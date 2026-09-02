@@ -357,6 +357,25 @@ _KEY_PROTECTED_PREFIXES = (
     # the read routes instead.
     '/tools', '/projects', '/export', '/generate',
     '/fs/upload', '/fs/mkdir', '/fs/rename', '/fs/delete',
+    # NOTE: '/agents' above does NOT cover '/agent/stream' — startswith('/agents')
+    # is false for '/agent/stream', so the one route that spawns a real agent
+    # CLI (with Edit/Write and --add-dir on the workspace) was the only member
+    # of this family with no gate at all: measured with a key configured and
+    # none supplied, /tools/exec and /terminal/spawn returned 401 while
+    # /agent/stream returned 400 — i.e. it reached body validation. The
+    # trailing slash keeps this precise: it covers /agent/stream and
+    # /agent/drivers without re-matching the '/agents' entry above.
+    '/agent/',
+)
+
+# Routes that hand back the HOST's own data (files, listings, office state).
+# An unknown browser origin gets NO Access-Control-Allow-Origin for these, so
+# a page the user happens to be visiting cannot read the response. The /fs
+# read routes are the load-bearing case: they are deliberately keyless and
+# _cafresohq_allowed_dirs defaults to $HOME. The key-gated members are listed
+# too — the key already stops them, and defence in depth costs nothing here.
+_HOST_DATA_PREFIXES = (
+    '/fs', '/vault', '/projects', '/export', '/tools', '/terminal', '/hq/',
 )
 
 # Background CLI-install jobs (POST /agents/install returns 202 immediately;
@@ -1651,8 +1670,23 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if allowed:
             self.send_header('Access-Control-Allow-Origin', origin)
             self.send_header('Access-Control-Allow-Credentials', 'true')
-        else:
+        elif not self.path.split('?', 1)[0].startswith(_HOST_DATA_PREFIXES):
             self.send_header('Access-Control-Allow-Origin', '*')
+        # else: no ACAO at all. The reasoning above — "a browser cannot send
+        # cookies with ACAO:'*', so a malicious site can't read this
+        # container's cookie-authenticated responses" — is sound for routes
+        # that need credentials, and has a hole exactly where they don't. The
+        # /fs read routes are deliberately keyless (see the note in
+        # _KEY_PROTECTED_PREFIXES) and _cafresohq_allowed_dirs defaults to
+        # $HOME, so ACAO:'*' let ANY page a user visited read any file under
+        # their home directory cross-origin. Measured against a local instance
+        # WITH an API key configured:
+        #   curl -H 'Origin: https://evil.example' '/fs/file?path=$HOME/<decoy>'
+        #   → 200, Access-Control-Allow-Origin: *, decoy contents in the body.
+        # Allowlisted app origins keep credentialed access through the branch
+        # above (that is what CAFRESOHQ_ALLOWED_WS_ORIGINS is for in a
+        # cross-origin UI/API split); everyone else now gets no ACAO header,
+        # which is what makes the browser refuse to hand over the response.
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
         self.send_header('Access-Control-Allow-Headers',
                          'Content-Type, Authorization, X-User-Principal, X-API-Key, '

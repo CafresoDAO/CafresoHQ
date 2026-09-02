@@ -22000,3 +22000,70 @@ handed, which is a larger change than a label correction.
 
 Regression tests: `scripts/test_every_settings_door_the_office_names_exists.py`
 (new), `scripts/test_cast.py` (corrected assertion).
+
+---
+
+## Tick 27 — two live holes: an ungated agent spawner, and $HOME readable by any website
+
+Both of these were reachable on a running office, and both are now shut. They
+came out of the 15-agent sweep, but the sweep only pointed; each was re-proven
+by hand against a real server before a line was changed.
+
+**A. `/agent/stream` was outside the key gate.** `_KEY_PROTECTED_PREFIXES`
+listed `'/agents'` — plural. The gate is `if not path.startswith(
+_KEY_PROTECTED_PREFIXES): return True`, and `'/agent/stream'.startswith(
+'/agents')` is `False`, so the route returned early with *no* check at all: not
+the key, not even the loopback fallback that covers every other member of this
+family. `/agent/stream` is the route that spawns a real agent CLI with
+Edit/Write and `--add-dir` pointed at the workspace, so it was the single
+highest-consequence route in the file and the only one with no gate.
+
+Measured, with a key configured and none supplied: `/tools/exec` 401,
+`/terminal/spawn` 401, `/agent/stream` **400** — that is, it sailed past auth
+and got as far as validating the request body. Fixed by adding `'/agent/'`; the
+trailing slash covers `/agent/stream` and `/agent/drivers` without colliding
+with the existing `'/agents'` entry. The UI sends no `X-API-Key` anywhere (zero
+matches across the `.jsx`), so it rides the same loopback fallback `/agents`
+already used — nothing that worked before stops working.
+
+**B. Any page the user visited could read their home directory.** The CORS
+branch ended in a bare `else:` that set `Access-Control-Allow-Origin: *` for
+every unrecognised origin. The `/fs` *read* routes are deliberately keyless —
+the preview iframe fetches `/fs/site/<root>/<asset>` from the browser with no
+key — and `_cafresohq_allowed_dirs` defaults to `$HOME`. Those two correct
+decisions composed into a wrong one.
+
+Proven with a decoy file, so no real secret was ever read: a request carrying
+`Origin: https://evil.example` came back `200`, `Access-Control-Allow-Origin:
+*`, and the decoy's contents — **with an API key configured**. Fixed by
+narrowing that `else` to skip `_HOST_DATA_PREFIXES` (`/fs`, `/vault`,
+`/projects`, `/export`, `/tools`, `/terminal`, `/hq/`): an unknown origin now
+gets no ACAO header at all, so the browser refuses to hand the body to the page.
+Allowlisted origins still get credentialed access; `/health`, which carries no
+host data, still answers `*` for anyone.
+
+**What this does *not* fix, and it matters for the public-URL question.**
+Absent-ACAO is a *browser* defence. `curl` still returns the bytes, because
+curl does not enforce CORS — and the `/fs` reads are keyless on purpose, so any
+client that can reach the port can still read inside the allowed dirs. That is
+survivable because the port binds loopback, but it means the honest answer to
+"can serve.py be the public URL" is **no, not as it stands**: its security model
+is "loopback, or an API key the browser UI cannot send". Setting a key today
+locks out the office's own UI, since a key configured removes the loopback free
+pass for every gated route the UI calls. A public surface needs a real
+browser-usable auth path, which does not exist yet — that is an architecture
+task, not an afternoon one, and it is the actual blocker to a stranger-usable
+URL.
+
+Third comment-contamination near-miss this run, and worth recording because it
+fooled me *while investigating*: a throwaway probe that regexed the prefix
+tuple reported `/fs/file` as key-gated. It is not. The tuple's own comment
+contains the literal `'/fs'` explaining why bare `/fs` must *not* be protected,
+and the regex matched the comment. Stripping comments first flipped the answer
+and changed the conclusion above.
+
+Regression test: `scripts/test_no_keyless_route_hands_the_host_to_a_stranger.py`
+(new) — boots serve.py for real, speaks HTTP to it, writes and removes its own
+decoy. Fire-tested: without the fix it fails on exactly the two intended checks
+(`/agent/stream` not 401; unknown origin receives ACAO `*`) while C and D stay
+green, confirming the fix is what those two checks measure.
