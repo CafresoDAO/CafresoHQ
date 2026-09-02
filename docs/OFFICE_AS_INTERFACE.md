@@ -21443,3 +21443,37 @@ now appears and blocks the write; "Reload" discards the boss's edit for
 the coworker's; "Keep mine" force-writes through.
 
 Regression test: `scripts/test_classic_projects_save_no_longer_clobbers_a_coworkers_edit.py`.
+
+### The graph's Share/publish button silently swallowed failure (2026-09-02)
+
+`publish` (views/graph.jsx), wired to the Library graph's "⤴ Share"
+button, POSTs an exported snapshot to `/graph/publish` to mint a
+shareable public graph link. Its failure path was:
+
+    } catch (err) { console.warn('publish graph:', err); }
+    finally { setSharing(false); }
+
+with no `res.ok` check at all — a 4xx/5xx response with a JSON body
+still parsed fine, so `if (j && j.viewerUrl)` was just false and the
+function fell through having done nothing. The button flips from
+"Publishing…" back to "⤴ Share" with zero indication anything went
+wrong: no toast, no banner, no chat message. Same fire-and-forget shape
+as the `decideExternal().catch(()=>{})` fix earlier this session, in a
+different, untouched component — and a direct break from this
+codebase's own convention: `views/projects.jsx`'s sibling `publishOpen`
+(WorkspaceView's own Publish flow) has always reported failure via
+`setPubMsg({ kind: 'err', text: 'Publish failed — ' + officeCause(...) })`.
+
+Fix: `publish` now throws on `!res.ok` and again when the response is
+ok but carries no `viewerUrl` (both used to fall through silently). The
+catch block sets a new `shareError` state via `officeCause` (importing
+it into graph.jsx for the first time — this file had no error-reporting
+vocabulary of its own), and a small dismissible banner renders when
+it's set. Live-verified by monkey-patching `window.fetch` to fail
+`/graph/publish` with a 500 in a real browser session, clicking Share,
+and confirming "⚠ Publish failed — simulated publish failure for live
+verification" appeared with a working Close button; the real success
+path (an actual publish, which mints a real public canister link) was
+left to the genuine-execution test rather than triggered live.
+
+Regression test: `scripts/test_graph_publish_reports_failure_instead_of_console_warn.py`.

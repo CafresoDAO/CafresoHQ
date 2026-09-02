@@ -1,5 +1,6 @@
 import { CafresoHQClient } from '../claude-client.jsx';
 import { hexToRgb } from './core.jsx';
+import { officeCause } from '../app/floor.jsx';
 const { useState: useSV, useMemo: useMV, useRef: useRV } = React;
 const DEFAULT_SETTINGS = {
   centerForce:  0.0008,
@@ -98,6 +99,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
   const [shareUrl, setShareUrl] = useSV(null);
   const [sharing, setSharing] = useSV(false);
   const [shareCopied, setShareCopied] = useSV(false);
+  const [shareError, setShareError] = useSV(null);
   const [embedCopied, setEmbedCopied] = useSV(null); // null | true | false — real result of the last "Copy embed" click
   const [edgesHover, setEdgesHover] = useSV(!!persisted.edgesHover); // hide edges until hover
   const edgesHoverRef = React.useRef(edgesHover);
@@ -300,6 +302,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
     const e = engineRef.current; if (!e) return;
     setSharing(true);
     setShareCopied(false);
+    setShareError(null);
     try {
       const snap = e.exportSnapshot();
       snap.title = sourceRef.current === 'concepts'
@@ -310,6 +313,11 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(snap),
       });
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try { const j = await res.json(); if (j && j.error) msg = j.error; } catch (_e) {}
+        throw new Error(msg);
+      }
       const j = await res.json();
       if (j && j.viewerUrl) {
         const full = (base || (typeof location !== 'undefined' ? location.origin : '')) + j.viewerUrl;
@@ -318,8 +326,13 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
         catch (_) { setShareCopied(false); }
         // Onboarding: mark "publish your first graph" complete.
         try { localStorage.setItem('cafresohq_hq_v1:publishedGraph', '1'); window.dispatchEvent(new CustomEvent('cafresohq:graph-published')); } catch (_) {}
+      } else {
+        throw new Error('the office did not hand back a link to share');
       }
-    } catch (err) { console.warn('publish graph:', err); }
+    } catch (err) {
+      console.warn('publish graph:', err);
+      setShareError(officeCause((err && err.message) || String(err)));
+    }
     finally { setSharing(false); }
   }, [activePath]);
 
@@ -531,6 +544,13 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
         .map(([label, fn]) => React.createElement('div', { key: label, role: 'menuitem', tabIndex: 0, onClick: fn,
           onKeyDown: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); fn(); } },
           style: { padding: '6px 10px', cursor: 'pointer', borderRadius: 5 }, onMouseEnter: (ev) => ev.currentTarget.style.background = 'rgba(245,210,93,0.14)', onMouseLeave: (ev) => ev.currentTarget.style.background = 'transparent' }, label))),
+
+    // Publish failure — was silently swallowed to console.warn before.
+    shareError && React.createElement('div', { style: { position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', zIndex: 60, width: 380, maxWidth: '90%', background: 'rgba(24,20,14,0.98)', border: '1px solid rgba(220,90,90,0.4)', borderRadius: 12, padding: 18, color: '#e9e2d4', font: '13px Inter, sans-serif', boxShadow: '0 18px 60px rgba(0,0,0,0.5)' } },
+      React.createElement('div', { style: { fontWeight: 600, color: '#e08080', marginBottom: 8 } }, '⚠ Publish failed'),
+      React.createElement('div', { style: { color: '#cabfa9', marginBottom: 12, lineHeight: 1.4 } }, shareError),
+      React.createElement('button', { onClick: () => setShareError(null), style: { ...ctrlStyle, cursor: 'pointer' } }, 'Close'),
+    ),
 
     // Share modal.
     shareUrl && React.createElement('div', { style: { position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', zIndex: 60, width: 420, maxWidth: '90%', background: 'rgba(24,20,14,0.98)', border: '1px solid rgba(245,210,93,0.3)', borderRadius: 12, padding: 18, color: '#e9e2d4', font: '13px Inter, sans-serif', boxShadow: '0 18px 60px rgba(0,0,0,0.5)' } },
