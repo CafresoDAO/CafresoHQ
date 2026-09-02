@@ -93,11 +93,18 @@ function WindowFrame({
       window.removeEventListener('mouseup', onUp);
       document.body.style.userSelect = ''; document.body.style.cursor = '';
       if (!ds || !el) { dragRef.current = null; return; }
+      // `|| fallback` would discard a legitimate 0 (dragged flush to the
+      // viewport's left/top edge, which the clamp ranges above allow) —
+      // parseFloat('0px') === 0 is falsy, so the window would silently
+      // snap back to its pre-drag position on release. Number.isFinite
+      // treats 0 as a real value and only falls back on a genuine parse
+      // failure (NaN).
+      const _px = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
       const next = {
-        x: parseFloat(el.style.left)   || ds.origX,
-        y: parseFloat(el.style.top)    || ds.origY,
-        w: parseFloat(el.style.width)  || ds.origW,
-        h: parseFloat(el.style.height) || ds.origH,
+        x: _px(el.style.left)   ?? ds.origX,
+        y: _px(el.style.top)    ?? ds.origY,
+        w: _px(el.style.width)  ?? ds.origW,
+        h: _px(el.style.height) ?? ds.origH,
       };
       // Edge-snap on drop (move gestures only): top → maximize,
       // left/right → tile to that half of the work area.
@@ -284,11 +291,18 @@ function ChatWindow({ open, setOpen, geometry, setGeometry, messageCount, chatPa
       const el = winRef.current;
       if (!ds || !el) return;
       // Snapshot current DOM geometry → commit to React state (single render).
+      // `|| fallback` would discard a legitimate 0 (dragged flush to the
+      // viewport's left/top edge, which the clamp ranges above allow) —
+      // parseFloat('0px') === 0 is falsy, so the window would silently
+      // snap back to its pre-drag position on release. Number.isFinite
+      // treats 0 as a real value and only falls back on a genuine parse
+      // failure (NaN).
+      const _px = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
       const next = {
-        x: parseFloat(el.style.left)   || ds.origX,
-        y: parseFloat(el.style.top)    || ds.origY,
-        w: parseFloat(el.style.width)  || ds.origW,
-        h: parseFloat(el.style.height) || ds.origH,
+        x: _px(el.style.left)   ?? ds.origX,
+        y: _px(el.style.top)    ?? ds.origY,
+        w: _px(el.style.width)  ?? ds.origW,
+        h: _px(el.style.height) ?? ds.origH,
       };
       dragRef.current = null;
       document.body.style.userSelect = '';

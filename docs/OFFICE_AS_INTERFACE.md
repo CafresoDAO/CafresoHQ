@@ -20937,3 +20937,38 @@ same mechanism the live `resize` message handler already uses, just
 applied once up front on resume too.
 
 Regression test: `scripts/test_pty_reconnect_applies_new_dimensions.py`.
+
+## Dragging a floating window flush to the left/top edge snapped it back on release
+
+`app/windows.jsx` has two independent draggable-window implementations
+(`WindowFrame` and `ChatWindow`), each committing dragged geometry on
+mouseup by reading the DOM style back:
+
+    x: parseFloat(el.style.left)   || ds.origX,
+    y: parseFloat(el.style.top)    || ds.origY,
+
+Both implementations' own drag clamps make `x === 0` and `y === 0`
+legitimate, ordinary positions to land on — `clamp(ds.origX + dx,
+-ds.origW + 80, W - 80)` for `x` has a negative lower bound for any
+window wider than 80px, so dragging a window flush to the left edge of
+the screen (an entirely normal thing to do) lands exactly on 0.
+`parseFloat('0px')` returns the number `0`, and `0` is falsy in
+JavaScript, so `0 || ds.origX` evaluated to `ds.origX` — the position
+from BEFORE the drag. The window tracked the mouse correctly the whole
+drag, then visibly snapped back to its old spot the instant the mouse
+was released.
+
+Found by a background hunt agent sweeping previously-unswept areas
+(desktop window drag/resize geometry — no existing test touched this
+file's drag logic).
+
+Fix: replaced the `parseFloat(...) || fallback` pattern at both commit
+sites with a small `_px()` helper using `Number.isFinite(...) ??
+fallback`, which only falls back on a genuine parse failure (NaN), not
+on a valid 0. Verified live in the browser: dispatched a real drag
+(mousedown/mousemove/mouseup) on the chat window's title bar landing it
+exactly at `x: 0`, and confirmed via `getBoundingClientRect()` (both
+immediately and after React's re-render) that it stayed at the left
+edge instead of snapping back to its pre-drag position.
+
+Regression test: `scripts/test_window_drag_to_edge_zero_snaps_back.py`.
