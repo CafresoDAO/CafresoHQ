@@ -22400,3 +22400,82 @@ and read the thinnest MVP-relevant ones. `app/approvals.jsx` and
 keep-both-ends elision has its own documented near-miss). Low test count turned
 out to be a poor bug predictor here; taking a screen at its word is still the
 better hunt.
+
+### #142 — the Library called itself empty while it was still being read
+
+The first run pays off in one moment. Llama took `Simple page: a one-page site
+for my dog-walking business`, built it, and the office filed it. The FIRST
+DELIVERY sheet said *"filed it in your cabinet"*, named the path — `📁
+Sites/simple-page-a-one-page-site-for-my-dog-walking-business.html` — and
+offered one button: **Open the page →**.
+
+Pressing it landed on:
+
+    📓 Your Library is empty
+    Notes, research, decks, documents and images all live here —
+    and your coworkers file their deliveries here too.
+    [➕ Write your first note]
+
+The file was on disk the whole time. Six seconds later the tree showed it,
+with a Preview. So on the single screen the entire first run builds toward,
+the office contradicted a sentence it had written itself one second earlier,
+and invited the boss to start from nothing.
+
+`views/vault.jsx` renders `!status` as the loading moment and `files.length
+=== 0` as the empty state. Those answer two different round trips —
+`vaultStatus()` asks *is there a cabinet*, `vaultList()` asks *what is in it* —
+and `refresh` set status between them. A resolved status over an unfilled
+`files` is the ordinary state of this view for the width of one fetch, and
+this block read it as an established fact.
+
+The comment on the empty state said *"Rendered only after status resolved (the
+!status screen owns the loading moment)"*. That names the right intent and the
+wrong fact, which is why it read as covering the case it did not. It has been
+corrected in place rather than deleted: the sentence is true now, and it is
+worth recording what made it false.
+
+The bridge branch of that same function has always landed `files` before
+`status` and never showed this. Two orderings of one sequence in one function,
+one of them wrong — the failure only reachable through the branch that a
+zero-config first run actually takes. `refresh` now holds `status` back until
+the listing settles, success or failure, so *empty* is something the office
+established rather than the shape of a variable nobody has filled in yet. Same
+rule as `officeHasBrain`'s unknowable → do not alarm and the starter card's
+unknowable → do not promise, pointed at the third surface that was asserting
+ahead of its own evidence.
+
+`scripts/test_an_empty_library_is_a_finding.py` runs the real `refresh` under
+Node against a listing that answers late, and asserts on what the view would
+have rendered in each frame rather than on the order of two statements. Fired
+against the original ordering it fails on exactly the two frames the boss
+read, and on nothing else. It also holds the other direction, which is the
+half a fix like this quietly breaks: a Library that really is empty must still
+say so, because that welcome is the only door a new boss has.
+
+Worth noting what this cost to find: nothing about it is visible in the source.
+Both surfaces are individually correct, the empty state is carefully written,
+and its own comment argues it is already gated. It took hiring a real brain,
+giving it a real assignment, and pressing the button the office offered.
+
+**Fallout, and the pattern behind it.** Splitting one statement in two broke
+`test_vault_graph_refresh.py` and `test_a_standing_search_stays_fresh.py`.
+Neither invariant moved: the local-backend path still lists then refreshes the
+graph, and the standing search still re-runs after the load. Both had pinned
+the exact text `setFiles(await CafresoHQClient.vaultList());` — one by regex
+adjacency, one by `str.index` — so they objected to the shape of a line rather
+than the fact they are named for. That is the fifth and sixth instance of this
+in six ticks (#128 accounted for three, #141 for two more), and it is now the
+most common way a change in this repo produces a red suite.
+
+Re-anchoring the second one turned up something worse. Its check read
+`vault.index('…vaultList()') < vault.rindex('await _refreshHits();')` — the
+FIRST load in the file against the LAST re-run in the file, and those sit in
+different branches. Firing the break it exists to catch — moving the server
+arm's re-run above its own load — it passed. The blind spot was in the
+original, not introduced by the re-anchor; re-anchoring is simply what
+exposed it. It is now scoped to the arm it names, and fails on that break.
+
+Which sharpens the case for a dedicated sweep rather than more one-at-a-time
+repairs: a test pinned to a literal does not merely cry wolf on innocent
+edits, it reports green over the fact it was written to defend. #141 already
+had one doing exactly that.

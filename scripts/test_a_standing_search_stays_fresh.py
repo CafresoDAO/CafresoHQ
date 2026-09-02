@@ -101,9 +101,25 @@ def main():
     # the standing search.
     check('both refresh arms (bridge and server) re-run the standing search',
           vault.count('await _refreshHits();') == 3)
+    # By the CALL, not by the whole statement it used to sit in. #142 split
+    # `setFiles(await CafresoHQClient.vaultList());` into a load and a set so
+    # the loading screen could outlive the fetch, and this line raised
+    # ValueError — on a change that moved neither the load nor the re-run
+    # relative to each other. The fact being checked is the ordering; the
+    # assignment form is incidental to it.
+    #
+    # Scoped to the server arm, which is what the label says and what the old
+    # line did not do. It compared the FIRST vaultList in the file against the
+    # LAST _refreshHits in the file, and those are in different branches — so
+    # moving this arm's re-run above its own load left a later re-run in the
+    # bridge arm still satisfying the comparison. Found by firing exactly that
+    # break at the re-anchored check and watching it pass; the blind spot was
+    # in the original too, and re-anchoring is what exposed it.
+    server_arm = vault[vault.index('const s = await CafresoHQClient.vaultStatus();'):]
+    server_arm = server_arm[:server_arm.index('\n  React.useEffect(')]
     check('the re-run sits inside refresh, after the files load',
-          vault.index('setFiles(await CafresoHQClient.vaultList());')
-          < vault.rindex('await _refreshHits();'))
+          server_arm.index('CafresoHQClient.vaultList()')
+          < server_arm.index('await _refreshHits();'))
 
     print()
     if FAILS:

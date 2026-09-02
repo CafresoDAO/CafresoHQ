@@ -451,14 +451,37 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     }
     try {
       const s = await CafresoHQClient.vaultStatus();
-      setStatus(s);
-      if (!s.configured) { setFiles([]); return; }
+      if (!s.configured) { setStatus(s); setFiles([]); return; }
+      /* `status` is what dismisses the loading screen, and the listing is a
+         SECOND round trip behind it. Setting status here — as this branch
+         used to — renders the tree with `files` still at its initial [], and
+         `emptyTreeState` reads that as a fact: "Your Library is empty ·
+         ➕ Write your first note".
+
+         Measured live on a fresh office (#142). The first-delivery modal
+         had just said "filed it in your cabinet · 📁 Sites/simple-page-….html"
+         and offered one button, "Open the page →". Pressing it landed on the
+         Library announcing the cabinet was empty and inviting the boss to
+         write their first note. The file was on disk the whole time; six
+         seconds later the tree showed it, with a Preview. So the office
+         contradicted itself on the one screen the whole first run pays off
+         on, and the contradiction was the office's own doing.
+
+         The bridge branch above already lands `files` before `status`, which
+         is why it never showed this. Same order here: status only goes up
+         once the listing it will be rendered against has settled, success or
+         failure. Empty is then a thing the office ESTABLISHED, not the shape
+         of a variable nobody has filled in yet — the same rule the rest of
+         the office follows about not asserting what it hasn't checked. */
       try {
-        setFiles(await CafresoHQClient.vaultList());
+        const list = await CafresoHQClient.vaultList();
+        setFiles(list);
+        setStatus(s);
         refreshGraph();
         await _refreshHits();
       } catch (e) {
         setFiles([]);
+        setStatus(s);
         setErr(e.message || 'Could not list the Library.');
       }
     } catch (e) {
@@ -1214,10 +1237,19 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
   /* First-run: a brand-new boss used to land on a silently blank tree —
      three tiny toolbar icons were the only doors in. The welcome names
      what the Library holds and repeats the two real doors as full-size
-     buttons. Rendered only after status resolved (the !status screen
-     owns the loading moment), and only in place of the TREE — search
-     and toolbar stay. A filter that empties a non-empty Library says
-     so instead, because "blank" reads as "lost your files". */
+     buttons. Rendered only in place of the TREE — search and toolbar
+     stay. A filter that empties a non-empty Library says so instead,
+     because "blank" reads as "lost your files".
+
+     "Rendered only after status resolved (the !status screen owns the
+     loading moment)" is what this comment used to say, and it named the
+     wrong fact. `status` resolving means the office knows there IS a
+     cabinet; the LISTING is a second round trip behind it, so a resolved
+     status with `files` still at [] is the ordinary state of this view
+     for as long as that trip takes — and this block called it empty.
+     `refresh` now holds `status` back until the listing settles, which is
+     what makes the sentence above true. See its comment for the first run
+     this cost. */
   const emptyTreeState = files.length === 0 ? (
     <div style={{ padding: '18px 14px', fontSize: 11, lineHeight: 1.6 }}>
       <div style={{ fontSize: 22, marginBottom: 6 }} aria-hidden="true">📓</div>

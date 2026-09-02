@@ -64,8 +64,17 @@ def main():
           bool(re.search(r"setStatus\(\{ configured: true, exists: true, name: '🔐 Encrypted Library', backend: 'bridge' \}\);\s*\n\s*refreshGraph\(\);", refresh_fn)),
           'views/vault.jsx: the bridge (encrypted shell) success branch must '
           'refresh the graph too, not just the local-backend branch')
+    # Anchored on the ORDER, not on one statement's exact text. This check
+    # used to require `setFiles(await …vaultList());` immediately followed by
+    # `refreshGraph();`, and #142 split that line in two — `const list =
+    # await …vaultList(); setFiles(list); setStatus(s);` — so the listing
+    # could be settled before the loading screen came down. Nothing this
+    # check names changed: the local-backend success path still lists, then
+    # refreshes the graph. Pinning the adjacency of two particular lines made
+    # it object to a change that left its own invariant intact.
+    local_success = re.search(r"vaultList\(\)([\s\S]*?)\n      \} catch", refresh_fn)
     check("refresh()'s local-backend success path calls refreshGraph()",
-          bool(re.search(r"setFiles\(await CafresoHQClient\.vaultList\(\)\);\s*\n\s*refreshGraph\(\);", refresh_fn)),
+          bool(local_success) and 'refreshGraph();' in local_success.group(1),
           'views/vault.jsx: without this, the exact repro (delete a note, '
           'create one, click Refresh) stays broken for every local-backend '
           'install — the common case')
