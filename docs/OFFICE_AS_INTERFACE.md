@@ -21531,3 +21531,42 @@ the "STORAGE ⚠ Office file save failed — this change may not survive a
 reload elsewhere" toast appeared.
 
 Regression test: `scripts/test_file_persist_reports_failure_instead_of_silent_drop.py`.
+
+### The standalone graph viewer's search box missed accented notes (2026-09-02)
+
+`graph-viewer.js` powers the public/embeddable graph view served at
+`graph-viewer.html` — the Library's "watch it grow" shareable link, not
+internal-only tooling. Its search box (`bestMatch()` and `apply()`)
+compared node labels with plain `.toLowerCase()`, the same accent gap
+already fixed three times this session in every other search surface
+built on the same vault content: serve.py's `_vault_search_hit`,
+views/vault.jsx's `bridgeSearch`, and views/graph.jsx's
+`nodeMatchesFilter` (whose fix even left a comment noting "vault search
+conventions everywhere" — this one standalone file was the everywhere
+that got missed). A previous hunt this session flagged the gap but
+didn't fix it; this tick re-verified it was still present and fixed it.
+
+Concrete repro: a shared graph has a node titled "...investigación...".
+Typing "investigacion" (no accent — the natural way to type it on a US
+keyboard) into the graph-viewer's own search box finds nothing, though
+the identical query already works on every other search surface in the
+app.
+
+Fix: added a module-level `foldAccents` helper (same NFD-decompose,
+drop U+0300-U+036F combining marks, lowercase algorithm as
+views/graph.jsx's `_foldAccents` / serve.py's `_fold_accents`), used at
+every label/query comparison site: `bestMatch`'s label scoring,
+`apply`'s label matching and query normalization, and the Enter-key
+handler's call into `bestMatch` (which needed its own `foldAccents`
+wrap, not just `.toLowerCase()`, since `bestMatch` now expects an
+already-folded query to compare against its now-folded labels).
+
+Live-verified by writing a two-node snapshot directly into
+`hq-state/public-graphs/` (one node titled with an accented Spanish
+label, one larger unaccented node) and loading it through the real
+`/graph-viewer.html?g=/graph/snapshot/<slug>` route in a browser:
+typing the unaccented query dimmed the unrelated bigger node while the
+accented-titled node stayed lit, confirming the fold actually drives
+the live search, not just the extracted-logic test.
+
+Regression test: `scripts/test_graph_viewer_search_folds_accents.py`.

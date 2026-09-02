@@ -48,6 +48,13 @@ const P = (k, d) => { const v = qs.get(k); return v == null ? d : v; };
 
 function titleOf(id) { return String(id).split('/').pop().replace(/\.md$/, ''); }
 
+/* Same algorithm as views/graph.jsx's _foldAccents / serve.py's _fold_accents:
+   NFD-decompose, drop combining marks (U+0300-U+036F), lowercase. Without
+   this, typing an unaccented "unicas" here never finds a node titled
+   "...investigación..." — the same bug already fixed in every other search
+   box in the app, just missed in this standalone viewer. */
+function foldAccents(s) { return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
+
 /* Node identity stays in the snapshot's colors; gold is reserved as the single
    "attention" channel (hover, halo, adjacent edges) so the two never compete.
    Edge alphas are tuned against premultiplied blending (see glRgba) — at rest
@@ -2181,20 +2188,20 @@ async function main() {
       if (!q || !searchSet || !searchSet.size) return null;
       let best = null, bestScore = -1;
       for (const id of searchSet) {
-        const label = String(fullLabel.get(id) || g.getNodeAttribute(id, 'label') || '').toLowerCase();
+        const label = foldAccents(fullLabel.get(id) || g.getNodeAttribute(id, 'label') || '');
         const score = (label.startsWith(q) ? 1000 : 0) + (baseSize.get(id) || 0);
         if (score > bestScore) { bestScore = score; best = id; }
       }
       return best;
     };
     const apply = () => {
-      const q = searchInput.value.trim().toLowerCase();
+      const q = foldAccents(searchInput.value.trim());
       if (!q) searchSet = null;
       else {
         searchSet = new Set();
         // Match the full label, not the clamped one — the tail of a question
         // is often the part someone remembers.
-        g.forEachNode((id, a) => { if (String(fullLabel.get(id) || a.label || '').toLowerCase().includes(q)) searchSet.add(id); });
+        g.forEachNode((id, a) => { if (foldAccents(fullLabel.get(id) || a.label || '').includes(q)) searchSet.add(id); });
       }
       searchWrap.classList.toggle('gv-has-q', !!q);
       renderer.refresh({ skipIndexation: true });
@@ -2225,7 +2232,7 @@ async function main() {
       } else if (e.key === 'Enter') {
         e.preventDefault();
         clearTimeout(flyDebounce);
-        const best = bestMatch(searchInput.value.trim().toLowerCase());
+        const best = bestMatch(foldAccents(searchInput.value.trim()));
         if (!best) return;
         const d = renderer.getNodeDisplayData(best);
         if (d) camera.animate({ x: d.x, y: d.y, ratio: 0.25 }, { duration: 400 });
