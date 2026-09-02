@@ -352,6 +352,27 @@ def _terminal_pty_ws(self):
             sess['sock']    = client_sock
             sess['expires'] = None   # cancel reaper countdown
 
+        # This connection's cols/rows (freshly parsed above) may differ
+        # from whatever the PTY was originally spawned with — the browser
+        # window can easily be a different size by the time a session is
+        # resumed. Apply them to the already-running PTY now: the ONLY
+        # other place that ever changes an existing PTY's kernel-level
+        # window size is the {"type":"resize"} message handler below, and
+        # the frontend (terminal.jsx) only sends that message in response
+        # to a NEW resize event — never on reconnect/resume itself — so
+        # without this, a resumed session would silently keep stale
+        # dimensions (wrong wrapping, garbled TUI redraws) until the user
+        # happened to resize the browser window again.
+        try:
+            if _is_win:
+                sess['pty_proc'].setwinsize(rows, cols)
+            else:
+                import termios as _termios4
+                fcntl.ioctl(sess['master_fd'], _termios4.TIOCSWINSZ,
+                            struct.pack('HHHH', rows, cols, 0, 0))
+        except Exception:
+            pass
+
         # Replay buffered output collected while the client was away.
         with sess['buf_lk']:
             replay, sess['buf'] = bytes(sess['buf']), bytearray()

@@ -20902,3 +20902,38 @@ correctness) and separately confirms serve.py's own source stores
 in its `time.mktime(...)` reconstruction.
 
 Regression test: `scripts/test_night_shift_daily_recurrence_survives_dst.py`.
+
+## Reconnecting a Terminal PTY session never applied the new window size
+
+`pty_server.py`'s WS handler parses `cols`/`rows` fresh from the query
+string on every connection, before deciding whether to spawn a new PTY
+or resume an existing one by `session_id`. The RECONNECT branch swapped
+in the new socket and replayed buffered output, but never applied those
+freshly-parsed `cols`/`rows` to the already-running PTY's kernel-level
+window size — they were silently discarded. The only other place that
+ever resizes a live PTY is the `{"type":"resize"}` message handler, and
+the frontend (`views/terminal.jsx`) only sends that message from a
+`ResizeObserver`/`window resize` listener reacting to a NEW resize
+event — never on reconnect/resume itself.
+
+Practical effect: open a Terminal tab, resize the browser window, then
+let the connection drop and come back (backgrounding the tab
+`visibilitychange`-reconnects it, or a network blip triggers the retry-
+backoff path) before the window is resized again. xterm.js redraws at
+the new pixel size and the new connection computes the right `cols`/
+`rows`, but the child process (vim, htop, claude/codex CLI, any TUI)
+never receives SIGWINCH/TIOCSWINSZ for it — output wraps at the wrong
+column and TUI redraws garble until the user happens to trigger another
+browser resize.
+
+Found by a background hunt agent sweeping previously-unswept areas
+(terminal/PTY session edge cases — resize, reconnect).
+
+Fix: the reconnect branch now applies the newly-parsed `cols`/`rows` to
+the resumed PTY immediately after taking over the socket —
+`pty_proc.setwinsize(rows, cols)` on Windows (winpty), or
+`fcntl.ioctl(master_fd, termios.TIOCSWINSZ, ...)` on POSIX — the exact
+same mechanism the live `resize` message handler already uses, just
+applied once up front on resume too.
+
+Regression test: `scripts/test_pty_reconnect_applies_new_dimensions.py`.
