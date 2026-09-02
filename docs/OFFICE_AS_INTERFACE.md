@@ -21360,3 +21360,46 @@ outside, so verification here is the source-shape regression test
 rather than a live browser repro.
 
 Regression test: `scripts/test_decide_external_reports_failure_instead_of_silent_drop.py`.
+
+### Graph filter box missed accented notes (2026-08-30)
+
+The Library's knowledge-graph filter box (`nodeMatchesFilter`,
+`views/graph.jsx`) matched bare search terms with plain
+`.toLowerCase()`, so a note titled "Ideas únicas sobre la investigación
+solar" appeared as a graph node but typing "unicas" into the filter box
+found nothing — the same node was findable via `/vault/search` and the
+encrypted bridge's `bridgeSearch` (both already accent-folding, the
+latter fixed earlier this window) but not via the graph's own filter,
+a third search surface over the same vault content that never got the
+same treatment.
+
+Fix: added a module-local `_foldAccents` (NFD-decompose, drop Unicode
+combining marks U+0300–U+036F, lowercase) to `views/graph.jsx` — kept
+module-local rather than imported from `views/vault.jsx` because
+`vault.jsx` already imports `GraphView`/`simulate` FROM `graph.jsx`, so
+a reverse import would be circular. Unlike vault.jsx's copy, this one
+doesn't track an index map back to the original text, since the filter
+only ever needs a match/no-match verdict, never a snippet. The fix is
+scoped to the bare-term fallback only — the `type:`/`path:`/`tag:`/
+`file:` structured operators still compare against their own unfolded
+values, since folding just the query side there would silently stop an
+accented verbatim match instead of adding a capability.
+
+Live-verified in the browser: created a note titled "Ideas únicas.md",
+confirmed it registered as a graph node, then found that the graph
+canvas doesn't visually re-frame around a single isolated match — the
+canvas stayed blank in the viewport whether the filter term needed
+folding ("unicas") or not ("ideas", an exact substring needing no
+fold), confirming this is a pre-existing canvas pan/zoom behavior for
+single-node matches, not a regression from this fix. The sidebar note
+list and analytics panel both continued to reflect the note correctly
+throughout. Verification of the actual match logic itself is via
+genuine Node execution of the extracted `_foldAccents` helper.
+
+`graph-viewer.js` (the standalone public-graph-snapshot viewer, served
+at `/graph-viewer.html`/`/graph-viewer.js`) has the identical unfolded
+`.toLowerCase()` gap in its own `apply()`/`bestMatch()` functions —
+deliberately left unfixed this tick to keep scope manageable; a good
+candidate for a future pass.
+
+Regression test: `scripts/test_graph_filter_folds_accents_like_vault_search.py`.

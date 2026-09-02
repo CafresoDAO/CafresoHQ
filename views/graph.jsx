@@ -14,6 +14,21 @@ const DEFAULT_SETTINGS = {
   colorEdgesByType: false,
 };
 
+/* Accent-folded copy of `s`: NFD-decompose each code point, drop the
+   combining marks (U+0300-U+036F), lowercase. Same algorithm as
+   serve.py's _fold_accents and views/vault.jsx's _foldAccents (module-
+   local rather than imported — vault.jsx already imports FROM this
+   file, so importing back would be circular), applied here so
+   nodeMatchesFilter (the graph's own search/filter box) doesn't miss
+   the accented notes the vault's two search paths already find:
+   'unicas' has to find a node titled '...investigación...' or the
+   graph quietly splits by keyboard layout, same as vault search used
+   to before it was fixed. No index-map here — this filter only needs
+   a match/no-match verdict, never a snippet back into the original
+   text. */
+const _foldAccents = (s) => String(s || '')
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
 const GRAPH_PREFS_KEY = 'cafresohq:graph:prefs';
 
 function loadGraphPrefs() {
@@ -978,6 +993,14 @@ function nodeMatchesFilter(n, filter) {
   const ageDays = n.mtime ? (Date.now() - n.mtime) / 86400000 : 0;
   const isOrphan = (n.inlinks || 0) === 0;
   const hay = [n.title, n.id, n.path, n.type, ...(n.tags || [])].join(' ').toLowerCase();
+  /* Accent-folded twin of `hay`, for the bare-term fallback below only —
+     'unicas' has to find a node titled '...investigación...' the same
+     way vault search (both arms — see _foldAccents in vault.jsx) already
+     does. Left the `type:`/`path:`/`tag:`/`file:` operators alone: those
+     compare against their own already-lowercased (unfolded) values, and
+     folding just the query side there would silently stop matching an
+     accented path/tag verbatim instead of adding a capability. */
+  const foldedHay = _foldAccents(hay);
   const evalTerm = (term) => {
     term = term.trim();
     if (!term) return true;
@@ -991,7 +1014,7 @@ function nodeMatchesFilter(n, filter) {
     else if (low.startsWith('file:')) ok = String(n.title || n.id || '').toLowerCase().includes(low.slice(5).replace(/^"|"$/g, ''));
     else if (low === 'orphan') ok = isOrphan;
     else if (low === 'stale') ok = !!n.mtime && ageDays > 60;
-    else ok = hay.includes(low);
+    else ok = foldedHay.includes(_foldAccents(low));
     return neg ? !ok : ok;
   };
   return raw.split(/\s+OR\s+/i).some(part => part.split(/\s+AND\s+|\s+/i).every(evalTerm));
