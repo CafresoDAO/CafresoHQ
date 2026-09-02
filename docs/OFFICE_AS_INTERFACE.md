@@ -22479,3 +22479,59 @@ Which sharpens the case for a dedicated sweep rather than more one-at-a-time
 repairs: a test pinned to a literal does not merely cry wolf on innocent
 edits, it reports green over the fact it was written to defend. #141 already
 had one doing exactly that.
+
+### #143 — the add-project dialog invited the folder it then refused
+
+Continuing #142's walk down the first-run path. Getting-started step 5 opens
+ADD PROJECT. Under the ABSOLUTE PATH field:
+
+    Any folder on this machine — 📁 Browse shows the ones your coworkers
+    can open.
+
+Typing a real absolute folder and pressing Add:
+
+    That folder is outside the ones this office can show you — 📁 Browse
+    shows the ones that work.
+
+Both sentences on screen at once, three lines apart. The refusal is right.
+The invitation was the leftover, and it is the one the boss reads *first* —
+so the office talked him into the input it was about to turn down.
+
+`_addRefusedOutsideSandbox` asks `/fs/browse` before filing a project, and
+that route enforces the allowlist in EVERY mode — deliberately, because it is
+keyless. The hint predates that guard. Its own comment argued the case
+honestly for the door it was looking at: `_safe_path` DOES take a local-mode
+skip, so on a default self-hosted run the *coworker tools* really are
+unrestricted. But that is not the door this modal's Browse and the boss's own
+FILES tree open with. Two true statements about two different doors, and the
+label was quoting the wrong one.
+
+The same stale sentence had settled in two more places: `_fs_browse`'s
+docstring said *"In local mode: any readable path is allowed"* twenty lines
+above the code commented *"enforced in EVERY mode (was container-only, which
+left local/BYO reads unbounded)"*; and this suite's own rationale for the hint
+ended *"and there is no restriction at all on a default local run"*. One
+change made a fact stale in three places and only the code was updated.
+
+The copy no longer promises a set at all. Which folders work depends on how
+the install is configured, and the answer true in both modes was already in
+the sentence's second half — Browse resolves through the same guard, so it
+lists exactly what the coworkers can reach. Verified live that Browse is a
+door that actually answers, rather than pointing the boss at a dead one.
+
+`scripts/test_the_add_project_label_matches_the_door.py` checks the
+AGREEMENT rather than the wording: it lifts the hint, runs the real
+`_addRefusedOutsideSandbox` under Node, and asserts the label does not promise
+a set wider than the door grants. A rewrite of the sentence passes; a
+re-broadened promise does not, and neither does letting `/fs/browse` take the
+local-mode skip — which would make the new copy wrong in the other direction.
+Both breaks fired.
+
+Two of that test's own checks were wrong on the first pass, in the same way as
+each other: one read `\b(any|every|all)\s+folder` and failed on **"Not every
+folder works"**, the corrected copy; the other banned the old phrase from the
+docstring and failed on the docstring's own record of having said it. A check
+that cannot tell a claim from its denial, or from a quotation of itself, would
+have pushed both sentences back to the overpromise they were written to
+forbid. Same family as the brittle-literal pattern: matching text rather than
+meaning.

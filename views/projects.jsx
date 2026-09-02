@@ -1835,10 +1835,30 @@ function AddProjectModal({ prefillName, onClose, onCommit }) {
                   the sentence invented a rule and then named it in a
                   vocabulary the reader could not act on.
 
-                  This says the same thing in the one place it is true in
-                  BOTH modes: Browse lists exactly what the coworkers can
-                  reach, because it resolves through the same guard. */}
-              <small>Any folder on this machine — 📁 Browse shows the ones your coworkers can open.</small>
+                  Then it said "Any folder on this machine", and THAT was
+                  false in the other direction. The premise above holds for
+                  `_safe_path`, the door the coworker TOOLS go through; the
+                  reading doors — /fs/browse, /fs/file, what this modal's
+                  own Browse and the FILES tree open with — are sandboxed
+                  in EVERY mode, deliberately, because they are keyless.
+                  `_addRefusedOutsideSandbox` at the top of this file asks
+                  the reading door before filing the project, so a path
+                  outside it is refused. Measured on the first-run path:
+                  step 5 of the getting-started checklist opens this modal,
+                  and typing a real absolute folder produced "That folder is
+                  outside the ones this office can show you" — under a label
+                  promising any folder on this machine would do. The office
+                  invited exactly the input it then turned down.
+
+                  So the sentence no longer promises a set. Which folders
+                  work depends on how this install is configured, and the
+                  one answer true in both modes is the one the paragraph
+                  below already gave: Browse lists exactly what the
+                  coworkers can reach, because it resolves through the same
+                  guard. Naming the restriction without naming its
+                  vocabulary is what keeps this actionable — the boss does
+                  not need to know the rule, only which door answers. */}
+              <small>Not every folder works — 📁 Browse shows the ones your coworkers can open.</small>
               {err ? <div className="addproj-err">{err}</div> : null}
               <div className="addproj-actions">
                 <button type="button" className="px-btn secondary" onClick={onClose}>Cancel</button>

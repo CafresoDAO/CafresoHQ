@@ -155,7 +155,10 @@ console.log(JSON.stringify(R));
     check('the path hint no longer names an environment variable',
           'CAFRESOHQ_ALLOWED_DIRS' not in re.sub(r'/\*[\s\S]*?\*/', '', src),
           'views/projects.jsx: outside a comment, this name is a dead end for '
-          'the boss — and there is no restriction at all on a default local run')
+          'the boss — Browse is the answer he can act on. This rationale used '
+          'to end "and there is no restriction at all on a default local run", '
+          'which was true of _safe_path and never of the reading doors the add '
+          'actually asks; see test_the_add_project_label_matches_the_door.py')
     check('...and still tells the boss how to find a folder that works',
           re.search(r'Browse shows the ones your coworkers can open', src),
           'views/projects.jsx: Browse resolves through the same guard, so it is '

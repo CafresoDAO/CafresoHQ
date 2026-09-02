@@ -37,8 +37,13 @@ _within_allowed_dirs = None
 def _fs_browse(self):
     """GET /fs/browse?path=<dir>
     Returns a directory listing for the path picker popup.
-    In container mode: restricted to CAFRESOHQ_ALLOWED_DIRS subtrees.
-    In local mode: any readable path is allowed.
+    Restricted to CAFRESOHQ_ALLOWED_DIRS subtrees in EVERY mode — see the
+    comment on the check below for why this route does not take the
+    local-mode skip that _validate_path offers. This docstring used to say
+    "In local mode: any readable path is allowed", which the code twenty
+    lines down has contradicted since the check was made unconditional; the
+    same stale sentence was still being repeated to the user by the add-
+    project dialog's path hint in views/projects.jsx.
     Response: {path, parent, entries:[{name, type:'dir'|'file', path}]}
     """
     qs = urllib.parse.urlparse(self.path).query
