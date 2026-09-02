@@ -21790,3 +21790,54 @@ the untouched one evicted) and passing clean post-fix — and is the
 reliable proof for this one.
 
 Regression test: `scripts/test_toast_dismiss_double_click_does_not_evict_a_live_toast.py`.
+
+### The worker-payout sweep silently wiped pay earned mid-sweep (2026-09-02)
+
+`src/cafresohq_state/main.mo`'s `scanWorkerPayouts` builds `due` as a
+synchronous snapshot of every eligible search-worker's `accruedE8s` at
+scan start — no `await` in that loop, so it's atomic. The loop that
+actually pays each `(worker, amount)` pair DOES `await
+executeWorkerPayout(...)` on every iteration — a real inter-canister
+ledger call, so meaningful time passes between paying worker #1 and
+worker #2. During that await, `fulfill` (a separate update call) can run
+for a worker still queued in `due` and add newly-earned pay to their
+`accruedE8s` via `x.accruedE8s + searchPayRateE8s`.
+
+The bug: when the payout loop finally reached that worker, it did
+`patchWorker(p, func(x) { { x with accruedE8s = 0; ... } })` —
+unconditionally resetting the CURRENT accrual to 0 instead of
+subtracting the SNAPSHOTTED `amount`. A worker snapshotted at 100,000
+e8s who finished one more job (another 5,000 e8s) before their turn in
+the payout loop got paid 100,000 and had their balance zeroed to 0 — the
+5,000 e8s of real, already-earned pay vanished, with no log entry and no
+error surfaced anywhere. This is a silent money-ledger bug, not a
+cosmetic one: a boss whose worker network runs is short-paying real
+coworkers by whatever they earn during their own payout's ledger
+round-trip, compounding every sweep.
+
+This same file's `restoreAccrual` (used on every definitive-reject
+ledger error, a few lines above `scanWorkerPayouts`) already gets this
+right — `patchWorker(p, func(x) { { x with accruedE8s = x.accruedE8s +
+amount } })` re-reads the CURRENT value and adjusts it, never overwrites
+it outright. `scanWorkerPayouts` was the one place in this file still
+blindly resetting a running counter instead of re-reading and adjusting
+it, on the exact field its own sibling function proves the correct
+pattern for.
+
+Fix: subtract the snapshotted `amount` from the CURRENT `x.accruedE8s`
+(Nat-safe, floored at 0 — a worker's own `fulfill` is the only thing
+that can raise `accruedE8s` in this window, so it can only ever be >=
+`amount`, but the floor turns a would-be trap into a merely-stale sweep
+instead of a canister trap).
+
+Verified by genuinely compiling `main.mo` with `moc` (via the pinned
+`.dfx-version` 0.24.3, since the system default dfx 0.29.1 produces
+unrelated `M0219`/transient-declaration errors on this codebase) — the
+fix compiles clean with only the expected "operator may trap" warning on
+the Nat-safe floor, the same warning any guarded Motoko subtraction
+produces. This is a source-only fix; nothing was deployed — the public
+Candid interface is unchanged (`scanWorkerPayouts` is a private
+function), and deploying to the live canister remains a separate,
+explicit action.
+
+Regression test: `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`.

@@ -2645,8 +2645,20 @@ actor CafresoHQState {
     for ((p, amount) in due.vals()) {
       let scheduledAt = now();
       let key = "wp#" # Principal.toText(p) # "#" # Int.toText(scheduledAt);
-      // Crash-safe intent BEFORE the await: zero the accrual, log pending.
-      patchWorker(p, func(x) { { x with accruedE8s = 0; updatedAt = now() } });
+      // Crash-safe intent BEFORE the await: subtract the snapshotted amount
+      // (never zero outright — `due` was snapshotted synchronously above,
+      // but this loop `await`s on every iteration, so a worker still queued
+      // here can `fulfill` more jobs in between. Reading `x.accruedE8s` again
+      // and subtracting only `amount` — the same re-read-and-adjust pattern
+      // `restoreAccrual` already uses on the failure paths below — leaves
+      // any accrual earned mid-sweep intact for the next scan instead of
+      // wiping it out unpaid and unrestored. Nat-safe floor: this worker's
+      // own `fulfill` is the only thing that raises accruedE8s between here
+      // and the snapshot, so it can only ever be >= amount, but a floor
+      // costs nothing and turns a would-be trap into a merely-stale sweep.
+      patchWorker(p, func(x) { { x with
+        accruedE8s = if (x.accruedE8s >= amount) { x.accruedE8s - amount } else { 0 };
+        updatedAt = now() } });
       appendWorkerPayout({ key; worker = p; amount; scheduledAt; status = "pending"; blockIndex = null; ts = now() });
       await executeWorkerPayout({ key; worker = p; amount; scheduledAt; status = "pending"; blockIndex = null; ts = now() });
     };
