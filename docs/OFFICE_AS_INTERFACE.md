@@ -22343,3 +22343,60 @@ because this runs *during* a dismissal: an unreachable server, a malformed
 listing, and a refused DELETE must none of them throw into `onDismiss` and
 strand the rest of the cascade. Fire-tested: with the fix stashed it fails on
 exactly the expected checks.
+
+### Tick 33 — the office told a self-hosted boss they were on a brain that isn't there
+
+Took the hire board at its word again, one card down from Tick 30's Codex:
+Hermes is labelled **NOT RUNNING** — *"Starting it is all it needs. You can hire
+them now and start it before their first task."* Hired them on a fresh office
+with the daemon genuinely down, and asked for work.
+
+The failure path itself is sound — `POST /hermes/v1/chat/completions` → 502,
+three retries, and after ~45s an honest *"⚠ Couldn't reach that brain — it looks
+offline from here"* with a ⚠ this run failed and ↻ RETRY. Not Tick 30's bug: the
+office does not claim this one worked. What followed it was the problem:
+
+> You’re on the shared Cafreso brain — you can add your own AI key in Settings →
+> Connections to run independently of it.
+
+There is no shared Cafreso brain here. The office's own CEO says so in its second
+ever message: *"We don't have a shared brain here, so whoever you hire will use
+one from this machine."*
+
+And it is not merely unverified — for the default provider it is **inverted**.
+`routeOut`'s rung 3 fires on `!C.hasUsableKey()`, and `hasUsableKey`'s default
+branch *is* `!!s.openrouterKey || !!_managedBrain`, where `_managedBrain` is
+literally the cached answer to "is there a shared Cafreso brain". The single
+condition that reaches this line is the condition that has just established there
+isn't one. It fires on the emptiest office there is — first run, self-hosted,
+nothing configured — which is the boss with the least context to catch it.
+
+`test_cast.py`'s own comment already records this exact lesson for **rung 2**:
+*"a diagnosis promising a brain would return when none was ever configured, two
+bubbles under the office's own 'We don't have a shared brain here'"*. Rung 2 was
+fixed; rung 3 kept doing it.
+
+Fixed by asking the client the question directly (`C.managedBrain()`) instead of
+inferring it backwards. The original sentence survives untouched where a managed
+brain really is wired up — a keyless provider selected while the fleet brain
+answers, the one state in which it is true — and where it is not, the route out
+is identical and the claim is dropped: *"No brain is set up yet — add your own AI
+key in Settings → Connections."* Verified live, before and after, on the same
+dead-Hermes run.
+
+Two checks in `test_cast.py` failed on this and both pinned the *phrase* rather
+than the invariant they name ("a hired-but-keyless office is pointed at a
+brain" — the route is the invariant, not the wording). Pinning the phrase is how
+the sentence went on asserting a shared brain after that assertion became
+inverted. Re-pinned on `Settings → Connections`, with the claim now pinned
+separately in both directions: absent when nothing says it is there, present when
+something does, and absent again when the client throws on being asked. Same
+brittleness pattern as the three tests in Tick 30 — that is four now, all of the
+form "pinned the current literal, guarded the wrong thing".
+
+Also surveyed, nothing found: ranked every source file by how many tests name it
+and read the thinnest MVP-relevant ones. `app/approvals.jsx` and
+`modals/delivery.jsx` are both carefully tended (the approval formatter's
+keep-both-ends elision has its own documented near-miss). Low test count turned
+out to be a poor bug predictor here; taking a screen at its word is still the
+better hunt.

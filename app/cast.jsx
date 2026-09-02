@@ -590,9 +590,27 @@ function routeOut(candidates, C, roster) {
   if (!hired.length) {
     return ` Nobody's hired yet — hire someone on the Team tab, or ${BRAIN}.`;
   }
+  /* Rung 3 used to say "You’re on the shared Cafreso brain" flat out. For
+     the DEFAULT provider that is not merely unverified, it is inverted:
+     hasUsableKey's default branch IS `openrouterKey || _managedBrain`, and
+     `_managedBrain` is the answer to "is there a shared Cafreso brain". So
+     the one condition that reaches this line is the condition that has just
+     established there isn't one — and the sentence fired on the emptiest
+     office there is, telling a self-hosted first-run boss they were on a
+     brain the CEO had told them two bubbles earlier does not exist here.
+
+     Exactly the lesson rung 2's comment above already records, one rung
+     down. So ask the client the question directly instead of inferring it
+     backwards: the original sentence stands where a managed brain really is
+     present (a keyless provider selected while the fleet brain is wired up),
+     and where it is not, the way out is the same and the claim is dropped. */
   try {
     if (C && C.hasUsableKey && !C.hasUsableKey()) {
-      return ` You’re on the shared Cafreso brain — you can ${BRAIN} to run independently of it.`;
+      let shared = false;
+      try { shared = !!(C.managedBrain && C.managedBrain()); } catch (_e) {}
+      return shared
+        ? ` You’re on the shared Cafreso brain — you can ${BRAIN} to run independently of it.`
+        : ` No brain is set up yet — ${BRAIN}.`;
     }
   } catch (_) {}
   return '';

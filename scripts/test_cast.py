@@ -184,6 +184,16 @@ R.rungLastMan = withRouteOut(DIAG, [], fakeC, DEAD);
 // A client that cannot answer must not produce a guess.
 R.rungMute   = withRouteOut(DIAG, DEAD, { parseModelId: fakeC.parseModelId,
                                           getSettings: fakeC.getSettings }, DEAD);
+// Same rung, but a managed brain really IS wired up (a keyless provider
+// selected while the fleet brain answers). This is the ONLY state in which
+// "you're on the shared Cafreso brain" is a true sentence, so it is the only
+// state that may produce it.
+R.rungKeyShared = withRouteOut(DIAG, DEAD,
+  Object.assign({}, fakeC, { managedBrain: () => ({ model: 'gemma', provider: 'cafreso' }) }), DEAD);
+// A client whose managedBrain() blows up must fall back to the claim-free
+// sentence, not to an unhandled throw that eats the whole route-out.
+R.rungKeyBadProbe = withRouteOut(DIAG, DEAD,
+  Object.assign({}, fakeC, { managedBrain: () => { throw new Error('x'); } }), DEAD);
 // ── what a coworker can DO, in the boss's words ─────────────────────────
 // Grammar is tested with every condition satisfied, so the joining rules
 // are exercised on their own. The gating gets its own fixtures below.
@@ -363,11 +373,30 @@ console.log(JSON.stringify(R));
           repr(out['rungHire']) + ' — the client cannot answer "is there a '
           'brain on this machine" without an async probe, and a route-out '
           'that turns out to be a dead end is worse than two honest ones')
+    # What this rung owes the boss is a way to GET a brain. It used to be
+    # pinned by the words "shared Cafreso brain", which is how the sentence
+    # went on claiming one after that claim became inverted: hasUsableKey's
+    # default branch IS `openrouterKey || _managedBrain`, so on the default
+    # provider the only way to reach this rung is with the shared brain known
+    # ABSENT. Pin the route, and pin the claim separately, below.
     check('a hired-but-keyless office is pointed at a brain',
-          'shared Cafreso brain' in out['rungKey'], out['rungKey'])
+          'Settings → Connections' in out['rungKey'], out['rungKey'])
+    check('...without claiming a shared brain it has no reason to think is there',
+          'shared Cafreso brain' not in out['rungKey'],
+          repr(out['rungKey']) + ' — this fires on a self-hosted first run, '
+          'two bubbles under the office\'s own "We don\'t have a shared '
+          'brain here"')
+    check('...and it still says so when the shared brain really is wired up',
+          'shared Cafreso brain' in out['rungKeyShared']
+          and 'Settings → Connections' in out['rungKeyShared'],
+          out['rungKeyShared'])
+    check('a client that cannot be asked about it makes no claim',
+          'shared Cafreso brain' not in out['rungKeyBadProbe']
+          and 'Settings → Connections' in out['rungKeyBadProbe'],
+          out['rungKeyBadProbe'])
     check('the last coworker falling over is not "nobody is hired"',
           "Nobody's hired" not in out['rungLastMan']
-          and 'shared Cafreso brain' in out['rungLastMan'],
+          and 'Settings → Connections' in out['rungLastMan'],
           repr(out['rungLastMan']) + ' — callers pass a FILTERED candidate '
           'list, so an empty one means nobody is available, not that the '
           'floor is empty; rung 2 must read the roster instead')
