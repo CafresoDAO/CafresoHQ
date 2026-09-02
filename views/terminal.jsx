@@ -588,7 +588,9 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
             )}
             {cli === 'hermes' && (
               <span style={{ fontSize: 9, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
-                model in Settings → System
+                {/* SYSTEM is a removed tab id (alias → account); the Hermes
+                    model selector lives in ConnectionsPanel/BrowserKeysTab. */}
+                model in Settings → Connections
               </span>
             )}
             {(cli === 'claude' || cli === 'gemini') && (

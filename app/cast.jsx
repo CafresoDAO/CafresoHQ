@@ -577,7 +577,15 @@ function handoffHint(agents, C) {
 function routeOut(candidates, C, roster) {
   const hint = handoffHint(candidates, C);
   if (hint) return hint;
-  const BRAIN = 'add your own AI key in Settings → Keys';
+  /* "Settings → Keys" named a tab that does not exist. `keys` survives only
+     as a deep-link alias (modals/settings.jsx SETTINGS_TAB_ALIAS, "old/removed
+     id → canonical id"); the nav a boss actually sees is ACCOUNT ·
+     CONNECTIONS · ROSTER · MODULES · MEDIA · APPEARANCE. This is the copy
+     that fires on the emptiest office there is — first run, nobody hired, no
+     brain — and it sent that boss looking for a door that was removed. Every
+     other key/brain sentence in the product already says Connections,
+     including line 245 of this same file. */
+  const BRAIN = 'add your own AI key in Settings → Connections';
   const hired = Array.isArray(roster) ? roster : (Array.isArray(candidates) ? candidates : []);
   if (!hired.length) {
     return ` Nobody's hired yet — hire someone on the Team tab, or ${BRAIN}.`;

@@ -21933,3 +21933,70 @@ skipped — triggering this path for real needs a mission to run at least
 live; `npm run build` succeeded and the full test suite passed.
 
 Regression test: `scripts/test_a_self_completed_mission_stands_its_coworker_down.py`.
+
+## Tick 26 — the office sent a first-run boss to a Settings tab that does not exist
+
+`app/cast.jsx`'s `routeOut` is the last rung of the failure ladder: the
+sentence that fires when a coworker's brain can't be reached and there is
+nobody else to hand the work to. On a genuine first run — no agents hired,
+no brain configured — it is the boss's answer to their very first message:
+
+    ⚠ Couldn't reach that brain — it looks offline from here. Nobody's
+      hired yet — hire someone on the Team tab, or add your own AI key
+      in Settings → Keys.
+
+The boss opens Settings and finds six tabs: ACCOUNT · CONNECTIONS ·
+ROSTER · MODULES · MEDIA · APPEARANCE. There is no Keys. `keys` survives
+only as a deep-link alias in `SETTINGS_TAB_ALIAS`, under a comment naming
+it exactly what it is — "old/removed id → canonical id". The one sentence
+written to stop a first-run dead end (its own comment: *"Driven on a
+genuine first run… No route, no next step"*) was itself a dead end, on
+the emptiest office the product ever shows.
+
+Two siblings carried the same defect: `claude-client.jsx`'s CLI-install
+timeout said "Settings → Code Agents" (the removed `agentcli` tab) and
+`views/terminal.jsx`'s Hermes hint said "Settings → System" (the removed
+`system` tab). All three now say **Connections** — where the cloud keys,
+the Hermes model selector, and the on-this-machine CLI panel actually
+render (`providers.jsx` → `BrowserKeysTab` → `ConnectionsPanel`, gated on
+`activeTab === 'connections'`). `app/cast.jsx:245` in that same file had
+been spelling it correctly the whole time; line 580 was the lone holdout.
+
+It survived because `scripts/test_cast.py` asserted the stale string
+outright (`'Settings → Keys' in out['rungHire']`), so the suite green-lit
+the broken door and this ledger recorded it as verified. That assertion is
+corrected, and the new test does not replace it with another hand-written
+string: it **derives** the valid door names from `SETTINGS_TABS` and the
+removed ones from `SETTINGS_TAB_ALIAS`, then sweeps every user-facing
+"Settings → X" in eleven surfaces and fails on any that names a tab a boss
+cannot see. A future tab rename now breaks a test instead of silently
+stranding the copy. The sweep strips JS comments first — comments quote the
+old names legitimately while explaining why they were wrong, this fix's own
+comments included, and a sweep that couldn't tell code from commentary
+would flag its own explanation.
+
+**Live-verified, end to end.** `CAFRESOHQ_HQ_STATE_DIR` boots an isolated
+office against an empty state dir on a spare port, so a true fresh install
+can be driven without touching the real one. In that office — agents
+`null`, tasks `null`, zero console errors, every request 200 — `fetch` was
+patched to fail every brain call, and the boss's first message came back:
+
+    ⚠ Couldn't reach that brain — it looks offline from here. Nobody's
+      hired yet — hire someone on the Team tab, or add your own AI key
+      in Settings → Connections.
+
+Opening Settings from that same screen listed ACCOUNT · CONNECTIONS ·
+ROSTER · MODULES · MEDIA · APPEARANCE. Both halves proven in one frame:
+the sentence names a door, and the door is on the wall. The instance was
+then shut down and its state dir removed.
+
+Known follow-on, deliberately not fixed here: rung 2 is gated only on
+`!hired.length`, not on key state, so on a **managed** install with nobody
+hired the same sentence prints — and there `visibleTabs` filters
+CONNECTIONS out entirely. The fix is strictly better than the status quo in
+every deployment (a hidden-but-aliased tab beats a deleted one), but making
+that rung managed-aware needs a health signal `routeOut` is not currently
+handed, which is a larger change than a label correction.
+
+Regression tests: `scripts/test_every_settings_door_the_office_names_exists.py`
+(new), `scripts/test_cast.py` (corrected assertion).

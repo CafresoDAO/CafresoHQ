@@ -355,7 +355,7 @@ console.log(JSON.stringify(R));
     check('an empty office is told how to stop being empty',
           "Nobody's hired yet" in out['rungHire']
           and 'Team tab' in out['rungHire']
-          and 'Settings → Keys' in out['rungHire'],
+          and 'Settings → Connections' in out['rungHire'],
           repr(out['rungHire']) + ' — with nobody hired, "pick another '
           'coworker" is not a route; hiring and bringing a brain are')
     check('...offering both routes rather than guessing between them',

@@ -992,7 +992,9 @@ async function agentsInstall(agent) {
       if (s.status === 'done') return s;
       if (s.status === 'error') throw new Error(s.error || 'install failed');
     }
-    throw new Error('install still running after 10 minutes — check Settings → Code Agents later');
+    /* CODE AGENTS was renamed; `agentcli` is now only a deep-link alias for
+       CONNECTIONS, whose on-this-machine panel is where an install shows up. */
+    throw new Error('install still running after 10 minutes — check Settings → Connections later');
   }
   return d;
 }
