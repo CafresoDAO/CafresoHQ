@@ -945,6 +945,17 @@ def run_iteration(ctx, sched, iteration, total_iters):
                 if status is None:
                     writes.append({'name': name, 'path': arg.strip(),
                                    'at': int(time.time() * 1000)})
+                    # A later write landing clears an earlier refusal in the
+                    # same iteration — `refused` gates the whole error chain
+                    # below on "the vault's answer to the LAST attempt", not
+                    # "did it ever say no this iteration". A flaky vault that
+                    # 502s once and then accepts the retry actually saved a
+                    # note; without this, that note sits in `writes` while
+                    # the iteration is still reported as a vault outage, and
+                    # three such iterations trip ERROR_STREAK_AUTO_PAUSE and
+                    # kill the rest of the night over a fault that already
+                    # cleared.
+                    refused = None
                 else:
                     refused = status
             messages.append({'role': 'assistant', 'content': reply})

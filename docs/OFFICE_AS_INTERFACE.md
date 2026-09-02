@@ -21668,3 +21668,43 @@ then let go and the browser session restored to a clean, unpatched
 state.
 
 Regression test: `scripts/test_hasusablekey_covers_server_authed_providers.py`.
+
+### A vault write that recovered mid-iteration was still reported as an outage (2026-09-02)
+
+`night_runner.py`'s `run_iteration` (~line 927) keeps a single `refused`
+flag across a night-shift iteration's whole hop loop: any `[VAULT_NEW]`/
+`[VAULT_APPEND]` hop whose write comes back non-200 sets it, but nothing
+ever cleared it on a later hop's success. The error chain checks
+`if refused is not None:` first, ahead of every other signal (this
+ordering itself was the fix behind `scripts/test_a_refused_note_is_not_a_lie.py`
+— a refused write must not be blamed on the coworker as a lie). That
+earlier fix never considered a write recovering later in the SAME
+iteration: its `drive()` test harness only ever passes one `vault_status`
+for every PUT in a run, so a fail-then-succeed sequence was never
+exercised. Concretely: hop 1's `[VAULT_NEW]` hits a transient 502, hop 2's
+`[VAULT_NEW]` lands clean — the iteration's `writes` correctly holds the
+second note, but `error` still reads "vault is not reachable — check
+Connections," a direct contradiction between the run's own two fields.
+
+This is a beta blocker, not a cosmetic mislabel: `run_mission` counts any
+iteration with a truthy `error` toward `error_streak`, and three in a row
+trip `ERROR_STREAK_AUTO_PAUSE`, aborting the rest of the scheduled night.
+A vault with occasional transient hiccups (a flaky self-hosted Obsidian
+REST server, a bucket with brief network blips) that keeps recovering
+within each iteration would have every iteration falsely flagged as an
+outage — even while genuinely saving notes — and after three such
+iterations the whole night's remaining work is silently cut short. The
+morning report then sends the boss to "check Connections" for a fault
+that already cleared, while the same run's `writes` list proves notes
+were actually saved.
+
+Fix: a write that lands now resets `refused` back to `None`, so the flag
+reflects the vault's answer to the LAST write attempt in the iteration,
+not "did it ever say no this iteration." A refusal with no later
+recovery, and a success later followed by a refusal, both still report
+correctly — only the fail-then-succeed case changes.
+
+Regression test: `scripts/test_a_recovered_vault_write_is_not_still_an_outage.py`
+(a new `drive()` harness variant taking a LIST of per-attempt vault
+statuses, since the existing test's harness only supports one status
+for an entire run).
