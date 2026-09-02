@@ -103,7 +103,13 @@ def main():
     # the next literal 'SEED' — the fix's own explanatory comment below
     # names "SEED SWARM" by name, which used to be text this test could
     # safely assume appeared nowhere before the visual label itself.
-    seed = HIRE[HIRE.rfind('hire-tile'):HIRE.rfind('hire-tile') + 3200]
+    # The window was 3200, which put `title={probing` at offset 3177 — inside
+    # the slice, but with its `?` on the next line falling just outside it, so
+    # adding an aria-label to the tile failed a check about code that had not
+    # changed. A magic number that a legitimate edit can outgrow reports the
+    # wrong thing; widened with room to spare. The end of this JSX element is
+    # ~3300 chars in, so this still cannot reach the next component.
+    seed = HIRE[HIRE.rfind('hire-tile'):HIRE.rfind('hire-tile') + 4200]
 
     check('probing has its own blocking branch, checked first',
           re.search(r'if \(probing\)\s*\{', seed),

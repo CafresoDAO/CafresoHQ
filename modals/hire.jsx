@@ -6,6 +6,36 @@ import { Modal, ModelPicker, loadTemplates, saveTemplates } from './base.jsx';
 import { visibleToolsCatalog } from './settings.jsx';
 const { useState: useStateM, useEffect: useEffectM, useRef: useRefM } = React;
 
+/* Every tile on the job-postings board was a bare <div onClick>: reachable
+   with a mouse, invisible to the keyboard. Measured on a fresh office — the
+   only focusable elements in the entire dialog were "NEW HIRE →" and
+   "CLOSE ✕", so a keyboard-only boss could not hire any of the coworkers the
+   front desk had just found for them. This is the FIRST screen a new boss
+   sees and hiring is the one thing it exists to do, so that is the onboarding
+   path dead-ending, not a polish gap.
+
+   The rest of the app already settled on role="button" + tabIndex={0} +
+   Enter/Space (views/vault.jsx, ui/panels.jsx, views/core.jsx,
+   ui/onboarding.jsx); this board just never got it. Returning onClick from
+   the same helper is the point: it keeps the mouse and keyboard paths from
+   drifting apart the next time one of them is edited.
+
+   The `e.target !== e.currentTarget` guard is load-bearing on the template
+   tile. That tile contains a real nested <button> (post-remove) which stops
+   click propagation — but keydown bubbles on its own, so without the guard
+   pressing Enter to DELETE a template would also load it into the form. */
+const cardActivate = (fn) => ({
+  role: 'button',
+  tabIndex: 0,
+  onClick: fn,
+  onKeyDown: (e) => {
+    if (e.target !== e.currentTarget) return;
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    fn();
+  },
+});
+
 /* The grid is the whole vocabulary of this form: an id it cannot SHOW is an
    id it must never WRITE.
 
@@ -461,7 +491,9 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
                 </div>
               )}
               {deskCards.map(c => (
-                <div key={c.id} className="post-card frontdesk-card" onClick={() => hireDetected(c)}>
+                <div key={c.id} className="post-card frontdesk-card"
+                     aria-label={`Hire ${c.name}, ${c.role}`}
+                     {...cardActivate(() => hireDetected(c))}>
                   <div className="post-head">
                     <Sprite data={c.color} scale={2}/>
                     <div className="post-name">{c.name}</div>
@@ -494,7 +526,9 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
                 </div>
               )}
               {candidates.map(t => (
-                <div key={'cand_' + t.name} className="post-card" onClick={() => loadCandidate(t)}>
+                <div key={'cand_' + t.name} className="post-card"
+                     aria-label={`Open candidate ${t.name}, ${t.role}`}
+                     {...cardActivate(() => loadCandidate(t))}>
                   <div className="post-head">
                     <Sprite data={t.color} scale={2}/>
                     <div className="post-name">{t.name}</div>
@@ -505,7 +539,9 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
                 </div>
               ))}
               {templates.map(t => (
-                <div key={t.id} className="post-card" onClick={()=>loadTpl(t)}>
+                <div key={t.id} className="post-card"
+                     aria-label={`Open saved role ${t.name}, ${t.role}`}
+                     {...cardActivate(() => loadTpl(t))}>
                   <div className="post-head">
                     <Sprite data={t.avatar} scale={2}/>
                     <div className="post-name">{t.name}</div>
@@ -515,13 +551,16 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
                   <button className="px-btn ghost post-remove" style={{fontSize:8}} onClick={(e)=>{e.stopPropagation(); deleteTpl(t.id);}}>✕</button>
                 </div>
               ))}
-              <div className="post-card hire-tile" onClick={()=>setShowBoard(false)}>
+              <div className="post-card hire-tile"
+                   aria-label="Create a new hire from scratch"
+                   {...cardActivate(() => setShowBoard(false))}>
                 <div className="plus">+<br/>NEW</div>
               </div>
               {candidates.length > 0 && (
                 <div
                   className="post-card hire-tile"
-                  onClick={async () => {
+                  aria-label={`Seed swarm: hire all ${candidates.length} specialists at once`}
+                  {...cardActivate(async () => {
                     /* Hiring seven coworkers onto a brain that does not
                        exist is seven desks that can never answer, and the
                        confirm used to promise it cheerfully. This guard used
@@ -563,7 +602,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
                     if (!ok) return;
                     HQ.spawnOpenswarmRoster(currentAgents, onHire, shelfBrain);
                     onClose();
-                  }}
+                  })}
                   style={{ background: 'linear-gradient(135deg, var(--accent-sun-10, rgba(218,165,32,0.12)) 0%, transparent 100%)', border: '2px solid var(--accent-sun, #d4a017)' }}
                   title={probing
                     ? 'Still checking what\'s available on this machine…'

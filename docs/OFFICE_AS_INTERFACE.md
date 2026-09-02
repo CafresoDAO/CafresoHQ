@@ -22067,3 +22067,64 @@ Regression test: `scripts/test_no_keyless_route_hands_the_host_to_a_stranger.py`
 decoy. Fire-tested: without the fix it fails on exactly the two intended checks
 (`/agent/stream` not 401; unknown origin receives ACAO `*`) while C and D stay
 green, confirming the fix is what those two checks measure.
+
+---
+
+## Tick 28 — the first screen a new boss sees could not be worked without a mouse
+
+The job-postings board is what opens on a fresh office, and hiring is the one
+thing it exists to do. Every tile on it was a bare `<div onClick>`.
+
+Measured on an isolated fresh office (`CAFRESOHQ_HQ_STATE_DIR` pointed at a
+scratch dir, so nothing of the boss's was touched): the only focusable elements
+in the entire dialog were `NEW HIRE →` and `CLOSE ✕`. All eight candidate cards,
+the `+ NEW` tile and the `SEED SWARM` tile were plain divs with no `tabindex`
+and no `role`. A keyboard-only boss — or anyone on a screen reader — opened the
+office, was told by the chief of staff that the front desk had found Claude,
+Codex, Llama and Hermes on their machine, and then could do nothing with any of
+them. That is the onboarding path dead-ending, not an accessibility polish item.
+
+The app had already settled on the fix everywhere else — `role="button"` +
+`tabIndex={0}` + Enter/Space, in `views/vault.jsx`, `ui/panels.jsx`,
+`views/core.jsx` and `ui/onboarding.jsx`. This board simply never got it. Added
+a `cardActivate(fn)` helper that returns `onClick` *and* the keyboard props from
+one call, so the two paths cannot drift apart the next time either is edited,
+and wired all five tile types through it with an `aria-label` each.
+
+One guard in that helper is load-bearing rather than decorative:
+`e.target !== e.currentTarget` bails out. The saved-role tile contains a real
+nested `<button>` (`post-remove`) that stops **click** propagation — but keydown
+bubbles on its own, so without the guard, pressing Enter to *delete* a saved role
+would also load it into the hire form.
+
+Verified live rather than by inspection: focusable elements in the dialog went
+2 → 15, and dispatching a real `Enter` keydown on the "Hire Llama, Generalist"
+card advanced the office to `FIRST ASSIGNMENT · LLAMA IS AT A DESK`. The hire
+genuinely happened from the keyboard.
+
+**A pre-existing test broke, and it is worth recording why it was not a
+regression.** `scripts/test_seed_swarm_waits_for_probe.py` lifts the SEED SWARM
+handler by slicing a fixed 3200 characters from the last `hire-tile`. Adding an
+`aria-label` pushed `title={probing` to offset 3177 — still inside the window,
+but with its `?` on the following line now falling just outside it, so the test
+failed on code that had not changed. The assertion is real and still true; the
+magic number was the brittle part. Widened to 4200 (the element ends ~3300 in,
+so it still cannot reach the next component) and confirmed the widened window
+*still* fails when the `probing` guard is actually removed — a window bumped
+until green would have been the wrong fix.
+
+Regression test:
+`scripts/test_the_hire_board_can_be_worked_without_a_mouse.py` (new). Two halves,
+because a source check alone cannot catch a helper that is wired in everywhere
+but does not work: the helper is extracted and **run under Node** (Enter and
+Space fire, `preventDefault` is called, ordinary letters and Tab do not fire, a
+keypress from a nested control does not fire, and `onClick` calls the same fn),
+and then the source is swept so no board tile carries a bare `onClick`. Comments
+are stripped first — the fix's own comment contains the literal `<div onClick>`,
+the exact shape being searched for, and the test asserts that decoy is gone from
+the stripped source so it cannot pass for the wrong reason. That is the fourth
+comment-contamination catch this run.
+
+Both halves fire-tested independently: with the fix stashed the helper is
+missing; with the helper present but one tile reverted to a bare `onClick`, the
+sweep names that tile.
