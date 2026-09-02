@@ -21841,3 +21841,54 @@ function), and deploying to the live canister remains a separate,
 explicit action.
 
 Regression test: `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`.
+
+## Tick 24 — /fs/collect skipped the local-mode sandbox: unauthenticated arbitrary-directory read
+
+`GET /fs/collect` (`fs_routes.py`) is the route Publish-to-Canister uses to
+walk a built site directory and hand it, base64-encoded, to the
+authenticated shell for upload to the `cafresohq_state` canister's site
+host (called from `claude-client.jsx`'s `fsCollect` helper). Like the
+other three keyless `/fs/*` read routes (`browse`, `file`, `stat` — see
+`serve.py`'s `_KEY_PROTECTED_PREFIXES`, which key-gates only the `/fs`
+*mutation* routes and relies on the allowed-dirs boundary for the reads),
+it carries no API key requirement.
+
+Unlike its three siblings, it validated its `path` query param via
+`self._validate_path(req_path)` instead of `_within_allowed_dirs(p)`.
+`_validate_path` has a deliberate skip: in local/native mode with no
+explicit `CAFRESOHQ_ALLOWED_DIRS` env var set — the default outside a
+container — it returns the resolved path completely unchecked, on the
+theory that "the user is developing locally and can access their own
+files". That's the right call for `strict=False` callers that already sit
+behind the API key. `/fs/collect` doesn't — so in the default local
+configuration, any HTTP client that could reach the dev server (no auth)
+could ask `GET /fs/collect?path=/etc` or `path=~` and get back a walk of
+every file under it, base64-encoded, in the JSON response. `_fs_browse`,
+`_fs_file`, and `_fs_stat` had already been fixed for this exact bug class
+(their own comments: "enforced in EVERY mode — was container-only, which
+left local/BYO reads unbounded"); `_fs_collect` was the one route that
+still used the skippable check.
+
+Fix: `_fs_collect` now resolves the path via the plain `_workspace_path`
+anchor (no validation of its own) and gates it with `_within_allowed_dirs`
+— the guard with no local-mode skip, "enforced in EVERY runtime mode" per
+its own docstring — matching the pattern its three siblings already use.
+The legitimate Publish-to-Canister caller is unaffected: a relative path
+still anchors to `_cafresohq_allowed_dirs[0]` (the workspace root) exactly
+as before, and that default allow-list (`~` and `~/Documents`) already
+covers any repo checked out under the user's home directory.
+
+Verified by genuinely invoking the real `_fs_collect` function (imported
+for real, not reimplemented) against temp directories, with `fs_routes`'s
+module globals wired the same way `serve.py` wires them at import time:
+a path inside the allowed dirs still walks and returns files (200), and a
+path outside them — with no `CAFRESOHQ_ALLOWED_DIRS` env var set and
+`_RUNTIME_ENV` at its `'local'` default, precisely the configuration that
+let the bug through — is refused with 403 instead of returning the
+directory's contents. Source-only fix, no UI/JS touched; a direct
+server-side security check like this isn't something the live app's own
+Publish flow would naturally exercise (it never asks for an out-of-sandbox
+path), so live browser verification was skipped in favor of the genuine-
+execution test against the real function.
+
+Regression test: `scripts/test_fs_collect_enforces_allowed_dirs.py`.

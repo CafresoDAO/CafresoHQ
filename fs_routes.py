@@ -121,9 +121,10 @@ def _fs_collect(self):
     Walk a built-site directory and return every file as base64 + a guessed
     content-type, so the authenticated shell can upload the site to the
     cafresohq_state canister's site host (Publish-to-Canister). Same
-    allowed-dirs guard as the other /fs endpoints (via _validate_path), so
-    it can't read outside the sandbox. Skips hidden/.url files and files
-    larger than the canister's ~2 MiB per-file cap (reported in `skipped`).
+    allowed-dirs guard as the other /fs read endpoints (_within_allowed_dirs,
+    enforced in EVERY mode), so it can't read outside the sandbox. Skips
+    hidden/.url files and files larger than the canister's ~2 MiB per-file
+    cap (reported in `skipped`).
     Response: {root, files:[{path, contentType, size, b64}], skipped:[...]}
     """
     import mimetypes, base64
@@ -132,11 +133,20 @@ def _fs_collect(self):
     if not req_path:
         return self._send_json(400, {'error': 'path required'})
     try:
-        root = self._validate_path(req_path)
-    except PermissionError as e:
-        return self._send_json(403, {'error': str(e)})
+        root = _workspace_path(req_path).resolve()
     except Exception as e:
         return self._send_json(400, {'error': f'invalid path: {e}'})
+    # This route is keyless (see _KEY_PROTECTED_PREFIXES in serve.py — only
+    # the /fs *mutation* prefixes are key-gated, the read routes rely on the
+    # allowed-dirs boundary instead). It used to call self._validate_path(),
+    # which SKIPS the whitelist entirely in local mode with no explicit
+    # CAFRESOHQ_ALLOWED_DIRS set — the default outside a container — letting
+    # an unauthenticated caller walk and base64-read any directory on the
+    # host (e.g. path=/etc or path=~) over plain HTTP. _fs_browse/_fs_file/
+    # _fs_stat already went through this exact fix for the same reason;
+    # _within_allowed_dirs is unconditional in every runtime mode.
+    if not _within_allowed_dirs(root):
+        return self._send_json(403, {'error': 'path is outside CAFRESOHQ_ALLOWED_DIRS'})
     if not root.is_dir():
         return self._send_json(400, {'error': 'not a directory'})
 
