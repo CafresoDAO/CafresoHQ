@@ -1562,6 +1562,20 @@ ${d.text}` : d.text,
       pendingAssistantHiresRef.current.delete(lid);
       pendingElevationRef.current.delete(lid);
     });
+    /* Projects and meetings hold their own `agentIds` roster, separate from
+       `agents` itself — nothing else in this cascade ever touched them, so
+       a dismissed coworker stayed "assigned" forever: views/projects.jsx's
+       ASSIGNED badge and deleteProject's confirm dialog both read the raw
+       (unfiltered) array length, and ui/chat.jsx gates a project's whole
+       chat-room tab on that same raw length, so a project's tab kept
+       claiming staffing (and reopening to an empty, contradicting room)
+       long after the only assigned coworker was let go. Drop the leaving
+       id(s) from both rosters here, the same place every other trace of a
+       dismissed coworker gets purged. */
+    setProjects(prev => prev.map(p => (p.agentIds || []).some(pid => leaving.has(pid))
+      ? { ...p, agentIds: p.agentIds.filter(pid => !leaving.has(pid)) } : p));
+    setMeetings(prev => prev.map(m => (m.agentIds || []).some(mid => leaving.has(mid))
+      ? { ...m, agentIds: m.agentIds.filter(mid => !leaving.has(mid)) } : m));
     if (cascadeAction === 'dismiss') {
       // Abort + remove all assistants in one pass.
       for (const x of assistants) abortAgentRun(x.id);

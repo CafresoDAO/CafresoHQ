@@ -21010,3 +21010,39 @@ substring-only, full-label-prefix, section-only) — the word-start case
 correctly surfaces both matching commands.
 
 Regression test: `scripts/test_command_palette_word_start_outranks_substring.py`.
+
+## Firing a coworker left them assigned to their projects and meetings forever
+
+`onDismiss` (app.jsx) carefully cascades a leaving coworker's id through
+`tasks`, `approvals`, and the three pending-request ref guards — but
+never touched `projects[].agentIds` or `meetings[].agentIds`, two other
+stores that key a coworker's assignment by the same id.
+
+Consequences, all directly visible on screen: `views/projects.jsx`'s
+"👥 ASSIGNED · N" badge (workspace header and project card both) and
+`deleteProject`'s confirm dialog ("N agent(s) currently assigned...")
+both read the raw, unfiltered `agentIds.length` — they kept counting a
+coworker who no longer worked here. Worse, `ui/chat.jsx` gates a
+project's entire dynamic chat-room tab on `p.agentIds.length > 0` and
+prints `${p.agentIds.length} assigned` in its own description — so the
+tab (with its fake headcount) never went away, even though opening
+that room correctly showed "No participants yet" (participants are
+separately filtered against live `agents`) — a direct, on-screen
+contradiction between the tab list and the room it opened to. The same
+shape applies to `meetings[].agentIds`.
+
+Found by a background hunt agent sweeping previously-unswept areas
+(delete/cascade logic — dangling references left in sibling state after
+a dismissal).
+
+Fix: `onDismiss` now also drops every leaving id from both
+`projects[].agentIds` and `meetings[].agentIds`, in the same place
+every other trace of a dismissed coworker is purged. Verified live in
+the browser: created a project, assigned a coworker (ASSIGNED · 1, a
+project chat tab appeared), fired that coworker from Team/Roster, and
+confirmed the badge dropped to ASSIGNED · 0, the checklist row
+unchecked, the project chat tab disappeared, the delete-project
+confirm dialog no longer claimed a phantom assignee, and the persisted
+`projects` record in localStorage now has an empty `agentIds` array.
+
+Regression test: `scripts/test_dismissed_coworker_leaves_no_stale_project_roster.py`.
