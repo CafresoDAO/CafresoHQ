@@ -21046,3 +21046,44 @@ confirm dialog no longer claimed a phantom assignee, and the persisted
 `projects` record in localStorage now has an empty `agentIds` array.
 
 Regression test: `scripts/test_dismissed_coworker_leaves_no_stale_project_roster.py`.
+
+## The per-senior assistant-hire cap could be silently exceeded via a stale closure
+
+`dispatchToAgent` (app.jsx) is a plain, non-memoized async arrow
+function recreated every render — it closes over whatever `agents` was
+at the render that STARTED a given dispatch, and it can still be
+running minutes later. That's exactly why `agentsRef.current` already
+exists and is used twice elsewhere in this same function (the "was I
+dismissed mid-dispatch" checks) — but the assistant-hire cap check was
+left reading the plain `agents` closure instead:
+
+    const currentAssistants = agents.filter(a => a.reportsTo === agent.id).length;
+    if (currentAssistants >= ASSISTANT_CAP_PER_SENIOR) { ...continue... }
+
+Concrete sequence: senior A has 1 assistant when a long dispatch for A
+starts, closing over that snapshot. While A's stream is still running, a
+separate quicker dispatch hires a second assistant for A — A's LIVE
+count is now 2, the documented cap. When A's original dispatch reaches
+this check, it still sees the stale snapshot (1), so the cap check
+passes and it raises another hire proposal. `onApprove`'s
+`hire-assistant` branch performs no independent cap re-check, so
+approving it gives A a 3rd assistant, silently over the cap the rest of
+the app (dismiss-cascade, the roster UI) assumes holds.
+
+Found by a background hunt agent sweeping previously-unswept areas for
+stale-closure-over-state bugs in async dispatch code.
+
+Fix: the cap check now reads `agentsRef.current` instead of the plain
+`agents` closure, matching the pattern already used elsewhere in this
+same function. Verified by extracting the actual check from source
+(not a hand-copied duplicate) and genuinely executing it via Node: with
+a stale 1-assistant snapshot but a live count that has since reached
+the cap (2), the check now correctly reports the cap as hit — before
+the fix it reported `capHit: false` and would have let a 3rd assistant
+through. This is a timing-dependent race between two concurrent
+long-running dispatches for the same senior, impractical to reproduce
+live in the browser on demand; the genuine-execution Node test is the
+verification here, the same standard applied to the Night Shift DST and
+PTY-reconnect fixes.
+
+Regression test: `scripts/test_assistant_hire_cap_reads_live_agents_not_stale_closure.py`.

@@ -3618,8 +3618,16 @@ ${d.text}` : d.text,
        reports_to graph edge, and tied dismissal cascade. */
     for (const hire of hireAssistantQueue) {
       // Cap: max 2 active assistants per senior at any time (counts the
-      // current agents list, not the all-time hire history).
-      const currentAssistants = agents.filter(a => a.reportsTo === agent.id).length;
+      // current agents list, not the all-time hire history). Reads
+      // agentsRef.current, not the `agents` closure — dispatchToAgent is
+      // async and can still be running minutes after the render that
+      // captured `agents` (the same reason agentsRef is already used
+      // above for the "was I dismissed mid-dispatch" checks). Reading the
+      // stale closure here let a second long-running dispatch for the
+      // same senior see an outdated (too-low) assistant count and raise
+      // another hire proposal past the cap — onApprove's hire-assistant
+      // branch performs no independent cap check, so it would go through.
+      const currentAssistants = agentsRef.current.filter(a => a.reportsTo === agent.id).length;
       if (currentAssistants >= ASSISTANT_CAP_PER_SENIOR) {
         setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `(${agent.name} already has ${currentAssistants} assistants — cap is ${ASSISTANT_CAP_PER_SENIOR}. Dismiss one before hiring another.)`, thread: 'team' }]);
