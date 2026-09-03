@@ -1751,6 +1751,17 @@ function AddProjectModal({ prefillName, onClose, onCommit }) {
   const [name, setName] = useSV(prefillName || '');
   const [path, setPath] = useSV('');
   const [repoUrl, setRepoUrl] = useSV('');
+  /* The github tab's folder name is its OWN state, not a second reader of
+     `name`. The two fields sit one tab apart and mean different things:
+     `name` is what the project is CALLED, `repoName` is a directory that
+     gets created on disk. Sharing one box meant typing "My Website" on the
+     Local tab and crossing over silently pre-filled it here — under a label
+     reading "(optional)" with the placeholder "auto from URL if blank",
+     which then did not happen, because the box was no longer blank. Cloning
+     facebook/react landed in `MyWebsite`, and the office looked like it had
+     chosen that. Seeded empty on purpose: `prefillName` is a project name
+     too, and the documented default for this field is the URL. */
+  const [repoName, setRepoName] = useSV('');
   const [shallow, setShallow] = useSV(true);
   const [busy, setBusy] = useSV(false);
   const [err, setErr] = useSV(null);
@@ -1773,7 +1784,7 @@ function AddProjectModal({ prefillName, onClose, onCommit }) {
     try {
       const r = await CafresoHQClient.cloneRepo({
         url,
-        name: name.trim() || undefined,
+        name: repoName.trim() || undefined,
         depth: shallow ? 1 : 0,
       });
       onCommit({ name: r.name, path: r.path, source: 'github:' + url });
@@ -1814,9 +1825,16 @@ function AddProjectModal({ prefillName, onClose, onCommit }) {
           <span className="title">ADD PROJECT</span>
           <button className="px-btn secondary" onClick={onClose} style={{fontSize:11,padding:'4px 10px'}}>✕</button>
         </div>
+        {/* `err` belongs to the form that raised it. It survived the tab
+            switch, so hitting Add on an empty Local form and crossing over
+            left "path required" sitting under the GitHub form — which has no
+            path field at all, and never asked for one. The other direction is
+            worse: a clone failure ("that repo doesn't exist or is private")
+            reads as a verdict on the folder you are about to type. A
+            complaint has to stay with the question it answers. */}
         <div className="addproj-tabs">
-          <button className={'addproj-tab' + (tab === 'local' ? ' active' : '')} onClick={() => setTab('local')}>📁 Local folder</button>
-          <button className={'addproj-tab' + (tab === 'github' ? ' active' : '')} onClick={() => setTab('github')}>🐙 GitHub repo</button>
+          <button className={'addproj-tab' + (tab === 'local' ? ' active' : '')} onClick={() => { setErr(null); setTab('local'); }}>📁 Local folder</button>
+          <button className={'addproj-tab' + (tab === 'github' ? ' active' : '')} onClick={() => { setErr(null); setTab('github'); }}>🐙 GitHub repo</button>
         </div>
         <div className="modal-body">
           {tab === 'local' ? (
@@ -1893,7 +1911,7 @@ function AddProjectModal({ prefillName, onClose, onCommit }) {
           ) : (
             <form onSubmit={submitGithub} className="addproj-form">
               <label>Repo<input value={repoUrl} onChange={e => setRepoUrl(e.target.value)} placeholder="owner/repo  or  https://github.com/owner/repo" autoFocus /></label>
-              <label>Local folder name (optional)<input value={name} onChange={e => setName(e.target.value)} placeholder="auto from URL if blank" /></label>
+              <label>Local folder name (optional)<input value={repoName} onChange={e => setRepoName(e.target.value)} placeholder="auto from URL if blank" /></label>
               <label className="checkbox-row">
                 <input type="checkbox" checked={shallow} onChange={e => setShallow(e.target.checked)} />
                 <span>Shallow clone (fast — no history)</span>

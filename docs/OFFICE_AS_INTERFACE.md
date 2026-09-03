@@ -23231,3 +23231,46 @@ now true. Suite 78/78 files.
 
 The locators in the new file are named, not literal — the sweep flagged in
 #154 is still open, but nothing new was added to it.
+
+---
+
+### #156 — The Add Project tabs stop sharing a box
+
+The Add Project dialog has two tabs, and they were sharing two pieces of state
+that mean different things on each side. Both measured live on a fresh office,
+on the surface the getting-started checklist opens at step 5.
+
+**`name`.** On the Local tab it is the project's DISPLAY NAME. On the GitHub
+tab the same box is labelled *"Local folder name (optional)"* — a directory
+that gets created on disk — with the placeholder *"auto from URL if blank"*.
+Typing **My Website** on the Local tab and crossing over pre-filled it here, so
+the box was no longer blank and the documented default never applied. Cloning
+`facebook/react` would have landed in `MyWebsite` (the server strips the space
+in `_projects_clone`), and the office would have looked like it chose that
+name. `prefillName` did the same thing on first open.
+
+Two labels, two meanings, one state. The GitHub tab now has its own
+`repoName`, seeded empty on purpose: `prefillName` is a project name too, and
+this field's documented default is the URL.
+
+**`err`.** Hitting Add on an empty Local form and switching tabs left **"path
+required"** sitting under the GitHub form — which has no path field at all and
+never asked for one. The other direction is worse: a clone failure ("that repo
+doesn't exist or is private") reads as a verdict on the folder you are about to
+type. Both tab buttons now clear it. A complaint has to stay with the question
+it answers.
+
+Checked while in there, and clean: the server's `_projects_clone` filters the
+folder name to `alnum` plus `-_.` and then re-checks `relative_to` the allowed
+dir, so `..` is refused. No traversal, and the fix above is a copy-and-intent
+bug, not a security one.
+
+`scripts/test_the_add_project_tabs_do_not_share_a_box.py` lifts the real
+`submitLocal` and `submitGithub` and runs them under Node against a stubbed
+`cloneRepo`, asserting which string reaches the clone in four combinations —
+including the one that names the whole bug: **the project's display name never
+becomes a directory on disk.** The Local tab's own three-way validation is
+driven too, so this file cannot pass by breaking the tab it was not about.
+Fire-tested five ways. Verified live in both directions: the stale error is
+gone, the folder box is blank on arrival, and a value typed on either side
+survives a round trip without leaking into the other. Suite 80/80 files.
