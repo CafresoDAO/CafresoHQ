@@ -1332,8 +1332,34 @@ function AccountTab({ usageTokens = 0 }) {
      blob is blanked — the same "keys NOT included" contract the Hermes
      config export makes. Enforced on BOTH directions, so a hand-edited
      backup can't smuggle a key into storage either. */
-  const OFFICE_EXPORT_PREFIXES = ['cafresohq_hq_v1:', 'cafresohq:', 'cafresohq_client_v1'];
+  const OFFICE_HQ_PREFIX = 'cafresohq_hq_v1:';
+  const OFFICE_EXPORT_PREFIXES = [OFFICE_HQ_PREFIX, 'cafresohq:', 'cafresohq_client_v1'];
   const OFFICE_EXPORT_BLOCKED = ['cafresohq_agent_keys_v1', 'cafresohq_device_key_v1'];
+  /* Mirror of every app/storage.jsx useFileStored(lsKey, scope, name, ...)
+     call site in app.jsx. Those keys are NOT purely local: useFileStored's
+     own mount-fetch treats the hq-state/hq-memory FILE as authoritative
+     whenever this session hasn't dirtied the value yet — which is exactly
+     the state of a tab that just reloaded after an import. Restoring only
+     the localStorage half of one of these keys is not a restore at all:
+     within the same reload this button triggers, the mount-fetch pulls the
+     old file back over the just-written value and the "restore" silently
+     undoes itself with no error anywhere. Push the matching file too, so
+     there is nothing stale left for that fetch to reassert. */
+  const OFFICE_FILE_BACKED = {
+    agents: { scope: 'memory', name: 'agents' },
+    messages: { scope: 'state', name: 'messages' },
+    openWindows: { scope: 'state', name: 'windows' },
+    activity: { scope: 'state', name: 'activity' },
+    tasks: { scope: 'state', name: 'tasks' },
+    experience: { scope: 'state', name: 'experience' },
+    memory: { scope: 'memory', name: 'context' },
+    receipts: { scope: 'state', name: 'receipts' },
+    pins: { scope: 'state', name: 'pins' },
+    missions: { scope: 'state', name: 'missions' },
+    workflows: { scope: 'state', name: 'workflows' },
+    projects: { scope: 'state', name: 'projects' },
+    meetings: { scope: 'state', name: 'meetings' },
+  };
   const _scrubClientBlob = (raw) => {
     try {
       const v = JSON.parse(raw);
@@ -1385,10 +1411,24 @@ function AccountTab({ usageTokens = 0 }) {
       if (!(await window.hqConfirm(
         `Restore ${keys.length} office entries${when}? This REPLACES the matching parts of this office (chat, team, tasks, prefs) and reloads the app.`,
         { okLabel: 'Replace office', danger: true }))) return;
+      const filePuts = [];
       for (const key of keys) {
         const raw = key === 'cafresohq_client_v1' ? _scrubClientBlob(data.entries[key]) : data.entries[key];
         localStorage.setItem(key, raw);
+        // Also write the mirrored server file (if this key has one) so the
+        // mount-fetch that runs right after reload finds the SAME content
+        // we just restored, instead of the old file it would otherwise pull
+        // back over it — see OFFICE_FILE_BACKED above.
+        if (key.startsWith(OFFICE_HQ_PREFIX)) {
+          const target = OFFICE_FILE_BACKED[key.slice(OFFICE_HQ_PREFIX.length)];
+          if (target) {
+            filePuts.push(fetch(`${apiBase}/hq/${target.scope}/${target.name}`, {
+              method: 'PUT', headers: { 'content-type': 'application/json' }, body: raw,
+            }).catch(() => {}));
+          }
+        }
       }
+      if (filePuts.length) await Promise.allSettled(filePuts);
       window.location.reload();
     } catch (er) { setNote('office import failed: ' + er.message); }
   };

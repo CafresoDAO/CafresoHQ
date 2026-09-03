@@ -25996,3 +25996,115 @@ mismatch recorded throughout this ledger, on a file this diff never
 touches — `git status --porcelain` covers only `views/vault.jsx` and the
 one new test file above; `src/cafresohq_state/main.mo` was never read,
 staged, or edited.
+
+---
+
+## 186. Restoring an office backup silently undid itself, within the same reload it triggered
+
+**The reading.** Settings → OFFICE BACKUP's "Restore an office"
+(`modals/settings.jsx`'s `importOffice`) promises to replace the matching
+parts of this office and reload. It does write every restored entry into
+`localStorage`, then calls `window.location.reload()` — but most of what
+that panel's own copy claims to restore ("chat, team, tasks and prefs")
+is not a pure `localStorage` value. `app.jsx`'s team roster, tasks,
+projects, missions, meetings, workflows, the agent message registry,
+memory/context, receipts, pins, the experience log, the activity log, and
+open windows all go through `app/storage.jsx`'s `useFileStored`, which
+mirrors to a server-side `hq-state`/`hq-memory` file and, on every mount,
+fetches that file and adopts it whenever the session hasn't dirtied the
+value yet (`dirtyRef.current` false — see `useFileStored`'s mount effect
+and its own scar tissue from the 2026-08-08 "second browser" data-loss
+note above it). A tab that just reloaded because of an import has dirtied
+nothing. So the mount-fetch pulls whatever the OLD file still holds —
+the office exactly as it stood **before** the restore — back over the
+value `importOffice` just wrote, within the same reload the button
+triggered, and writes it a second time into `localStorage` for good
+measure. Nothing in the UI ever says so; the confirm dialog says "Replace
+office," the page reloads, and the task list is unchanged.
+
+No cross-machine step is needed to see it: add a task, export, delete the
+task, import that same file, reload — the deleted task is back, because
+the file backing `tasks` on *this* server was never touched by the
+import. Team roster, projects, missions, meetings, workflows, the DM
+registry, and memory/context all reproduce the identical way. Only the
+categories that are genuinely `localStorage`-only (`useStored`, not
+`useFileStored`) — theme, density, window geometry, the raw chat
+transcript, onboarding flags, and the scrubbed `cafresohq_client_v1`
+settings blob — actually survive a restore. The export itself is
+correct; every one of these keys really is in the backup file. The bug is
+entirely on the restore side.
+
+**The mechanism.** `useFileStored(lsKey, fileScope, fileName, ...)` is
+called from 13 places in `app.jsx` (`agents`, `messages`, `openWindows`,
+`activity`, `tasks`, `experience`, `memory`, `receipts`, `pins`,
+`missions`, `workflows`, `projects`, `meetings`), each mirroring its
+`lsKey` to `/hq/<fileScope>/<fileName>` via GET-on-mount and a debounced
+PUT-on-change. `importOffice` had no notion of this second, server-side
+half at all — it only ever called `localStorage.setItem(key, raw)` in a
+loop, then reloaded immediately.
+
+**The fix.** `modals/settings.jsx` gains `OFFICE_FILE_BACKED`, a literal
+`{ suffix: { scope, name } }` map mirroring those same 13
+`useFileStored` call sites (`OFFICE_HQ_PREFIX` factored out of
+`OFFICE_EXPORT_PREFIXES` so both the export filter and the new map key
+off the identical `'cafresohq_hq_v1:'` string). `importOffice` now checks
+each restored key against that map and, for a match, also `fetch`es a
+`PUT /hq/<scope>/<name>` with the restored value as the body — collecting
+every such request into `filePuts` and `await Promise.allSettled(filePuts)`
+**before** calling `window.location.reload()`. File and `localStorage`
+agree by the time the next mount-fetch runs, so there is nothing stale
+left for it to reassert; an unreachable/self-hosted backend that has no
+running server for the fetch to reach is no worse off than before the
+fix (the mount-fetch would then also fail and never touch `localStorage`,
+per `useFileStored`'s own `.catch(() => { hydratedRef.current = true; })`).
+
+**The test**
+(`scripts/test_a_restored_office_does_not_snap_back_to_the_old_file.py`,
+17 checks) has two independent layers. First, a structural diff that
+regex-extracts the real `useFileStored(k('X'), 'scope', 'name', ...)`
+call sites straight out of `app.jsx` and asserts they exactly equal
+`OFFICE_FILE_BACKED` as evaluated (via Node) out of the real
+`modals/settings.jsx` source — so a future 14th `useFileStored` call
+added without updating the mirror fails this test by name, not just this
+session's fix. Second, a behavioral run: the real `importOffice` (plus
+`OFFICE_HQ_PREFIX`/`OFFICE_EXPORT_PREFIXES`/`OFFICE_EXPORT_BLOCKED`/
+`OFFICE_FILE_BACKED`/`_scrubClientBlob`) lifted brace-balanced out of
+`modals/settings.jsx` and driven under Node against a mocked `fetch`
+(resolves after a real `setTimeout`, so ordering is genuine, not
+same-tick), `localStorage`, and `window`, fed a synthetic backup
+containing a purely-local pref, three file-backed keys (`tasks`,
+`projects`, and `memory` — the one whose suffix and on-disk filename
+differ, `memory` → `context`), an unmapped future key, and the scrubbed
+client blob. Asserts exactly the three file-backed `PUT`s fire, each at
+the correct `/hq/<scope>/<name>` with the exact restored body: no PUT for
+the local pref, the unmapped key, or the client blob; the blocked secret
+store is filtered out before any of this runs (already covered by
+`test_the_office_can_leave_the_browser_and_come_back.py`, re-asserted
+here as a cheap regression backstop); and — the actual fix — `reload`'s
+position in the recorded call order is strictly after every `fetch`'s
+`fetch:settled:` marker, not just after every `fetch:start:`.
+
+Fire-tested by reverting `importOffice`'s file-backed loop to its
+original three-line form (`localStorage.setItem` only, no `filePuts`, no
+`Promise.allSettled`) while leaving `OFFICE_FILE_BACKED` itself in place.
+9 of the 17 checks failed by name — every PUT-target check, the ordering
+check, and the two structural "looked up before reloading" / "PUT is
+awaited" checks — while the untouched checks (map exists, no drift
+against `app.jsx`, local-pref/unmapped-key/client-blob exclusions,
+blocked-secret exclusion) stayed green, confirming the failing checks are
+actually pinned to the fix and not to unrelated source shape. Restored
+the reverted block and confirmed `modals/settings.jsx` byte-identical to
+the pre-revert state via `md5sum`. The refactor that factored
+`OFFICE_HQ_PREFIX` out of `OFFICE_EXPORT_PREFIXES` also broke the
+pre-existing `test_the_office_can_leave_the_browser_and_come_back.py`'s
+own source-lift (it only lifted `OFFICE_EXPORT_PREFIXES` in isolation,
+so the extracted snippet referenced an undefined `OFFICE_HQ_PREFIX` when
+run standalone under Node) — fixed by adding that same constant to its
+lift list; re-ran and confirmed green.
+
+**Suite: 370/371.** The one failure is the same pre-existing
+`moc`/M0219 `main.mo` toolchain mismatch recorded throughout this
+session, on files this diff never touches (`modals/settings.jsx`,
+`scripts/test_the_office_can_leave_the_browser_and_come_back.py`, and
+the one new test file above); `src/cafresohq_state/main.mo` was never
+read, staged, or edited.

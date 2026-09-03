@@ -105,6 +105,7 @@ def main():
         # logic the way importOffice applies it.
         pieces = []
         for opener, closer in (
+            ("const OFFICE_HQ_PREFIX = ", ";"),
             ("const OFFICE_EXPORT_PREFIXES = [", ";"),
             ("const OFFICE_EXPORT_BLOCKED = [", ";"),
             ("const _scrubClientBlob = (raw) => {", "\n  };"),
