@@ -22801,3 +22801,70 @@ Two things the fire-tests taught, both recorded in the suite itself:
   an anchor that had forgotten the rail entirely.
 
 Suite: 336/336.
+
+### #149 — the office made a folder on the boss's disk and did not say so
+
+Fresh office, hired Llama, skipped the FIRST ASSIGNMENT, then followed the
+checklist to step 5: "New Project →", "Create your first project", Local
+folder. Typed a name and a path that does not exist. The dialog closed and the
+office said
+
+> ✓ Added project "Alpaca site"
+
+which is the same sentence, letter for letter, as pointing at a folder that was
+already there. Checked the disk: the directory had been created, in `$HOME`,
+seconds earlier. Nothing on screen had mentioned it.
+
+`commitProject` calls `/fs/mkdir` best-effort before filing the project, and
+that is deliberate — without it a first-time boss lands on "Not a directory"
+with no way forward, which is exactly why it was added; the comment above the
+second call site still explains it, and
+`scripts/test_new_project_creates_folder.py` defends it. **The defect is not
+the create, it is the silence.** `/fs/mkdir` is `parents=True`, so a typo like `~/Documnets/site`
+creates the whole chain, the project points at it, and the FILES tree then
+renders it empty — which is exactly what a correct-but-empty project looks
+like. There is no reading of that screen that tells the boss a folder was made.
+
+The fact was already in the response and both call sites threw it away:
+`existed: true` when the folder was there, absent when the server made one. So
+`_addProjectMkdir` reads it, `_addedProjectSay` says it, and both commit steps
+share one implementation of each — the bug was in two places at once, which is
+what a shared helper is for.
+
+> ✓ Added project "Dog walking site" — there was no folder at
+> /Users/anthonym/hq-tick41-typo-test, so the office made one.
+
+One sentence, one em-dash (#145), and it names the path, because a typo is only
+catchable if the boss can read back what was actually made. Verified live in
+both directions: a path that existed still gets the plain sentence and a tree
+full of real files.
+
+`scripts/test_the_office_says_when_it_made_you_a_folder.py` runs both halves
+for real — the shipped helpers under Node against a stub client, and the
+shipped `_fs_mkdir` route against a real temp directory, so the `existed`
+contract the sentence now rests on cannot drift silently. Fire-tested five
+ways, including the direction that matters most: claiming a folder was made
+when it was not sends the boss looking for something that is not there.
+
+**Two neighbouring suites failed, and both were the brittle-literal pattern.**
+This is the fifth tick it has cost something, and this time it cost two:
+
+- `test_new_project_creates_folder.py` pinned `source === 'local'`, `fsMkdir`
+  and a try/catch *inside each commitProject body*. All three guarantees still
+  hold — they moved into the helper. Its own failure message anticipated
+  exactly this ("if one was consolidated into a shared helper, update this test
+  to point at the helper instead"), so retargeting was the sanctioned move, not
+  an override. The three checks now read the helper, and each commit step is
+  held to what it still owes: that it awaits it.
+- `test_add_project_left_the_old_projects_file_on_screen.py` located each
+  `commitProject` by a two-line literal that included the mkdir `if` — a detail
+  with nothing to do with the state-reset behaviour it tests. It did not fail,
+  it **crashed** on a `ValueError` from `str.index`, which reads as a broken
+  test rather than a broken app. Now located by ordinal, with the assertion it
+  already had (`setSelectedId` vs `setSelected`) confirming which one it
+  landed on. Its Node harness lifts the real helpers instead of stubbing them,
+  because it drives the real bodies and a stub would let those bodies call a
+  helper the app no longer has.
+
+Both retargeted suites were fire-tested against the three original guarantees
+and still catch all of them. Suite: 337/337.

@@ -57,34 +57,53 @@ check(
     f"ProjectsView (found {len(matches)}) — if one was consolidated into a "
     "shared helper, update this test to point at the helper instead.",
 )
+# The mkdir was consolidated into the shared `_addProjectMkdir` helper (#149,
+# which also made the create audible in the toast). This file said in the
+# message above what to do if that ever happened — "update this test to point
+# at the helper instead" — so the three guarantees below moved with it rather
+# than being deleted. What each commitProject still owes is that it CALLS the
+# helper and waits for it; the guarantees themselves are now the helper's.
+helper = re.search(r'const _addProjectMkdir = [\s\S]*?\n\};', src)
+check(
+    bool(helper),
+    "views/projects.jsx: the shared `_addProjectMkdir` helper is gone — if "
+    "the mkdir moved again, point these checks at wherever it lives now, or "
+    "the 'Not a directory' dead end comes back unnoticed.",
+)
+hbody = helper.group(0) if helper else ''
+check(
+    "source !== 'local'" in hbody or "source === 'local'" in hbody,
+    "_addProjectMkdir must gate the mkdir on the local-folder source — "
+    "GitHub-clone paths already exist (cloneRepo creates them server-side), "
+    "so this must not run for that tab.",
+)
+check(
+    'fsMkdir' in hbody,
+    "_addProjectMkdir must call fsMkdir(path) — the same call the '+ Folder' "
+    "button already made, run automatically so a brand-new project path is "
+    "guaranteed to exist before the Files pane ever tries to list it.",
+)
+check(
+    re.search(r'try\s*\{[\s\S]*?fsMkdir', hbody) and 'catch' in hbody,
+    "the fsMkdir call in _addProjectMkdir must be try/caught — a failure here "
+    "(e.g. no permission) must fall back to today's existing 'not a "
+    "directory' state, not break project creation outright.",
+)
 for i, m in enumerate(matches):
     who = f"commitProject #{i + 1}"
     check(
         m.group(1) == 'async ',
-        f"{who} must be `async` — it awaits CafresoHQClient.fsMkdir "
-        "before adding the project.",
+        f"{who} must be `async` — it awaits the mkdir before adding the "
+        "project.",
     )
     tail = src[m.end():]
     end = tail.index('\n  };')
     body = tail[:end]
     check(
-        "source === 'local'" in body,
-        f"{who} must gate the mkdir call on `source === 'local'` — "
-        "GitHub-clone paths already exist (cloneRepo creates them), so this "
-        "should only run for the local-folder tab.",
-    )
-    check(
-        'fsMkdir' in body,
-        f"{who} must call CafresoHQClient.fsMkdir(path) — the same "
-        "call the '+ Folder' button already made, now run automatically so "
-        "a brand-new project path is guaranteed to exist before the Files "
-        "pane ever tries to list it.",
-    )
-    check(
-        re.search(r'try\s*\{[^}]*fsMkdir', body) or 'catch' in body,
-        f"the fsMkdir call in {who} must be try/caught — a failure here "
-        "(e.g. no permission) must fall back to today's existing 'not a "
-        "directory' state, not break project creation outright.",
+        re.search(r'await\s+_addProjectMkdir\(', body),
+        f"{who} must await _addProjectMkdir(...) — a commit step that skips "
+        "it re-opens the 'Not a directory' dead end on that path, and one "
+        "that does not await it files the project before the folder exists.",
     )
 
 # The Workspace empty state's "Create your first project" button must open

@@ -43,6 +43,7 @@ those either).
 Run: python3 scripts/test_add_project_left_the_old_projects_file_on_screen.py
 """
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -80,16 +81,46 @@ def main():
 
     src = PROJECTS.read_text(encoding='utf-8')
 
+    # The mkdir and its sentence moved into two module-scope helpers (#149)
+    # that BOTH commit steps now share. Lift the real ones rather than stub
+    # them: this suite drives the real bodies, and a stub here would let the
+    # bodies call a helper that no longer exists in the app.
+    def lift_const(name):
+        m = re.search(r'^const %s = ' % re.escape(name), src, re.M)
+        if not m:
+            raise SystemExit('views/projects.jsx: could not lift ' + name)
+        depth, i = 0, m.end()
+        while i < len(src):
+            ch = src[i]
+            if ch in '({[':
+                depth += 1
+            elif ch in ')}]':
+                depth -= 1
+            elif ch == ';' and depth == 0:
+                return src[m.start():i + 1]
+            i += 1
+        raise SystemExit('views/projects.jsx: unterminated ' + name)
+
+    MKDIR_SRC = lift_const('_addProjectMkdir')
+    SAY_SRC = lift_const('_addedProjectSay')
+
     check('exactly one WorkspaceView.commitProject and one '
           'ProjectsView.commitProject exist',
           src.count('const commitProject = async ({ name, path, source }) => {') == 2,
           'views/projects.jsx: commitProject count changed')
 
     # --- WorkspaceView.commitProject -----------------------------------
-    ws_start = ("const commitProject = async ({ name, path, source }) => {\n"
-                "    if (source === 'local' && C && C.fsMkdir)")
-    ws_fn = extract(src, ws_start, '\n  };')
-    check('found WorkspaceView.commitProject by its C.fsMkdir marker',
+    # Located by ORDINAL, not by a line from the body. This used to key off
+    # `if (source === 'local' && C && C.fsMkdir)`, a mkdir detail that has
+    # nothing to do with the state-reset behaviour under test — and when that
+    # mkdir moved into a shared helper (#149) this file did not fail, it
+    # crashed on a ValueError from `str.index`, which reads as a broken test
+    # rather than a broken app. The count check above already pins that there
+    # are exactly two, and WorkspaceView's is the first in the file; the
+    # setSelectedId assertion below is what confirms we landed on it.
+    SIG = 'const commitProject = async ({ name, path, source }) => {'
+    ws_fn = extract(src, SIG, '\n  };')
+    check('found WorkspaceView.commitProject, the first of the two',
           'setSelectedId' in ws_fn, 'views/projects.jsx shape changed')
     check('WorkspaceView.commitProject no longer calls setSelectedId directly '
           'without resetting state first',
@@ -105,7 +136,9 @@ def main():
 
     def drive_workspace():
         harness = """
-const C = { fsMkdir: async () => ({ existed: false }) };
+const C = { fsMkdir: async () => ({ ok: true, path: '/tmp/marketing' }) };
+%(mkdir)s
+%(say)s
 // The sandbox preflight is its own tested unit (see
 // test_the_add_project_door_checks_the_reading_door.py) — here it waves
 // the add through so the reset behavior under test is reachable.
@@ -129,13 +162,13 @@ const pulseTimers = { current: { '/a/b.txt': 1, '/a/c.txt': 2 } };
 const idleTimer = { current: 3 };
 const clearTimeout = () => { calls.timersCleared++; };
 const commitProject = async ({ name, path, source }) => {
-%s
+%(body)s
 };
 (async () => {
   await commitProject({ name: 'Marketing Site', path: '/tmp/marketing', source: 'local' });
   console.log(JSON.stringify(calls));
 })();
-""" % ws_body
+""" % {'mkdir': MKDIR_SRC, 'say': SAY_SRC, 'body': ws_body}
         return run(harness)
 
     ws = drive_workspace()
@@ -159,11 +192,11 @@ const commitProject = async ({ name, path, source }) => {
           ws['setShowAdd'] == [False] and len(ws['toasts']) == 1, ws)
 
     # --- ProjectsView (Classic).commitProject --------------------------
-    classic_start = ("const commitProject = async ({ name, path, source }) => {\n"
-                      "    if (source === 'local' && CafresoHQClient && CafresoHQClient.fsMkdir)")
-    classic_fn = extract(src, classic_start, '\n  };')
-    check('found ProjectsView.commitProject by its CafresoHQClient.fsMkdir marker',
-          'setSelected' in classic_fn, 'views/projects.jsx shape changed')
+    # The second of the two, found by resuming the search past the first.
+    classic_fn = extract(src[src.index(SIG) + len(SIG):], SIG, '\n  };')
+    check('found ProjectsView.commitProject, the second of the two',
+          'setSelected' in classic_fn and 'setSelectedId' not in classic_fn,
+          'views/projects.jsx shape changed')
     check('ProjectsView.commitProject now resets openFile alongside setSelected',
           'setOpenFile(null)' in classic_fn, classic_fn)
 
@@ -180,7 +213,9 @@ const commitProject = async ({ name, path, source }) => {
 
     def drive_classic(toast_available=True):
         harness = """
-const CafresoHQClient = { fsMkdir: async () => ({ existed: false }) };
+const CafresoHQClient = { fsMkdir: async () => ({ ok: true, path: '/tmp/marketing' }) };
+%(mkdir)s
+%(say)s
 // Preflight stubbed open — its own behavior is covered by
 // test_the_add_project_door_checks_the_reading_door.py.
 const _addRefusedOutsideSandbox = async () => false;
@@ -193,18 +228,20 @@ const setSelected = (v) => calls.setSelected.push(v);
 const setOpenFile = (v) => calls.setOpenFile.push(v);
 const setShowAdd = (v) => calls.setShowAdd.push(v);
 const toast = () => {};   // only the refused branch speaks through it
-const window = { cafresohqToast: %s };
+const window = { cafresohqToast: %(toast)s };
 const commitProject = async ({ name, path, source }) => {
-%s
+%(body)s
 };
 (async () => {
   await commitProject({ name: 'Marketing Site', path: '/tmp/marketing', source: 'local' });
   console.log(JSON.stringify(calls));
 })();
-""" % (
-            "{ success: (m) => calls.toastMsgs.push(m) }" if toast_available else "undefined",
-            classic_body,
-        )
+""" % {
+            'mkdir': MKDIR_SRC, 'say': SAY_SRC,
+            'toast': ("{ success: (m) => calls.toastMsgs.push(m) }"
+                      if toast_available else "undefined"),
+            'body': classic_body,
+        }
         return run(harness)
 
     result = drive_classic()

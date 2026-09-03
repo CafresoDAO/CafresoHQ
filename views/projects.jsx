@@ -28,6 +28,35 @@ const _addRefusedOutsideSandbox = async (path, toast) => {
   } catch (_e) { /* browse unreachable — let the add proceed */ }
   return false;
 };
+/* The commit step's best-effort mkdir, and the fact that has to come back
+   with it. Returns the path of a folder that was NEWLY created, or null.
+
+   Measured (#149) on the first-run path, step 5 of the getting-started
+   checklist: typing a path that does not exist files the project and toasts
+   `Added project "X"` — the same sentence, letter for letter, as pointing at
+   a folder that was already there. The office had made a directory on the
+   boss's disk and did not say so. `/fs/mkdir` is `parents=True`, so a typo
+   like ~/Documnets/site creates the whole chain, and the FILES tree then
+   renders it empty, which is exactly what a correct-but-empty project looks
+   like. There was no signal anywhere that anything had been written.
+
+   `/fs/mkdir` already answers the question — `existed: true` for a folder
+   that was there, absent when it made one — and both call sites threw it
+   away. Still best effort: a refusal or an unreachable server surfaces as
+   the tree's not-a-directory state, and nothing here claims a folder was
+   made unless the server said it made one. */
+const _addProjectMkdir = async (client, path, source) => {
+  if (source !== 'local' || !(client && client.fsMkdir)) return null;
+  try {
+    const r = await client.fsMkdir(path);
+    return (r && r.ok && !r.existed) ? (r.path || path) : null;
+  } catch (_e) { return null; }
+};
+/* One sentence, one em-dash (#145), and it names the folder — a typo is only
+   catchable if the boss can read back what was actually created. */
+const _addedProjectSay = (name, madeAt) => (madeAt
+  ? `Added project "${name}" — there was no folder at ${madeAt}, so the office made one.`
+  : `Added project "${name}"`);
 function WorkspaceView({ projects, setProjects, agents = [], onSwitchView }) {
   const LS = (k, d) => { try { const v = localStorage.getItem('ws:' + k); return v == null ? d : JSON.parse(v); } catch (_e) { return d; } };
   const LSset = (k, v) => { try { localStorage.setItem('ws:' + k, JSON.stringify(v)); } catch (_e) {} };
@@ -83,9 +112,7 @@ function WorkspaceView({ projects, setProjects, agents = [], onSwitchView }) {
      existing folder, and without this the FILES pane's first render is
      "Not a directory: …". An existing path just returns `existed: true`. */
   const commitProject = async ({ name, path, source }) => {
-    if (source === 'local' && C && C.fsMkdir) {
-      try { await C.fsMkdir(path); } catch (_e) { /* surfaces as the tree's not-a-directory state */ }
-    }
+    const madeAt = await _addProjectMkdir(C, path, source);
     if (await _addRefusedOutsideSandbox(path, toast)) return;
     const id = 'p_' + Math.random().toString(36).slice(2, 8);
     setProjects && setProjects(prev => [...(prev || []), { id, name, path, source }]);
@@ -105,7 +132,7 @@ function WorkspaceView({ projects, setProjects, agents = [], onSwitchView }) {
     setConflict(false);
     setSelectedId(id);
     setShowAdd(false);
-    toast('success', `Added project "${name}"`);
+    toast('success', _addedProjectSay(name, madeAt));
   };
   const _isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
   const [mobilePane, setMobilePane] = useSV('files');   // mobile pane-switcher: files | editor | terminal | agents
@@ -881,9 +908,7 @@ function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
      own copy also describes) just gets `existed: true` back and nothing
      changes for it. */
   const commitProject = async ({ name, path, source }) => {
-    if (source === 'local' && CafresoHQClient && CafresoHQClient.fsMkdir) {
-      try { await CafresoHQClient.fsMkdir(path); } catch (_e) { /* falls back to today's "not a directory" state */ }
-    }
+    const madeAt = await _addProjectMkdir(CafresoHQClient, path, source);
     if (await _addRefusedOutsideSandbox(path, toast)) return;
     const id = 'p_' + Math.random().toString(36).slice(2, 8);
     setProjects && setProjects(prev => [...(prev || []), { id, name, path, source }]);
@@ -894,7 +919,7 @@ function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
     setSelected(id);
     setOpenFile(null);
     setShowAdd(false);
-    if (window.cafresohqToast) window.cafresohqToast.success(`Added project "${name}"`);
+    if (window.cafresohqToast) window.cafresohqToast.success(_addedProjectSay(name, madeAt));
   };
 
   const onDropFolder = (e) => {
