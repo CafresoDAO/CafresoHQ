@@ -55,6 +55,24 @@ const classifyStreamFailure = (s) => {
   return { kind: 'unknown', retryable: true, actionNeeded: 'Inspect error and retry' };
 };
 
+/* First-run gate for the CEO-led welcome (chat message + auto-opened hire
+   deck). "Genuinely new office" means no hired roster AND no local CLI
+   (hermes/claude/codex/gemini) the auto-sync effect would staff in on its
+   own — that sync runs on a 2.5s delay (it spawns `--version`/auth
+   subprocesses server-side), well past the point a mount-time roster check
+   alone can trust, so this asks the same `agentsStatus` detector directly
+   instead of racing it. `agentsStatus` is injected so this can run outside
+   React (and be swapped for a mock) — it must be awaited, not just called. */
+async function decideFirstRunWelcome({ agentsCount, agentsStatus }) {
+  if (agentsCount > 0) return false;              // hydrated roster → returning user
+  if (typeof agentsStatus === 'function') {
+    let detected = [];
+    try { detected = (await agentsStatus()).agents || []; } catch (_e) { detected = []; }
+    if (detected.some(d => d && d.installed)) return false;   // pre-staffed via local CLI
+  }
+  return true;
+}
+
 function App() {
   /* Empty by design — HQ.INITIAL_AGENTS is []. Fresh offices start with the
      CEO alone; the fake-stats mapping that used to live here (invented tokens
@@ -525,8 +543,16 @@ function App() {
   const firstRunChatRef = useRefA(chat); firstRunChatRef.current = chat;
   useEffectA(() => {
     if (tourSeen) return;
-    const t = setTimeout(() => {
-      if (firstRunAgentsRef.current.length > 0) return; // hydrated roster → returning user
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      const oc = CafresoHQClient;
+      const isNewOffice = await decideFirstRunWelcome({
+        agentsCount: firstRunAgentsRef.current.length,
+        agentsStatus: oc && oc.agentsStatus,
+      });
+      // Re-check the ref (not just the count decideFirstRunWelcome was given) —
+      // the roster fetch can hydrate while we were awaiting agentsStatus().
+      if (cancelled || !isNewOffice || firstRunAgentsRef.current.length > 0) return;
       /* CEO-led first win: no passive slideshow tour up front. The CEO
          greets, then the candidates deck opens — the new user's first two
          minutes produce a real hire and a real task instead of ten
@@ -572,7 +598,7 @@ function App() {
          line lands — the user's first decision is a real hire. */
       setTimeout(() => { try { setHireOpen(true); } catch (_e) {} }, 1600);
     }, 800);
-    return () => clearTimeout(t);
+    return () => { cancelled = true; clearTimeout(t); };
   }, []);
   /* Allow palette command + future button to replay the tour. */
   useEffectA(() => {

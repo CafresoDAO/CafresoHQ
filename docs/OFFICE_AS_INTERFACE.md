@@ -25379,3 +25379,71 @@ the same pre-existing `moc`/`main.mo` implicit-`transient` toolchain
 mismatch recorded above, on a file this session's diff never touches
 (`git status --porcelain` covers only `views/projects.jsx`, `styles.css`,
 and the new test file).
+
+---
+
+## 179. The CEO's first line was a lie on any machine with a CLI agent installed
+
+**Provenance.** Found and committed by an earlier agent working from a
+`master`-based worktree whose copy of this ledger had already diverged too
+far to cherry-pick cleanly (a 3-way apply of its `app.jsx` diff produced a
+900-line conflict block from unrelated module-extraction refactors since
+its base). The code fix and test below were independently re-verified and
+hand-ported onto current `app.jsx` rather than merged wholesale; this entry
+is freshly written against that ported state, not copied from the
+worktree's own (stale) ledger text.
+
+**The reading.** On a wiped office (`hq-state/` deleted, localStorage
+cleared), the first-run effect (`app.jsx`, the `tourSeen` onboarding effect)
+decided "genuinely new office" — CEO welcome message + auto-opened hire
+deck — off an 800ms timer reading the hired-roster ref. A separate, older
+effect a few lines up (the CLI-sync effect, `DEFS`/`agentsStatus`) detects
+Hermes/Claude Code/Codex/Gemini already on PATH and auto-stages them into
+the roster, but on a **2500ms** delay — it spawns real `--version`/auth
+subprocesses server-side via `GET /agents`. 800 < 2500 on every machine,
+every load: the welcome fires and claims "nothing here is pre-staged" while
+the JOB POSTINGS hire deck auto-opens for a step about to complete itself
+seconds later — exactly the case for this app's actual target user, a
+developer running it on their own box with tools already installed.
+
+**The mechanism.** The 800ms timer was a guess at when `useFileStored`'s
+async roster read resolves, not an actual check of what the CLI-sync effect
+would soon report. Nothing connected the two.
+
+**The fix.** `decideFirstRunWelcome({ agentsCount, agentsStatus })` — a
+standalone async function above `App()` — replaces the blind timer. If the
+roster is already non-empty it returns false immediately (returning user,
+never asks the detector). Otherwise it awaits the same `agentsStatus()`
+detector the CLI-sync effect itself uses and returns false if any detected
+entry has `installed: true` (authentication status doesn't matter — an
+installed-but-not-logged-in CLI still counts as "pre-staffed", matching the
+CLI-sync effect's own `d.installed` filter, so the two criteria cannot
+quietly diverge). A failed or absent detector fails OPEN to "genuinely new"
+so a flaky backend can't freeze onboarding forever. The effect's timer
+callback now awaits this before touching chat or the hire modal, and
+re-checks the live roster ref afterward (it can hydrate mid-await); the
+effect's cleanup still sets a `cancelled` flag so no state update fires
+after unmount.
+
+**The test**
+(`scripts/test_the_ceo_stops_lying_about_a_pre_staffed_office.py`, 18
+checks) lifts `decideFirstRunWelcome` out of `app.jsx` by name and runs it
+under Node across 9 scenarios (no detector at all, empty/malformed/null
+responses, an installed-but-unauthenticated CLI, a null entry in the
+agents array, the measured Hermes+Claude-Code case), plus a hydrated-roster
+case proving the detector is never even called once a roster exists.
+Static checks pin the call site: the effect actually `await`s the function,
+passes the live roster count, wires the real `agentsStatus` (not a stub),
+gates the welcome sequence on the result, re-checks the roster ref
+post-await, and still honors the unmount `cancelled` flag.
+
+Independently fire-tested one break during integration: swapped the fix's
+`d.installed` check for `d.authenticated` — 3 checks failed by name
+("installed but never logged in still counts as staffed", the null-entry
+scan, and the same-field-as-CLI-sync check), `app.jsx` restored
+`cmp`-identical afterward.
+
+**Suite: 366/367** (up from 365/366; one new file). The only failure is the
+same pre-existing `moc`/M0219 `main.mo` toolchain mismatch recorded
+throughout this session, on a file this fix's diff never touches
+(`app.jsx` and the one new test file above).
