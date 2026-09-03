@@ -115,11 +115,24 @@ function EmbeddedTerminal({ project, cli, sessionId, visible }) {
     const RETRY_MS = [2000, 4000, 8000, 15000, 30000];
     const nextDelay = () => RETRY_MS[Math.min(attempt, RETRY_MS.length - 1)];
 
+    /* connect() is async — the readyState guard below runs BEFORE the nonce
+       fetch, and wsRef only becomes CONNECTING after it. So two overlapping
+       calls (the onclose retry timer + the visibilitychange handler are
+       independent triggers) could both pass the guard during that await and
+       open TWO sockets for one session_id. The server hands the PTY to
+       whichever attaches last, while wsRef keeps whichever connect() resumed
+       last — when they disagree, keystrokes and output ride different
+       sockets, and after the next drop the client refuses to reconnect
+       because the orphan still reads OPEN: a silently frozen terminal.
+       A synchronous in-flight flag closes the gap. */
+    let connecting = false;
+
     const connect = async () => {
-      if (cancelled) return;
+      if (cancelled || connecting) return;
       // Skip if already open or mid-handshake.
       const rs = wsRef.current?.readyState;
       if (rs === WebSocket.OPEN || rs === WebSocket.CONNECTING) return;
+      connecting = true;
       term.writeln('\x1b[2m[connecting…]\x1b[0m');
 
       // Fetch nonce — /terminal/nonce is same-origin-only so cross-origin
@@ -130,7 +143,7 @@ function EmbeddedTerminal({ project, cli, sessionId, visible }) {
         if (_nr.ok) { const _nd = await _nr.json(); ptyNonce = _nd.nonce || ''; }
       } catch (_) {}
 
-      if (cancelled) return;
+      if (cancelled) { connecting = false; return; }
 
       // Target the BACKEND base (window._API_BASE = the gateway when the UI is
       // served cross-origin from the asset canister), NOT the page origin — an
@@ -151,6 +164,7 @@ function EmbeddedTerminal({ project, cli, sessionId, visible }) {
       const ws = new WebSocket(`${_wsProto}//${_wsHost}${_wsPath}/terminal/pty?${_wsParams}`);
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
+      connecting = false;   // wsRef is CONNECTING now — the readyState guard takes over
 
       // Always send init frame immediately on open — even with no BYOK keys.
       // The server waits up to 2 s for this frame before spawning the PTY;

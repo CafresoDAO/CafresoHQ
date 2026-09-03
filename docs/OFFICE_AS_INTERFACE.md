@@ -27007,3 +27007,85 @@ in-progress Motoko actor migration on a file this change never touches.
 `git status --porcelain` for this change covers only
 `modals/providers.jsx`, the one new test file above, and this ledger;
 `src/cafresohq_state/main.mo` was never staged or edited.
+
+---
+
+## 198. Two overlapping reconnects could open two PTY sockets and freeze the embedded terminal
+
+**The reading.** Assigned area: the terminal view — `views/terminal.jsx`
+(xterm session tabs, spawn/kill/reconnect, resize, scrollback, theme),
+with `pty_server.py` read for protocol context. The session tab bar,
+kill-on-close path (`/terminal/kill` vs. the 300s detach reaper), the
+`_nextSessionId` restore-aware minting, the ResizeObserver teardown, and
+the double-rAF fit-on-unhide all checked out as already hardened by
+earlier entries. The live find was in `EmbeddedTerminal`'s reconnect
+machinery itself.
+
+**The mechanism.** `connect()` is `async`. Its only re-entrancy guard
+was the readyState check — `rs === WebSocket.OPEN || rs ===
+WebSocket.CONNECTING`, skip — but that check runs *before* the
+`await fetch('/terminal/nonce')`, and `wsRef.current` only becomes a
+CONNECTING socket after the `new WebSocket(...)` that follows the
+await. During the whole nonce round-trip, the guard still sees the OLD,
+closed socket and waves a second caller through. And `connect()` has
+two independent triggers that routinely overlap in exactly that window:
+the `onclose` backoff timer (`setTimeout(connect, wait)`) and the
+`visibilitychange` handler (reconnect when the user tabs back). Service
+blips → a retry is scheduled → the user flips away and back → both
+paths run `connect()` concurrently, each fetches a nonce, each opens a
+WebSocket to `/terminal/pty` with the SAME `session_id`.
+
+Server-side (`pty_server.py`, the resume path at `sess['sock'] =
+client_sock`), the PTY's output goes to whichever socket *attached
+last*; client-side, `wsRef.current` keeps whichever `connect()`
+*resumed last* — and the two fetch completions can order either way.
+When they disagree, keystrokes ride the orphan socket while output
+rides the live one (both feed the same PTY, so it half-works and looks
+haunted), and the real damage lands on the next drop: the server-side
+socket dies, output starts buffering for a resume — but the client
+never resumes, because `wsRef` still points at the orphan, which reads
+OPEN, so every future `connect()` call bails at the readyState guard.
+The terminal is silently frozen until the user leaves the PTY tab
+entirely and comes back (full unmount). Duplicate `[connecting…]`
+lines and a doubled `init` frame (BYOK keys sent twice) ride along.
+
+**The fix.** A synchronous `let connecting = false` flag in the mount
+effect's closure, alongside `cancelled` and the backoff state.
+`connect()` now bails on `cancelled || connecting` at the top, raises
+the flag *before* the awaited nonce fetch (synchronously — so a second
+invocation during the gap cannot pass), and lowers it in exactly two
+places: the post-await `cancelled` bail-out, and immediately after
+`wsRef.current = ws` — from which point the new socket reads
+CONNECTING and the original readyState guard is authoritative again.
+Three lines plus a comment; no behavior change for any single-caller
+path, and the backoff ladder, ceiling announcements, and
+visibility-driven reconnect all work exactly as before.
+
+**The test** (`scripts/test_terminal_reconnect_no_double_socket.py`)
+lifts the REAL `EmbeddedTerminal` out of `views/terminal.jsx` and the
+real `connect()` arrow out of it (brace-balanced extraction, the
+`test_workspace_terminal_key.py` technique) and pins the invariant's
+structure: the flag is declared in the effect scope before `connect`,
+the `cancelled || connecting` guard precedes the first `await`, the
+flag is raised before the awaited `/terminal/nonce` fetch (raising it
+after would leave the same window), it is lowered only at the
+`wsRef.current = ws` handover or the cancelled bail-out, and the
+readyState guard itself is still present (the flag complements it, it
+does not replace it).
+
+Fire-tested: reverted the fix in place (guard back to `if (cancelled)
+return;`, flag never raised or lowered on the live paths) — 6 of 11
+checks failed, by name, starting with `connect() early-returns on
+'cancelled || connecting'`. Restored `views/terminal.jsx` from the /tmp
+safety copy (md5-verified byte-identical, `150af299…`), test green
+again, `npm run build` re-run (the dev server never rebuilds
+`dist-ui/`).
+
+**Suite: 381/382** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` implicit-`transient`
+toolchain mismatch recorded in `#188` and `#193` — a different
+session's in-progress Motoko migration on a file this change never
+touches. This change covers only `views/terminal.jsx`, the new test
+file, and this entry; `src/cafresohq_state/main.mo` was never staged or
+edited, and no dfx/IC action of any kind was run.
