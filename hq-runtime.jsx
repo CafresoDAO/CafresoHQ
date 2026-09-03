@@ -1350,9 +1350,62 @@ function unverifiedSources(text, visits, citesFn, workingFn) {
    there" was a guess wearing a verdict's clothes. A note that outclaims its
    witness gets one contradiction on a card, and then every note after it
    reads as machine noise. */
+/* A path sitting inside a tool marker is not a prose promise, and this note
+   is only ever about a prose promise — see the section head: "a filename
+   promised, and no file". `unsentBlocks` above owns the other story, and
+   tells it better.
+
+   Measured live (office 8847, first @mention of a hired coworker). Llama
+   answered "I've saved a note to start building my memory with
+   [MEMORY_WRITE: decisions/intro.md]." — an opener with no closer. The boss
+   got both notes, stacked:
+
+     _(nothing was saved to their memory — they started the note and stopped
+       partway, so it is not there however it was described above. Ask them
+       to save it again.)_
+     _(`decisions/intro.md` is named above, but they never wrote it to the
+       cabinet on this run — ask them to file it if you need it.)_
+
+   One fact, twice, and the second one wrong twice over. It reads as a
+   different failure ("never wrote it" against "started and stopped
+   partway"), so a boss counting problems counts two. And it names the
+   CABINET for a path that was never headed there: MEMORY_WRITE goes to the
+   coworker's own notes folder, which is exactly why app/artifacts.jsx's
+   CABINET_WRITE leaves the MEMORY_* markers out — "the coworker's private
+   notes folder (Agents/<name>/), not a deliverable for the boss". So the
+   closing advice, "ask them to file it if you need it", asks the boss to
+   chase a file into a drawer it was never going into.
+
+   Prose wins over the marker when a path is in both: a coworker who writes
+   "saved to Research/x.md" AND emits a truncated marker for it has still
+   made the claim in the boss's own words, and that claim is what this note
+   answers. Only an occurrence with no prose twin is dropped.
+
+   Inlined, not two helpers beside it, for the reason `unsentBlocks` keeps
+   its KINDS table inside itself: five suites lift THIS function by name and
+   run it under node, so anything it calls from module scope is a
+   ReferenceError in every one of them. Written as siblings first, and all
+   five went red together — the hazard is documented two functions up and
+   still caught me. */
 function unfiledPath(text, visits, unwrittenFn) {
   if (!Array.isArray(visits)) return null;         // unknowable, so silent
-  const named = (unwrittenFn || unwrittenPaths)(text, visits);
+  const t = String(text || '');
+  const spans = [];
+  const markerRe = /\[\s*\/?\s*[A-Za-z][A-Za-z0-9_]*\s*:[^\]\n]*\]/g;
+  let mm;
+  while ((mm = markerRe.exec(t))) spans.push([mm.index, mm.index + mm[0].length]);
+  const onlyInsideMarkers = (path) => {
+    if (!spans.length) return false;
+    let at = t.indexOf(path), seen = false;
+    while (at !== -1) {
+      seen = true;
+      if (!spans.some(([s, e]) => at >= s && at + path.length <= e)) return false;
+      at = t.indexOf(path, at + 1);
+    }
+    return seen;
+  };
+  const named = (unwrittenFn || unwrittenPaths)(text, visits)
+    .filter(p => !onlyInsideMarkers(p));
   if (!named.length) return null;
   const one = named.length === 1;
   return '_(' + named.map(p => '`' + p + '`').join(' and ')

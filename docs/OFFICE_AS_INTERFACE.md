@@ -22535,3 +22535,50 @@ that cannot tell a claim from its denial, or from a quotation of itself, would
 have pushed both sentences back to the overpromise they were written to
 forbid. Same family as the brittle-literal pattern: matching text rather than
 meaning.
+
+### #144 — one failure, told twice, the second time to the wrong drawer
+
+The CEO's own brain was offline and the office said so well: "Llama is still
+working, though — @mention them and they can pick this up." Taking that
+advice on a fresh office (8847), Llama answered:
+
+> I've saved a note to start building my memory with [MEMORY_WRITE: decisions/intro.md].
+
+An opener with no closer. Stacked underneath the one bubble:
+
+> _(nothing was saved to their memory — they started the note and stopped
+> partway, so it is not there however it was described above. Ask them to save
+> it again.)_
+> _(`decisions/intro.md` is named above, but they never wrote it to the
+> cabinet on this run — ask them to file it if you need it.)_
+
+One fact, twice, and the second wrong twice over. It describes a *different*
+failure ("never wrote it" against "started and stopped partway"), so a boss
+counting problems counts two. And it names the **cabinet** for a path that was
+never headed there — `MEMORY_WRITE` goes to the coworker's own notes folder,
+which is exactly why `app/artifacts.jsx`'s `CABINET_WRITE` leaves the
+`MEMORY_*` markers out: "not a deliverable for the boss". Its closing advice
+asked the boss to chase a file into a drawer it was never going into.
+
+`unsentBlocks` owns the truncated-marker story and tells it accurately.
+`unfiledPath` is about a filename promised **in prose** with no file behind it
+— its own section head says so. A path that appears only inside
+`[MEMORY_WRITE: …]` is machine syntax, not a promise in the boss's words, so
+it no longer counts. **Prose wins:** a coworker who says "saved to
+Research/x.md" in prose *and* emits a truncated marker for it has still made
+the claim the boss read, so that note survives. The filter is per path, not
+per reply — a reply naming one of each keeps the prose note and drops the
+marker-only one.
+
+`scripts/test_one_failure_is_one_note.py` runs the real functions lifted from
+the app under node, and fire-tested in both directions: dropping the filter
+reproduces the live string verbatim; inverting the containment test silences
+the prose promise the note exists for.
+
+**The trap that caught me anyway.** Written first as two module-scope siblings
+(`markerSpans`, `onlyInsideMarkers`) beside `unfiledPath`. Five suites lift
+`unfiledPath` **by name** and run it under node, so all five went red at once
+with `ReferenceError: onlyInsideMarkers is not defined`. The hazard is
+documented two functions up, and `unsentBlocks` keeps its `KINDS` table inline
+for precisely this reason — and I still walked into it. Inlined now, with the
+reason written at the call site rather than only here.
