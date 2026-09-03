@@ -24662,3 +24662,126 @@ noted rather than chased.
 **Suite: 356/357 — the one failure is the pre-existing `moc`/M0219
 mismatch above; all 32 of this fix's own checks pass.**
 
+---
+
+## 173. A fresh office opened its chat window on top of the ADD button
+
+**A worktree note.** This session's worktree started 734 commits behind
+`chore/oss-reduction` — `git merge-base --is-ancestor HEAD chore/oss-reduction`
+reported a clean pass (no divergence, so the literal check is satisfied),
+but the working tree was missing this ledger file entirely, which is what
+actually surfaced the gap. `git status --short` was clean, so
+`git merge --ff-only chore/oss-reduction` landed cleanly at `2b84b0f` before
+any of the work below started. Recorded here because a passing
+ancestor-check is not the same claim as "at current tip," and at least one
+other agent this tick hit the same thing.
+
+**The reading.** A fresh office session (assigned area: Tasks / Kanban
+board), no stored geometry, viewport 1280x720 — the single most common
+"brand new boss" starting point. Open the Task Board, click "+ NEW" to
+reveal the add-task row, type a title, click ADD. Nothing happens: no task
+appears, no error, the input keeps its text. `document.elementFromPoint`
+at the button's own rendered coordinates resolved to a different element —
+the floating chat window's own drag-handle area, a `position:fixed;
+z-index:300` div sitting directly over the button. A `.click()` called
+directly on the actual ADD element (bypassing hit-testing) filed the task
+immediately, proving the button's own handler was never the problem: the
+click was never reaching it. The chat window mounts on every view except
+Chat itself and normally sits clear of the page; on a viewport this short
+its default position happened to land squarely on the Task Board's own
+controls.
+
+**The mechanism.** Two independent copies of the same formula, and fixing
+either one alone changed nothing observable. `_chatAnchor` in
+`app/windows.jsx` — the pure function that decides a fresh or re-anchored
+window's position — used `y: Math.max(8, VH - h - 80)`, floored only at
+8px from the bottom of the calculation, with nothing keeping it clear of
+whatever controls the page underneath happens to render near the top. At
+1280x720 that put the window at y=180, and the Task Board's "+ NEW" row's
+ADD button spans y≈191-224 — squarely inside it. But `app.jsx`'s
+`chatWinGeo` state — the value `useStored` falls back to the very first
+time a session has nothing in localStorage yet, i.e. exactly a brand-new
+office — carried its OWN hand-typed copy of that same pre-floor arithmetic,
+never calling `_chatAnchor` at all. `_chatGeometryStale` (the repair check
+that runs after mount) saw the duplicate's output as a complete, in-bounds,
+off-the-rail geometry and had nothing to flag, so the duplicate's value
+stood forever. Patching `_chatAnchor` first proved this: rebuilding and
+clearing storage still showed the old, un-fixed `y` in
+`localStorage['cafresohq_hq_v1:chatWinGeoV2']`, because a fresh session
+never actually executes `_chatAnchor` — it executes the copy.
+
+**The fix.** A new named constant, `CHAT_TOP_FLOOR = 235`, floors
+`_chatAnchor`'s y term (`Math.max(CHAT_TOP_FLOOR, VH - h - 80)`) — clears
+the measured ADD-button row with a little margin, and only binds at all on
+viewports short enough for the 460px-tall default to reach that high
+(below ~763px tall; the 800px-tall fixture in
+`test_a_window_never_covers_the_way_out.py` never notices it, because
+800-460-80=260 already clears 235 on its own — confirmed, not assumed).
+Deliberately NOT threaded into `_chatGeometryStale` or `_chatClamp`: both
+also govern a position the boss chose by dragging, and the existing suite
+pins that a deliberate placement clear of the rail (x=300, y=120) must
+never be moved again — "the boss's choice is final" for every axis this
+file does not treat as a hard floor. Then `_chatAnchor` and `_railRight`
+were added to `app/windows.jsx`'s export line, and `app.jsx`'s
+`chatWinGeo` initializer was rewritten to call `_chatAnchor(W, H,
+_railRight())` directly instead of carrying its own arithmetic — one rule,
+one reader, for the case that actually ships a brand-new office.
+
+**The test** (`scripts/test_a_fresh_chat_window_does_not_cover_the_add_button.py`,
+15 checks) lifts `CHAT_TOP_FLOOR` and `_chatAnchor` out of
+`app/windows.jsx` by name (a constant-line regex alongside the existing
+brace-matched function lift, reusing `test_a_window_never_covers_the_way_
+out.py`'s `lift()` convention) and runs them for real under Node — plus
+static checks (regex, no Node needed) that: `_chatAnchor`'s body actually
+references the named constant rather than a re-typed literal; both
+`_chatAnchor` and `_railRight` are on `app/windows.jsx`'s export line; both
+are on `app.jsx`'s import line from it; and `app.jsx`'s `chatWinGeoV2`
+initializer (lifted by a new brace-balanced `lift_block()` starting from
+that call site, since it is a `const [x,y] = useStored(key, () => {...})`
+statement, not a top-level named function) calls `_chatAnchor(` and no
+longer contains the duplicate's own `Math.max(8,` arithmetic. The
+behavioral half covers the measured reproduction (1280x720, no rail:
+y clears the button, lands exactly on 235), that a tall-enough viewport
+(800, and 900 further past it) keeps the pre-fix value completely
+unchanged, and that the floor holds the same way with a rail present at a
+short viewport (700, rail=232).
+
+`test_a_window_never_covers_the_way_out.py` (the #148 rail-overlap suite,
+which also lifts `_chatAnchor` by name) needed one mechanical patch: its
+`lift()` only brace-matches `function NAME(...) {...}`, so it had no way
+to see the new top-level `const CHAT_TOP_FLOOR = 235;` that `_chatAnchor`'s
+body now references, and failed with `CHAT_TOP_FLOOR is not defined` in
+the generated probe until a sibling `lift_const()` was added and prepended
+before `_chatAnchor`'s body. No assertion in that file needed to change:
+every fixture that pins an exact `_chatAnchor` y value (the WIDE(1280,800)
+pinned default, the no-rail default) already computes to a value at or
+above 235, so the floor never binds for any of them — checked by hand
+against each one before touching the file, not just by running it.
+
+Eight fire-tests against real edits to `app/windows.jsx`/`app.jsx` —
+`CHAT_TOP_FLOOR` lowered below the button (100), `_chatAnchor` dropped
+from the export line, the duplicate formula reintroduced in `app.jsx`,
+`_chatAnchor` dropped from the import line, the floor's `Math.max` flipped
+to `Math.min`, the constant's value off-by-one (236), the constant
+re-inlined as a bare literal inside `_chatAnchor`, and `_railRight` dropped
+from the export line — all eight failed by a properly named check, and
+every restore came back `cmp`-identical before the next break was applied.
+
+**A closed lead, recorded not chased.** The Task Board's outer task-card
+`<div>` (`features.jsx`, `TaskBoard`) still has no `role`/`tabIndex`/
+`onKeyDown` for its click-to-expand behavior — the same gap Tick 28 (#167)
+closed on `modals/hire.jsx` via the `cardActivate` helper, and explicitly
+did NOT list `features.jsx` among the files it fixed. `views/core.jsx`'s
+`CalendarView` task rows already carry the equivalent pattern, so the
+precedent and the gap sit in the same codebase side by side. Not fixed
+this tick — time went to the overlap bug above instead — but it is a real,
+still-open instance of an already-established pattern, not a new
+discovery.
+
+**Suite: 356/357.** The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`) is
+`moc` refusing to compile `src/cafresohq_state/main.mo` over implicit-
+`transient` declarations — a Motoko toolchain/version error in an unrelated
+backend subsystem (the worker-payout sweep), on a file this session's diff
+never touches (`git diff --stat` covers only `app.jsx`, `app/windows.jsx`,
+and the two test files above). Not a regression from this fix.

@@ -16,7 +16,7 @@ import { attachVisit, chainHoldLine, doneLine, floorEmit, officeCause, shortfall
 import { formatToolInput } from './app/approvals.jsx';
 import { attentionCount as attentionCountOf } from './app/attention.jsx';
 import { capChatFair, chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, mergeMessages, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored } from './app/storage.jsx';
-import { ChatWindow, MSG_STATES, WindowFrame } from './app/windows.jsx';
+import { ChatWindow, MSG_STATES, WindowFrame, _chatAnchor, _railRight } from './app/windows.jsx';
 /* ==========================================================================
    CafresoHQ — root app
    ========================================================================== */
@@ -443,15 +443,22 @@ function App() {
     window.cafresohqSetChatOpen = (v) => setChatWinOpen(v);
     return () => { delete window.cafresohqSetChatOpen; };
   }, []);
+  /* This used to carry its own copy of `_chatAnchor`'s arithmetic — the
+     bottom-right-default formula, hand-rolled again right here — as the
+     lazy initial value `useStored` falls back to when localStorage has
+     nothing yet. That is precisely the case a brand-new session hits, and
+     it runs BEFORE `ChatWindow`'s own repair effect ever gets a chance to
+     reconsider anything: `_chatGeometryStale` sees a complete, in-bounds,
+     off-the-rail `{x,y,w,h}` and has nothing to complain about, so the
+     duplicate's output stands untouched. Measured live: fixing the
+     overlap this was silently reproducing (see `CHAT_TOP_FLOOR` in
+     app/windows.jsx) inside `_chatAnchor` alone did nothing for a fresh
+     office, because a fresh office never actually called it — it called
+     this copy instead. One rule, one reader now. */
   const [chatWinGeo, setChatWinGeo] = useStored(k('chatWinGeoV2'), () => {
     const W = typeof window !== 'undefined' ? window.innerWidth  : 1280;
     const H = typeof window !== 'undefined' ? window.innerHeight : 720;
-    const w = 400, h = 460;
-    return {
-      x: Math.max(8, W - w - 24),
-      y: Math.max(8, H - h - 80),  // pinned bottom-right by default
-      w, h,
-    };
+    return _chatAnchor(W, H, _railRight());
   });
   /* ─── Desktop (window) mode ───────────────────────────────────────
      When enabled, app views open as draggable/resizable windows over the

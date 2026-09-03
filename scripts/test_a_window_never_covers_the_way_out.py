@@ -87,6 +87,18 @@ def lift(src, name):
     return None
 
 
+def lift_const(src, name):
+    """The one line `const NAME = ...;`, verbatim. `_chatAnchor` now floors its
+    y term at `CHAT_TOP_FLOOR` (a fresh boss's first click on the Task
+    Board's own ADD button used to land on this window instead — see the
+    constant's comment in app/windows.jsx) and the probe below has to define
+    it for the same reason it re-runs the SHIPPED functions rather than a
+    copy: a re-typed `235` here would agree with itself while the app used
+    some other number."""
+    m = re.search(r'^const %s = .+;$' % re.escape(name), src, re.M)
+    return m.group(0) if m else None
+
+
 PROBE = '''
 const OUT = {};
 const anchor = (vw, vh, rail) => _chatAnchor(vw, vh, rail);
@@ -156,6 +168,14 @@ console.log(JSON.stringify(OUT));
 def run_probe():
     src = WINDOWS.read_text(encoding='utf-8')
     pieces = []
+    # _chatAnchor's body references CHAT_TOP_FLOOR (a fresh-session-only floor
+    # so the default position can never seed on top of the Task Board's own
+    # ADD button — see the constant's comment in app/windows.jsx). It must be
+    # defined before _chatAnchor's lifted body runs, so it goes in first.
+    floor_const = lift_const(src, 'CHAT_TOP_FLOOR')
+    if floor_const is None:
+        return None, 'could not lift CHAT_TOP_FLOOR from app/windows.jsx'
+    pieces.append(floor_const)
     for name in ('_chatAnchor', '_chatGeometryStale', '_chatClamp'):
         body = lift(src, name)
         if body is None:

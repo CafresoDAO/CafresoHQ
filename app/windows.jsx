@@ -26,6 +26,37 @@ function _railRight() {
   return (r.width > 0 && r.height > 0) ? Math.round(r.right) : 0;
 }
 
+/* How far down a FRESH window's default y may start, so it does not open
+   already sitting on top of the first row of controls in whatever view is
+   showing underneath.
+
+   Measured live on the Tasks board (2026-09-03), on a plain 1280x720
+   session with no stored geometry — the single most common "brand new
+   boss" starting point. `_chatAnchor`'s stock formula put the window at
+   y=180; the Task Board's own "+ NEW" add-task row (opened, the ADD button
+   spanning y≈191-224) sits directly under that. A real click on ADD at
+   its rendered coordinates hit the chat window's drag handle instead —
+   `elementFromPoint` confirmed it, a fixed/z-index:300 div — and the task
+   was never created: no error, no visual break, the input just sat there
+   un-submitted. Only a `.click()` called directly on the button element
+   (bypassing hit-testing) actually filed the task. 235 clears that row
+   with a little room to spare; it only binds at all on viewports short
+   enough for the 460px-tall default to reach that high (below ~763px
+   tall) — the 800px-tall fixture in
+   test_a_window_never_covers_the_way_out.py never notices it, because
+   800 - 460 - 80 = 260 already clears 235 on its own.
+
+   Deliberately NOT threaded into `_chatGeometryStale` or `_chatClamp`:
+   both of those also govern a position the boss chose by dragging, and
+   `test_a_window_never_covers_the_way_out.py` pins that a deliberate
+   placement clear of the rail (x=300, y=120) must never be moved again —
+   "the boss's choice is final" for every axis this file does not treat as
+   a hard floor. Adding this term there would silently re-open that
+   contract for y. So this covers every FRESH session from here on; a
+   geometry already saved under the old formula is left where the boss (or
+   the old bug) put it, same as any other position on this axis. */
+const CHAT_TOP_FLOOR = 235;
+
 /* The three geometry decisions the chat window makes, kept as pure functions
    of (viewport, rail) so they can be exercised without a browser — the
    regression suite runs THESE, not a copy of them.
@@ -34,11 +65,12 @@ function _railRight() {
    panel cannot clear the rail it gives up width before it gives up the
    navigation. With no rail in the layout the width term is
    `Math.min(400, VW - 32)` and the x term `Math.max(8, VW - w - 24)`, which
-   is the bottom-right default this has always had. */
+   is the bottom-right default this has always had. The y term is floored
+   the same way at `CHAT_TOP_FLOOR` — see the comment on that constant. */
 function _chatAnchor(VW, VH, rail) {
   const w = Math.min(400, Math.max(280, VW - rail - 32));
   const h = Math.min(460, VH - 24);
-  return { x: Math.max(rail + 8, VW - w - 24), y: Math.max(8, VH - h - 80), w, h };
+  return { x: Math.max(rail + 8, VW - w - 24), y: Math.max(CHAT_TOP_FLOOR, VH - h - 80), w, h };
 }
 
 /* `_chatGeometryStale` — whether a stored geometry has to be thrown away.
@@ -632,4 +664,16 @@ function ChatWindow({ open, setOpen, geometry, setGeometry, messageCount, chatPa
    how prominently to surface the swap (system chat note, toast, etc).
    ───────────────────────────────────────────────────────────────────── */
 
-export { ChatWindow, MSG_STATES, WindowFrame };
+/* `_chatAnchor` and `_railRight` are exported too, alongside the component —
+   not for the test suite (scripts/test_a_window_never_covers_the_way_out.py
+   lifts them from source text on purpose, precisely so it runs the SHIPPED
+   arithmetic even if this export list is ever trimmed) but for `app.jsx`,
+   which used to carry its OWN copy of this exact formula as the lazy
+   initial value for the persisted `chatWinGeoV2` state — the value a fresh
+   session (nothing in localStorage yet) actually gets, before `ChatWindow`'s
+   own repair effect ever runs. Two implementations of "where does the chat
+   window start" is exactly the shape #148 was about; this one hid because
+   `_chatGeometryStale` had no complaint about the duplicate's OUTPUT (a
+   well-formed-looking `{x:856,y:180,w:400,h:460}` clears every existing
+   staleness check), so the repair effect never fired to paper over it. */
+export { ChatWindow, MSG_STATES, WindowFrame, _chatAnchor, _railRight };
