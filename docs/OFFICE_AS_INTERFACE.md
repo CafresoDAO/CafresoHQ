@@ -23099,3 +23099,80 @@ reads `.rail-toggle`'s own negative inset instead of hardcoding 13px, and the
 `margin-top: auto` check exists so that if the identity chip stops being
 bottom-pinned the file says its premise changed rather than passing quietly.
 Fire-tested six ways, including the plausible wrong fix (`1fr`). Suite 341/341.
+
+## #154 — The board admits it is filtering
+
+Measured live on Tasks, one task on the board:
+
+```
+search box: "zzzznomatch"
+header:     0 OF 1
+INBOX:      "Nothing waiting — hit + NEW to add one."
+```
+
+The first line is a claim about the office, and it was being made about the
+search box. So I followed the advice underneath it:
+
+```
++ NEW → "Order more coffee" → ADD
+header:     0 OF 2
+INBOX:      "Nothing waiting — hit + NEW to add one."
+```
+
+The task was real — clearing the search showed it sitting in the inbox — but
+the only thing that moved on screen was a number in the header, and the same
+instruction was still there inviting the boss to do it again. **The office
+told the boss to do something, they did it, and the office answered by saying
+the same thing again.** That is a loop that quietly stacks up duplicate tasks
+nobody can see.
+
+This board already carried a comment about exactly this shape of mistake, one
+message over:
+
+> `/* `tasks` here is the FILTERED list … otherwise a search matching nothing
+> would greet an established boss with "No tasks yet". */`
+
+The onboarding message had been given the unfiltered count to check against.
+The "Nothing waiting" message sitting next to it never was.
+
+**Two fixes, one fact — the board did not know a filter was on.**
+
+`TasksView` now hands down `hiddenByStatus`, a **per-column** count of what
+the filters are keeping out, and each empty column says so rather than
+asserting the office is empty. Per column and not board-wide deliberately:
+`totalCount - tasks.length` cannot tell an empty inbox beside five hidden DONE
+tasks from an inbox with five hidden tasks, and those two want opposite
+messages. Seen live on the real board with one DONE task and a query matching
+nothing — three columns, three different true statements: INBOX "Nothing
+waiting" (genuinely empty, nothing hidden from it), DONE "Nothing matches —
+1 hidden by the filters above", DOING "—".
+
+And adding a task now drops whichever filter would hide it — *only* that one.
+This is not a new rule. It is the rule the highlight effect a few lines above
+already applies to a task arriving from the Calendar: *"Whichever filter would
+hide the requested task, drop it."* It had never been applied to the task the
+boss types themselves.
+
+One rule, three readers: `hides` is written once and used by the list, by the
+counts, and by the add check, because a second copy drifting is exactly how a
+board comes to claim "Nothing waiting" over work it is holding.
+
+`scripts/test_the_board_admits_it_is_filtering.py` lifts the real `hides`,
+`filtered`, `hiddenByStatus` and `addVisible` out of the shipped `TasksView`
+and runs those bodies under Node; only React's state binding is stubbed, since
+"which filter did the add clear?" is precisely the question. The wrong
+direction is weighted at least as heavily as the bug — clearing a search the
+boss is still using would be its own small betrayal — so a matching add, a
+detail-only match, a caps query, an unrelated toggle and a whitespace-only box
+all assert that *nothing* is dropped. Fire-tested six ways.
+
+**And the sweep finally bit.** The full suite came back 341/1: not a
+regression, but `test_calendar_task_row_opens_the_right_card.py` **crashing**
+with `ValueError: substring not found`, because it located three components by
+pinning their entire parameter lists as literals and TaskBoard had gained one
+prop. That is the brittle-literal pattern in its most misleading form — a
+crash reads as a broken test, not a broken app, from a change that broke
+nothing the file is about. All three locators now find the function by name,
+and two adjacent-pair signature checks were relaxed to assert the fact rather
+than its neighbours. Fire-tested that the repaired file survives an added prop
+and still catches all three real breakages it was written for. Suite 342/342.

@@ -69,13 +69,23 @@ def brace_lift(src, opener):
     raise SystemExit('unbalanced braces lifting ' + opener)
 
 
-def slice_to_next_function(src, opener):
+def slice_to_next_function(src, name):
     # brace_lift's naive counter breaks on template literals like
     # `${t.status}` — they carry their own unbalanced { } — which several
     # of these components use. Slicing to the next top-level function
     # declaration is good enough for containment checks like these.
-    i = src.index(opener)
-    j = src.find('\nfunction ', i + len(opener))
+    #
+    # Located by NAME. This used to take the component's entire parameter
+    # list as a literal, and adding one prop to TaskBoard (#154's
+    # `hiddenByStatus`) made `src.index` raise ValueError — a crash, which
+    # reads as a broken test rather than a broken app, from a change that
+    # broke nothing this file is about. A locator has to survive the edits
+    # the code it locates is expected to receive.
+    m = re.search(r'^function %s\(' % re.escape(name), src, re.M)
+    if not m:
+        raise SystemExit('no top-level `function %s(` in this source' % name)
+    i = m.start()
+    j = src.find('\nfunction ', m.end())
     return src[i:] if j == -1 else src[i:j]
 
 
@@ -106,7 +116,7 @@ def main():
           'app.jsx: calendar render site not wired')
 
     # --- views/core.jsx: CalendarView task row -------------------------
-    cal_fn = slice_to_next_function(core, 'function CalendarView({ tasks, agents, missions = [], nightShiftBoard = [], nightShiftRuns = [], onOpenTask = null }) {')
+    cal_fn = slice_to_next_function(core, 'CalendarView')
     check('CalendarView accepts onOpenTask',
           'onOpenTask = null' in cal_fn.splitlines()[0], cal_fn.splitlines()[0])
     row = "className={`cal-item status-${t.status}`}"
@@ -122,10 +132,15 @@ def main():
           row_block)
 
     # --- views/core.jsx: TasksView filter-override effect --------------
-    tasks_fn = slice_to_next_function(core, "function TasksView({ tasks, agents, onAdd, onMove, onDelete, onCyclePriority, onDropTaskOnAgent, onAssign, onAssignToChat, onMakeRoomFromTask, onStartTask, experience = [], highlightTaskId = null, onConsumeHighlight = null }) {")
+    tasks_fn = slice_to_next_function(core, 'TasksView')
+    # Same relaxation as TaskBoard's below, for the same reason: the fact is
+    # that both props are accepted, not that nothing was ever added between
+    # them.
+    tasks_sig = tasks_fn.splitlines()[0]
     check('TasksView accepts highlightTaskId/onConsumeHighlight',
-          'highlightTaskId = null, onConsumeHighlight = null' in tasks_fn.splitlines()[0],
-          tasks_fn.splitlines()[0])
+          'highlightTaskId = null' in tasks_sig
+          and 'onConsumeHighlight = null' in tasks_sig,
+          tasks_sig)
     check('TasksView clears the search query and forces "show completed" on '
           'when a valid highlighted task arrives — so the filter can never '
           'hide the very card the click was meant to land on',
@@ -138,10 +153,14 @@ def main():
           tasks_fn)
 
     # --- features.jsx: TaskBoard highlight/flash ------------------------
-    tb_fn = slice_to_next_function(features, 'function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onCyclePriority, onDragStart, onAssignToChat, onMakeRoomFromTask, onStartTask, totalCount = null, experience = [], highlightTaskId = null, onConsumeHighlight = null }) {')
+    tb_fn = slice_to_next_function(features, 'TaskBoard')
+    # The fact, not its neighbours: both props are accepted with a default.
+    # Pinning them as an adjacent pair made this a second hostage to any
+    # prop added between or beside them.
+    sig = tb_fn.splitlines()[0]
     check('TaskBoard accepts highlightTaskId/onConsumeHighlight',
-          'highlightTaskId = null, onConsumeHighlight = null' in tb_fn.splitlines()[0],
-          tb_fn.splitlines()[0])
+          'highlightTaskId = null' in sig and 'onConsumeHighlight = null' in sig,
+          sig)
     check('the task card carries a data-task-id for the flash effect to find',
           'data-task-id={t.id}' in tb_fn,
           'features.jsx: task card no longer carries data-task-id')

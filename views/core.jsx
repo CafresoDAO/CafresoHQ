@@ -98,14 +98,46 @@ function TasksView({ tasks, agents, onAdd, onMove, onDelete, onCyclePriority, on
     setShowDone(true);
   }, [highlightTaskId]);
 
-  const filtered = useMV(() => {
+  /* One rule, three readers: the list, the per-column hidden counts the
+     board's empty states need, and the check that a task the boss has just
+     typed is not about to be filtered out from under them. Written once
+     because a second copy of it drifting is exactly how a board comes to
+     claim "Nothing waiting" over work it is holding. */
+  const hides = (t) => {
+    if (!showDone && t.status === 'done') return true;
     const needle = q.trim().toLowerCase();
-    return tasks.filter(t => {
-      if (!showDone && t.status === 'done') return false;
-      if (!needle) return true;
-      return (t.title + ' ' + (t.detail || '')).toLowerCase().includes(needle);
-    });
+    if (!needle) return false;
+    return !(t.title + ' ' + (t.detail || '')).toLowerCase().includes(needle);
+  };
+
+  const filtered = useMV(() => tasks.filter(t => !hides(t)), [tasks, q, showDone]);
+
+  /* Not `tasks.length - filtered.length`: an empty inbox beside five hidden
+     DONE tasks and an inbox with five hidden tasks are different situations
+     and the board says different things about them. */
+  const hiddenByStatus = useMV(() => {
+    const out = {};
+    for (const t of tasks) if (hides(t)) out[t.status] = (out[t.status] || 0) + 1;
+    return out;
   }, [tasks, q, showDone]);
+
+  /* Measured live: with a search matching nothing, + NEW created a real task
+     and the board answered by repeating "Nothing waiting — hit + NEW to add
+     one." The count in the header went 1 of 1 → 0 of 2 and nothing else
+     moved, which invites a boss to press it again and again and quietly
+     stack up duplicates they cannot see.
+
+     This is the same rule the highlight effect above already applies to a
+     task arriving from the Calendar: whichever filter would hide the task
+     the boss just asked for, drop it. Only the filter that actually hides
+     it — a search still standing after an unrelated add would be an
+     annoyance of its own. */
+  const addVisible = (t) => {
+    onAdd(t);
+    if (!t || !hides(t)) return;
+    if (!showDone && t.status === 'done') setShowDone(true);
+    if (q.trim()) setQ('');
+  };
 
   return (
     <div className="view-tasks">
@@ -133,7 +165,8 @@ function TasksView({ tasks, agents, onAdd, onMove, onDelete, onCyclePriority, on
            the show-completed toggle, and neither of those makes the office
            new again. */
         totalCount={tasks.length}
-        onAdd={onAdd} onMove={onMove} onDelete={onDelete}
+        hiddenByStatus={hiddenByStatus}
+        onAdd={addVisible} onMove={onMove} onDelete={onDelete}
         onCyclePriority={onCyclePriority}
         onAssign={onAssign}
         onAssignToChat={onAssignToChat}

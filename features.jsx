@@ -75,8 +75,19 @@ function AssigneeSelect({ value, agents, onChange, compact = false }) {
    office is new. `totalCount` is the unfiltered figure and is the only
    thing allowed to trigger onboarding — otherwise a search matching
    nothing would greet an established boss with "No tasks yet". */
-function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onCyclePriority, onDragStart, onAssignToChat, onMakeRoomFromTask, onStartTask, totalCount = null, experience = [], highlightTaskId = null, onConsumeHighlight = null }) {
+function FilteredEmpty({ n }) {
+  return <div className="tb-empty">Nothing matches — {n} hidden by the filters above.</div>;
+}
+
+function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onCyclePriority, onDragStart, onAssignToChat, onMakeRoomFromTask, onStartTask, totalCount = null, hiddenByStatus = null, experience = [], highlightTaskId = null, onConsumeHighlight = null }) {
   const officeIsNew = (totalCount === null ? tasks.length : totalCount) === 0;
+  /* Per COLUMN, how many tasks the view's filters are keeping out of it.
+     Board-wide arithmetic (`totalCount - tasks.length`) would have been
+     cheaper and wrong in a way that matters: it cannot tell an inbox with
+     five hidden tasks from an empty inbox next to five hidden DONE ones,
+     and those two want opposite messages. TasksView owns the filters, so
+     it counts; `{}` means nobody is filtering. */
+  const hidden = hiddenByStatus || {};
   const [adding, setAdding] = useSF(false);
   const [title, setTitle] = useSF('');
   const [expanded, setExpanded] = useSF({});
@@ -407,8 +418,23 @@ function TaskBoard({ tasks, agents, onAssign, onAdd, onMove, onDelete, onCyclePr
                       }} />
                       <span className="tb-empty-hint">Or hit <strong>+ NEW</strong> above. Drag any card onto a coworker's desk to delegate.</span>
                     </div>
-                    : <div className="tb-empty">Nothing waiting — hit <strong>+ NEW</strong> to add one.</div>)
-                  : <div className="tb-empty">—</div>
+                    /* "Nothing waiting" is a claim about the OFFICE, and it
+                       was being made about the search box. Measured live:
+                       a query matching nothing left an inbox holding real
+                       work reading "Nothing waiting — hit + NEW to add
+                       one." — a false statement followed by advice that
+                       made it worse, since the task that advice produced
+                       was hidden by the same filter the moment it existed.
+                       Say which of the two it is. */
+                    : hidden[key] > 0
+                      ? <FilteredEmpty n={hidden[key]} />
+                      : <div className="tb-empty">Nothing waiting — hit <strong>+ NEW</strong> to add one.</div>)
+                  /* The other two columns never lied — `—` says nothing —
+                     but they said nothing about four done tasks a search
+                     had hidden either. Same fact, same sentence. */
+                  : hidden[key] > 0
+                    ? <FilteredEmpty n={hidden[key]} />
+                    : <div className="tb-empty">—</div>
               )}
             </div>
           </div>
