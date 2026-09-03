@@ -931,11 +931,9 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
    knows exactly when it ends (`startedAt + durationMs`). Those land on the
    day they finish, which is a real future entry. Nothing here is invented —
    a mission that isn't running contributes nothing, the same way an
-   un-created task does. (Night-shift schedules carry a `nextRunAt` too and
-   belong here as well, but they live behind the container bridge; they are
-   not local state this view can read honestly, so they are left out rather
-   than faked.) */
-function CalendarView({ tasks, agents, missions = [], nightShiftBoard = [], nightShiftRuns = [], onOpenTask = null }) {
+   un-created task does. Night-shift schedules carry a `nextRunAt` too and
+   are filed the same way, via `nightShiftPending` below (see #170). */
+function CalendarView({ tasks, agents, missions = [], nightShiftBoard = [], nightShiftRuns = [], nightShiftPending = [], onOpenTask = null }) {
   const groups = useMV(() => {
     const out = new Map();
     /* officeDate, not toISOString — the office runs on the BOSS'S clock.
@@ -1012,10 +1010,26 @@ function CalendarView({ tasks, agents, missions = [], nightShiftBoard = [], nigh
         push(at, { kind: 'mission', at, mission: m, done: true });
       }
     }
+
+    /* A Night Shift schedule that has not started running yet had NO
+       representation here at all — not a wrong day, not a hidden row behind
+       a filter, nothing. `nightShiftBoard` above (and app.jsx's poll that
+       builds it) only ever holds schedules `_night_running` already picked
+       up; a schedule created for two days out sat with zero footprint on
+       the one view whose whole job is "your business by day", discoverable
+       only by reopening the Missions modal's own Night Shift list and
+       remembering it was there. Filed at its own `nextRunAt` the same way a
+       running mission is filed at its projected wrap — a forecast, and
+       marked as one by the same "ahead" heading the day grouping already
+       applies below. */
+    for (const s of (nightShiftPending || [])) {
+      if (!s || !s.nextRunAt) continue;
+      push(s.nextRunAt, { kind: 'mission-pending', at: s.nextRunAt, sched: s });
+    }
     return [...out.entries()]
       .map(([day, items]) => [day, items.sort((a, b) => b.at - a.at)])
       .sort((a,b) => b[0].localeCompare(a[0]));
-  }, [tasks, missions, nightShiftBoard, nightShiftRuns]);
+  }, [tasks, missions, nightShiftBoard, nightShiftRuns, nightShiftPending]);
 
   /* A day heading has to say WHEN, and this one printed a weekday and a
      date and stopped — no year, and no line between a day that happened and
@@ -1098,6 +1112,25 @@ function CalendarView({ tasks, agents, missions = [], nightShiftBoard = [], nigh
           <div className="cal-day-body">
             {items.map(entry => {
               const time = new Date(entry.at).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+              if (entry.kind === 'mission-pending') {
+                const s = entry.sched;
+                const a = agents.find(x => x.id === s.agentId);
+                /* Not "wraps up" — it hasn't started, so nothing is running
+                   yet to wrap. A distinct verb keeps this row from reading
+                   as the in-flight forecast above, which promises an agent
+                   is already working. */
+                return (
+                  <div key={'pending-' + s.id} className="cal-item cal-mission">
+                    <div className="cal-time">{time}</div>
+                    <div className="cal-title">🌙 {s.topic} — starts</div>
+                    <div className="cal-meta">
+                      {a ? <><Sprite data={a.color} scale={1}/> {a.name}</> : <span className="muted">{s.agentName || s.agentId}</span>}
+                      <span className="pri">{s.recurrence === 'daily' ? 'repeats nightly' : 'one-time'}</span>
+                      <span className="status-pill">SCHEDULED</span>
+                    </div>
+                  </div>
+                );
+              }
               if (entry.kind === 'mission') {
                 const m = entry.mission;
                 const a = agents.find(x => x.id === m.agentId);

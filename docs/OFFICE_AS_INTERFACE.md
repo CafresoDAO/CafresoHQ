@@ -24364,3 +24364,86 @@ instead.
 `moc`/M0219 "implicitly transient" Motoko toolchain mismatch already
 documented in #166–168 as environment-specific and unrelated — this tick's
 diff touched no Motoko source.
+
+---
+
+## 170. The calendar didn't know a mission was coming
+
+**The reading.** CalendarView's tag reads "your business by day · tasks
+when raised · missions when they wrap," and a prior fix (the Calendar
+highlight effect, and #157/#154 after it) already covers one shape of "the
+filter you're under hides what you just did" — a task or memory entry
+landing behind a filter that would otherwise swallow it. Night Shift
+(`missions.jsx`'s NightShiftSection, "runs even with this tab closed") lets a
+boss schedule a research mission for any future moment: a topic, a coworker,
+a STARTS datetime, once or nightly. Schedule one two days out and it is
+genuinely saved — `serve.py`'s `/missions/schedule` writes it to
+`scheduled-missions.json` with a real `nextRunAt`, and the Missions modal's
+own Night Shift list shows it right away as SCHEDULED with a countdown.
+
+The Calendar showed nothing. Not a wrong day, not a row hidden behind a
+filter — reproduced live against a real `serve.py` (isolated hq-state,
+127.0.0.1:8912): POSTed a schedule with `startAt` two days out, confirmed
+`/missions/scheduled` answers with the schedule sitting in `schedules` and
+an empty `running` array. `nightShiftBoard` — the only Night Shift data
+`CalendarView` ever received — is built in app.jsx by
+`schedules.filter(s => runningIds.has(s.id))`, which is exactly the filter
+that turns that same response into nothing. A schedule the office has not
+started running yet had no path into the view at all: not this ticket's
+family of bug (a filter hiding an entry the view already has data for), but
+the sharper case in the same family — the view was never GIVEN the data in
+the first place. The only place the schedule existed was the Missions
+modal's own list, discoverable only by remembering to reopen it.
+
+(Checked and clean, the two related shapes this ticket's brief called out
+by name: tasks have no editable date and land the instant they're raised —
+`officeDate(t.createdAt)` — so there is no "create/edit a task onto a date
+outside the current view" case, because this view has no month/week window
+to be outside of; it renders every day with an entry, always. And a
+mission's own start time, once an in-browser Research mission is actually
+running, is not user-editable at all. Night Shift's schedule form is the
+only place on this page's whole surface where a boss picks a future date,
+which is exactly where the gap was.)
+
+**The fix.** The other half of a poll app.jsx was already running.
+`nightShiftBoard`'s filter answers "is this schedule running RIGHT NOW";
+`nightShiftPending` (new state, same 15s poll, same `schedules`/`runningIds`
+already fetched) answers its complement — "does this schedule exist and
+have NOT started" — `s.enabled !== false && !runningIds.has(s.id)`. A
+one-time schedule flips `enabled` to `false` the instant `_night_scan`
+starts it (serve.py), so a fired one-time schedule can never resurrect here;
+a daily schedule simply falls back into `pending` the moment its run ends,
+with `nextRunAt` already advanced to the next occurrence.
+
+`CalendarView` files each pending schedule at its own `nextRunAt`, the same
+way a running mission is filed at its projected wrap — a forecast row under
+the same "ahead" heading #162 already knows how to mark. The copy is
+deliberately its own: "🌙 {topic} — starts" and a SCHEDULED pill, never
+"wraps up" / RUNNING — those words already mean "an agent is working right
+now," and a schedule two days out is not that.
+
+**The test**
+(`test_the_calendar_didnt_know_a_mission_was_coming.py`, 22 checks) lifts
+the real `board`/`pending` split out of app.jsx and the real day-filing loop
+out of `CalendarView`, wires them together, and drives them under Node
+across five schedule shapes: never run, currently running (must not
+double-count with `board`), already fired once (must not resurrect),
+a daily schedule freshly re-armed (must show at its NEW `nextRunAt`), and a
+schedule with no runnable time (must not crash the loop or file a phantom
+row at the epoch — this one is caught by the loop's own guard, checked by
+name so a filter added one layer up can't quietly take credit for it).
+A separate live section boots a real `serve.py` on an ephemeral port,
+POSTs a real schedule two days out, GETs the real response, and runs the
+same lifted code against it — the actual bug, reproduced and then fixed,
+not just its synthetic shape. Fire-tested seven ways: reverting either half
+of the pending filter, reverting the call-site prop, reverting the "starts"
+and "SCHEDULED" copy back towards "wraps up"/RUNNING, dropping the
+loop's own `nextRunAt` guard (which promptly filed a phantom row on
+1969-12-31, exactly the crash class it guards against), and relabeling the
+entry's `kind` away from `mission-pending` — each caught by name, each
+restored byte-identical (`cmp`).
+
+**Suite: 356/357 — the one failure is the pre-existing `moc`/`M0219`
+"implicitly transient" compiler mismatch on `test_worker_payout_sweep_does_
+not_wipe_mid_sweep_accrual.py`, already recorded above as environment noise
+unrelated to any UI fix; untouched by this change.**

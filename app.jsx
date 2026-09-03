@@ -1023,6 +1023,14 @@ function App() {
      it anywhere else could read it — this poll is the ambient version,
      alongside the schedule poll below, same cadence. */
   const [nightShiftRuns, setNightShiftRuns] = useStateA([]);
+  /* A schedule that exists but has not started running yet — the other half
+     of `schedules` that `board` above filters OUT. CalendarView's forecast
+     row for a running mission ("wraps up") had no counterpart for one that
+     is merely scheduled: created for two days out, it had zero footprint
+     anywhere in the office until the moment `_night_scan` actually started
+     it. Same poll, same cadence, the data was already in `schedules` — it
+     just never went anywhere. */
+  const [nightShiftPending, setNightShiftPending] = useStateA([]);
   React.useEffect(() => {
     let stop = false;
     const poll = async () => {
@@ -1048,6 +1056,18 @@ function App() {
             intervalMs: s.intervalMs || 0,
           }));
         if (!stop) setNightShiftBoard(board);
+        // Enabled and not currently running — a one-time schedule flips
+        // `enabled` to false the instant it fires (serve.py's `_night_scan`),
+        // so this can never double-count a schedule `board` above already
+        // claimed; a daily schedule simply falls back in here the moment it
+        // finishes, with `nextRunAt` already advanced to its next occurrence.
+        const pending = schedules
+          .filter(s => s && s.enabled !== false && !runningIds.has(s.id))
+          .map(s => ({
+            id: s.id, topic: s.topic, agentName: s.agentName, agentId: s.agentId,
+            nextRunAt: s.nextRunAt || s.startAt || 0, recurrence: s.recurrence,
+          }));
+        if (!stop) setNightShiftPending(pending);
         const rj = await rr.json();
         if (!stop) setNightShiftRuns(rj.runs || []);
         /* §5's own contract: "a MISSION that ran its schedule" is a job,
@@ -6394,7 +6414,8 @@ ${d.text}` : d.text,
       case 'calendar':
         return <CalendarView tasks={tasks} agents={agents} missions={missions}
                  onOpenTask={goToTask}
-                 nightShiftBoard={nightShiftBoard} nightShiftRuns={nightShiftRuns} />;
+                 nightShiftBoard={nightShiftBoard} nightShiftRuns={nightShiftRuns}
+                 nightShiftPending={nightShiftPending} />;
       case 'projects':
         return <WorkspaceView projects={projects} setProjects={setProjects} agents={agents} onSwitchView={goTo} />;
       case 'terminal':
