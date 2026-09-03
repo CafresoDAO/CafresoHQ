@@ -30,6 +30,19 @@ const DEFAULT_SETTINGS = {
 const _foldAccents = (s) => String(s || '')
   .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
+/* The engine's own filter is a raw substring `includes` over the whole
+   query string — but the filter box right above it advertises the legacy
+   renderer's grammar ("tag:x  type:y  -term", plus OR / orphan / stale and
+   the accent folding directly above). Typing the placeholder's own example
+   into the WebGL view therefore blanked the graph: "tag:project" was
+   searched as the literal text "tag:project", "-daily" hid everything
+   instead of excluding, and "planning meeting" missed a note titled
+   "meeting planning". One matcher already speaks that grammar —
+   nodeMatchesFilter below — so wrap it as the predicate the engine's
+   setFilter now accepts, rather than teaching graph-engine.js a second
+   copy of the syntax. Empty text returns '' so the engine clears cleanly. */
+const filterMatcher = (text) => (text ? (n) => nodeMatchesFilter(n, text) : '');
+
 const GRAPH_PREFS_KEY = 'cafresohq:graph:prefs';
 
 function loadGraphPrefs() {
@@ -214,7 +227,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
     });
     engineRef.current = eng;
     wireEngine(eng);
-    if (filterRef.current) eng.setFilter(filterRef.current);
+    if (filterRef.current) eng.setFilter(filterMatcher(filterRef.current));
     if (sourceRef.current === 'links' && activePathRef.current) {
       eng.setActivePath(activePathRef.current);
       if (localModeRef.current !== 'global') eng.setLocalMode(activePathRef.current, parseInt(localModeRef.current, 10));
@@ -274,7 +287,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
 
   // Control → engine wiring.
   React.useEffect(() => { const e = engineRef.current; if (e) { e.setColorMode(colorMode); e.setColorFor(colorFor); } }, [colorMode, colorFor]);
-  React.useEffect(() => { const e = engineRef.current; if (e) e.setFilter(filter); }, [filter]);
+  React.useEffect(() => { const e = engineRef.current; if (e) e.setFilter(filterMatcher(filter)); }, [filter]);
   React.useEffect(() => { const e = engineRef.current; if (e) e.setEdgeMode(edgesHover ? 'hover' : 'always'); }, [edgesHover]);
   React.useEffect(() => {
     const e = engineRef.current; if (!e) return;

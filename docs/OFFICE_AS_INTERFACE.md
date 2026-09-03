@@ -26702,3 +26702,92 @@ session's in-progress Motoko actor migration on a file this change never
 touches. `git status --porcelain` for this change covers only
 `styles.css` and the one new test file above; `src/cafresohq_state/main.mo`
 was never read, staged, or edited.
+
+---
+
+## 194. The graph's filter box hid the whole graph when you typed the syntax it advertises
+
+**The reading.** Assigned area: the knowledge graph — `views/graph.jsx`
+(the live WebGL GraphView), its engine `graph-engine.js`, and
+`graph-viewer.js`/`kg_builder.py` for context. Hunted the sigma/graphology
+lifecycle first: the engine's `destroy()` already clears both FA2 timers,
+kills the layout worker, terminates the analytics worker and the renderer;
+GraphView's unmount effect and every remount path call it; and sigma v3's
+own `render()` calls `resize()` internally (confirmed in
+`node_modules/sigma/dist/sigma.esm.js` — `render()`'s first act is
+`this.resize()`, which re-reads container dimensions), so the
+ResizeObserver → `e.resize()` → `renderer.refresh()` chain genuinely
+re-sizes the canvases. No leak there. The real bug was sitting in the
+filter box.
+
+**The mechanism.** `views/graph.jsx` opens with a long comment block
+explaining that `_foldAccents` exists so "nodeMatchesFilter (the graph's
+own search/filter box) doesn't miss the accented notes", and the filter
+input's placeholder promises the legacy grammar verbatim: `'Filter
+(tag:x  type:y  -term)'`. But `nodeMatchesFilter` — the function that
+implements that grammar (`type:`/`path:`/`tag:`/`file:` operators,
+`-term` negation, `OR`/`AND`, `orphan`/`stale`, accent folding) — is only
+reachable from the LEGACY Canvas-2D renderer in the bottom half of the
+file. The live WebGL GraphView forwarded the raw text to
+`graph-engine.js`'s `setFilter(text)`, and the engine's `_visible()`
+matched the WHOLE query as one lowercased substring:
+`hay.includes(q)` over `label + _path + _type + _tags`. Consequences,
+each one a blank graph where nodes should be:
+
+- `tag:project` — the placeholder's own first example — was searched as
+  the literal thirteen characters `tag:project`, which no node's
+  label/path/type/tags contain. Every node hidden.
+- `-daily` hid everything instead of excluding the daily notes: no hay
+  contains the literal `-daily`.
+- `planning meeting` missed a note titled "meeting planning" — substring
+  match is word-order-rigid where the grammar's implicit-AND split isn't.
+- `unicas` no longer found `investigación` — the accent folding the top
+  of the file promises for "the graph's own search/filter box" simply
+  never ran on this renderer.
+
+Both call sites forwarded the raw string: `mountData`'s re-apply
+(`eng.setFilter(filterRef.current)`) and the `[filter]` effect. Nothing
+else in the repo calls the engine's `setFilter`, so the fix could change
+its contract safely.
+
+**The fix.** One matcher, owned by the shell. `graph-engine.js`
+`setFilter()` now accepts either a predicate over the raw node record
+(stored as `this.filterFn`; the string path stays intact as the
+grammarless fallback) and `_visible()` consults `filterFn(d._node)`
+first — the raw backend record is already carried on every node as
+`_node` by `_build()`. `views/graph.jsx` adds a module-level
+`filterMatcher(text)` that wraps `nodeMatchesFilter` in a closure, and
+both call sites pass `filterMatcher(...)` instead of the raw text. The
+engine did not grow a second copy of the syntax; empty text still hands
+the engine `''` so clearing works unchanged. `npm run build` after
+(dist-ui rebuilt, graphEngine asset included).
+
+**The test**
+(`scripts/test_graph_filter_speaks_its_own_placeholder_syntax.py`)
+does both halves: structurally, it asserts `filterMatcher` exists over
+`nodeMatchesFilter` and that BOTH call sites pass the matcher (and that
+no call site still hands the engine the raw string). Behaviorally, it
+brace-balance-lifts the REAL `_visible` and `setFilter` out of
+`graph-engine.js` and the REAL `_foldAccents`/`filterMatcher`/
+`nodeMatchesFilter` out of `views/graph.jsx` into a node harness with a
+four-node fixture, and drives the engine's own visibility verdict:
+`tag:project` shows exactly the `#project` node, `-daily` excludes only
+the daily note, `planning meeting` finds "meeting planning",
+`investigacion` finds the accented title, clearing shows all four, and a
+plain string still works through the substring fallback.
+
+Fire-tested: reverted the engine to the old one-liner
+`setFilter(text)` + string-only `_visible`, and both view call sites
+back to the raw string. The three call-site checks failed by name;
+restored both files byte-identical from the pre-revert copies (md5
+verified: `9b8b80b7…` / `c62b2d4e…`), test green again, bundle rebuilt.
+
+**Suite: 380/381** (`python3 scripts/run_tests.py`; fresh `npm ci` +
+`npm run build` in this worktree). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` implicit-`transient`
+toolchain mismatch recorded in `#188` and `#193` — a different session's
+in-progress Motoko actor migration on a file this change never touches.
+`git status --porcelain` for this change covers only `views/graph.jsx`,
+`graph-engine.js`, and the one new test file above;
+`src/cafresohq_state/main.mo` was never read, staged, or edited.

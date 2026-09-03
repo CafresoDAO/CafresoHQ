@@ -63,6 +63,7 @@ class GraphEngine {
     this.selected = null;
     this.hidden = new Set();
     this.filterText = '';
+    this.filterFn = null;                          // predicate over the raw node record (see setFilter)
     this.localSet = null;                          // Set of ids when in local mode, else null
     this.analytics = null;
     this._analyticsSeq = 0;
@@ -231,7 +232,12 @@ class GraphEngine {
   _visible(id, d) {
     if (this.hidden.has(id)) return false;
     if (this.localSet && !this.localSet.has(id)) return false;
-    if (this.filterText) {
+    if (this.filterFn) {
+      // The shell's grammar-aware matcher (nodeMatchesFilter) gets the raw
+      // backend record; fall back to the display attrs for nodes built
+      // without one so a bad record can never blank the whole graph.
+      if (!this.filterFn(d._node || { id, title: d.label, type: d._type, tags: d._tags })) return false;
+    } else if (this.filterText) {
       const q = this.filterText;
       const hay = ((d.label || '') + ' ' + (d._path || '') + ' ' + (d._type || '') + ' ' + (d._tags || []).join(' ')).toLowerCase();
       if (!hay.includes(q)) return false;
@@ -310,7 +316,16 @@ class GraphEngine {
   setColorMode(mode) { this.colorMode = mode; this._recolor(); }
   setEdgeMode(mode) { this.edgeMode = mode || 'always'; this._refreshReducers(); }
   setColorFor(fn) { this.colorFor = fn; if (this.colorMode !== 'community') this._recolor(); }
-  setFilter(text) { this.filterText = (text || '').toLowerCase().trim(); this._refreshReducers(); }
+  /* Accepts either a predicate over the RAW node record, or a plain string.
+     The React shell passes nodeMatchesFilter wrapped in a closure, so the
+     filter box's advertised syntax (tag:x, type:y, -term, OR, orphan/stale,
+     accent folding) works on this renderer instead of being matched as one
+     literal substring. The string path stays as the grammarless fallback. */
+  setFilter(f) {
+    if (typeof f === 'function') { this.filterFn = f; this.filterText = ''; }
+    else { this.filterFn = null; this.filterText = (f || '').toLowerCase().trim(); }
+    this._refreshReducers();
+  }
   setHidden(idSet) { this.hidden = idSet instanceof Set ? idSet : new Set(idSet || []); this._refreshReducers(); }
   setLocalMode(rootId, depth) {
     if (!rootId || !depth) { this.localSet = null; this._refreshReducers(); return; }
