@@ -5689,6 +5689,21 @@ ${d.text}` : d.text,
           const liveIds = new Set(pending.map(p => p.id));
           // Drop any external rows the server no longer has (decided/expired elsewhere).
           const kept = prev.filter(p => !p.externalId || liveIds.has(p.externalId));
+          /* "decided/expired elsewhere" above was a comment, not a behavior —
+             the rows it describes just vanished. onApprove/onReject already
+             remove their own row from THIS state (and record a receipt)
+             synchronously the instant the boss clicks, so any external row
+             that disappears here without this client ever calling either of
+             those was never decided anywhere this office can show the boss.
+             In practice that's serve.py's _gc_approvals: a 30-minute TTL with
+             no decision auto-denies the entry AND evicts it, so the blocked
+             `claude` CLI call the boss forgot about unblocks with a deny and
+             the very next poll just lost the tray row — no receipt, no chat
+             line, nothing. The Receipts modal calls itself "stamped
+             approvals · audit trail"; a decision made with nobody watching
+             is exactly the one an audit trail exists to catch, and it was
+             the one case that left zero trace anywhere in the UI. */
+          const timedOut = prev.filter(p => p.externalId && !liveIds.has(p.externalId));
           // Add any new ones.
           const fresh = pending
             .filter(p => !haveIds.has(p.id))
@@ -5729,6 +5744,17 @@ ${d.text}` : d.text,
             });
           if (fresh.length === 0 && kept.length === prev.length) return prev;
           if (fresh.length) say(`Claude Code wants ${fresh[0].title.slice(0, 30)}…`, 'STAMP');
+          if (timedOut.length) {
+            timedOut.forEach(ap => {
+              const rcId = recordReceipt(ap, 'rejected');
+              settleReceipt(rcId, 'expired',
+                'Timed out waiting for you (30 min) — automatically denied so the waiting tool call could stop blocking.');
+            });
+            setChat(prevChat => [...prevChat, { id: HQ.uid('m'), from: 'system', name: 'HQ',
+              text: timedOut.length === 1
+                ? `⏱ Timed out waiting for you — ${timedOut[0].title} was automatically denied.`
+                : `⏱ ${timedOut.length} approvals timed out waiting for you and were automatically denied.` }]);
+          }
           return [...kept, ...fresh];
         });
       } catch (_e) { /* server probably restarting; ignore */ }

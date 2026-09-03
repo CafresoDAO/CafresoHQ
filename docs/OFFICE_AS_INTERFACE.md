@@ -25657,3 +25657,87 @@ the new test adds a passing suite in place of what would otherwise still be
 on a file this fix's diff never touches (`features.jsx` and the one new
 test file above; `src/cafresohq_state/main.mo` was left untouched, per
 this session's own constraints).
+## 182. An external approval that timed out left no receipt anywhere
+
+**The reading.** `serve.py`'s `_gc_approvals()` auto-denies any
+`/approvals/external` entry (the bridge the local `claude` CLI's
+PreToolUse hook uses) that sits for `_APPROVAL_TTL_SEC` (30 minutes) with
+no human decision, and evicts it from `_approvals_pending` — no log line,
+nothing. Confirmed live: shrank the TTL to 6s, POSTed a real request,
+watched `/approvals/external/list` return it, waited past the TTL, and
+watched the list go back to `{"pending": []}` with the server log showing
+`[approvals] queued ...` on submit but printing nothing when the GC later
+denies/evicts it.
+
+The UI's poll effect (`app.jsx`, the `/approvals/external/list` interval)
+is the only place a boss could ever learn what happened. Its
+`setApprovals` updater computed `kept = prev.filter(p => !p.externalId ||
+liveIds.has(p.externalId))` — dropping any external row the server no
+longer lists — under a comment reading "decided/expired elsewhere" that
+described a behavior the code never actually had: no `recordReceipt`, no
+`settleReceipt`, no chat line. Lifted that exact updater out of `app.jsx`
+(brace-matched, not reimplemented) and ran it under Node with a `pending`
+list that no longer contains a row the tray was tracking — mirroring the
+curl-verified server state above — and every side-effect mock
+(`recordReceipt`/`settleReceipt`/`setChat`) sat at zero calls while the
+row silently vanished from the returned array.
+
+This is a step worse than the already-fixed sibling bug (#`decideExternal`
+swallowing a failed decide-POST with `.catch(() => {})`,
+`scripts/test_decide_external_reports_failure_instead_of_silent_drop.py`):
+there, the boss's own click got lost. Here the boss never even got a
+chance to click — the office decided on their behalf and the Receipts
+modal, which calls itself "stamped approvals · audit trail," has no entry
+for the decision it presided over.
+
+**The mechanism.** `onApprove`/`onReject` already remove their own row
+from `approvals` state (and call `recordReceipt`) synchronously the
+instant the boss clicks, before any later poll can run — so an external
+row that disappears from a **later** poll's `liveIds` without this client
+ever calling either handler was never decided anywhere this office can
+show the boss. In the realistic single-window case that's exactly the
+30-minute GC timeout; the tray just lost the row on the very next poll.
+
+**The fix.** The poll's updater (`app.jsx`) now computes `timedOut =
+prev.filter(p => p.externalId && !liveIds.has(p.externalId))` alongside
+`kept`, and — only if non-empty — calls `recordReceipt(ap, 'rejected')` +
+`settleReceipt(rcId, 'expired', ...)` for each dropped row plus a single
+chat line (one row named directly, an aggregate count if several timed
+out together), reusing the same receipt/outcome plumbing the `publish`
+and `decideExternal`-failure branches already use elsewhere in this
+function. `features.jsx`'s `ReceiptsModal` gives the `'expired'` outcome
+its own ⏱ icon instead of falling into the generic ⚠ bucket built for a
+failed publish. The steady-state no-op path (nothing pending, nothing
+tracked — React's `kept.length === prev.length` bail-out) and the
+ordinary "a new ask arrived" path are both untouched.
+
+**The test**
+(`scripts/test_expired_external_approval_leaves_a_receipt.py`, 21 checks)
+lifts the real `setApprovals(prev => {...})` call verbatim (brace-matched,
+same technique as `test_a_busy_desk_is_not_cleared.py`'s timer-body lift)
+and runs it under Node across four scenarios in separate subprocesses so
+mock call-logs never leak between them: a tracked row the server no
+longer lists (receipt recorded, `settleReceipt` outcome `'expired'`, one
+chat line naming the request); two rows timing out together (two receipts,
+but one aggregated chat line, not two); an ordinary new-ask arriving
+(added to the tray, zero receipt/settle/chat noise); and steady state
+(same array reference back, zero side effects). Static checks pin the
+source shape (`timedOut` filter present, `recordReceipt(ap, 'rejected')`,
+the `'expired'` outcome, the ⏱ icon in `features.jsx`) alongside the
+behavioral ones.
+
+Fire-tested: changed `if (timedOut.length) {` to `if (false &&
+timedOut.length) {` — a one-line sabotage. 5 of the 21 checks failed by
+name (the receipt/settle/chat assertions across both the single- and
+double-timeout scenarios); the purely textual checks and the three other
+scenarios stayed green, confirming the behavioral half of this test is
+what actually catches the regression, not just a string match against
+dead code. Restored the one line and confirmed `app.jsx`/`features.jsx`
+byte-identical to the pre-sabotage state via `md5`.
+
+**Suite: 366/367.** The only failure is the same pre-existing
+`moc`/M0219 `main.mo` toolchain mismatch recorded throughout this
+session, on files this fix's diff never touches (`app.jsx`,
+`features.jsx`, and the one new test file above; `serve.py` was patched
+to a 6-second TTL for the live repro above and reverted — confirmed
+byte-identical via `git diff` — before this run).

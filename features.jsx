@@ -1554,7 +1554,7 @@ function ReceiptsModal({ open, onClose, receipts, onPin, onClear }) {
                   color: r.outcome === 'failed' ? 'var(--error)' : 'inherit',
                   opacity: r.outcome === 'failed' ? 1 : 0.85,
                 }}>
-                  {r.outcome === 'shipped' ? '🚀 ' : (r.outcome === 'preview' ? '🔗 ' : '⚠ ')}
+                  {r.outcome === 'shipped' ? '🚀 ' : (r.outcome === 'preview' ? '🔗 ' : (r.outcome === 'expired' ? '⏱ ' : '⚠ '))}
                   {r.outcomeText}
                 </div>
               )}
