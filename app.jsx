@@ -579,7 +579,21 @@ function App() {
   /* Whether the Getting Started checklist is collapsed to its pill. Reported
      up by the card so the coach mark below can stand down on a phone — see
      the coachMark memo. Deliberately NOT persisted: it is a within-session
-     layout fact, not a preference. */
+     layout fact, not a preference.
+
+     That mirror only stays honest while <GettingStarted> stays mounted. It
+     does not: `{!gsDismissed && !tourOpen && (<GettingStarted .../>)}` a
+     screen down unmounts the card outright for as long as the tour replay
+     is open, and its OWN `collapsed` is a plain `useState(false)` with no
+     memory of what it was before — so it always comes back expanded. If
+     this mirror was `true` when the tour opened (checklist had been
+     collapsed to a pill), it is still `true` after Skip/Finish closes the
+     tour, even though the card that just remounted is showing every one of
+     its six steps. The coach-mark guard below trusts this flag over what
+     is actually on screen, so the pill and the fully expanded checklist
+     both render at once — precisely the collision the mobile fix a few
+     lines down spent its whole comment explaining how to avoid, reached
+     from a second direction it didn't cover. See the `onClose` reset. */
   const [gsCollapsed, setGsCollapsed] = useStateA(false);
   const [publishedGraph, setPublishedGraph] = useStateA(() => { try { return localStorage.getItem(k('publishedGraph')) === '1'; } catch (_e) { return false; } });
   useEffectA(() => {
@@ -7322,7 +7336,11 @@ ${d.text}` : d.text,
       )}
       <OnboardingTour
         open={tourOpen}
-        onClose={() => { setTourOpen(false); setTourSeen(true); }}
+        /* setGsCollapsed(false) here, not inside <GettingStarted> itself:
+           the card is about to remount expanded no matter what this flag
+           says (see the declaration above), so the one place that can make
+           the mirror true again is the same place that ends the unmount. */
+        onClose={() => { setTourOpen(false); setTourSeen(true); setGsCollapsed(false); }}
         onComplete={() => { setTourSeen(true); }}
         steps={(() => {
           const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;

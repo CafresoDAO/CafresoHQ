@@ -24264,3 +24264,103 @@ test-harness artifact of a multi-agent session sharing one Browser pane, not
 a reachable state for a real foregrounded tab. No second bug confirmed.
 
 **Suite: 357/357, zero failures.**
+
+## 169. Replaying the tour brought back the pill it was built to hide from
+
+**The reading.** Live office (127.0.0.1:8914). Hired a coworker off the front
+desk so the "chat" coach mark had something to say, then collapsed the
+Getting Started checklist to its pill ("–"). Opened "Replay onboarding tour"
+from the command palette and hit Skip on step 1. The result: the checklist
+card came back **fully expanded** — a "Collapse" button, all six steps — and
+a *second*, separate coach-mark pill ("Your first hire is at their desk —
+say hi and brief them," its own "Open chat"/"Dismiss tip" controls) rendered
+at the same time. Both surfaces on screen at once is exactly the collision
+`test_mobile_onboarding_layout.py`'s fix was written to prevent — that
+suite's own commit measured the pill covering the checklist by its full
+height on a phone, and clipping its corner at common desktop widths
+(~1100–1510px) — reached here through a door that fix never covered: not a
+narrow viewport, a tour replay.
+
+**The mechanism.** `app.jsx` renders the checklist conditionally —
+`{!gsDismissed && !tourOpen && (<GettingStarted ... onCollapsedChange=
+{setGsCollapsed} />)}` — so opening the tour doesn't just cover the
+checklist, `tourOpen` going true drops it out of that `&&` chain entirely
+and **unmounts** it. `GettingStarted`'s own collapsed flag
+(`ui/onboarding.jsx`) is a plain `useState(false)` with no memory of
+anything: every fresh mount comes back expanded, full stop. `gsCollapsed` —
+app.jsx's mirror of that flag, and the only thing the coach-mark's own
+suppression guard actually reads
+(`!tourOpen && coachMark && !(!gsDismissed && !gsCollapsed)`) — has no way
+to learn the remount happened unless something tells it, and nothing did:
+`<OnboardingTour>`'s `onClose` only ever touched `tourOpen` and `tourSeen`.
+Collapse the checklist, replay the tour, Skip: the checklist remounts
+expanded (true state), `gsCollapsed` still says `true` (stale belief), the
+guard reads the stale belief and lets the pill through, and the two
+surfaces the guard exists to keep apart both render. Same defect family as
+#155/#157/#159/#161/#167: a fix landed on a surface and a second path to
+the same collision opened up behind it, invisible to anyone testing only
+the path the fix was built against.
+
+**The fix.** `<OnboardingTour>`'s `onClose` in `app.jsx` now also calls
+`setGsCollapsed(false)` — `onClose={() => { setTourOpen(false);
+setTourSeen(true); setGsCollapsed(false); }}`. Not inside `<GettingStarted>`
+itself: the card is going to remount expanded no matter what the mirror
+says, so the one place that ends the unmount is the one place that can make
+the mirror agree with what the child is about to look like. Verified live,
+both directions, on the running office: before the fix, collapse → replay →
+Skip left the expanded checklist and the standalone pill in the same
+`read_page` dump; after rebuilding with the fix, the identical sequence left
+only the checklist's own inline "Open chat →" — no second pill, no
+"Dismiss tip." Collapsing again afterward still produces the pill correctly
+(the ordinary, already-working case wasn't touched).
+
+**The test** (`scripts/test_tour_replay_resyncs_getting_started_collapse.py`,
+11 checks) pulls the real `onClose` handler and both real JSX guards out of
+`app.jsx`/`ui/onboarding.jsx` and drives a small state machine through the
+measured timeline (collapse → open tour → Skip), checking the checklist's
+true on-screen expanded state and the coach-mark guard's verdict can never
+both be true — plus a run with the fix's own effect removed (confirms the
+simulation reproduces the measured collision rather than passing
+vacuously) and a run starting already-expanded (confirms replaying while
+never collapsed stays harmless either way).
+
+**A gap in the ported extraction, found and fixed during integration.** The
+original version of this test located the checklist's mount guard with a
+bare `mount_marker in app` whole-file substring search, then derived the
+boolean expression it fed to the state machine from that same hardcoded
+marker literal — not from whatever the search actually matched. The guard's
+exact text is also quoted, verbatim, inside the explanatory doc-comment two
+hundred lines earlier (the comment written to explain this very bug to a
+future reader). Independently fire-testing this integration (never trusting
+a subagent's own fire-test claims at face value) surfaced the consequence
+directly: dropping `!tourOpen` from the *real* JSX guard at its actual
+render site left every check green, because the substring search was still
+satisfied by the comment alone — an escape the reporting agent's own
+fire-test pass had not caught. Fixed by anchoring on the real multi-line
+render site instead (`<GettingStarted` immediately followed by a newline
+only ever occurs at the actual invocation; the comment's abbreviated
+single-line `<GettingStarted .../>` form never breaks there), extracting
+the guard expression from whatever that anchor actually finds rather than
+from a literal constant. Re-run against the same break: now caught by three
+named checks, including a state-machine assumption violation surfaced as
+its own named failure rather than an uncaught exception.
+
+Five fire-tests re-verified independently at integration (the reset
+dropped, the reset inverted, `!tourOpen` dropped from the mount guard, the
+tour-close call dropped from `onClose`, and the coach guard's suppression
+clause removed) — all five caught by name, every file restored
+`cmp`-identical before the next break.
+
+**Provenance.** Found and fixed by one of five agents dispatched in
+parallel this tick to hunt for beta-blocking bugs across distinct areas of
+the app — this one assigned onboarding/new-user flow after a prior tick's
+agent in the same area proposed a fix for a premise ("CLI auto-hire race")
+that had already been resolved in current code and was discarded; this
+agent was told not to repeat that fix and found a genuine, unrelated bug
+instead.
+
+**Suite: 357/358, one pre-existing failure.** The one failure,
+`test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`, is the
+`moc`/M0219 "implicitly transient" Motoko toolchain mismatch already
+documented in #166–168 as environment-specific and unrelated — this tick's
+diff touched no Motoko source.
