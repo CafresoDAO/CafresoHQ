@@ -3,6 +3,29 @@ import { HQ } from '../hq-runtime.jsx';
 import { CafresoHQClient } from '../claude-client.jsx';
 import { useSettingsStore } from './base.jsx';
 const { useState: useStateM, useEffect: useEffectM, useRef: useRefM } = React;
+
+/* Mobile keyboards (iOS Safari especially) auto-capitalize the first
+   character typed into a plain text field even with autocapitalize "off"
+   honored inconsistently across versions — "https://" silently becomes
+   "Https://", which fails to resolve with zero visible sign anything's
+   wrong (the field looks identical). The scheme is case-insensitive per
+   spec, so lowercasing it here is always safe; nothing after the scheme is
+   touched — host/path can be genuinely case-sensitive, and a token/key
+   value must never go through this at all. Same defect, same fix as the
+   2026-07-22 Workspaces/Fleet Settings page fix — that one never reached
+   this file's URL fields (VaultTab's REST URL, MediaTab's local-provider
+   base URLs), which is the actual Settings modal a boss uses day to day. */
+function normalizeUrlScheme(v) {
+  return (v || '').replace(/^(https?):\/\//i, (_, s) => s.toLowerCase() + '://');
+}
+/* Every URL/token/path field below gets these four — belt for the scheme
+   normalizer above, suspenders for the fields (folder paths, API keys)
+   the normalizer can't safely touch at all: autocapitalize/autocorrect off
+   so the mobile keyboard never mangles the first character in the first
+   place, autocomplete off so a browser/password-manager suggestion can't
+   silently overwrite a real key, spellcheck off so nothing gets a red
+   squiggle (or a tap-to-replace) under a token. */
+const NO_MANGLE_PROPS = { autoCapitalize: 'off', autoCorrect: 'off', autoComplete: 'off', spellCheck: false };
 const HBACKENDS = {
   openrouter: { label: 'OpenRouter', field: 'openrouterKey', ph: 'sk-or-v1-…',
                 link: 'https://openrouter.ai/keys', linkText: 'openrouter.ai/keys',
@@ -652,7 +675,7 @@ export function VaultTab() {
   const saveRest = async () => {
     setBusy(true); setMsg(null);
     try {
-      const patch = { restUrl: draftUrl.trim() };
+      const patch = { restUrl: normalizeUrlScheme(draftUrl.trim()) };
       if (draftKey.trim()) patch.restKey = draftKey.trim();
       await CafresoHQClient.vaultConfigure(patch);
       setDraftKey(''); // clear the in-memory draft so we don't redisplay
@@ -743,6 +766,7 @@ export function VaultTab() {
         <div className="form-row" style={{marginBottom:8,marginTop:6}}>
           <label>LIBRARY FOLDER</label>
           <input placeholder={status.defaultRoot || 'C:/Users/you/Documents/cafresohq/hq-state/vault'}
+            {...NO_MANGLE_PROPS}
             value={draftRoot} onChange={e=>setDraftRoot(e.target.value)}/>
           <span className="hint">absolute path to a Markdown folder; the default lives inside CafresoHQ under <code>hq-state/vault</code></span>
         </div>
@@ -768,12 +792,14 @@ export function VaultTab() {
         <div className="form-row" style={{marginBottom:8,marginTop:6}}>
           <label>REST URL</label>
           <input placeholder="https://127.0.0.1:27124"
+            {...NO_MANGLE_PROPS}
             value={draftUrl} onChange={e=>setDraftUrl(e.target.value)}/>
           <span className="hint">optional Obsidian Local REST API endpoint (HTTPS, self-signed cert OK via proxy)</span>
         </div>
         <div className="form-row" style={{marginBottom:8}}>
           <label>API KEY</label>
           <input type="password" placeholder={status.restKey ? '•••• (saved — type to replace)' : 'paste from Obsidian → Local REST API settings'}
+            {...NO_MANGLE_PROPS}
             value={draftKey} onChange={e=>setDraftKey(e.target.value)}/>
           <span className="hint">optional; stored only on this proxy server (in memory); never logged</span>
         </div>
@@ -894,7 +920,7 @@ function MediaKeyRow({ keyId }) {
     <div className="form-row" style={{ marginBottom: 8 }}>
       <label>{meta.label} KEY</label>
       <input type="password" placeholder={has ? '•••• (saved — type to replace)' : meta.ph}
-        autoComplete="off" spellCheck={false} disabled={busy} onBlur={save} />
+        {...NO_MANGLE_PROPS} disabled={busy} onBlur={save} />
       <span className="hint">
         {msg || <>get one at{' '}
           <a href={meta.link} target="_blank" rel="noopener noreferrer"
@@ -959,7 +985,8 @@ export function MediaTab() {
           <div className="form-row">
             <label>BASE URL</label>
             <input placeholder={imgMeta.ph} value={s[imgMeta.urlField] || ''}
-              onChange={e => update({ [imgMeta.urlField]: e.target.value })} />
+              {...NO_MANGLE_PROPS}
+              onChange={e => update({ [imgMeta.urlField]: normalizeUrlScheme(e.target.value) })} />
             <span className="hint">where your local {imgMeta.label.split(' ')[0]} server listens</span>
           </div>
         )}
@@ -994,7 +1021,8 @@ export function MediaTab() {
           <div className="form-row">
             <label>BASE URL</label>
             <input placeholder={vidMeta.ph} value={s[vidMeta.urlField] || ''}
-              onChange={e => update({ [vidMeta.urlField]: e.target.value })} />
+              {...NO_MANGLE_PROPS}
+              onChange={e => update({ [vidMeta.urlField]: normalizeUrlScheme(e.target.value) })} />
             <span className="hint">ComfyUI video needs a workflow JSON supplied per-call; this only sets where to reach it</span>
           </div>
         )}
@@ -1073,6 +1101,7 @@ export function BrowserKeysTab() {
           <div className="form-row" style={{ marginBottom: 8 }}>
             <label>API KEY</label>
             <input type="password" placeholder={r.ph} value={s[r.keyField] || ''}
+              {...NO_MANGLE_PROPS}
               onChange={e => update({ [r.keyField]: e.target.value })} />
             {/* Where to get one, the same way SELF_HOST_PROVIDERS does it in
                 the CLOUD KEYS panel — a boss who has got this far because a
@@ -1129,6 +1158,7 @@ export function BraveTab() {
       <div className="form-row" style={{marginBottom:8}}>
         <label>API KEY</label>
         <input type="password" placeholder="BSA-…"
+          {...NO_MANGLE_PROPS}
           value={s.braveKey} onChange={e=>update({braveKey: e.target.value})}/>
         <span className="hint">stored in this browser's localStorage; sent to /brave/search on this proxy only</span>
       </div>

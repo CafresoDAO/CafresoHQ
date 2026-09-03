@@ -24557,3 +24557,108 @@ break was applied.
 recorded this tick, in unrelated Motoko source (`src/cafresohq_state/main.mo`)
 this fix never touched — a toolchain-version issue in this worktree, not a
 regression from this change.
+
+---
+
+## 172. The other Settings page never got the 2026-07-22 keyboard fix
+
+**The reading.** 2026-07-22's fix (`1ec6867`, "settings: prevent mobile
+keyboards from mangling URL/token fields") added
+`autocapitalize`/`autocorrect="off"` plus a save-time scheme normalizer to
+four fields on `frontend/src/routes/hq/settings/+page.svelte` — the
+Fleet/Workspaces API settings page, since cut over to the cafreso-pages repo
+(`8dbcc6f`) and gone from this tree entirely. It never touched
+`modals/providers.jsx` — the Settings *modal* every CafresoHQ boss actually
+opens today (Settings → Connections/Media), a completely different file in a
+completely different app surface that happens to solve the identical
+problem. Live against a fresh dev office (127.0.0.1:8910, fresh state):
+every URL/token field rendered under Settings → Connections/Media —
+Anthropic key, Google key, Brave key, the vault LIBRARY FOLDER path, the
+Obsidian REST URL and REST API key, and Media's local-provider BASE URL/key
+fields — carried no `autocapitalize`/`autocorrect`/`autocomplete`/
+`spellcheck` attributes at all; `input.getAttribute('autocapitalize')` etc.
+all read `null` off the live DOM. A boss on a phone typing
+`https://127.0.0.1:27124` into LIBRARY → OBSIDIAN REST → REST URL, or a
+local Stable Diffusion/TTS base URL under Media, hits the exact same silent
+failure the other page was fixed for five weeks earlier: iOS auto-
+capitalizes the first character of a plain text field even with
+`autocapitalize="off"` honored inconsistently across versions,
+`https://` silently becomes `Https://`, and the field looks completely
+normal while the fetch just stops resolving.
+
+**The mechanism.** The 2026-07-22 fix was scoped to the one page open at the
+time; nothing generalized it, and `modals/providers.jsx`'s own input fields
+predate and postdate that commit untouched. Two independent surfaces, same
+defect, because a fix to one never had a reason to reach the other — same
+shape as #155/#157/#159/#161/#167's "fixing a surface does not fix the
+surface standing right behind it," except here the two surfaces live in
+what are now, post-cutover, two different repos, and this one was simply
+never visited.
+
+**The fix.** A shared `NO_MANGLE_PROPS` object
+(`autoCapitalize`/`autoCorrect`/`autoComplete: 'off'`, `spellCheck: false`)
+spread onto all eight affected fields — `VaultTab`'s LIBRARY FOLDER, REST
+URL and REST API KEY; `MediaTab`'s image/video BASE URL and
+`MediaKeyRow`'s API KEY; `BrowserKeysTab`'s Anthropic/Google API KEY; and
+`BraveTab`'s API KEY — plus a `normalizeUrlScheme(v)` helper, contract
+identical to the original fix's `normalizeUrl` (lowercase an anchored
+`http(s)://` scheme, touch nothing else, since the scheme is
+case-insensitive per spec and everything after it can be genuinely
+case-sensitive), wired at the three points that actually persist a URL:
+`VaultTab.saveRest()` (its explicit SAVE button) and `MediaTab`'s two
+local-provider BASE URL `onChange` handlers (no separate save step on
+those, so it runs inline — safe because it only ever replaces a
+same-length, case-insensitive prefix, never repositioning the cursor).
+Token/key fields and the LIBRARY FOLDER filesystem path only get
+`NO_MANGLE_PROPS`, never the normalizer — a case-sensitive secret or a
+path must never be silently rewritten.
+
+Live-verified round-trip in the same dev office: typed
+`Https://127.0.0.1:27124` into REST URL, pressed SAVE, reloaded — the field
+read back `https://127.0.0.1:27124` from the server. Typed
+`Http://127.0.0.1:7860` into Media's a1111 BASE URL — read back
+`http://127.0.0.1:7860` immediately, no separate save step on that field.
+
+**The test** (`scripts/test_settings_urls_survive_mobile_keyboards.py`, 32
+checks) locates each affected `<input>` by scanning outward from a unique
+marker inside it (placeholder or value expression, not a line number) and
+confirms it spreads `{...NO_MANGLE_PROPS}`; extracts the real
+`normalizeUrlScheme` by brace-balanced statement scan and runs it for real
+under Node across nine cases — mangled `https`, mangled all-caps `HTTPS`
+with path case preserved, an already-correct URL left byte-identical, a
+bare mangled scheme, empty string, `null`/`undefined`, a non-http scheme
+(`ftp`) untouched, plain text untouched, and a near-miss scheme
+(`httpsX://`) not mistaken for `https`; checks the normalizer is called at
+exactly three sites (`saveRest`, image BASE URL, video BASE URL — one
+definition, three uses); and negative-checks that no token/key field and
+the LIBRARY FOLDER path field ever pass through `normalizeUrlScheme(`.
+Eight fire-tests against real one-line edits to `modals/providers.jsx` —
+`NO_MANGLE_PROPS` missing one of its four keys, each of two representative
+fields losing its spread, the normalizer's regex un-anchored, its
+lowercasing dropped, a fourth stray call site added, `saveRest` reverted to
+the raw untrimmed value, and the LIBRARY FOLDER field wired through the
+normalizer by mistake — each failed by exactly the expected check name, the
+file restored byte-identical between breaks and confirmed with `cmp`.
+
+**Provenance.** Found and fixed by one of five agents dispatched in
+parallel this tick to hunt for beta-blocking bugs across distinct areas of
+the app, assigned to Settings & connectivity. Its worktree's literal
+staleness check (`git merge-base --is-ancestor HEAD chore/oss-reduction`)
+reported "OK" while the worktree was actually 734 commits behind tip —
+missing the entire `app/`+`views/` module split and every later ledger
+entry, including this file's own existence at that HEAD. A working tree
+that is a clean ancestor but far behind is not the same as one that's
+current; caught by comparing `git log --oneline HEAD..chore/oss-reduction`
+(734) against the literal check before doing any work, fixed with a
+fast-forward merge (`git merge --ff-only chore/oss-reduction`) since the
+worktree had no uncommitted changes to preserve across it. Also hit the
+same `moc`/`M0219: implicitly transient` compile mismatch in `main.mo`
+noted in #166/#167 as pre-existing and toolchain-specific
+(`test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`); this
+worktree's own diff never touched anything under `src/cafresohq_state/`,
+so it's the same environment-specific mismatch, not a regression, and is
+noted rather than chased.
+
+**Suite: 356/357 — the one failure is the pre-existing `moc`/M0219
+mismatch above; all 32 of this fix's own checks pass.**
+
