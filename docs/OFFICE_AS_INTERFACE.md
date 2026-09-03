@@ -25555,3 +25555,105 @@ the same pre-existing `moc`/M0219 `main.mo` toolchain mismatch recorded
 throughout this ledger, on a file this session's diff never touches
 (`git status --porcelain` covers only `hq-runtime.jsx` and the new test
 file above).
+## 181. Focus Mode's own CEO bubble never got the "clean the final reply" fix its front-door sibling already carries
+
+**A worktree note.** This session's worktree started 745 commits behind
+`chore/oss-reduction` — `git status --short` was clean, so `git merge
+--ff-only chore/oss-reduction` landed before any of the work below started.
+
+**The reading.** Assigned area: Meeting Room / delegate-a-task flow —
+`MeetingRoom`, `MeetingPicker`, `MeetingRoomModal`, drag-to-delegate,
+`FocusMode`, `StandupModal`. `MeetingRoomModal`, `MeetingPicker`,
+`MeetingRoom`'s seating/moderation, and `StandupModal`'s report-gathering
+all read straightforwardly correct — the interesting gap was in the fourth
+named surface, `FocusMode` ("1:1 WITH CAFRESOHQ ... quiet room · no
+distractions", `features.jsx`).
+
+`ceoStream` (`hq-runtime.jsx`) grants the CEO tools unconditionally in
+every caller — "CEO has implicit web + vault — those are top-of-house
+concerns" per its own comment — so the same brain FocusMode puts the boss
+alone with can emit a `[VAULT_NEW: ...]`/`[VAULT_SEARCH: ...]` marker, or
+leave a dangling harmony commentary block, exactly as it can in the
+ordinary Direct chat. `ui/chat.jsx`'s own CEO path already hit this twice
+and left two comments proving it: "Strip raw routing markers from the
+rendered CEO bubble ... The CEO is a reply path too, and it was the one
+nobody counted... Now the same `visibleReply` + `cleanHarmony` recipe as
+the other six paths, run unconditionally" (the marker-leak fix), and "Kill
+any rAF flush scheduled just before the abort — it would fire AFTER this
+rewrite and overwrite the '(stopped)' marker with the raw truncated text"
+(the `flush.cancel()` race fix, the same shape `test_final_paint_wins.py`
+proves generically for `throttleTokens`). `FocusMode.send()` calls the
+exact same `HQ.ceoStream`/`HQ.throttleTokens` pair from its own,
+independently-written function and had neither fix.
+
+**The mechanism.** `HQ.throttleTokens`'s live flush only ever runs
+`cleanHarmony` on the accumulating buffer while streaming — never
+`visibleReply`, which is what actually strips bracket tool/protocol
+markers (`[VAULT_NEW: ...]...[/VAULT_NEW]`, `[NEEDS_APPROVAL: ...]`, ACK
+markers, etc.) into either plain text or a friendly placeholder sentence.
+Every other reply path in the app runs `HQ.cleanHarmony(HQ.visibleReply(...))`
+once more, unconditionally, right after the stream ends, overwriting the
+bubble with the fully cleaned text. `FocusMode.send()` never did this: its
+final `setChat` only flipped `streaming: false`, leaving whatever raw text
+`cleanHarmony`-alone had last painted. Confirmed live under Node with the
+real, unmodified `visibleReply`/`cleanHarmony` (and their transitive
+strip-family deps) lifted from `hq-runtime.jsx`: fed a realistic
+successful-vault-write reply — prose, a closed `[VAULT_NEW: Notes/quarterly.md]
+...[/VAULT_NEW]` block with a revenue figure inside it, prose — `cleanHarmony`
+alone (FocusMode's old recipe) left the entire marker and its payload sitting
+in the string; `cleanHarmony(visibleReply(...))` (the fix, and what
+`ui/chat.jsx` already does) stripped it cleanly while keeping the CEO's own
+sentences on either side.
+
+Separately, `FocusMode.send()`'s `catch` block never called `flush.cancel()`
+before rewriting the bubble to "…(stopped)" or an error string, unlike
+`ui/chat.jsx`'s catch, which does exactly that with the comment quoted
+above. `throttleTokens`'s pending rAF frame renders straight from the
+unstripped `raw` accumulator regardless of what a later, un-throttled
+`setChat` call just wrote — `cancel()` is the only thing that makes that
+frame a no-op once queued. Reproduced under Node with the real
+`throttleTokens`, a fake `requestAnimationFrame` queue (same harness shape
+as `test_final_paint_wins.py`), and FocusMode's own catch-block write: with
+no `flush.cancel()`, a frame queued by the last streamed token before an
+abort fires *after* the "…(stopped)" rewrite and wipes it back to the raw,
+truncated buffer; adding `flush.cancel()` first (matching `ui/chat.jsx`)
+makes that same queued frame a no-op and the stopped/error text survives.
+
+**The fix.** `features.jsx`, `FocusMode.send()`: added `flush.cancel();` as
+the first line of the `catch` block (verbatim match to `ui/chat.jsx`'s own
+fix), and replaced the final `setChat(p => p.map(m => m.id===ceoId?{...m,streaming:false}:m))`
+with one that also runs `HQ.cleanHarmony(HQ.visibleReply(String(m.text || ''), 'CafresoHQ'))`
+on the CEO's own message specifically (guarded so it never touches any
+other message, and so it never overwrites text with an empty/unchanged
+result — the same guard `ui/chat.jsx` uses).
+
+**The test**
+(`scripts/test_the_quiet_room_gets_the_same_clean.py`) lifts `FocusMode`'s
+`send()` body out of `features.jsx` by brace-matching (parens-aware, since
+it's an arrow function, not a `function` declaration) and confirms by
+regex that both fixes are present and correctly gated, cross-checking
+against the equivalent, still-unchanged patterns in `ui/chat.jsx` as
+sentinels. Two mechanism sections then run the REAL lifted source under
+Node: one runs the actual `visibleReply`/`cleanHarmony`/`stripBlocks` chain
+against a measured VAULT_NEW-block reply, proving `cleanHarmony` alone
+leaves the marker and payload in place while the fixed recipe strips them
+and keeps the surrounding prose; the other runs the actual `throttleTokens`
+under a fake frame queue, proving the exact catch-block race — a queued
+frame silently overwriting "…(stopped)" back to the raw buffer without
+`flush.cancel()`, and surviving with it.
+
+Fire-tested both halves independently: reverting the whole fix (git's
+pre-edit `features.jsx`) failed the 4 checks tied to the change by name and
+none of the sibling/mechanism sentinels; removing only the `flush.cancel();`
+line (keeping the `visibleReply`/`cleanHarmony` half intact) failed exactly
+the one check named for it and no others. Restored `features.jsx` came back
+`md5sum`/`cmp`-identical to the fixed version before the next break was
+applied and after the last one.
+
+**Suite: 366/367** (one new file; unchanged count from the previous entry —
+the new test adds a passing suite in place of what would otherwise still be
+366/366 plus this one). The only failure is the same pre-existing
+`moc`/M0219 `main.mo` toolchain mismatch recorded throughout this session,
+on a file this fix's diff never touches (`features.jsx` and the one new
+test file above; `src/cafresohq_state/main.mo` was left untouched, per
+this session's own constraints).

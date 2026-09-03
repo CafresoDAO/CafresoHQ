@@ -760,13 +760,37 @@ function FocusMode({ active, onClose, chat, setChat }) {
         { chat: pending, signal: controller.signal, onHint: flush.note });
       flush.flushNow();
     } catch (err) {
+      /* Kill any rAF flush scheduled just before the abort — same fix
+         ui/chat.jsx already carries on this exact catch block: without it,
+         a frame queued a moment earlier fires AFTER this rewrite and
+         overwrites the "…(stopped)" marker with the raw, still-streaming
+         buffer (`flush`'s own comment names this as "the bug flushNow was
+         written to fix, one step further along the chain"). This catch
+         never had it — FocusMode's send() was written separately from the
+         Direct-chat send() and did not inherit the fix. */
+      flush.cancel();
       const stopped = err.name === 'AbortError';
       setChat(p => p.map(m => m.id===ceoId
         ? {...m, text: stopped ? (m.text + ' …(stopped)') : `⚠ ${snagSentence(err && err.message || String(err))}`, error: !stopped}
         : m));
     }
     abortRef.current = null;
-    setChat(p => p.map(m => m.id===ceoId?{...m,streaming:false}:m));
+    /* Same recipe ui/chat.jsx already runs on this exact function's output
+       (see its "CEO is a reply path too" fix) — visibleReply strips DM_TO /
+       HANDOFF_TO / VAULT_* / ACK marker syntax into a plain sentence, and
+       cleanHarmony takes off any dangling `<|channel|>commentary…` block a
+       local model tacked on. Written separately here (FocusMode has its own
+       `send()`, not a shared one), this half of the recipe never arrived:
+       `HQ.throttleTokens`'s live flush only ever runs cleanHarmony, so a
+       reply that used the office's own vault tools — which this quiet room
+       has been handing the CEO all along, see ceoStream's "implicit web +
+       vault" — left raw bracket syntax sitting in the one bubble the boss
+       came here to read distraction-free from. */
+    setChat(p => p.map(m => {
+      if (m.id !== ceoId) return m;
+      const cleaned = HQ.cleanHarmony(HQ.visibleReply(String(m.text || ''), 'CafresoHQ'));
+      return { ...m, streaming: false, text: (cleaned && cleaned !== m.text) ? cleaned : m.text };
+    }));
     setStreaming(false);
   };
   return (
