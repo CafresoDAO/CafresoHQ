@@ -95,7 +95,7 @@ function useStored(key, initial, transform) {
    opt-in WRITE filter: what persist() sends to localStorage and to disk goes
    through it, so the durable record never receives what the filter exists to
    keep out of it. The two are separate on purpose — do not unify them. */
-function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensitive = false, persistTransform = null } = {}) {
+function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensitive = false, persistTransform = null, mergeOnDirty = false } = {}) {
   const [val, setVal] = useStateA(() => {
     const fallback = () => (typeof initial === 'function' ? initial() : initial);
     try {
@@ -200,10 +200,33 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
            is still byte-identical to the seed it started with, nobody has
            edited anything; a boot effect just wrote the initial value back.
            Adopt the file in that case, or a fresh browser deletes the
-           office's staff. */
+           office's staff.
+
+           `mergeOnDirty` is the one escape hatch from "keep theirs": a plain
+           snapshot transform (tasksOnLoad, persistableAgents-shaped, or none)
+           has no way to reconcile a fetched file against a live edit, so
+           returning here — discarding the fetch outright — is the safe
+           choice for those. A log-shaped transform (mergeByIdCap,
+           mergeMessages) is different: it already reads the CURRENT in-memory
+           value itself (via a ref closure) and unions it with whatever the
+           fetch returns, so skipping it here doesn't protect anything — it
+           just throws the fetched history away.
+
+           Measured on `activity` (mergeOnDirty not yet wired for it before
+           this fix): seed three historical entries on disk, load fresh, fire
+           one `cafresohq:agentActivity` event ~200ms in (the same event the
+           agent_runner shim dispatches for every vault write) so dirtyRef
+           flips true before the mount fetch resolves. The fetch landed with
+           the three entries, `untouched` was false (a real edit happened),
+           and this `return` fired — `transform` (mergeByIdCap) never ran.
+           The three historical entries, one of them an unread ATTENTION row,
+           never entered state. The next activity write's debounced PUT then
+           overwrote hq-state/activity.json with just the session's own new
+           entries — the coworker's unresolved failure was gone from disk,
+           silently, with no error anywhere. */
         let untouched = false;
         try { untouched = JSON.stringify(valRef.current) === seedRef.current; } catch (_e) {}
-        if (dirtyRef.current && !untouched) return;   // a real edit — keep theirs
+        if (dirtyRef.current && !untouched && !mergeOnDirty) return;   // a real edit, no safe merge — keep theirs
         const merged = transform ? transform(data) : data;
         valRef.current = merged;
         setVal(merged);

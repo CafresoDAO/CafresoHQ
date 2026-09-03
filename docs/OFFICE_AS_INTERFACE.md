@@ -25109,3 +25109,152 @@ the new test file above, nothing under `src/cafresohq_state/`.
 **Provenance.** Found and fixed by one of five agents dispatched in
 parallel this tick to hunt for beta-blocking bugs across distinct areas
 of the app, assigned to billing / cycles / plan / usage-cap UI.
+---
+
+## 177. An early activity event could erase the whole notification history
+
+**A worktree note.** This session's worktree started 739 commits behind
+`chore/oss-reduction` — `git merge-base --is-ancestor HEAD chore/oss-reduction`
+reported a clean pass, the same false-clean shape #172/#173 recorded (a
+passing ancestor-check only proves fast-forwardability, not currency).
+`git log --oneline HEAD..chore/oss-reduction | wc -l` showed 739; fixed with
+`git merge --ff-only chore/oss-reduction` before any investigation began.
+
+**The reading.** Assigned area: the notification bell, the activity feed,
+`logActivity`, and the AgentInbox. `app/attention.jsx` and the bell's merge
+logic in `app.jsx` turned out to be in good shape — several bugs in this
+exact family (repeat reports inflating the "N need you" pill, ghosts from
+dismissed coworkers, a dead "🔬 Missions" filter, a live failure row with no
+Retry button) are already fixed, each with its own measured comment still
+sitting in the source. The one place still worth checking, per this
+session's own brief, was whether `activity`'s `mergeByIdCap` transform —
+the thing that's supposed to protect the canonical activity log from
+`useFileStored`'s mount-fetch race — actually closes the race, or only
+looks like it does.
+
+Live-verified against a real `serve.py` (`PORT=48321 python3 serve.py`, this
+worktree, confirmed by `cwd` before trusting a single response from it — a
+generic port number and a `/tmp` log path had put an earlier attempt at this
+test on a DIFFERENT parallel agent's server instead, caught by diffing the
+served `hq.html` against this worktree's own copy before proceeding):
+
+1. Seeded `/hq/state/activity` with three historical entries, one an unread
+   `priority: 'attention'` row ("hit a snag on the report").
+2. Loaded the app fresh (cleared localStorage) with the activity `GET`
+   artificially delayed ~9s — a test-only `window.fetch` monkeypatch added
+   to `hq.html` for this measurement alone and reverted (`git checkout --
+   hq.html`) before writing the fix; it widens the timing window without
+   changing any real code path.
+3. ~150ms after load, dispatched `cafresohq:agentActivity` from the console
+   — the exact event `agent_runner`'s shim fires on every vault write, not
+   a synthetic hook — which runs `logActivity` → `setActivity`.
+4. Confirmed via `localStorage['cafresohq_hq_v1:activity']` that state held
+   only the one new entry while the delayed fetch was still in flight
+   (dirtyRef true, a real edit).
+5. Once the delayed fetch resolved (confirmed by a console timestamp): state
+   stayed at one entry. The three historical entries — including the unread
+   attention row — never arrived, not in `activity`, not in the bell, not
+   in the AgentInbox.
+6. A second activity event triggered the 1.5s debounced disk write, which
+   then overwrote `hq-state/activity.json` with just the two session-local
+   entries — the coworker's unresolved failure permanently gone from disk,
+   with no error anywhere on the way.
+
+**The mechanism.** `useFileStored` (`app/storage.jsx`) hydrates from a
+mount-time `fetch`, and has always had a "local edits win" guard for the
+case where something writes to the value before that fetch resolves:
+
+    if (dirtyRef.current && !untouched) return;   // a real edit — keep theirs
+
+Correct for a plain snapshot (`tasks`, `agents`, `memory`, `workflows`...) —
+a fetched file there is a whole document, there's no way to reconcile it
+against a live edit, so keeping the in-memory copy and discarding the fetch
+is the only safe move. `activity` is not a snapshot, it's a log, and it was
+already given `mergeByIdCap` specifically so a live edit and a fetched file
+could be unioned instead of one clobbering the other — the comment above
+its `useFileStored` call in `app.jsx` said exactly that ("the load transform
+merges the fetched file with anything logged in the first ~300ms"). It
+didn't. The guard above returns BEFORE `transform` is ever called — `return`
+exits the whole `.then(data => {...})` callback — so the instant dirtyRef
+flips true, `mergeByIdCap` never runs at all. It isn't that the merge picks
+the wrong side; the merge never happens. `messages` sat on the identical
+hook and got its own version of this exact bug fixed this session
+(`2b84b0f`, "mount-fetch overwrite could wipe a just-created message") —
+but that fix closed the OTHER branch: a fresh remount with `dirtyRef` still
+false adopting a stale fetch unconditionally (no transform at all, before
+`mergeMessages` existed). This is the branch on the other side of the same
+guard, and it was still open for `activity` even with `mergeByIdCap` already
+wired — the transform existing doesn't help if the guard hands it nothing
+to run.
+
+**The fix.** `useFileStored` gained one opt-in option, `mergeOnDirty`
+(default `false` — every existing consumer's behavior is byte-identical).
+When set, the guard becomes
+`if (dirtyRef.current && !untouched && !mergeOnDirty) return;` — a real
+edit still calls `transform(data)` instead of returning early, trusting a
+log-shaped transform (which already reads the current in-memory value
+itself, via a ref closure) to reconcile the two sides rather than picking
+one. `activity`'s `useFileStored` call in `app.jsx` now passes
+`{ mergeOnDirty: true }`; nothing else does. `messages` (already fixed this
+session for the other branch) is untouched — the same latent gap likely
+still exists there too, but it's a distinct area's fix to make, not
+re-opened here.
+
+**The test**
+(`scripts/test_an_early_activity_event_did_not_erase_the_log.py`, 19
+checks) extracts the real `mergeByIdCap` (brace-balanced `const` statement
+scan, the same helper `test_messages_registry_merge.py` uses) and the real
+mount-fetch `.then(data => {...})` callback body out of `app/storage.jsx`
+by anchoring on the two lines that bracket it — not a line range, not a
+hand-copied reimplementation — then runs both for real under Node inside a
+harness that reconstructs the hook's local refs and records every `setVal`
+call. Five scenarios: (A) the bug as measured — dirty real edit, no
+`mergeOnDirty` — `setVal` never called, fetched history dropped; (B) the
+fix — same preconditions, `mergeOnDirty: true` — all four entries merged,
+newest-first, attention row intact; (C) a clean mount merges identically
+whether `mergeOnDirty` is set or not; (D) a dirty-but-`untouched` mount (a
+boot-time normalizing write that reproduced the exact seed) still merges
+either way, unchanged from before this fix; (E) a snapshot-style consumer
+(no `mergeOnDirty`, a transform that doesn't reconcile against in-memory)
+keeps the original protective behavior — a real edit still discards a stale
+fetch, proving the fix is opt-in rather than a blanket behavior change.
+Static checks confirm the options destructure defaults `mergeOnDirty` to
+`false`, the guard is gated by `!mergeOnDirty` rather than removed outright,
+`app.jsx` wires `{ mergeOnDirty: true }` onto the `activity` call
+specifically, and `messages`' call is untouched by this fix.
+
+Four fire-tests against real one-line edits to `app/storage.jsx`/`app.jsx`
+— the `&& !mergeOnDirty` clause dropped from the guard, the
+`{ mergeOnDirty: true }` option dropped from `activity`'s `useFileStored`
+call, the option's own default flipped from `false` to `true` (making it
+apply to every consumer), and the guard's `return` commented out entirely
+(always merge, breaking scenario E) — each failed by a properly named
+check (the third only via the static default-value check, since every
+harness scenario passes `mergeOnDirty` explicitly and wouldn't otherwise
+notice a changed default), and `app.jsx`/`app/storage.jsx` came back
+`md5`-identical to their post-fix state after every restore.
+
+**Provenance.** Found and fixed by one of five agents dispatched in
+parallel this tick to hunt for beta-blocking bugs across distinct areas of
+the app, assigned to the notification bell / activity feed / logActivity /
+AgentInbox / approvals area. The bell, attention-count, and AgentInbox
+surfaces this area covers were already in good shape from earlier fixes
+this session; this bug lived one layer down, in the persistence hook they
+all read from.
+
+**A closed lead, recorded not chased.** The bell's own "seen" watermark
+(`notifSeenAt`, bumped by `markNotifsSeen`) and the attention pill's
+per-entry `unread` flag are deliberately two different clocks — reading the
+bell clears its badge without resolving the "N need you" pill, and that is
+the documented design (routine activity is read the moment you look at it;
+an attention item stays open until you act on it via Retry/Approve/Reject).
+Traced this fully before ruling it a non-bug: `mergedNotifications`'
+`unread: e.unread && (e.ts || 0) > notifSeenAt` for activity rows and
+`attentionCount`'s direct `e.unread` read are answering different
+questions on purpose, not drifting from each other by accident.
+
+**Suite: 361/362 — the one failure is the pre-existing `moc`/M0219 mismatch
+above, in `src/cafresohq_state/main.mo`, untouched by this fix; all 19 of
+this fix's own checks pass.**
+
+---

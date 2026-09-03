@@ -799,11 +799,22 @@ function App() {
   /* Canonical activity log — the single source of truth for the ticker, the
      notification center, and the Team inbox. Persisted to /hq/state/activity;
      the load transform merges the fetched file with anything logged in the
-     first ~300ms (merge-by-id) so nothing is clobbered. */
+     first ~300ms (merge-by-id) so nothing is clobbered.
+
+     `mergeOnDirty: true` is required, not decorative — useFileStored's mount
+     fetch otherwise skips the merge transform entirely the moment a real
+     edit lands before it resolves (its own "keep theirs" guard, correct for
+     a plain snapshot like tasks/agents, wrong for a log that mergeByIdCap
+     already knows how to union safely). Without it, one early
+     `cafresohq:agentActivity` dispatch — the agent_runner shim fires this on
+     every vault write, so it is not a rare boot race — drops the entire
+     fetched history from state, and the next debounced write permanently
+     erases it from disk. See app/storage.jsx for the mechanism. */
   const activityRef = useRefA([]);
   const [activity, setActivity] = useFileStored(
     k('activity'), 'state', 'activity', [],
-    (fetched) => mergeByIdCap(activityRef.current, fetched, 200));
+    (fetched) => mergeByIdCap(activityRef.current, fetched, 200),
+    { mergeOnDirty: true });
   useEffectA(() => { activityRef.current = activity; }, [activity]);
   const logActivity = useCallbackA((entry) => setActivity(prev =>
     [{ id: HQ.uid('act'), ts: Date.now(), priority: 'routine', unread: true, ...entry },
