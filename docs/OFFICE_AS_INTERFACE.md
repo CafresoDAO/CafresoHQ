@@ -24447,3 +24447,113 @@ restored byte-identical (`cmp`).
 "implicitly transient" compiler mismatch on `test_worker_payout_sweep_does_
 not_wipe_mid_sweep_accrual.py`, already recorded above as environment noise
 unrelated to any UI fix; untouched by this change.**
+
+---
+
+## 171. A two-word search found nothing in the note it was about
+
+**The reading.** Live office (127.0.0.1:8913, fresh vault, one note). Filed
+`meeting.md`:
+
+```
+# Q3 Planning
+
+We had a great meeting yesterday about Q3 planning. Everyone attended.
+```
+
+Searched "meeting" — found it, score 4. Searched "planning" — found it,
+score 2. Searched "meeting planning", the two-word query a boss would
+actually type for a note that is, in as many words, about a Q3 planning
+meeting:
+
+```
+curl 'http://127.0.0.1:8913/vault/search?q=meeting+planning'
+{"hits": [], "total": 0}
+```
+
+Nothing. Reversing the words ("planning meeting") did no better. Both
+single-word queries worked; the two together, the natural search, worked
+for neither.
+
+**The mechanism.** `_vault_search_hit` (serve.py, shared by the fs and oci
+backend arms) and `bridgeSearch` (`views/vault.jsx`, the encrypted-shell
+arm — the two already have to be kept in lockstep by hand; see
+`test_bridge_vault_search_folds_accents_like_server.py` for the last time
+they silently drifted) both scored the *entire query string* as one
+literal phrase: `fq` was the whole query,
+unsplit, and `ftext.count(fq)` only ever counts exact, adjacent
+occurrences of it. "meeting yesterday about Q3 planning" never contains
+the substring "meeting planning" — the words are real, present, and four
+words apart — so the score was 0 on both the title arm and the body arm,
+and the hit was dropped. A boss's mental model of a search box ("does
+this note mention both of these things") was never what the code checked
+("does this note contain this literal phrase"), and nothing in the UI —
+no quote-marks hint, no "0 results, did you mean one word at a time?" —
+ever suggested otherwise.
+
+**The fix.** Split the query on whitespace into words; require every word
+somewhere — title or body, in ANY order, not necessarily adjacent — the
+ordinary implicit-AND a plain-language multi-word search box implies. A
+single-word query is a list of one word, so score and snippet are
+byte-for-byte the same as before in that case (verified against every
+existing single-word test in `test_search_speaks_both_keyboards.py` and
+`test_search_finds_what_it_cannot_read.py` — both still pass unmodified).
+One wrinkle worth recording: the first pass picked the snippet-anchor word
+by whichever word came first *in the query*, so "meeting planning" and
+"planning meeting" scored the same but centered on different sentences —
+a boss retyping their own search in a different order would see the
+"same" result read differently. Fixed by anchoring on whichever word's
+first occurrence is earliest *in the note*, so both orderings now return
+the literally identical hit, snippet included.
+
+`_snippetParts` (the client-side highlighter both hit-row layouts share)
+needed the matching half of this: it only ever highlighted the exact,
+space-and-all phrase, which would light up *nothing* for the ordinary
+multi-word AND hit whose words are scattered through the snippet — search
+would find the note but the boss would see an unlit snippet with no clue
+why it matched. It now also highlights each individual word, with the full
+phrase kept as a needle too and a longest-match tie-break, so two query
+words that DO happen to sit together (the "Remote Startups" case
+`test_a_search_hit_shows_why_it_matched.py` already covers) still light up
+as one continuous span exactly as before — this only adds coverage for
+when they don't.
+
+**The test.** `scripts/test_search_finds_words_that_are_apart.py`, 22
+checks. Lifts `_vault_search_hit`/`_fold_accents` out of serve.py by name
+(ast, not a line range) and runs them for real under Python — the live
+two-word miss reproduced exactly, the AND requirement (one absent word is
+still a miss, not a loosened OR), order-independence of both score and
+snippet, a title-only multi-word AND-match (mirroring the existing
+name-only deck/PDF path), and byte-identical single-word behavior. Lifts
+`bridgeSearch` and `_snippetParts` out of `views/vault.jsx` by
+brace-balanced statement scan and runs them for real under Node with a
+stub `_bridge`: the same bug mirrored client-side, order-independence,
+AND semantics, per-word highlighting of a scattered match, the unchanged
+adjacent-phrase span, and — added after a fire-test on this exact line
+turned up genuinely dead-looking logic — the longest-match tie-break
+actually firing when two of the query's own word-needles ('a' and 'ab')
+start at the identical position (the 'a' that opens "abstract" is also
+where "ab" starts).
+
+Eight fire-tests against real one-line edits to `serve.py`/`views/vault.jsx`
+— reverting the query split back to one phrase (both arms), loosening the
+AND to an OR (both arms), reverting the snippet anchor to query-order
+instead of note-order (both arms), reverting `_snippetParts`'s needles to
+phrase-only, and removing the longest-match tie-break — seven were caught
+immediately by name; the eighth (the tie-break removal) passed clean on
+the first attempt, because the phrase needle already sits first in
+iteration order and a strict `<` comparison keeps whatever was found
+first regardless of length, making the explicit tie-break redundant for
+every case the test exercised up to that point. Rather than count a
+fire-test that doesn't fire, a new check was added first — a query whose
+own two words tie on position ('a'/'ab' at the start of "abstract") — and
+the same one-line removal was re-applied and this time caught cleanly by
+that new check. Every restore came back `cmp`-identical before the next
+break was applied.
+
+**Suite: 356/357, one pre-existing failure.** The lone failure
+(`test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`) is the same
+`moc`/M0219 "implicitly transient" compile mismatch #167 and #168 both
+recorded this tick, in unrelated Motoko source (`src/cafresohq_state/main.mo`)
+this fix never touched — a toolchain-version issue in this worktree, not a
+regression from this change.

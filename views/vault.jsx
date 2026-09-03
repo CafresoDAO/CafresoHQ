@@ -153,21 +153,37 @@ const _wikiResolvePath = (files, target) => {
    case-insensitive occurrence of the query, so the hit rows can show
    WHY a result matched instead of a bare title. Accent-folded matches
    (the server finds those) simply come back unhighlighted — the
-   snippet is still shown. Pure; node-run by the search-snippet test. */
+   snippet is still shown. Pure; node-run by the search-snippet test.
+
+   Search is now an AND of the query's individual words (see
+   bridgeSearch/serve.py's _vault_search_hit) — the words don't have to
+   sit next to each other in the note, so highlighting only the exact,
+   space-and-all phrase would light up nothing for the ordinary case a
+   multi-word search box exists for: a hit whose words are scattered
+   across the snippet. The whole phrase stays a needle too (first in the
+   list, and the longest-match tie-break below prefers it), so two query
+   words that DO happen to sit together still highlight as one continuous
+   span exactly like before — this only ADDS coverage for when they don't. */
 const _snippetParts = (snippet, q) => {
   const s = String(snippet || '');
   if (!s) return [];
-  const needle = String(q || '').trim().toLowerCase();
-  if (!needle) return [{ t: s, hit: false }];
+  const trimmed = String(q || '').trim().toLowerCase();
+  if (!trimmed) return [{ t: s, hit: false }];
+  const needles = [...new Set([trimmed, ...trimmed.split(/\s+/).filter(Boolean)])];
   const low = s.toLowerCase();
   const out = [];
   let i = 0;
   for (;;) {
-    const j = low.indexOf(needle, i);
-    if (j === -1) { if (i < s.length) out.push({ t: s.slice(i), hit: false }); break; }
-    if (j > i) out.push({ t: s.slice(i, j), hit: false });
-    out.push({ t: s.slice(j, j + needle.length), hit: true });
-    i = j + needle.length;
+    let bestJ = -1, bestLen = 0;
+    for (const needle of needles) {
+      const j = low.indexOf(needle, i);
+      if (j === -1) continue;
+      if (bestJ === -1 || j < bestJ || (j === bestJ && needle.length > bestLen)) { bestJ = j; bestLen = needle.length; }
+    }
+    if (bestJ === -1) { if (i < s.length) out.push({ t: s.slice(i), hit: false }); break; }
+    if (bestJ > i) out.push({ t: s.slice(i, bestJ), hit: false });
+    out.push({ t: s.slice(bestJ, bestJ + bestLen), hit: true });
+    i = bestJ + bestLen;
   }
   return out;
 };
@@ -614,27 +630,47 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
      arm — the two had silently diverged: this arm matched on plain
      .toLowerCase(), so an accented note was findable through the server
      vault but invisible through the encrypted bridge one, the more
-     security-conscious of the two paths). */
+     security-conscious of the two paths).
+
+     Split on whitespace into words and require every word somewhere (title
+     or body), not the whole query as one literal phrase — see
+     _vault_search_hit in serve.py for the live-reproduced bug this mirrors
+     the fix for: "meeting planning" found nothing in a note that said
+     "a meeting … about Q3 planning" because the two words are never
+     adjacent, even though either word alone found it fine. A single-word
+     query is a list of one word, so this is unchanged for the common case. */
   const bridgeSearch = async (query) => {
-    const [fq] = _foldAccents(query);
-    if (!fq) return [];
+    const tokens = String(query).split(/\s+/).map(w => _foldAccents(w)[0]).filter(Boolean);
+    if (!tokens.length) return [];
     const candidates = files.filter(f => !f.isBinary);
     const results = await Promise.all(candidates.map(async (f) => {
       let text;
       try { text = await _bridge.read(f.id); } catch (_e) { return null; }
       const [ftext, tmap] = _foldAccents(text);
       const [ftitle] = _foldAccents(f.title);
-      const titleScore = ftitle.includes(fq) ? 3 : 0;
-      const count = ftext.split(fq).length - 1;
-      if (!titleScore && !count) return null;
-      const idx = ftext.indexOf(fq);
+      // The snippet centers on whichever word's first occurrence comes
+      // EARLIEST IN THE NOTE, not on whichever word came first in the
+      // query — "meeting planning" and "planning meeting" should read as
+      // the same result, not two hits that share a score but disagree
+      // about which sentence to show.
+      let score = 0, snipIdx = -1, snipLen = 0;
+      for (const fq of tokens) {
+        const titleHit = ftitle.includes(fq);
+        const count = ftext.split(fq).length - 1;
+        if (!titleHit && !count) return null;   // AND: every word has to show up somewhere
+        score += (titleHit ? 3 : 0) + count;
+        if (count) {
+          const idx = ftext.indexOf(fq);
+          if (snipIdx === -1 || idx < snipIdx) { snipIdx = idx; snipLen = fq.length; }
+        }
+      }
       let snippet = '';
-      if (idx >= 0) {
-        const oStart = tmap[idx], oEnd = tmap[idx + fq.length - 1] + 1;
+      if (snipIdx >= 0) {
+        const oStart = tmap[snipIdx], oEnd = tmap[snipIdx + snipLen - 1] + 1;
         const s = Math.max(0, oStart - 60), e = Math.min(text.length, oEnd + 60);
         snippet = (s > 0 ? '…' : '') + text.slice(s, e).replace(/\n/g, ' ').trim() + (e < text.length ? '…' : '');
       }
-      return { path: f.path, title: f.title, score: titleScore + count, snippet };
+      return { path: f.path, title: f.title, score, snippet };
     }));
     return results.filter(Boolean).sort((a, b) => b.score - a.score).slice(0, 10);
   };

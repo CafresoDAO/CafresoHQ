@@ -96,10 +96,18 @@ def main():
     check('found bridgeSearch', bridge_m is not None)
     bridge_body = bridge_m.group(1) if bridge_m else ''
 
+    # A later fix (the multi-word AND-search ticket) split `query` into
+    # words before folding each one, so the literal call is now
+    # `_foldAccents(w)` inside a `String(query).split(...).map(...)` —
+    # still folding the query, just per word instead of as one phrase.
+    # Accept either shape so this accent check doesn't false-positive as
+    # a regression the next time the query-handling shape legitimately
+    # changes; it only fails if `query` stops being folded at all.
     check('bridgeSearch folds the query through _foldAccents before '
           'matching (the actual regression — it used to be plain '
           'query.toLowerCase())',
-          '_foldAccents(query)' in bridge_body)
+          '_foldAccents(query)' in bridge_body
+          or ('String(query).split' in bridge_body and '_foldAccents(w)' in bridge_body))
     check('bridgeSearch folds each candidate\'s body text through '
           '_foldAccents before matching',
           bool(re.search(r'_foldAccents\(text\)', bridge_body)))

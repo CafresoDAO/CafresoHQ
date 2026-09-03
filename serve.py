@@ -1067,26 +1067,60 @@ def _vault_search_hit(rel: str, text: str, ql: str, query: str):
 
     `ql` (the pre-lowered query) stays in the signature for those callers
     but matching is accent-folded now — folding lowers too, so `query` is
-    the only input actually read."""
+    the only input actually read.
+
+    A multi-word query used to be scored as ONE literal phrase: `fq` was
+    the whole query, unsplit, so `ftext.count(fq)` only ever counted exact,
+    adjacent occurrences of it. A note reading "We had a great meeting
+    yesterday about Q3 planning" — literally about a Q3 planning meeting —
+    scored 0 for the query "meeting planning", because those two words never
+    sit next to each other in that order. "meeting" alone found it; "planning"
+    alone found it; the two together, the thing a boss would actually type,
+    found nothing. Reproduced live against a fresh vault: both single-word
+    queries returned the note, the two-word query returned `{"hits": [],
+    "total": 0}`.
+
+    Now the query is split on whitespace into words and every word is
+    required somewhere — title or body, in ANY order, not necessarily
+    adjacent — the ordinary implicit-AND a plain-language multi-word search
+    box implies. A single-word query is one word in a list of one, so this
+    is exactly the old behavior in that case: same score, same snippet.
+
+    The snippet centers on whichever word's first occurrence comes
+    EARLIEST IN THE NOTE, not on whichever word came first in the query —
+    "meeting planning" and "planning meeting" search the same note the
+    same way and should read as the same result, not two hits that happen
+    to share a score but disagree about which sentence to show."""
     stem = pathlib.PurePosixPath(rel).stem
-    fq, _ = _fold_accents(query)
-    if not fq:
+    tokens = []
+    for word in query.split():
+        fw, _ = _fold_accents(word)
+        if fw:
+            tokens.append(fw)
+    if not tokens:
         return None
     ftext, tmap = _fold_accents(text)
     fstem, _ = _fold_accents(stem)
-    title_score = 3 if fq in fstem else 0
-    count = ftext.count(fq)
-    if not (title_score or count):
-        return None
-    idx = ftext.find(fq)
+    score = 0
+    snip_idx, snip_len = -1, 0
+    for fq in tokens:
+        title_hit = fq in fstem
+        count = ftext.count(fq)
+        if not (title_hit or count):
+            return None  # AND: every word has to show up somewhere
+        score += (3 if title_hit else 0) + count
+        if count:
+            idx = ftext.find(fq)
+            if snip_idx == -1 or idx < snip_idx:
+                snip_idx, snip_len = idx, len(fq)
     snippet = ''
-    if idx >= 0:
-        o_start = tmap[idx]
-        o_end = tmap[idx + len(fq) - 1] + 1
+    if snip_idx >= 0:
+        o_start = tmap[snip_idx]
+        o_end = tmap[snip_idx + snip_len - 1] + 1
         s = max(0, o_start - 60)
         e = min(len(text), o_end + 60)
         snippet = ('…' if s > 0 else '') + text[s:e].replace('\n', ' ').strip() + ('…' if e < len(text) else '')
-    return {'path': rel, 'title': stem, 'score': title_score + count, 'snippet': snippet}
+    return {'path': rel, 'title': stem, 'score': score, 'snippet': snippet}
 
 
 def _oci_vault_search(query: str, ql: str, limit: int) -> dict:
