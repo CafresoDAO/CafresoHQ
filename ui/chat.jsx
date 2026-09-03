@@ -1285,6 +1285,31 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
             {activeRoom && activeRoom.kind === 'meeting' && <>No messages in this meeting yet. Type below to send to all attendees, or @-mention specific people.</>}
           </div>
         )}
+        {/* The same courtesy the inbox pays its own cap, on the surface the
+            boss reads far more often. Measured on a scratch office seeded
+            with 130 turns: one reload showed 100 opening on "turn 31", the
+            saved copy already held 80 opening on "turn 51", and a second
+            reload brought the screen down to match. Fifty turns gone for
+            good, and the thread simply began at turn 51 — which reads
+            exactly like a beginning.
+
+            Above the list, not below it, for the reason the inbox states:
+            the dropped ones are the OLDEST, and the top is where someone
+            scrolling back stops and concludes they have seen everything.
+
+            Read off `visibleChat[0]` rather than a total, because
+            `capChatFair` stamps the oldest survivor of EACH thread and this
+            view shows one thread at a time. Suppressed while searching:
+            `visibleChat` then spans every room and is ordered by the chat
+            array, so its first row is not this thread's oldest survivor and
+            the count would be answering a question nobody asked. */}
+        {!searchQuery && visibleChat.length > 0 && visibleChat[0].droppedBefore > 0 && (
+          <div className="msg-system" style={{opacity:0.65,fontStyle:'italic'}}>
+            ⋯ {visibleChat[0].droppedBefore} older message{visibleChat[0].droppedBefore === 1 ? '' : 's'} rolled
+            out of this room to keep the office small. This is not where the
+            conversation started; anything above is gone for good.
+          </div>
+        )}
         {visibleChat.length === 0 && searchQuery && (
           <div className="thread-empty">No messages match "{searchQuery}".</div>
         )}

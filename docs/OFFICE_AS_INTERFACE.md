@@ -23533,3 +23533,102 @@ example of what the repair looks like.
 polled — and this entry is the case for why that step is not optional. The
 first run of this tick came back **346 PASS / 1 FAIL**, and the failure was
 information, not noise.
+
+---
+
+### #160 — The chat says where it starts
+
+**The bug.** A bounded transcript has to say it is bounded. The message
+registry learned this already — `persistableMessages` stamps `droppedBefore`
+on the oldest survivor and the inbox prints "⋯ N older messages rolled out of
+this registry". The **chat** had the same two caps and none of the disclosure,
+on the surface the boss actually reads.
+
+Reproduced on a scratch office (127.0.0.1:8897) seeded with 130 turns in one
+room:
+
+```
+after one reload    screen: 100 turns, opening on "turn 31"
+                    storage:  80 turns, opening on "turn 51"
+after two reloads   screen:  80 turns, opening on "turn 51"
+```
+
+Fifty turns of conversation gone for good; the screen and the saved copy
+disagreeing about how much was left; and a live probe for any word resembling
+*older / dropped / earlier / trimmed / beginning* returning **false**. The
+thread simply began at "turn 51", which reads exactly like a beginning.
+
+Two caps do it: `capChatFair(prev, 100)` in memory past 120 entries, and
+`capChatFair(xs, 80)` on every persist. Both are the right call and neither is
+being removed here. What was wrong is that the office spent the boss's trust
+on them silently — and the chat is the **only substantive office state that
+lives in `localStorage` rather than `hq-state/`**, so nothing behind it holds
+the part that went.
+
+**The fix.** `capChatFair` now records what each room lost and stamps it on
+that room's oldest survivor; the scrollback prints it above the first message.
+
+**Per room, not one total** — this is the decision worth recording. The chat
+is one array interleaving every thread (`direct`, `team`, `project:*`,
+`meeting:*`, `research`) and the view shows one at a time. A single total
+would tell a boss standing in the Direct room that 120 messages were dropped
+out of it when the project room lost every one of them: a second wrong answer
+dressed as a fix. The registry can hang its count on one record because it is
+a flat list; this cannot.
+
+The count **accumulates** (`+ 1 + (m.droppedBefore || 0)` off each departing
+message), so it is everything the room has ever shed rather than the size of
+the most recent pass — measured: the in-memory pass shed 30, the persist pass
+shed 20 more, and the room reports **50**, not 20.
+
+**The test.** `scripts/test_the_chat_says_where_it_starts.py`, 45 checks.
+`capChatFair` and `persistableChat` are lifted from `app/storage.jsx` and
+executed under Node — the real eviction, both caps, in the order a live office
+applies them. Seven fixtures: the measured case, a second pass, a room under
+the cap, a room exactly at it, a quiet room beside a busy one, two rooms one
+after the other, and two rooms interleaved.
+
+**Fire-tested eleven ways.** Eight on the mechanism (no stamping, one shared
+total, no accumulation, stamped on every survivor instead of the oldest,
+notice deleted, search suppression dropped, notice moved below the list,
+`droppedBefore` stripped by the persist transform) and three more after the
+locator was tightened.
+
+**Two things this tick got wrong first, both worth keeping:**
+
+1. A fixture of 100 direct + 100 team messages was written expecting an even
+   40/40 split. The real answer is **15 and 65** — eviction walks oldest-first
+   and the first room pays until it hits its floor of 15. That is
+   `capChatFair` working exactly as its own comment documents; the expectation
+   was naive. The case was kept, renamed to say what it demonstrates, and an
+   interleaved case added beside it for the ordinary shape.
+
+2. A check looked for the sentence *"not where the conversation started"* as a
+   literal and failed against copy that was already correct, because the JSX
+   wraps mid-phrase. That is **#159's hazard wearing a different hat**, caught
+   inside the same tick that wrote the entry about it. Both that check and the
+   block locator are now whitespace-tolerant, and the three gates
+   (`!searchQuery`, non-empty room, `visibleChat[0].droppedBefore`) are
+   asserted **independently** — verified by a break that reorders them, which
+   passes, alongside three that remove one each, which each fail by name.
+
+**Verified live** in four directions: the notice appears with the right
+accumulated count (30, then 50 after a second reload); a room that lost
+nothing (TEAM, 5 messages) shows none; a search suppresses it; and the count
+tracks the room on screen rather than the array.
+
+**Also this tick: a sweep for vacuously-passing checks came back clean.**
+Prompted by #159, an AST scan of all 348 test files looked for the exact
+shape — a helper that returns `''` on a miss, a variable assigned from it, and
+a negative membership test against that variable with no truthiness guard. It
+flagged 12 sites across 8 files; every one was then probed by instrumenting
+the real assignment and running the file, and **all 12 locators currently
+resolve to real content** (the one that looked suspicious, `copy` in
+`test_a_dominant_topic_is_actually_dominant.py`, is a 6-key dict guarded by
+`is None`, which the scanner did not recognise). No live holes. The
+brittle-literal lead stays open on the *reporting* side —
+`test_window_drag_to_edge_zero_snaps_back.py` still pins exact interior
+whitespace — but the *silence* side is measured and clear.
+
+**Suite: 348/348, zero failures**, launched detached with a done marker and
+polled.

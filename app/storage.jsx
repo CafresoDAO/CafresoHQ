@@ -322,17 +322,47 @@ const capChatFair = (xs, max, floor = 15) => {
     counts.set(t, (counts.get(t) || 0) + 1);
   }
   const kept = [];
+  /* What each thread lost, so the survivors can say so. Same decision the
+     message registry made two functions down, on the surface the boss
+     actually reads: a bounded record has to say it is bounded.
+
+     Reproduced 2026-09-03 on a scratch office (127.0.0.1:8897) seeded with
+     130 turns in one thread. One reload showed 100, opening on "turn 31";
+     localStorage already held 80, opening on "turn 51". A second reload
+     brought the screen down to match — fifty turns of conversation gone for
+     good — and nothing anywhere on the surface said so. The thread simply
+     began at turn 51, which reads exactly like a beginning.
+
+     PER THREAD, not one total. The registry is a flat list, so its count can
+     ride on the single oldest survivor; this array interleaves every room
+     and the view shows one room at a time, so a Direct thread announcing
+     fifty dropped turns that were actually the project room's would be a
+     second wrong answer rather than a fix. Carries `droppedBefore` off a
+     departing message the same way the registry does, so this is everything
+     the thread has ever shed and not the size of the most recent pass. */
+  const dropped = new Map();
   let toDrop = xs.length - max;
   for (const m of xs) {
     const t = m.thread || 'direct';
     if (toDrop > 0 && counts.get(t) > floor) {
       counts.set(t, counts.get(t) - 1);
       toDrop--;
+      dropped.set(t, (dropped.get(t) || 0) + 1 + (m.droppedBefore || 0));
       continue;
     }
     kept.push(m);
   }
-  return kept.length === xs.length ? xs : kept;
+  if (kept.length === xs.length) return xs;
+  /* The oldest survivor of each thread that lost something — exactly the
+     message the boss is looking at when they scroll to the top and wonder
+     whether the room starts where they started talking in it. */
+  const stamped = new Set();
+  return kept.map(m => {
+    const t = m.thread || 'direct';
+    if (stamped.has(t) || !dropped.get(t)) return m;
+    stamped.add(t);
+    return { ...m, droppedBefore: (m.droppedBefore || 0) + dropped.get(t) };
+  });
 };
 // Cap chat history at 80 entries so localStorage doesn't bloat — fairly,
 // per thread, so one busy room can't evict another room's history.
