@@ -22739,3 +22739,65 @@ at all) and the suite said so.
 Noted, not chased: raw `[BROWSER_FETCH: …]` and `[MEMORY_WRITE: …]` markers are
 visible in the chat bubble **while the reply streams**, and gone once it
 completes. Transient, and §6 does not obviously licence it.
+
+### #148 — the chat window sat on the navigation and would not come off
+
+Fresh office, hire Llama, skip the FIRST ASSIGNMENT, click **Tasks**. The
+floating chat window — which mounts on every view except Chat — came up in the
+top-left corner, 400×460 at x=8, covering the whole rail. Measured with
+`elementFromPoint` at three points per link: **Chat, Office, Tasks, Calendar,
+Memory and Library were covered at every one of them**, and the Tasks board's
+INBOX column with them. Nine of the ten views are reachable only from that
+rail. Nothing on screen said what had happened, or that dragging the window
+would fix it.
+
+The window's position is decided once, persisted, and never revisited:
+
+    x = Math.max(8, VW - w - 24)
+
+Below the 768px breakpoint `aside.rail` is `display: none`. Reproduced
+deliberately after finding it: at 560×620 that arithmetic anchors the chat at
+x=136 against a layout with **no navigation in it**, and writes it to
+localStorage. Widen past 768, the rail comes back at 232px wide, and nothing
+recomputes the anchor. The render-time clamp keeps a window on *screen* — its
+only lower bound was 8 — so it will hold one on top of the nav indefinitely.
+A first mount at ≤432px wide is the x=8 version, which is what I had.
+
+**Windows may cover the board. They may not cover the way out of it.** So the
+fix is a floor, not a new position. `_railRight()` measures how far the rail
+actually reaches — measured, not a second copy of the media query in JS, which
+would be right today and wrong in six months. `_chatGeometryStale` adds
+`x < rail` to the reasons a stored geometry has to be thrown away, and the
+repair now listens for `resize` as well as mount, because the rail comes and
+goes with the breakpoint. It moves the window **only** out of that state: a
+position the boss chose anywhere clear of the rail is left exactly where they
+put it, and that is a check in the suite, because the obvious over-eager fix
+snaps a deliberately-parked window every reload.
+
+The three decisions (`_chatAnchor`, `_chatGeometryStale`, `_chatClamp`) are now
+pure functions of `(viewport, rail)`, so
+`scripts/test_a_window_never_covers_the_way_out.py` runs the **shipped** ones
+under Node rather than a copy that would agree with itself.
+
+Two things the fire-tests taught, both recorded in the suite itself:
+
+- **The suite caught the first fix.** Capping the clamp's width at `VW - 16`
+  lets a window the boss resized to nearly full width pass the stale check —
+  it is not bigger than the viewport — and then leaves the clamp no room to put
+  it anywhere but x=8, back on the rail. A floating window's room is the space
+  *beside* the navigation, so that is the cap now: it gives up width, which
+  nothing depends on, rather than the way out.
+- **Two of seven breaks stayed green, and I looked at why rather than
+  contriving fixtures.** One was a real gap — nothing ever ran the clamp on a
+  geometry left of the rail, which is precisely the render that discovers the
+  problem, before the repair effect commits; that fixture is in now and the
+  floor cannot be deleted silently. The other is not a gap: `_chatAnchor`'s
+  `Math.max(rail + 8, …)` is provably inert, because the width term already
+  puts `VW - w - 24` at or beyond `rail + 8` wherever the rail exists. It is
+  kept as a floor of last resort and the docstring says outright that nothing
+  covers it. A sweep across 160 (viewport, rail) combinations covers the rest —
+  including a 420px rail, wider than anything shipping, because at 232px every
+  rail-aware term in the anchor is inert and the sweep would have been green on
+  an anchor that had forgotten the rail entirely.
+
+Suite: 336/336.

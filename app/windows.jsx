@@ -10,6 +10,68 @@ const MSG_STATES = {
   cancelled:    { label: 'Cancelled',    color: '#888888', terminal: true  },
 };
 
+/* How far the navigation rail reaches, or 0 when it is not in the layout.
+   The rail is `display: none` below the 768px breakpoint, so the only
+   honest way to ask is to measure it rather than to re-derive the media
+   query here and let the two drift.
+
+   A floating window whose left edge starts before this line is sitting on
+   the only route to nine of the ten views. Windows may cover the board;
+   they may not cover the way out of it. */
+function _railRight() {
+  if (typeof document === 'undefined') return 0;
+  const el = document.querySelector('aside.rail');
+  if (!el) return 0;
+  const r = el.getBoundingClientRect();
+  return (r.width > 0 && r.height > 0) ? Math.round(r.right) : 0;
+}
+
+/* The three geometry decisions the chat window makes, kept as pure functions
+   of (viewport, rail) so they can be exercised without a browser — the
+   regression suite runs THESE, not a copy of them.
+
+   `_chatAnchor` — where a fresh or re-anchored window goes. Where a 400px
+   panel cannot clear the rail it gives up width before it gives up the
+   navigation. With no rail in the layout the width term is
+   `Math.min(400, VW - 32)` and the x term `Math.max(8, VW - w - 24)`, which
+   is the bottom-right default this has always had. */
+function _chatAnchor(VW, VH, rail) {
+  const w = Math.min(400, Math.max(280, VW - rail - 32));
+  const h = Math.min(460, VH - 24);
+  return { x: Math.max(rail + 8, VW - w - 24), y: Math.max(8, VH - h - 80), w, h };
+}
+
+/* `_chatGeometryStale` — whether a stored geometry has to be thrown away.
+   Oversized (a past resize, a smaller screen, a corrupted value) makes the
+   chat fill the screen; `x < rail` means it is sitting on the navigation;
+   non-finite x/y would render as `NaNpx` and put the window nowhere at all. */
+function _chatGeometryStale(g, VW, VH, rail) {
+  if (!g || !(g.w > 0) || !(g.h > 0)) return true;
+  if (!Number.isFinite(g.x) || !Number.isFinite(g.y)) return true;
+  return g.w > VW - 12 || g.h > VH - 12 || g.x < rail;
+}
+
+/* `_chatClamp` — the per-render clamp. Keeps the window on screen, and keeps
+   it off the navigation.
+
+   The width cap is the interesting half, and the suite caught it: capping at
+   `VW - 16` lets a window the boss resized almost to full width survive the
+   stale check (it is not bigger than the viewport) and then leaves the
+   on-screen clamp no room to place it anywhere but x=8, back on the rail. A
+   floating window's room is the space beside the navigation, not the whole
+   viewport, so that is what it is capped to — and with no rail in the layout
+   the cap is `VW - 16` again, unchanged. */
+function _chatClamp(g, VW, VH, rail) {
+  const w = Math.max(280, Math.min(g.w, Math.max(280, VW - rail - 16)));
+  const h = Math.max(220, Math.min(g.h, VH - 16));
+  const hi = Math.max(8, VW - w - 8);
+  return {
+    x: Math.max(Math.min(Math.max(rail, 8), hi), Math.min(g.x, hi)),
+    y: Math.max(8, Math.min(g.y, VH - h - 8)),
+    w, h,
+  };
+}
+
 /* ─────────────────────────────────────────────────────────────────────
    WindowFrame — generic draggable + resizable window (the desktop "app
    window"). Same drag/resize engine as ChatWindow, generalized so any HQ
@@ -317,21 +379,39 @@ function ChatWindow({ open, setOpen, geometry, setGeometry, messageCount, chatPa
     };
   }, [open]);
 
-  /* One-time repair: a persisted geometry bigger than the viewport (from a past
-     resize, a smaller screen, or a corrupted value) makes the chat fill the
-     whole screen. Reset it to the compact bottom-right default so the window is
-     a sane floating panel again. Runs once on mount. */
+  /* Repair: a persisted geometry bigger than the viewport (from a past resize,
+     a smaller screen, or a corrupted value) makes the chat fill the whole
+     screen. Reset it to the compact bottom-right default so the window is a
+     sane floating panel again.
+
+     `geometry.x < rail` is the second, worse case. Measured (#148) on a fresh
+     office opened at 560x620: below the 768px breakpoint the rail is
+     `display: none`, so this anchored the window at x=136 against a viewport
+     with no navigation in it, and persisted that. Widening past 768 brought
+     the rail back at 232px, and nothing recomputed the anchor — the clamp in
+     the render below keeps a window on SCREEN, but its only lower bound was
+     8, so it will hold one on top of the nav indefinitely. Reproduced further
+     down the same path (a first mount at ≤432px wide anchors at x=8): six of
+     the ten destinations were then unclickable at every sample point, with
+     nothing on screen to say why.
+
+     Hence the resize listener: the rail comes and goes with the breakpoint,
+     and a window covering the nav is never a state worth preserving. It moves
+     the window ONLY out of that state, so a position the boss chose anywhere
+     else is left exactly where they put it. */
   React.useEffect(() => {
     if (isTouch) return;
-    const VW = typeof window !== 'undefined' ? window.innerWidth  : 1280;
-    const VH = typeof window !== 'undefined' ? window.innerHeight : 720;
-    const bad = !geometry || !(geometry.w > 0) || !(geometry.h > 0)
-      || geometry.w > VW - 12 || geometry.h > VH - 12;
-    if (bad) {
-      const w = Math.min(400, VW - 24), h = Math.min(460, VH - 24);
-      setGeometry({ x: Math.max(8, VW - w - 24), y: Math.max(8, VH - h - 80), w, h });
-    }
-  }, []);
+    const repair = () => {
+      const VW = typeof window !== 'undefined' ? window.innerWidth  : 1280;
+      const VH = typeof window !== 'undefined' ? window.innerHeight : 720;
+      const rail = _railRight();
+      if (!_chatGeometryStale(geometry, VW, VH, rail)) return;
+      setGeometry(_chatAnchor(VW, VH, rail));
+    };
+    repair();
+    window.addEventListener('resize', repair);
+    return () => window.removeEventListener('resize', repair);
+  }, [geometry, isTouch]);
 
   /* Cursor lookup keyed by the 4-edge subset. Mirrors the standard CSS
      cursors so the arrow shape matches what the user is dragging. */
@@ -423,10 +503,7 @@ function ChatWindow({ open, setOpen, geometry, setGeometry, messageCount, chatPa
               // the chat near-fullscreen, and keeps it on-screen after resizes.
               const VW = typeof window !== 'undefined' ? window.innerWidth  : 1280;
               const VH = typeof window !== 'undefined' ? window.innerHeight : 720;
-              const w = Math.max(280, Math.min(geometry.w, VW - 16));
-              const h = Math.max(220, Math.min(geometry.h, VH - 16));
-              const x = Math.max(8, Math.min(geometry.x, VW - w - 8));
-              const y = Math.max(8, Math.min(geometry.y, VH - h - 8));
+              const { x, y, w, h } = _chatClamp(geometry, VW, VH, _railRight());
               return { left: x + 'px', top: y + 'px', width: w + 'px', height: h + 'px' };
             })()),
         zIndex: 'var(--z-window)',
