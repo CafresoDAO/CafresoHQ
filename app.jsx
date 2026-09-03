@@ -3404,7 +3404,7 @@ ${d.text}` : d.text,
     for (const dm of dmQueue) {
       const targetName = String(dm.to || '').trim();
       if (!targetName) continue;
-      const target = agents.find(a => a.name.toLowerCase() === targetName.toLowerCase());
+      const target = agentsRef.current.find(a => a.name.toLowerCase() === targetName.toLowerCase());
       if (!target) {
         setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `(${agent.name} tried to DM "${targetName}" but no such teammate is hired)`, thread: 'team' }]);
@@ -4529,7 +4529,7 @@ ${d.text}` : d.text,
     }
     // Continue any DMs the delegated agent initiated to peers.
     for (const dm of dmQueue) {
-      const target = agents.find(x => x.name.toLowerCase() === String(dm.to || '').trim().toLowerCase());
+      const target = agentsRef.current.find(x => x.name.toLowerCase() === String(dm.to || '').trim().toLowerCase());
       if (target && target.id !== a.id) {
         if (!consumeDmBudget()) { dmBudgetExhaustedNote(); break; }
         /* parentMessageId chains the child record to the hand-off's own —
@@ -5578,7 +5578,7 @@ ${d.text}` : d.text,
       dmQueue.length = 0;
     }
     for (const dm of dmQueue) {
-      const target = agents.find(x => x.name.toLowerCase() === String(dm.to || '').trim().toLowerCase());
+      const target = agentsRef.current.find(x => x.name.toLowerCase() === String(dm.to || '').trim().toLowerCase());
       if (target && target.id !== agent.id) {
         if (!consumeDmBudget()) { dmBudgetExhaustedNote(); break; }
         await dispatchToAgent(target, dm.body, { dmFrom: agent, dmDepth: 1,

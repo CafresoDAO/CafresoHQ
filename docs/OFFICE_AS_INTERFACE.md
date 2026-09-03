@@ -26318,3 +26318,93 @@ mismatch recorded throughout this ledger, on a file this diff never
 touches — `git status --porcelain` covers only `ui/chat.jsx` and the one
 new test file above; `src/cafresohq_state/main.mo` was never read,
 staged, or edited.
+
+---
+
+## 190. A dismissed coworker could still receive and answer a DM already in flight when they were let go
+
+**The reading.** Assigned area: the coworker hiring/firing flow — the hire
+form and its validation (already covered by ticket #167, not re-litigated
+here), the LET GO / dismissal flow, and what happens to a fired coworker's
+in-flight tasks, meetings, and DMs. `onDismiss` (`app.jsx`) is already
+extensively hardened: it purges the leaving coworker from tasks,
+approvals, pending-request guards, project/meeting rosters, stray research
+missions, and even server-side night-shift schedules, each with its own
+dated comment explaining a real, previously-reproduced failure. The gap
+was one door those fixes didn't cover: a DM already queued by a *different*
+coworker's in-flight reply, addressed to the one who just got dismissed.
+
+**The mechanism.** `dispatchToAgent`, `onDelegate`, and `onTaskDropOnAgent`
+each run their own copy of the same post-stream loop: once an agent's
+reply finishes, any `[DM_TO: <name>]` markers it emitted are resolved to a
+target coworker by name and re-dispatched via `dispatchToAgent`. All three
+resolved that target with `const target = agents.find(...)` — the plain
+`agents` state variable captured by closure at the render that started the
+*sending* agent's own dispatch, not `agentsRef.current`, the ref this file
+already keeps live via `agentsRef.current = agents` specifically so
+long-running async code reads current state. An earlier fix
+(`scripts/test_honesty_notes_roster_reads_live_agents_in_remaining_dispatch_paths.py`)
+had already converted the honesty-label `roster` read sitting right next
+to this line, in these same three functions — but not this one.
+
+`dispatchToAgent` does guard against dispatching to a just-dismissed
+recipient, but only inside the branch that waits out a currently BUSY desk
+(`if (agentAbortersRef.current.has(agent.id))`), which re-checks the
+roster once the wait ends. `onDismiss` calls `abortAgentRun(id)`, which
+deletes that agent's aborter entry synchronously — so a coworker's desk
+reads as free the instant they're let go, in the ordinary case where they
+weren't already mid-reply themselves. The busy-desk branch is never
+entered, its recipient-gone check never runs, and the function falls
+straight through to post a chat bubble under the dismissed coworker's name
+and stream them a real, billed reply.
+
+Concrete sequence: the boss asks Vera something that leads her to emit
+`[DM_TO: Kenji]...[/DM_TO]`. While Vera is still streaming (which can run
+many seconds), the boss presses LET GO on Kenji — his desk is idle, so
+`onDismiss` removes him from `agents` immediately. Vera's stream finishes;
+her DM_TO is parsed and the `dmQueue` loop resolves `agents.find(...
+'kenji' ...)` against the STALE `agents` array `dispatchToAgent` captured
+back when Vera's own dispatch began, before Kenji was dismissed — he's
+still in it. `target` resolves to him anyway and he is re-dispatched: a
+bubble reading "Kenji · <role>" appears and streams a genuine reply from a
+coworker the boss just fired.
+
+**The fix.** All three `target = agents.find(...)` reads in
+`dispatchToAgent`, `onDelegate`, and `onTaskDropOnAgent` now use
+`agentsRef.current.find(...)`, matching the already-fixed `roster` read
+beside each one.
+
+**The test**
+(`scripts/test_dm_continuation_target_reads_live_agents_not_stale_closure.py`)
+confirms all three sites via source-shape checks (an aggregate count of 3
+so a future 4th dispatch path trips the test rather than going unswept),
+then lifts the actual matched target-resolution statement out of each
+function (including `dispatchToAgent`'s supporting `targetName` line) and
+runs all three verbatim under Node against a roster where a coworker
+present in the stale `agents` snapshot has since been removed from the
+live `agentsRef.current` — confirming each resolves to `null` rather than
+resurrecting the dismissed coworker.
+
+Fire-tested: reverted all three sites back to `agents.find(...)`. Seven
+checks failed by name — the three per-function "reads agentsRef.current"
+checks, the aggregate "none still read the plain stale agents closure"
+check, and all three live-execution checks (each resolving to `'Kenji'`
+instead of `null`). Restored the three lines and confirmed `app.jsx`
+byte-identical to the pre-revert state via `shasum -a 256`.
+
+**Suite: 375/376.** The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`) is
+the same pre-existing `moc`/M0219 `main.mo` implicit-`transient` toolchain
+mismatch recorded throughout this ledger, on a file this diff never
+touches — `git status --porcelain` covers only `app.jsx` and the one new
+test file above; `src/cafresohq_state/main.mo` was never read, staged, or
+edited.
+
+**A worktree note.** This agent's assigned worktree
+(`.claude/worktrees/agent-af72f25e33f05b295`) was 696 commits stale
+against `chore/oss-reduction`'s local tip (missing `docs/OFFICE_AS_INTERFACE.md`
+past #167, `scripts/run_tests.py`, and the `app/`/`ui/`/`views/`/`modals/`
+module split). Rather than work from that base, its branch was reset
+(`git reset --hard chore/oss-reduction`) to the local tip — the same repo,
+same working directory, now checked out at the current commit — and the
+bug hunt, fix, and this entry proceed from there.
