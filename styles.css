@@ -1867,6 +1867,38 @@ body.theme-coffeeshop .desk::after {
 .gs-coach { left: 246px; bottom: 14px; }                    /* 232 rail + 14 */
 @media (max-width: 1100px) { .gs-coach { left: 214px; } }    /* 200 rail + 14 */
 .app.rail-collapsed .gs-coach { left: 70px; }                /*  56 rail + 14 */
+
+/* Third instance of the collision above, one column over. Clearing the rail
+   put the coach on the Chat view's composer, which is bottom-anchored too and
+   spans the whole remaining width — so there is no column left to clear, only
+   a row.
+
+   Measured at 1280×860: the card covered 27% of the message box and 50% of
+   the DIRECT thread tab, and elementFromPoint at the tab's centre and at two
+   points inside the textarea all returned the coach — at (380,780) it
+   returned a BUTTON inside the coach, so a click aimed at the message box
+   would have advanced an onboarding step instead. Worse on a phone, where
+   Chat is the primary view: at 375×812 the card covered 46% of the composer
+   and the textarea's own CENTRE was unhittable. The collapsed pill is not
+   exempt — it carries `.gs-coach` too, and measured 26% at that size.
+
+   And the coach's step 3 is "Chat with your team — Say hi to your CEO", with
+   an "Open chat →" button. Follow it and the card lands on the composer it
+   just sent you to. Same sentence as the note above: a coach that blocks the
+   door it is pointing at.
+
+   `top` rather than a bottom offset on purpose. The dock's height is not
+   knowable from CSS — the textarea grows from 44px to `max-height: 140px` as
+   you type, and the thread tabs sit under it — so any bottom offset is a
+   magic number that a long message walks straight back through. Anchoring to
+   the top needs no number at all. It costs the top of the message list, which
+   is the oldest end of a log that scrolls to its newest; the composer is the
+   one thing on this view that must never be covered.
+
+   `:has()` because `.mobile-chat-view` is rendered for `view === 'chat'` and
+   nothing else (app.jsx renderViewBody), so it is the exact signal, and the
+   ancestor carries no view class of its own. */
+.app:has(.mobile-chat-view) .gs-coach { top: 66px; bottom: auto; }
 .rail.collapsed { padding: 16px 4px; gap: 6px; }
 .rail.collapsed .brand { padding: 6px 4px 8px; }
 .rail.collapsed nav a {

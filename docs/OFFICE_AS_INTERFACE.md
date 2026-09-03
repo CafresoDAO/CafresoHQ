@@ -23319,3 +23319,81 @@ alphabetically. The suite is **345 files**. Re-run detached to completion:
 touch. The fixes were real and the fire-tests were real; the totals printed
 beside them were not. Suite runs from here are launched detached with a done
 marker and polled, rather than trusted because they exited 0.
+
+---
+
+### #158 — The coach never covers the message box
+
+**The bug.** The getting-started coach is `position: fixed` and bottom-anchored.
+On the Chat view it sat on top of the composer. Measured live at 1280×860: the
+card covered **27%** of the message box and **50%** of the DIRECT thread tab, and
+`elementFromPoint` at the tab's centre and at two points inside the textarea all
+returned the coach — at (380, 780) it returned a **BUTTON inside the coach**, so
+a click aimed at the message box would have advanced an onboarding step instead.
+Worse at 375×812, where Chat is the primary view: **46%** of the composer covered
+and the textarea's own **centre unhittable**. The collapsed `gs-coach-mini` pill
+is not exempt — it carries `.gs-coach` too, and measured **26%** at that size.
+
+And the coach's step 3 reads *"Chat with your team — Say hi to your CEO"*, with
+an "Open chat →" button. Follow it and the card lands on the composer it just
+sent you to. That is the sentence already written in the comment at
+`styles.css:1857`: **a coach that blocks the door it is pointing at.** This is
+its third instance — it landed on the rail's SETTINGS button once (fixed by
+clearing the rail's column), on the mobile tab bar once (fixed by clearing the
+bar's height), and clearing the rail's column is what put it here. The Chat dock
+is bottom-anchored too and spans the whole remaining width, so this time there is
+**no column left to clear, only a row**.
+
+**The fix.** One rule, in `styles.css`:
+
+```css
+.app:has(.mobile-chat-view) .gs-coach { top: 66px; bottom: auto; }
+```
+
+`top` rather than a bottom offset **on purpose**. The dock's height is not
+knowable from CSS: `.composer textarea` grows from `min-height: 44px` to
+`max-height: 140px` as you type, and the thread tabs sit under it. Any bottom
+offset is a magic number that a long message walks straight back through.
+Anchoring to the top needs no number at all. It costs the top of the message
+list, which is the oldest end of a log that scrolls to its newest; the composer
+is the one thing on this view that must never be covered.
+
+`:has()` because `.mobile-chat-view` is rendered for `view === 'chat'` and
+nothing else (`app.jsx` `renderViewBody`), so it is the exact signal, and the
+ancestor carries no view class of its own. Specificity: `:has(X)` contributes its
+**argument's** specificity and none of its own, so the rule scores (0,3,0) —
+enough to beat the plain `.gs-coach { bottom: … }` in the mobile block *later in
+the file*, which is the one that would otherwise win.
+
+**The test.** `scripts/test_the_coach_never_covers_the_message_box.py`, 12
+checks. Not a grep for the fix — it states the rule the fix has to satisfy
+(*whatever positions the coach while Chat is up must not be a bottom offset*) and
+derives it from the stylesheet. §1 proves the premise from the CSS itself
+(`min-height ≠ max-height`, i.e. the dock really does grow). §2 requires exactly
+one chat-scoped `.gs-coach` rule, outside any media query, with `bottom: auto`, a
+real `top`, and **no numeric or `calc` bottom**. §3 **computes** specificity —
+including the `:has`/`:not` argument rule — and requires the chat rule to outrank
+every other `.gs-coach` rule that sets a bottom, rather than trusting source
+order. §4 checks the base coach is still bottom-anchored everywhere else. §5
+checks `.mobile-chat-view` is rendered exactly once and under `case 'chat':`, so
+the hook stays exact.
+
+**Fire-tested seven ways** — rule removed, magic bottom, `calc` bottom,
+media-query-scoped to desktop, scope dropped, composer given a fixed height, and
+a competing `.app.rail-collapsed .gs-coach { bottom: 20px }` at equal specificity
+(which failed §3 alone, naming the offender). Each broke exactly the checks it
+should; restore byte-identical; test passes again.
+
+**Verified live** in both directions: 0% overlap and full hittability of the
+textarea and both thread tabs at 1280×860 and at 375×812; the coach unchanged on
+Tasks (bottom 14px, bottom edge 846).
+
+**Class sweep.** The #157 class — *a surface with a filter and a create control,
+where the create control does not know the filter exists* — was swept again this
+tick. The Library/vault was checked and **cleared as a non-instance**: its
+`newNote` opens the note immediately, and its empty-kind message never invites
+creation. `modals/collab.jsx` INBOX, `features.jsx` `ReceiptsModal` and the
+meeting seats were cleared earlier. The class is closed for now.
+
+**Suite: 346/346, zero failures** — launched detached with a done marker and
+polled, per the correction in #157.
