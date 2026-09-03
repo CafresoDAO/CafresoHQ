@@ -587,15 +587,49 @@ function InboxModal({ open, onClose, onResend = null }) {
      because `all` is in append order, so all[0] is that record. */
   const droppedRecords = (all[0] && all[0].droppedBefore) || 0;
 
+  /* The two halves of the subtitle were answering different questions.
+     `visibleThreads.length` respects both filters; `all.length` respected
+     neither, and the word "total" was pinned to it — so an office holding
+     exactly one message, failed, opened its inbox on
+
+         0 THREADS · 1 MESSAGE TOTAL
+
+     above "No messages match this filter." Measured live, on the default
+     ACTIVE filter with one failed record on disk. Zero threads holding one
+     message is not a state anything can be in: it reads as the inbox
+     admitting it has a message and cannot show it. The chip row underneath
+     was answering correctly the whole time (ACTIVE 0, FAILED 1, ALL 1),
+     which is what makes the header the odd one out rather than the news.
+
+     The remedy already exists one level down, on each thread row: when a
+     filter is on, say how many messages in HERE matched ("3 here"). This is
+     the same sentence for the whole panel — count what the filters actually
+     let through, and name the narrowing rather than leaving the reader to
+     infer it from a number that never moves.
+
+     `all.length` is still on screen when filtered, as the second half of
+     "M of K" — the boss should not have to clear the filter to learn the
+     registry is not empty. That is the half the old line got right. */
+  const matchingMessages = all.filter(m => matchesState(m) && matchesAgent(m)).length;
+  const isFiltered = filterState !== 'all' || filterAgent !== 'all';
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
   return (
     <Modal open={open} onClose={onClose}
            title="📬 INBOX"
-           subtitle={`${visibleThreads.length} thread${visibleThreads.length === 1 ? '' : 's'} · ${all.length} message${all.length === 1 ? '' : 's'}`
+           subtitle={plural(visibleThreads.length, 'thread') + ' · '
+                     + (isFiltered
+                        ? `${matchingMessages} of ${plural(all.length, 'message')}`
+                        : plural(all.length, 'message'))
                      + (droppedRecords
                         /* "500 messages total" was the sentence on screen with
                            505 on disk. The word doing the damage is "total". */
                         ? ` kept · ${droppedRecords} older dropped`
-                        : ' total')}
+                        /* …and "total" is only true of the unfiltered count.
+                           On "M of K" the K already says which number is the
+                           whole registry, so the word would be claiming it of
+                           M instead — the exact slip this fix is undoing. */
+                        : isFiltered ? '' : ' total')}
            size="xl">
       <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10,alignItems:'center'}}>
         {FILTER_PILLS.map(s => (

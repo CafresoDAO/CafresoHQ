@@ -87,6 +87,46 @@ def section(src, start, end):
     return src[a:b] if b > a else ''
 
 
+def component(src, name):
+    """One top-level function body, located by NAME — never by its parameter
+    list, the locator that turned an added prop into a test CRASH once
+    already (see test_calendar_task_row_opens_the_right_card)."""
+    m = re.search(r'^function %s\(' % re.escape(name), src, re.M)
+    if not m:
+        return ''
+    j = src.find('\nfunction ', m.end())
+    return src[m.start():] if j == -1 else src[m.start():j]
+
+
+def jsx_attr(src, name):
+    """The expression inside `name={…}`, brace-balanced — or '' if absent.
+
+    Located by the attribute's NAME. The subtitle check below used to pin the
+    first characters of the expression itself
+    (``subtitle={`${visibleThreads.length}``), and #159 rewrote exactly those
+    characters to stop the header mixing a filtered count with an unfiltered
+    one. `section` then returned '' and BOTH checks failed — not because the
+    trim disclosure had regressed, but because the locator had. That is the
+    brittle-literal hazard this suite has been flagging for other files,
+    landing here: a locator that pins prose or punctuation reports a rename as
+    a regression, and (worse) an empty slice satisfies any check phrased as
+    "X not in slice".
+    """
+    m = re.search(r'\b%s=\{' % re.escape(name), src)
+    if not m:
+        return ''
+    depth, j = 0, m.end() - 1
+    while j < len(src):
+        if src[j] == '{':
+            depth += 1
+        elif src[j] == '}':
+            depth -= 1
+            if depth == 0:
+                return src[m.end():j]
+        j += 1
+    return ''
+
+
 COLLAB_CODE = strip_jsx_comments(COLLAB)
 
 HARNESS = r"""
@@ -234,8 +274,16 @@ def main():
           'history ({m.history.length} events)' not in COLLAB,
           '— that exact string was on screen over a 45-event record')
 
-    subtitle = section(COLLAB_CODE, 'subtitle={`${visibleThreads.length}', 'size="xl"')
-    check('the inbox subtitle is findable', bool(subtitle))
+    # Scoped to the component, not the file: `subtitle={…}` appears on other
+    # modals in here too, and the first brace-form one being the inbox's is a
+    # fact about line order, not about the code.
+    inbox = component(COLLAB_CODE, 'InboxModal')
+    check('the InboxModal component is findable', bool(inbox),
+          '— modals/collab.jsx: `function InboxModal(` is gone')
+    subtitle = jsx_attr(inbox, 'subtitle')
+    check('the inbox subtitle is findable', bool(subtitle),
+          '— modals/collab.jsx has no `subtitle={…}` on the INBOX modal, so '
+          'every check below it would pass against an empty string')
     # Counted, not merely found. The word has to appear ONCE, in the branch
     # taken when nothing was dropped — an arm that put " total" back into the
     # base string and left the conditional suffix hanging off the end read as

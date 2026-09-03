@@ -23397,3 +23397,139 @@ meeting seats were cleared earlier. The class is closed for now.
 
 **Suite: 346/346, zero failures** — launched detached with a done marker and
 polled, per the correction in #157.
+
+---
+
+### #159 — The inbox header counts one thing
+
+**The bug.** The INBOX subtitle was two answers to two different questions,
+joined by a middle dot and closed with a word that belonged to only one of
+them:
+
+```jsx
+subtitle={`${visibleThreads.length} thread…  ·  ${all.length} message…`
+          + (droppedRecords ? ` kept · …` : ' total')}
+```
+
+`visibleThreads` respects the state chip **and** the agent dropdown. `all` has
+never respected either, and `total` was pinned to it. Measured live on an
+office holding exactly one message — the boss's "hello there" to the CEO,
+state `failed` — with the panel on its default ACTIVE filter:
+
+```
+📬 INBOX
+0 THREADS · 1 MESSAGE TOTAL
+ACTIVE 0 · BLOCKED · COMPLETED · FAILED 1 · CANCELLED · ALL 1
+No messages match this filter.
+```
+
+Zero threads holding one message is not a state anything can be in. It reads
+as the inbox admitting it has a message and cannot show it — on the one panel
+whose whole job is to let the boss *trace what happened to a handoff*. The
+chip row directly underneath was answering correctly the entire time, which is
+what makes the header the odd one out rather than the news.
+
+This is the recurring shape again — **a surface answers a question it was not
+asked** (#155, #157) — with a twist: one sentence answering *two* questions,
+so it contradicts itself rather than merely being unhelpful.
+
+**The fix.** Count what the filters actually let through, and name the
+narrowing instead of leaving the reader to infer it from a number that never
+moves:
+
+```jsx
+const matchingMessages = all.filter(m => matchesState(m) && matchesAgent(m)).length;
+const isFiltered = filterState !== 'all' || filterAgent !== 'all';
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+```
+
+```
+0 threads · 0 of 1 message          (default ACTIVE, one failed record)
+1 thread  · 1 of 1 message          (FAILED chip, or the agent dropdown)
+1 thread  · 1 message total         (no filter — unchanged)
+```
+
+`all.length` stays on screen while filtered, as the second half of "M of K":
+the boss should not have to clear a filter to learn the registry is not empty.
+That is the half the old line got right. And `total` is now suppressed while
+filtered — the word is a claim about the whole registry, and beside "M of K"
+it would be claiming it of **M**, which is the exact slip being undone. The
+remedy already existed one level down, on each thread row (`{hits} here`);
+this is that sentence for the whole panel.
+
+**The test.** `scripts/test_the_inbox_header_counts_one_thing.py`, 16 checks.
+The subtitle expression, the thread grouping, both filter predicates and the
+state table are **lifted from the shipped sources and executed under Node** —
+`MSG_STATES` from `app/windows.jsx`, because that table is the authority on
+what "active" excludes and a hand-written copy here would be the third one
+this file's own comments complain about. Ten cases cover the measured state,
+both filter dimensions independently, an empty registry, and the roll clause
+filtered and unfiltered. Two rules are then stated once over all of them: no
+reading ever prints "0 threads" beside a message count it is showing, and the
+word "total" never appears while a filter narrows the view.
+
+**Fire-tested seven ways** — the original bug reintroduced, `total` kept while
+filtered, the agent dropdown dropped from `isFiltered`, `matchingMessages`
+counting threads, `matchingMessages` ignoring the agent half, the roll clause
+deleted, and `MSG_STATES` un-imported.
+
+**One escaped on the first pass**, and is the reason this entry is worth
+reading: substituting `visibleThreads.length` for `matchingMessages` passed
+all fifteen checks clean. Every case in the list happened to have as many
+matching messages as matching threads, so a header counting *threads* and
+calling them *messages* read correctly in all of them. The fix was a case, not
+a check — two failed messages inside **one** thread, the only shape that tells
+the two numbers apart. Recorded because it is the same hazard as the brittle
+literal: a suite can be thorough about assertions and still be blind in a
+direction its fixtures never point.
+
+**Verified live** in five directions on a real office: ACTIVE, FAILED, ALL,
+and the agent dropdown alone with the state on ALL, plus the unfiltered
+sentence confirmed byte-for-byte unchanged.
+
+---
+
+**And then the suite found the second half of the tick.**
+`test_a_trimmed_record_says_it_was_trimmed.py` went red — not because the trim
+disclosure had regressed, but because it located the subtitle like this:
+
+```python
+subtitle = section(COLLAB_CODE, 'subtitle={`${visibleThreads.length}', 'size="xl"')
+```
+
+A locator pinned to the first characters of the expression. The fix above
+rewrote exactly those characters, `section` returned `''`, and **two** checks
+failed at once — one of them the "findable" guard, which was the only thing
+standing between an empty slice and a suite full of checks phrased as *"X not
+in slice"*, every one of which passes vacuously against `''`.
+
+This is the **brittle-literal class** that has sat in this ledger as an open
+lead for many entries, caught for the first time by an actual rename rather
+than by a sweep. Repaired the way every locator written since #146 has been —
+by name, not by text:
+
+```python
+inbox    = component(COLLAB_CODE, 'InboxModal')   # by `function <Name>(`
+subtitle = jsx_attr(inbox, 'subtitle')            # brace-balanced attribute
+```
+
+Scoped to the component on purpose: `subtitle={…}` appears on other modals in
+the same file, and the inbox's being the first brace-form one is a fact about
+line order, not about the code. The "findable" guard now carries a detail
+string saying *why* an empty slice is dangerous, and a new check fails loudly
+if `InboxModal` itself is renamed rather than silently scoping to nothing.
+
+**Fire-tested four ways**: the regression the check exists for (`total` put
+back on the dropped branch) is still caught; a rename inside the expression —
+the exact break that started this — now passes; a deleted subtitle fails
+loudly instead of vacuously; and a renamed component fails loudly too.
+
+The lead stays open for the rest of the suite: `test_window_drag_to_edge_zero_snaps_back.py`
+is still known to pin exact interior whitespace, and no systematic sweep of
+the 347 has been done. But the class now has one confirmed repair and a worked
+example of what the repair looks like.
+
+**Suite: 347/347, zero failures**, launched detached with a done marker and
+polled — and this entry is the case for why that step is not optional. The
+first run of this tick came back **346 PASS / 1 FAIL**, and the failure was
+information, not noise.
