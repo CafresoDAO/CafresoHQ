@@ -26408,3 +26408,88 @@ module split). Rather than work from that base, its branch was reset
 (`git reset --hard chore/oss-reduction`) to the local tip — the same repo,
 same working directory, now checked out at the current commit — and the
 bug hunt, fix, and this entry proceed from there.
+
+---
+
+## 191. A task dragged straight to DONE looked finished forever, with no name and no time
+
+**The reading.** Assigned area: the Task Board's drag-and-drop status
+transitions (`views/core.jsx`'s `TasksView`, `features.jsx`'s `TaskBoard`,
+and the shared status-write helper both funnel through, `app/worklog.jsx`'s
+`applyStatus`). #f01359b ("Stamp completedAt/completedBy on every task
+completion") had already taught the agent-completion paths to stamp
+`completedAt`/`completedBy` so a finished card could say who finished it
+and when, and verified itself with a wiring check that greps `app.jsx`/
+`features.jsx` for the literal text ``applyStatus(...,'done'``. That regex
+is itself a clue: anything that reaches `'done'` through a variable rather
+than a literal is invisible to it.
+
+**The mechanism.** The Task Board's column drop is exactly that variable
+call — `app.jsx`'s `onMoveTask`:
+
+    const onMoveTask = (id, status) =>
+      setTasks(prev => prev.map(t => t.id === id ? applyStatus(t, status) : t));
+
+Every drag between INBOX/DOING/DONE on the board (`features.jsx`'s
+`onDrop={e=>{ const id=e.dataTransfer.getData('task'); if(id) onMove(id,
+key); }}` on each column) runs through this one line, and `'done'` never
+appears in it literally — it arrives as whatever column the boss dropped
+the card on. `applyStatus` itself only owned the `startedAt` invariant;
+nothing stamped `completedAt`/`completedBy` on this path at all. Measured:
+take a task parked in DOING whose run ended without producing a
+deliverable — `f01359b`'s own not-produced branch leaves `result` holding
+the reply text and `completedAt`/`completedBy` both correctly `null` — and
+drag it straight onto the DONE column. `features.jsx`'s result block
+computes `finished = t.status === 'done'` from status alone, so the card
+flips to "✓ finished" and, with no `completedAt` ever written, stays
+timeless — the exact bare line `f01359b` exists to prevent, reachable on
+the one path its own wiring check couldn't see. The inverse gap sat right
+beside it: dragging a DONE card back to DOING or INBOX (reopening it by
+hand rather than via a fresh run) left the old `completedAt`/`completedBy`
+in place, so a card back "on it" could still be traced to whoever finished
+its previous life.
+
+**The fix.** `applyStatus` (`app/worklog.jsx`) now owns the
+`completedAt`/`completedBy` invariant the same way it already owns
+`startedAt`: stamp `completedAt` (only when absent, so re-dropping an
+already-done card on DONE doesn't refresh its finish time) on the way into
+`done`; clear both fields on the way out, for the same reason it already
+clears `startedAt` leaving `doing` — a stamp left over from an earlier life
+must not hang a stale name or time off a card back in progress. No agent
+touched this path, so `completedBy` is never invented — the field is left
+alone for callers that do know who, and every one of the three sites
+`f01359b` already fixed sets its own `completedAt`/`completedBy` in the
+same object spread immediately after calling `applyStatus`, which still
+wins (spread order).
+
+**The test** (`scripts/test_a_dragged_done_card_says_when.py`) lifts
+`applyStatus` verbatim from `app/worklog.jsx` (the same harness pattern
+`test_worklog.py` already uses) and drives the exact reported scenario: a
+parked task (`result` set, `completedAt`/`completedBy` both `null`) run
+through `applyStatus(t, 'done')` — the identical call `onMoveTask` makes —
+now stamps `completedAt` and, via `finishedLabel`, renders a real "just
+now" instead of staying silent; `completedBy` is confirmed to stay absent
+rather than fabricated. Re-dropping an already-done card on DONE doesn't
+refresh the stamp; dragging back to DOING or INBOX clears both fields; an
+explicit `completedAt`/`completedBy` set at the call site still overrides
+the default; the input task is never mutated. A wiring check greps
+`app.jsx` for `onMoveTask`'s exact body to confirm the column drop still
+routes through `applyStatus(t, status)` rather than reimplementing (or
+skipping) the transition inline, so a future edit can't silently reopen
+this gap.
+
+Fire-tested: removed the new `completedAt`/`completedBy` block from
+`applyStatus`, leaving only the pre-existing `startedAt` logic. Five checks
+failed by name — the stamp-on-drag, the rendered "just now", and both
+clear-on-reopen checks — while the untouched `startedAt` checks in
+`test_worklog.py` and the explicit-stamp/purity checks here stayed green.
+Restored the block and confirmed `app/worklog.jsx` byte-identical to the
+pre-revert file via `diff`.
+
+**Suite: 375/376.** The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`) is
+the same pre-existing `moc`/M0219 `main.mo` implicit-`transient` toolchain
+mismatch recorded throughout this session, on a file this diff never
+touches — `git status --porcelain` covers only `app/worklog.jsx` and the
+one new test file above; `src/cafresohq_state/main.mo` was never read,
+staged, or edited.

@@ -22,13 +22,47 @@
    drag onto the same column) must not restart the clock, or a job that has
    been sitting two hours would report itself fresh every time it was
    touched. Cleared on the way out so a re-opened task can't inherit a stale
-   age from a previous life. */
+   age from a previous life.
+
+   `completedAt`/`completedBy` get the same treatment, for the same reason —
+   and belong here rather than at each call site for a reason `startedAt`
+   didn't have to worry about: the fix that taught every agent-completion
+   path to stamp them (app.jsx, "of the three sites that put a task into
+   done, only one stamped") verified itself with a wiring check that greps
+   app.jsx/features.jsx for the literal text `applyStatus(...,'done'`. The
+   Task Board's own column drag — `onMoveTask` in app.jsx, `applyStatus(t,
+   status)` with `status` a variable — has never once matched that literal
+   and was never one of the three sites anyone counted.
+
+   Measured: drag a parked card (one whose run came back without a
+   deliverable — `result` holds the reply text, `completedAt`/`completedBy`
+   both correctly null per that same fix) straight from DOING to the DONE
+   column. The card's `t.result` block renders `finished` from `t.status`
+   alone, so it flips to "✓ finished" — and, with nothing here stamping
+   `completedAt`, stays timeless forever, the exact bare line the
+   agent-completion fix was written to stop. No agent did this, so no name
+   is owed — `completedBy` is left to the caller, same as it always was —
+   but WHEN is owed, because the boss just did it and the field exists to
+   say so.
+
+   Symmetric with `startedAt`: only stamped when absent, so re-dropping an
+   already-done card on DONE doesn't refresh its finish time; cleared on the
+   way out (`completedBy` with it — a name with no timestamp behind it is a
+   worse answer than no name) so a card reopened via a manual drag, and not
+   just via a fresh run, can't go on crediting whoever finished its last
+   life. */
 function applyStatus(task, status, now) {
   const next = Object.assign({}, task, { status });
   if (status === 'doing') {
     if (!next.startedAt) next.startedAt = (now || Date.now());
   } else if (next.startedAt) {
     delete next.startedAt;
+  }
+  if (status === 'done') {
+    if (!next.completedAt) next.completedAt = (now || Date.now());
+  } else {
+    if (next.completedAt) delete next.completedAt;
+    if (next.completedBy) delete next.completedBy;
   }
   return next;
 }
