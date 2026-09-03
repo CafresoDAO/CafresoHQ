@@ -547,6 +547,24 @@ const persistableMessages = (xs) => {
   return out;
 };
 
+/* Merge the persisted messages file (fetched on mount) with whatever's
+   already in memory before the fetch lands — dedup by id, in-memory wins.
+   `activity` sits on this exact same useFileStored race (mount fetch vs. a
+   debounced 1.5s file write) and was given mergeByIdCap for it; `messages`
+   never got the equivalent, so createMessage() could append a message,
+   flush it to localStorage, and then lose it outright to a same-tab reload
+   that landed inside the debounce window and adopted the still-stale file.
+   Unlike mergeByIdCap, this doesn't sort or cap on its own — messages have
+   no ts/unread fields to sort by, and the union is handed back through
+   persistableMessages (which already caps + prunes history) rather than
+   duplicating that logic here. */
+const mergeMessages = (inMem, fetched) => {
+  const byId = new Map();
+  for (const m of (Array.isArray(fetched) ? fetched : [])) byId.set(m.id, m);
+  for (const m of (Array.isArray(inMem) ? inMem : [])) byId.set(m.id, m);
+  return persistableMessages([...byId.values()]);
+};
+
 // Message states form a directed lifecycle. Every transition appends to
 // history, and history is capped (see trimHistory) — so the trail is the
 // opening entry plus the most recent HISTORY_CAP-1, with the count of what
@@ -555,4 +573,4 @@ const persistableMessages = (xs) => {
 // the cap two functions up had been quietly disproving. `terminal` states
 // can't be transitioned out of (except via explicit reopen).
 
-export { capChatFair, chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored };
+export { capChatFair, chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, mergeMessages, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored };

@@ -15,7 +15,7 @@ import { taskKind, xpRecord } from './app/experience.jsx';
 import { attachVisit, chainHoldLine, doneLine, floorEmit, officeCause, shortfallLine, snagCause, snagSentence, toolActivity, visitLine, visitPlace } from './app/floor.jsx';
 import { formatToolInput } from './app/approvals.jsx';
 import { attentionCount as attentionCountOf } from './app/attention.jsx';
-import { capChatFair, chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored } from './app/storage.jsx';
+import { capChatFair, chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, mergeMessages, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored } from './app/storage.jsx';
 import { ChatWindow, MSG_STATES, WindowFrame } from './app/windows.jsx';
 /* ==========================================================================
    CafresoHQ — root app
@@ -175,13 +175,21 @@ function App() {
   // every DM the system dispatches creates a message, transitions through
   // states (queued → delivered → in_progress → completed/failed), and is
   // persisted so the boss can always trace what happened to a handoff.
-  // See persistableMessages above for the cap + history pruning.
-  const [messages, setMessages] = useFileStored(k('messages'), 'state', 'messages', [], persistableMessages);
+  // See persistableMessages (app/storage.jsx) for the cap + history pruning.
+  //
+  // messagesRef is declared before the hook, not after (the pattern every
+  // other ref in this file follows), because the mount-fetch transform below
+  // reads messagesRef.current to merge the file against whatever's already
+  // in memory instead of letting a stale file clobber it — see mergeMessages
+  // in app/storage.jsx. `activity` sits on this exact same useFileStored race
+  // and was given the equivalent (mergeByIdCap) above.
+  const messagesRef = useRefA([]);
+  const [messages, setMessages] = useFileStored(k('messages'), 'state', 'messages', [],
+    (fetched) => mergeMessages(messagesRef.current, fetched));
 
-  // Stable refs so the dispatcher closure (created early in the render) can
+  // Stable ref so the dispatcher closure (created early in the render) can
   // always read the latest list — without this, fast back-to-back DMs would
   // see stale snapshots and lose updates.
-  const messagesRef = useRefA(messages);
   messagesRef.current = messages;
 
   /* MessageRegistry — the API agent dispatch + the Inbox panel both use.

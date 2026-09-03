@@ -24166,3 +24166,101 @@ passes clean on this tree — the mismatch was specific to that worktree's own
 toolchain state.
 
 **Suite: 354/354, zero failures.**
+
+## 168. The registry remembers what the file forgot
+
+**The reading.** A fresh office session, port 8904. Seed `hq-state/messages.json`
+with one message via `PUT /hq/state/messages`, then, live in the app,
+`@mention` a hired agent — `MessageRegistry.createMessage` appends a second
+message and the chat shows it immediately, correctly. Before the debounced
+file write (1.5s) lands, roll the server file back to the seeded, one-message
+version — standing in for the ordinary case where a tab reloads a beat before
+that write fires. Reload. The second message, the one the boss just watched
+get created, is gone. No error, no "couldn't save," nothing on screen says the
+registry lost anything.
+
+**The mechanism.** `useFileStored`'s mount-time fetch doesn't merge by
+default — it hands whatever the file returned straight to its caller's
+`transform`, and adopts the result outright once `dirtyRef`/`hydratedRef`
+(the 2026-08-08 fresh-browser-office fix) clear it to proceed. That guard
+protects against a *different* hazard — this session's own boot-time write
+racing the fetch — not against a same-tab remount landing while an *earlier*
+mount's debounced file write is still in flight: on remount, `dirtyRef` starts
+false again, so the fetch's stale file content is adopted unconditionally,
+even though `val` had already been seeded straight from localStorage with the
+message the earlier mount created. `messages` was wired with the plain
+`persistableMessages` transform — no merge — so `createMessage`'s synchronous
+append (flushed to localStorage right away, file catching up 1.5s behind)
+could lose the newer message outright to a same-tab reload landing inside
+that window. `activity` sits on the exact same hook with the exact same
+shape of race and doesn't have this bug: it was given a merge transform
+(`mergeByIdCap`, `app/storage.jsx`) when it needed one, back when it hit this.
+`messages` never got the equivalent.
+
+**The fix.** A new `mergeMessages(inMem, fetched)` in `app/storage.jsx`,
+next to `persistableMessages` (module-split home for both, post the
+`app/`+`views/` refactor — this fix targets that split layout, not the
+monolith), built the same way as `mergeByIdCap`: dedup into a `Map` keyed by
+id, write `fetched` first, then `inMem` over it so a collision always keeps
+the in-memory copy (it's always the fresher side), then run the union back
+through `persistableMessages` so the merge doesn't dodge the normal
+500-message cap / 30-history-entry prune. `app.jsx`'s
+`useFileStored(k('messages'), 'state', 'messages', [], ...)` now passes
+`(fetched) => mergeMessages(messagesRef.current, fetched)` as that transform.
+The one piece that isn't obvious: `messagesRef` had to move *above* the
+`useFileStored` call instead of being assigned from `messages` right after it
+(the pattern every other ref in this file follows) — the transform closure
+reads `messagesRef.current` and needs a live value at mount, before
+`messages` itself exists yet.
+
+**The test** (`scripts/test_messages_registry_merge.py`, 23 checks) pulls
+`MESSAGES_CAP`, `HISTORY_CAP`, `trimHistory`, `persistableMessages`, and
+`mergeMessages` out of `app/storage.jsx` by name — a brace-balanced
+statement scanner keyed on `const <name> = `, not a line range or a
+copy-pasted snippet — and runs them for real under Node, plus a regex check
+that `app.jsx` actually wires `mergeMessages` as the `messages` transform
+(not just defines it unused) and that `messagesRef` is declared before that
+call. Covers the message cap (500, rolling tail), the history prune (keeps
+the *opening* entry plus the most recent 29 — not a plain last-30 slice, and
+tracks `historyDropped`), non-array guards on both `persistableMessages` and
+`mergeMessages` (exercised behaviorally, not just inferred from a missing
+crash), the measured bug itself (an in-memory message absent from a stale
+fetched set survives the merge), collision resolution (in-memory wins), and
+that a merge exceeding the cap still comes out at exactly 500.
+
+Eight fire-tests against real edits to `app/storage.jsx`/`app.jsx` — flipped
+merge order, the original overwrite wiring reintroduced, both cap
+directions, both history-prune assertions, the array guard on each side of
+the merge, the merge skipping `persistableMessages` entirely, and
+`messagesRef`'s declaration order reverted — all eight failed by a properly
+named check (one early pass caught a guard removal only by an unrelated
+static-pattern check throwing `ValueError`, which is why two direct
+behavioral checks for the non-array guards were added rather than relying on
+that accident), and every restore came back `cmp`-identical before the next
+break was applied.
+
+**A worktree note.** This fix was found and built in a worktree branched
+before this ledger file existed in its history and before the `app/`+`views/`
+module split — its own `app.jsx` still had `persistableMessages` defined
+locally, pre-split. Integrating it meant re-verifying the bug's premise
+against the current, split tree from scratch (confirmed: `app.jsx` line ~179
+still wires the plain `persistableMessages` transform with no merge, and
+`activity`'s already-fixed `mergeByIdCap` at line ~775-777 is the working
+precedent this borrows from) rather than trusting the worktree's own diff,
+and re-homing the fix and its test to `app/storage.jsx` — where
+`persistableMessages` and `mergeByIdCap` already live — instead of the
+monolith location the original diff touched.
+
+**A closed lead, recorded not chased.** The same tick's exploration went
+looking for a doubled "⚠ Couldn't read" banner on a broken brain endpoint;
+all `chatErrorText` call sites do one clean bubble-text update each, no
+duplication in source. A live repro against an unreachable Ollama port
+surfaced something that looked like an indefinite hang instead, traced to
+`listOllamaModels()`'s 3s `AbortController` never firing because the Browser
+pane's tab stayed `document.hidden === true` throughout — Chrome throttles
+background-tab timers, and the underlying fetches completed fine (200 OK in
+the network log); the abort just never got scheduled to cut them off. A
+test-harness artifact of a multi-agent session sharing one Browser pane, not
+a reachable state for a real foregrounded tab. No second bug confirmed.
+
+**Suite: 357/357, zero failures.**
