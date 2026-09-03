@@ -26493,3 +26493,131 @@ mismatch recorded throughout this session, on a file this diff never
 touches — `git status --porcelain` covers only `app/worklog.jsx` and the
 one new test file above; `src/cafresohq_state/main.mo` was never read,
 staged, or edited.
+
+---
+
+## 192. The Memory Shelf's local cache leaked between two offices sharing one browser
+
+**The reading.** Assigned area: how Memory Shelf entries are stored,
+retrieved, and surfaced — `views/core.jsx`'s `MemoryPage`, `app.jsx`'s
+`memory` state, `app/storage.jsx`'s `useFileStored`. Read the prior work
+here first: the `MEMORY_PROMPT_CAP` fix (memory's slice-to-24 ceiling
+folded into the prompt, and its own "seed the server file, not
+`localStorage`" method note — `useFileStored` hydration overwrites a
+seeded mirror), and #186 (restoring an office backup used to silently undo
+itself within the same reload, fixed by mirroring the file-backed half of
+a restore too). Neither touches what this entry found: `memory`'s
+`useFileStored` call used the WRONG localStorage-key helper for a
+multi-tenant deployment, not a bug in the cap or the restore path
+themselves.
+
+**The mechanism.** `hq.cafreso.com` serves every office (container) from
+ONE origin, split only by URL path — `/u/<slug>/hq.html`, with Caddy
+stripping `/u/<slug>` before the request reaches that container's own
+`serve.py` and its own `CAFRESOHQ_HQ_STATE_DIR` (`claude-client.jsx`'s
+`_API_BASE` derivation spells this out explicitly). Each container's
+`/hq/memory/context` file is therefore already correctly isolated — separate
+processes, separate state directories. `localStorage`, though, is scoped by
+ORIGIN, not path: a browser that has opened two different offices at
+`hq.cafreso.com` shares every `cafresohq_hq_v1:*` key between them
+regardless of which office is open now. `app/storage.jsx` already has the
+fix for exactly this mismatch — `ks(n)`, `k(n)` plus the office's own slug
+parsed out of `_API_BASE` — and it is wired into five onboarding flags
+(`coachSeen`, `tourSeen`, `gettingStartedDone`, `firstDeliverySeen`,
+`cliDismissed`) specifically so, per its own comment, "a NEW user/container
+shows the New-User guide, instead of inheriting a 'seen' flag from a prior
+account in the same browser." `memory`'s `useFileStored` call
+(`app.jsx`) used the OTHER helper, `k('memory')` — no slug, one shared slot
+for every office a browser has ever opened.
+
+`useFileStored` reads that slot as its very first paint, before the
+mount-fetch to the (correctly per-office) file has resolved. So opening
+Office B, having previously opened Office A, put Office A's saved
+long-term memory — the boss's own facts, preferences, rules about a
+DIFFERENT business — on screen as Office B's own notes for the first
+~100-300ms of every load. That alone is a leak the boss can screenshot. It
+stops being transient the moment the boss acts in that window: a REMEMBER
+click (or a delete) that lands before the fetch settles flips `dirtyRef`,
+and `useFileStored`'s mount-fetch guard keeps a "genuine edit" over a
+"stale" fetch (`if (dirtyRef.current && !untouched && !mergeOnDirty)
+return;` — the same guard `test_an_early_activity_event_did_not_erase_the_log.py`
+already documents as the correct, deliberate behavior for a plain-snapshot
+store like this one, just never checked against a SHARED key before). The
+debounced PUT that follows then persists Office A's leaked entries into
+Office B's own `memory/context.json` on disk — no longer a rendering
+glitch, a cross-tenant write.
+
+**The fix.** `app.jsx`'s memory `useFileStored` call now uses `ks('memory')`
+— the exact pattern the five onboarding flags already use. Every other
+`useFileStored` collection (`agents`, `tasks`, `messages`, `activity`,
+`workflows`, `meetings`, `projects`, `missions`, `receipts`, `pins`,
+`windows`, `experience`) shares this same unscoped-`k()` gap and is
+deliberately NOT touched here — out of scope for a Memory Shelf fix, and a
+larger, unreviewed change than one call site should make on its own.
+
+That one-line change broke a second thing, caught by the existing suite
+rather than found by inspection: `modals/settings.jsx`'s office-restore
+path (#186) looks up a backup entry's bare name in `OFFICE_FILE_BACKED` to
+decide whether to also PUT it to its mirrored file — `OFFICE_FILE_BACKED[key.slice(OFFICE_HQ_PREFIX.length)]`.
+A `ks()`-scoped key's remainder is now `memory:<slug>` (or `memory:local`
+with none), which isn't a key `OFFICE_FILE_BACKED` has, so restoring a
+backup taken from a live, slugged office silently stopped mirroring memory
+back to disk — reintroducing #186's own bug, scoped to exactly the one
+store this entry just re-scoped. Fixed by trying the exact remainder
+first, then falling back to stripping one trailing `:suffix` before
+re-consulting the map — covers the new scoped form, an old bare-`memory`
+backup from before this fix, and every already-unscoped store (no colon to
+strip, first lookup already hit) in one small change.
+
+**The tests.** New:
+`scripts/test_a_second_office_never_inherits_the_first_offices_memory.py`
+lifts the real `STORE_KEY`, `k` and `ks` out of `app/storage.jsx` by exact
+source-anchored extraction and runs them under Node with a fake `window`
+whose `_API_BASE` switches between two simulated office slugs — confirming
+`ks('memory')` differs per office while the old `k('memory')` does not, and
+simulating the leak end to end with one shared fake `localStorage`: Office
+A's saved notes (including a client name) never appear in Office B's first
+read once the key is scoped, and are reproduced showing up there against
+the old unscoped key for contrast. It also asserts every OTHER
+`useFileStored` collection is untouched — still on `k(...)`, not silently
+widened.
+
+Updated `scripts/test_a_restored_office_does_not_snap_back_to_the_old_file.py`,
+whose own call-site regex (`useFileStored\(\s*k\('(\w+)'\)...`) only
+matched literal `k(...)` and so stopped counting `memory` as a real call
+site the moment this fix landed — widened to `ks?` and added a check that
+`memory` is still discovered, with the right scope/name, even though it's
+`ks(...)` now. Also widened its behavioral harness: the mocked backup's
+memory entry now carries a realistic `ks()`-scoped key
+(`cafresohq_hq_v1:memory:1a2b3c4d5e6f7890`) and still resolves to
+`hq/memory/context`, plus a second small run confirming an OLD-format
+backup's bare `cafresohq_hq_v1:memory` key still resolves too.
+
+Fire-tested both fixes independently: reverting `app.jsx`'s `ks('memory')`
+back to `k('memory')` failed the new test's two wiring checks by name (and
+would have silently failed the widened restore-test regex too, had it run
+first); reverting `settings.jsx`'s fallback lookup back to the bare
+`OFFICE_FILE_BACKED[key.slice(...)]` failed three checks in the restore
+test by name — the scoped-key resolution, the "exactly 3 file-backed
+entries" count, and the reload-ordering check (the PUT that stopped firing
+was also the PUT the reload was waiting on). Restored both and confirmed
+`app.jsx` and `modals/settings.jsx` byte-identical to the pre-revert state
+via `git diff --stat` (diff limited to the intended lines) after each
+round-trip. `npm run build` succeeded after every edit that touched a
+`.jsx` file.
+
+**A worktree note.** This bug-hunt agent's assigned worktree was 15 commits
+stale — missing `docs/OFFICE_AS_INTERFACE.md`, `scripts/run_tests.py`, and
+the `app/`/`ui/`/`views/`/`modals/` module split entirely. Rather than
+hand-port a patch, its own branch was fast-forwarded in place
+(`git merge --ff-only chore/oss-reduction`, verified as a clean ancestor
+first) onto the current tip before any edits were made, so this entry and
+its diff are against current source throughout.
+
+**Suite: 375/376.** The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`) is
+the same pre-existing `moc`/M0219 `main.mo` implicit-`transient` toolchain
+mismatch recorded throughout this ledger, on a file this diff never
+touches — `git status --porcelain` covers only `app.jsx`,
+`modals/settings.jsx`, and the two test files above;
+`src/cafresohq_state/main.mo` was never read, staged, or edited.

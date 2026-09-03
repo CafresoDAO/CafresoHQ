@@ -104,7 +104,10 @@ const setNote = (n) => { noteCalls.push(n); };
     'cafresohq_hq_v1:theme': '"dark"',
     'cafresohq_hq_v1:tasks': '[{"id":1,"title":"Ship it"}]',
     'cafresohq_hq_v1:projects': '[{"id":"p1"}]',
-    'cafresohq_hq_v1:memory': '{"notes":"hi"}',
+    // The realistic current shape: memory's key is ks()-scoped, so a real
+    // export from a live, slugged office carries the office's slug as a
+    // suffix, not the bare name the map's keys are written under.
+    'cafresohq_hq_v1:memory:1a2b3c4d5e6f7890': '{"notes":"hi"}',
     'cafresohq_hq_v1:totallyUnknownFutureKey': '{"x":1}',
     'cafresohq_client_v1': JSON.stringify({ model: 'x', openrouterKey: 'sk-LEAK' }),
     'cafresohq_agent_keys_v1': '{"smuggled":"blob"}',
@@ -144,12 +147,24 @@ def main():
     # a fourteenth useFileStored(k('whatever'), scope, name, ...) call in
     # app.jsx and forget the mirror here. Diff against app.jsx itself,
     # not a hand-copied assumption, so that drift is what fails.
+    #
+    # `ks?` — memory's call site is useFileStored(ks('memory'), ...), not
+    # k('memory'): a shared hq.cafreso.com origin serves every office split
+    # only by URL path, and localStorage is scoped by origin, so the Memory
+    # Shelf's cache used to leak between two offices opened in one browser.
+    # ks() suffixes the key with the office's own slug to stop that. A
+    # regex that only matched literal k(...) would silently stop counting
+    # memory as a real call site the moment that fix landed — which is
+    # exactly what happened here until this line grew the `?`.
     call_re = re.compile(
-        r"useFileStored\(\s*k\('(\w+)'\)\s*,\s*'(\w+)'\s*,\s*'(\w+)'")
+        r"useFileStored\(\s*ks?\('(\w+)'\)\s*,\s*'(\w+)'\s*,\s*'(\w+)'")
     real = {m.group(1): {'scope': m.group(2), 'name': m.group(3)}
             for m in call_re.finditer(app)}
     check('found the real useFileStored call sites in app.jsx to diff against',
           len(real) >= 13, sorted(real))
+    check("memory's call site is counted even though it's ks(...), not k(...)",
+          'memory' in real and real.get('memory') == {'scope': 'memory', 'name': 'context'},
+          real.get('memory'))
 
     if not shutil.which('node'):
         print('  SKIP  node not on PATH — map + behavior checks need it')
@@ -200,7 +215,7 @@ def main():
                   == '[{"id":1,"title":"Ship it"}]')
             check('the restored projects are pushed to their mirrored file',
                   'http://TESTAPI/hq/state/projects' in urls, urls)
-            check("memory's suffix and filename differ (memory -> context) and both resolve",
+            check("a ks()-scoped memory key (memory:<slug>) still resolves to hq/memory/context",
                   'http://TESTAPI/hq/memory/context' in urls, urls)
             check('exactly the three file-backed entries were pushed — no more, no fewer',
                   len(urls) == 3, urls)
@@ -227,6 +242,35 @@ def main():
                   and reload_positions
                   and reload_positions[0] > max(settle_positions),
                   out['order'])
+
+        # ── backward compat: a backup exported BEFORE the ks()-scoping fix
+        # carries the bare 'cafresohq_hq_v1:memory' key (no slug suffix at
+        # all). The fallback in importOffice's lookup must still resolve
+        # that, not just the newly-scoped form exercised above — a boss
+        # restoring an old backup file must not lose this either. Reuses
+        # the exact same lifted importOffice (`js`), a fresh mocked backend,
+        # and just one entry so the assertion stays a single clean fact.
+        old_format_harness = HARNESS.replace(
+            "'cafresohq_hq_v1:theme': '\"dark\"',\n"
+            "    'cafresohq_hq_v1:tasks': '[{\"id\":1,\"title\":\"Ship it\"}]',\n"
+            "    'cafresohq_hq_v1:projects': '[{\"id\":\"p1\"}]',\n"
+            "    // The realistic current shape: memory's key is ks()-scoped, so a real\n"
+            "    // export from a live, slugged office carries the office's slug as a\n"
+            "    // suffix, not the bare name the map's keys are written under.\n"
+            "    'cafresohq_hq_v1:memory:1a2b3c4d5e6f7890': '{\"notes\":\"hi\"}',\n"
+            "    'cafresohq_hq_v1:totallyUnknownFutureKey': '{\"x\":1}',",
+            "'cafresohq_hq_v1:memory': '{\"notes\":\"old-format backup\"}',")
+        assert old_format_harness != HARNESS, 'old_format_harness edit did not match — HARNESS template drifted'
+        p2 = subprocess.run(['node', '-e', old_format_harness % js],
+                             capture_output=True, text=True, timeout=60)
+        if p2.returncode != 0:
+            check('the lifted importOffice runs on an old-format (bare "memory") backup',
+                  False, p2.stderr.strip()[:300])
+        else:
+            out2 = json.loads(p2.stdout.strip().split('\n')[-1])
+            urls2 = sorted(c['url'] for c in out2['fetchCalls'])
+            check("an OLD backup's bare 'memory' key (no slug suffix) still resolves to hq/memory/context",
+                  'http://TESTAPI/hq/memory/context' in urls2, urls2)
 
     print()
     if FAILS:

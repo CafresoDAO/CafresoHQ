@@ -1420,7 +1420,19 @@ function AccountTab({ usageTokens = 0 }) {
         // we just restored, instead of the old file it would otherwise pull
         // back over it — see OFFICE_FILE_BACKED above.
         if (key.startsWith(OFFICE_HQ_PREFIX)) {
-          const target = OFFICE_FILE_BACKED[key.slice(OFFICE_HQ_PREFIX.length)];
+          const remainder = key.slice(OFFICE_HQ_PREFIX.length);
+          /* A ks()-scoped key (app/storage.jsx) suffixes the bare name with
+             ':<container-slug>' (or ':local' with none) so the Memory Shelf
+             doesn't inherit another office's cache on hq.cafreso.com's
+             shared origin — see the memory fix this map exists to protect.
+             The literal key is already restored verbatim two lines up
+             regardless; only this lookup needs the bare name, so try it
+             first (covers every unscoped store, and an old backup's bare
+             "memory") and fall back to stripping one trailing ':suffix'
+             (covers a current export's "memory:<slug>") rather than adding
+             a map entry per slug, which isn't enumerable. */
+          const target = OFFICE_FILE_BACKED[remainder]
+            || OFFICE_FILE_BACKED[remainder.replace(/:[^:]*$/, '')];
           if (target) {
             filePuts.push(fetch(`${apiBase}/hq/${target.scope}/${target.name}`, {
               method: 'PUT', headers: { 'content-type': 'application/json' }, body: raw,

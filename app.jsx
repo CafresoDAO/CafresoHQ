@@ -899,7 +899,40 @@ function App() {
   const recordXp = (entry) => setExperience(prev => xpRecord(prev, entry));
   const experienceRef = useRefA([]);
   useEffectA(() => { experienceRef.current = experience; }, [experience]);
-  const [memory, setMemory] = useFileStored(k('memory'), 'memory', 'context', SEED_MEMORY);
+  /* `ks('memory')`, not `k('memory')` — CONTAINER-scoped, like coachSeen a
+     few lines down. hq.cafreso.com serves every office from ONE origin,
+     split only by URL path (`/u/<slug>/hq.html`, stripped by Caddy before
+     it reaches this container's own serve.py — see claude-client.jsx's
+     _API_BASE derivation). localStorage is scoped by ORIGIN, not path, so
+     a browser that has opened two different offices there shares ONE
+     `cafresohq_hq_v1:memory` slot between them no matter which office is
+     open now.
+
+     useFileStored reads that slot as its FIRST paint, before the mount
+     fetch to `/hq/memory/context` (correctly routed per-container) has
+     resolved — so opening Office B, having previously opened Office A,
+     put Office A's saved long-term memory on screen as Office B's own
+     notes for the first ~100-300ms of every load. That alone is a leak
+     the boss can screenshot. It stops being transient the moment the boss
+     acts in that window: useFileStored's mount-fetch keeps a genuine edit
+     over a "stale" fetch (see the dirty-guard a few files up in
+     app/storage.jsx), so a REMEMBER click that lands before the fetch
+     settles has Office B silently persist Office A's leaked entries into
+     Office B's own memory/context.json on disk — no longer a rendering
+     glitch, a cross-tenant write.
+
+     `ks()` exists for exactly this — coachSeen, tourSeen, gettingStartedDone,
+     firstDeliverySeen and cliDismissed all already suffix their key with the
+     container slug parsed from `_API_BASE` so a new office never inherits a
+     flag from whichever office the browser saw last. It was never applied to
+     the Memory Shelf itself, the one store where "whichever office the
+     browser saw last" means another customer's private notes. Every other
+     useFileStored collection (agents, tasks, messages, activity, workflows,
+     meetings, projects, missions, receipts, pins, windows, experience) has
+     this same unscoped-`k()` gap and is NOT touched here — out of scope for
+     a Memory Shelf fix and a larger change than one call site should make
+     unreviewed. */
+  const [memory, setMemory] = useFileStored(ks('memory'), 'memory', 'context', SEED_MEMORY);
   const [meetingOpen, setMeetingOpen] = useStateA(false);
   const [meetingParticipants, setMeetingParticipants] = useStateA([]);
   const [meetingPickerOpen, setMeetingPickerOpen] = useStateA(false);
