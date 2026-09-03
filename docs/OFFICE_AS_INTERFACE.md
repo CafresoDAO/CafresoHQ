@@ -22582,3 +22582,51 @@ with `ReferenceError: onlyInsideMarkers is not defined`. The hazard is
 documented two functions up, and `unsentBlocks` keeps its `KINDS` table inline
 for precisely this reason — and I still walked into it. Inlined now, with the
 reason written at the call site rather than only here.
+
+### #145 — a mistyped domain came back as a C library errno
+
+Asked a coworker to read a page and mistyped the host by one letter. Under
+the reply:
+
+> ⚠ Couldn't read cafreshq.com/team
+> Couldn't read that page — fetch failed: URLError: `<urlopen error [Errno 8]
+> nodename nor servname provided, or not known>`
+
+Driven through the same route by hand, a refused port answered `[Errno 61]
+Connection refused` and an expired certificate answered `certificate verify
+failed: certificate has expired (_ssl.c:1082)`. §6 bans that vocabulary
+anywhere the boss can see it, and §7 asks each failure for one honest
+sentence carrying a way forward. None of the three said what to do — and the
+one case with an obvious answer, *look at what you typed*, said it least.
+
+**Why nobody had looked** is written into the tool that reads the value
+aloud. `BROWSER_FETCH`'s own comment says "`j.error` is authored by our own
+serve.py and already reads as English." True of every branch but one: the
+fetch route's catch-all formatted the raw exception straight into the field.
+A true-sounding comment standing over a single false branch — the same shape
+as #143, where a hint argued correctly from the wrong door.
+
+`_page_fetch_cause` in `serve.py` now owns the clause, with `detail` carrying
+the raw text for whoever is debugging a self-hosted install — the split the
+clone failure in `views/projects.jsx` settled on. The clauses are lowercase
+and spend no em-dash of their own: the caller has already written "Couldn't
+read that page — ", and two dashes in one sentence read as two thoughts.
+Deliberately **not** routed through the floor's `snagCause`, for the reason
+that tool's comment already records: a site's 401 came back as "that brain
+isn't signed in yet".
+
+The jargon guard could not have caught this. It sweeps source copy files;
+this sentence is composed in Python at request time and arrives in chat
+without passing through any of them.
+
+`scripts/test_a_page_that_would_not_load.py` raises **real** exceptions —
+a bad host, a released port, a TLS handshake against a plain-HTTP listener,
+a socket that accepts and says nothing — rather than composing strings to
+match the table, which would only prove the table was copied correctly. It
+checks that each sentence is free of machine vocabulary **and** still says
+something, since absence alone is satisfied by "something went wrong". Its
+first fixture was wrong and the suite said so: the held-open socket had been
+allowed to fall out of scope, so the read got a connection reset and the
+table classified it as a network fault. Fire-tested three ways — restoring
+the formatted exception, collapsing the table to one vague sentence, and
+dropping `detail` — each caught by different checks.

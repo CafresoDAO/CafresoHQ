@@ -2205,6 +2205,14 @@ const TOOL_REGISTRY = {
          ("Browser fetch error:"), not the message — `j.error` is authored by
          our own serve.py and already reads as English.
 
+         That last sentence was true of every branch but one, and this comment
+         is why nobody looked: the fetch route's catch-all formatted the raw
+         exception, so a mistyped domain reached the boss as "fetch failed:
+         URLError: <urlopen error [Errno 8] nodename nor servname provided, or
+         not known>" (#145). serve.py's `_page_fetch_cause` now owns that
+         clause, which is what makes the sentence above true rather than
+         merely intended — see scripts/test_a_page_that_would_not_load.py.
+
          Do NOT route this through snagCause. That classifier is tuned for
          BRAIN failures, and a page is not a brain: a site answering 401 came
          back as "that brain isn't signed in yet — add it in Settings", 429 as

@@ -1639,6 +1639,64 @@ class _CDPWebSocket:
         except Exception: pass
 
 
+# A page that could not be fetched, said in one sentence the boss can act on.
+#
+# The BROWSER_FETCH tool hands `error` to the boss verbatim — its own comment
+# says so: "j.error is authored by our own serve.py and already reads as
+# English." That was true of every branch except the last one, which formatted
+# the raw exception. Measured live (#145): asking a coworker to read a
+# mistyped domain put this under the reply, twice,
+#
+#     ⚠ Couldn't read that page — fetch failed: URLError: <urlopen error
+#       [Errno 8] nodename nor servname provided, or not known>
+#
+# and a refused port and an expired certificate came back as "[Errno 61]" and
+# "(_ssl.c:1082)". §6 bans that vocabulary on the floor and §7 asks each
+# failure for one honest sentence with a way forward, so the clause is built
+# here rather than left to the reader.
+#
+# Written as lowercase clauses because of where they land: the caller prefixes
+# "Couldn't read that page — ", and `barrenPage` in hq-runtime.jsx already
+# writes to that same joint. No clause carries an em-dash of its own: the
+# caller has already spent it, and two in one sentence reads as two
+# thoughts. Deliberately NOT routed through the floor's
+# snagCause — that classifier is tuned for brains, and the tool's comment
+# records having to take it back out when a site's 401 came back as "that
+# brain isn't signed in yet".
+_PAGE_FETCH_CAUSES = (
+    # DNS. The commonest one, and the only one where the boss's own typo is
+    # the likely cause, so it is the only one that asks him to look at what
+    # he typed.
+    (('nodename nor servname', 'name or service not known', 'getaddrinfo failed',
+      'temporary failure in name resolution', 'no address associated'),
+     'there is no site at that address; check the spelling of the domain'),
+    (('connection refused',),
+     'nothing answered at that address, so the site may be down or that port '
+     'may not be the right one'),
+    (('certificate verify failed', 'certificate has expired', 'ssl:',
+      'sslcertverificationerror', 'wrong version number'),
+     "that site's security certificate did not check out, so I stopped "
+     'rather than trust it'),
+    (('timed out', 'timeout'),
+     'that page took too long to answer, so I stopped waiting'),
+    (('network is unreachable', 'no route to host', 'connection reset'),
+     'the office could not reach the network to get there; check the '
+     'connection and try again'),
+)
+
+
+def _page_fetch_cause(exc) -> str:
+    """One lowercase clause for a page that could not be fetched."""
+    hay = ('%s %s' % (type(exc).__name__, exc)).lower()
+    for needles, sentence in _PAGE_FETCH_CAUSES:
+        if any(n in hay for n in needles):
+            return sentence
+    # Better a vague honest one than a confident wrong one — the same rule
+    # SNAG_CAUSES states for its own fallthrough. The raw text is not lost:
+    # it rides along as `detail`, for the self-hoster reading the console.
+    return 'the office could not reach it'
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
     # HTTP/1.0 + Connection: close gives us read-until-close streaming,
     # which is exactly what SSE needs without fighting chunked encoding.
@@ -3141,7 +3199,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 'text': '', 'title': '', 'length': 0,
             })
         except Exception as e:
-            return self._send_json(502, {'error': f'fetch failed: {type(e).__name__}: {e}'})
+            # `error` is read aloud to the boss; `detail` is for whoever is
+            # debugging a self-hosted install — the same split the clone
+            # failure in views/projects.jsx settled on.
+            return self._send_json(502, {
+                'error': _page_fetch_cause(e),
+                'detail': f'{type(e).__name__}: {e}'[:300],
+            })
         # Decode (best-effort)
         encoding = 'utf-8'
         if 'charset=' in ctype.lower():
