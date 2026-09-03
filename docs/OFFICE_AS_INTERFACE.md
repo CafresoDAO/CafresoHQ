@@ -26108,3 +26108,42 @@ session, on files this diff never touches (`modals/settings.jsx`,
 `scripts/test_the_office_can_leave_the_browser_and_come_back.py`, and
 the one new test file above); `src/cafresohq_state/main.mo` was never
 read, staged, or edited.
+
+---
+
+## 187. Switching projects in the Workspace terminal could corrupt another project's saved tabs
+
+`WorkspaceView` (`views/projects.jsx`) renders `<ProjectTerminal project={project} .../>` at two
+call sites — the mobile `ws-mterm` pane and the desktop `ws-cstage` terminal tab — with no `key`
+tied to the selected project. Picking a different project from the workspace's project selector
+changes the `project` prop but never unmounts `ProjectTerminal`: its session-tab list
+(`useStoredV`, a `localStorage`-backed `useState` seeded once at mount) kept showing the
+*previous* project's tabs, while its debounced write-back effect silently persisted them into the
+*new* project's storage key — overwriting that project's real terminal session list, `sessionId`s
+included. `serve.py`'s `/terminal/pty` WebSocket handler reconnects by `session_id` alone with no
+`cwd` re-check, so a leaked `sessionId` could resurface one project's already-running PTY under a
+different project's UI. `ProjectsView`'s own per-project loop (`views/projects.jsx`, further down
+the same file) already keys its `<ProjectTerminal>` calls correctly by project id — only
+`WorkspaceView`'s two call sites lacked it.
+
+Fix: added `key={project.id || project.path}` to both `<ProjectTerminal>` call sites in
+`WorkspaceView`, forcing a clean remount (and fresh `localStorage` read) on every project switch.
+
+Regression test: `scripts/test_workspace_terminal_key.py` — brace-balance-extracts `WorkspaceView`
+out of `views/projects.jsx` and asserts every `<ProjectTerminal>` call site inside it carries a
+`key=` expression that actually reads `project.id`/`project.path`. Fire-tested by reverting the fix
+(both call sites): the test failed all 3 relevant checks by name; restored and confirmed
+`views/projects.jsx` byte-identical via `shasum -a 256`.
+
+**A worktree note.** The bug-hunt agent that found this worked in a worktree branched off
+`chore/oss-reduction` well behind its current tip (749 commits stale — missing the whole
+`app.jsx`/`ui.jsx`/`views.jsx`/`modals.jsx` → `app/`/`ui/`/`views/`/`modals/` module split,
+`scripts/run_tests.py`, and this ledger file). Rather than force an incompatible `git apply --3way`
+merge of its patch, the fix was hand-ported against current `views/projects.jsx` (confirming the
+same un-keyed call sites were still present there) and this entry was written fresh rather than
+merging the worktree's own stale-base ledger diff.
+
+**Suite: 374/375.** The one failure (`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the pre-existing `moc`/M0219 `main.mo` toolchain mismatch recorded throughout this ledger, on a
+file this diff never touches — `git status --porcelain` covers only `views/projects.jsx` and the
+one new test file above; `src/cafresohq_state/main.mo` was never read, staged, or edited.

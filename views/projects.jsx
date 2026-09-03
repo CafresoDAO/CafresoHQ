@@ -733,9 +733,16 @@ function WorkspaceView({ projects, setProjects, agents = [], onSwitchView }) {
           <div className="ws-mbody">
             <div className="ws-mpane" style={{ display: mobilePane === 'files' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column', overflow: 'hidden' }}>{filesPane()}</div>
             <div className="ws-mpane" style={{ display: mobilePane === 'editor' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column', overflow: 'hidden' }}>{editorPane()}</div>
-            {/* Terminal stays mounted (visibility/height toggle) so xterm can size when shown. */}
+            {/* Terminal stays mounted (visibility/height toggle) so xterm can size when shown.
+                key={project.id} forces a remount when the project SELECTOR switches projects
+                (this pane doesn't unmount on its own) — ProjectTerminal's session list/active-tab
+                state is loaded once at mount via useStoredV and never re-reads localStorage for a
+                changed project id, so without this key, switching projects here would keep
+                showing (and then persisting) the PREVIOUS project's terminal tabs/session ids
+                under the NEW project's storage key, corrupting it and letting a stale session_id
+                reconnect to the wrong project's already-running PTY. */}
             <div className="ws-mpane ws-mterm" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, visibility: mobilePane === 'terminal' ? 'visible' : 'hidden', height: mobilePane === 'terminal' ? undefined : 0, flex: mobilePane === 'terminal' ? 1 : undefined, pointerEvents: mobilePane === 'terminal' ? 'auto' : 'none' }}>
-              <ProjectTerminal project={project} visible={mobilePane === 'terminal'} />
+              <ProjectTerminal key={project.id || project.path} project={project} visible={mobilePane === 'terminal'} />
             </div>
             <div className="ws-mpane" style={{ display: mobilePane === 'agents' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column', overflow: 'hidden' }}>{agentPane()}</div>
           </div>
@@ -767,7 +774,9 @@ function WorkspaceView({ projects, setProjects, agents = [], onSwitchView }) {
             </div>
             <div className="ws-cstage" style={{ display: termOpen ? 'none' : 'flex' }}>{editorPane()}</div>
             <div className="ws-cstage" style={{ display: termOpen ? 'flex' : 'none' }}>
-              {(termOpen || termMounted) && <ProjectTerminal project={project} visible={!!termOpen} />}
+              {/* key={project.id} forces a remount on project switch — see the matching
+                  comment on the mobile ws-mterm pane above for why this is load-bearing. */}
+              {(termOpen || termMounted) && <ProjectTerminal key={project.id || project.path} project={project} visible={!!termOpen} />}
             </div>
           </div>
           {agentPane()}
