@@ -101,6 +101,10 @@ def main():
         '  const setFilter = (v) => { filter = v; };',
         '  const setText = (v) => { cleared = (v === ""); };',
         '  const onAdd = (m) => { added.push(m); };',
+        # #164 added a `dropped` notice alongside the filter reset this file
+        # already covers; not this file's concern, so it is stubbed rather
+        # than asserted on.
+        '  const setDropped = (_v) => {};',
         '  ' + lift(page, 'submit'),
         '  submit();',
         '  OUT.push([label, filter, added, cleared]);',
@@ -160,8 +164,11 @@ def main():
     # --- §2: the premise ----------------------------------------------
     # If this sentence stops inviting the boss to add one below, the rule
     # above is answering a question nobody is being asked any more.
+    # #164 extended this sentence to name the tag the composer now follows
+    # (`it will be filed as {filter}`) — the invitation this file is about
+    # survives that; only the exact trailing punctuation moved.
     check('the filtered-empty state still says "or add one below"',
-          'Pick another tag above, or add one below.' in page,
+          'Pick another tag above, or add one below' in page,
           'views/core.jsx: the instruction this fix makes true has changed')
     check('the composer tag is genuinely independent of the filter — which '
           'is why the save has to reconcile them',

@@ -185,6 +185,7 @@ function MemoryPage({ memory, onAdd, onRemove, onPin }) {
   const [text, setText] = useSV('');
   const [tag, setTag] = useSV('NOTE');
   const [filter, setFilter] = useSV('ALL');
+  const [dropped, setDropped] = useSV(null);
   const tags = ['ALL','NOTE','PREF','PROJECT','PEOPLE','RULE','TONE'];
   const filtered = filter === 'ALL' ? memory : memory.filter(m => m.tag === filter);
 
@@ -200,12 +201,26 @@ function MemoryPage({ memory, onAdd, onRemove, onPin }) {
      before it: whichever filter would hide the thing the boss just made,
      drop it. Only that one, and only when it would actually hide it — an
      entry added while the shelf is showing ALL, or tagged the same as the
-     filter, leaves the view exactly as the boss set it. */
+     filter, leaves the view exactly as the boss set it.
+
+     Two things have changed since. The composer now follows the filter (see
+     the tag row below), so the ordinary path — stand in PROJECT, add one
+     below — files a PROJECT and this reset never fires at all; the boss
+     keeps the shelf they set. What is left here is the deliberate override:
+     filtered to PROJECT, dropdown moved by hand to RULE. That still has to
+     clear the filter or the entry vanishes, but clearing it silently is its
+     own small lie — the shelf changes under the boss with no cause given.
+     So it says which filter it dropped and what the entry was filed as. */
   const submit = () => {
     if (!text.trim()) return;
     onAdd({ id: 'mem_'+Math.random().toString(36).slice(2,6), tag, text: text.trim(), date: Date.now() });
     setText('');
-    if (filter !== 'ALL' && filter !== tag) setFilter('ALL');
+    if (filter !== 'ALL' && filter !== tag) {
+      setDropped({ from: filter, as: tag });
+      setFilter('ALL');
+    } else {
+      setDropped(null);
+    }
   };
 
   /* `date` used to be persisted as the literal string 'Today' — every entry,
@@ -242,11 +257,37 @@ function MemoryPage({ memory, onAdd, onRemove, onPin }) {
       <div className="view-toolbar">
         <div className="memtag-row">
           {tags.map(t => (
-            <button key={t} className={`px-btn ${filter===t?'primary':'secondary'}`} style={{fontSize:8}} onClick={()=>setFilter(t)}>{t}</button>
+            /* Picking a tag on the shelf also points the composer at it.
+               `submit` below already refuses to hide a new entry behind the
+               filter — that was #154's rule, applied here — but it did it by
+               throwing the boss's filter away, and it never fixed the thing
+               that made the entry need hiding: the composer sat on whatever
+               tag it was last left at.
+
+               Measured live: filter the shelf to PROJECT with a NOTE and a
+               PREF on it. The page says "No entries tagged PROJECT. Pick
+               another tag above, or add one below." Add one below and you
+               get a PREF — the dropdown's leftover value — the shelf snaps
+               back to ALL, and the boss has a mis-tagged entry plus a lost
+               filter, having done exactly what they were told.
+
+               Following the filter fixes both at once: the entry lands under
+               the tag the boss was standing in, so `submit`'s escape hatch
+               never fires and the filter survives. The dropdown visibly
+               changes, so nothing is decided behind the boss's back, and
+               changing it afterwards still wins — ALL is left alone, because
+               "no filter" is not a tag to file anything under. */
+            <button key={t} className={`px-btn ${filter===t?'primary':'secondary'}`} style={{fontSize:8}}
+              onClick={()=>{ setFilter(t); if (t !== 'ALL') setTag(t); setDropped(null); }}>{t}</button>
           ))}
         </div>
       </div>
       <div className="memshelf shelf-page">
+        {dropped && (
+          <div className="muted" style={{padding:'12px 16px 0'}}>
+            Filed as {dropped.as}, so the {dropped.from} filter was cleared to show it.
+          </div>
+        )}
         {memory.length === 0 ? (
           <div className="empty-state onboard">
             <div className="empty-title">🧠 Teach your HQ</div>
@@ -264,7 +305,12 @@ function MemoryPage({ memory, onAdd, onRemove, onPin }) {
             <div className="empty-cta-hint">↓ start typing in the box below</div>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="muted" style={{padding:16}}>No entries tagged {filter}. Pick another tag above, or add one below.</div>
+          /* "or add one below" is an instruction, so it has to say where the
+             thing it produces will land. It used to be silent about that and
+             was wrong as often as not — the composer kept its own tag. Now it
+             follows the filter, and naming the tag is how the boss can tell
+             that from the outside instead of finding out afterwards. */
+          <div className="muted" style={{padding:16}}>No entries tagged {filter}. Pick another tag above, or add one below — it will be filed as {filter}.</div>
         ) : null}
         {filtered.map(m => (
           <div key={m.id} className="memrow">

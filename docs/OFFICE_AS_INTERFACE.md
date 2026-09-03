@@ -23848,3 +23848,71 @@ theming `--brand-coffee`, which invalidates the file's own reasoning and says
 so rather than passing.
 
 **Suite: 351/351, zero failures.**
+
+## 164. The memory composer knows the filter
+
+**The reading.** Live office (127.0.0.1:8892), Memory shelf holding one NOTE
+and two PREF entries. Filter the shelf to PROJECT. The page says:
+
+```
+No entries tagged PROJECT. Pick another tag above, or add one below.
+```
+
+Do exactly that — type "Apollo ships in Q4", press + REMEMBER — and the entry
+is filed as **PREF**, the dropdown's leftover value, and the shelf silently
+snaps back to **ALL**. The boss followed the surface's own instruction and got
+a mis-tagged entry plus a lost filter, with nothing on screen accounting for
+either.
+
+**The mechanism.** `MemoryPage` keeps `tag` (the composer) and `filter` (the
+shelf) as two independent pieces of state that never spoke. `submit` already
+carried the #154 mitigation — *whichever filter would hide the thing the boss
+just made, drop it* — so the entry was never actually lost. But that rule had
+been applied to the **consequence** (the entry would be hidden) and never to
+the **cause** (the control that produced the wrong tag in the first place).
+This is the same shape as #154 and #157: a surface with a filter and a create
+control, where the create control does not know the filter exists. Fixing the
+message half of it here in an earlier tick made the instruction *"or add one
+below"* correct-sounding and still wrong.
+
+**The fix.** Picking a tag on the shelf now points the composer at it, and
+`ALL` is left alone because "no filter" is not a tag to file anything under.
+The ordinary path — stand in PROJECT, add one below — files a PROJECT, so
+`submit`'s reset never fires and the boss keeps the shelf they set. The
+dropdown visibly changes, so nothing is decided behind the boss's back, and
+moving it by hand afterwards still wins. The filtered-empty sentence now names
+the tag it will file under, which is how the boss can tell from the outside
+rather than afterwards.
+
+**The reset had to start speaking.** With the composer following the filter,
+the surviving path into `setFilter('ALL')` is a deliberate override — filtered
+to PROJECT, dropdown moved by hand to RULE. That still has to clear the filter
+or the entry vanishes, but clearing it silently is its own small lie: the shelf
+changes under the boss with no cause given. It now renders *"Filed as RULE, so
+the PROJECT filter was cleared to show it."*, and any tag pick clears the
+notice.
+
+**The test** (`test_the_memory_composer_knows_the_filter.py`, 73 checks) lifts
+`submit`, `filtered` and the tag pill's own `onClick` — anchored on the pill's
+`filter===t` className so it cannot pick up one of the dozen other handlers in
+the component — and executes them under Node across twenty scenarios,
+including the measured one and every one of the six tags. Two invariants run
+over all of them: #154 still holds (the boss can see what they just made, read
+at the moment of the add rather than at the end of the script), and the filter
+moves only when the boss is told. Ten fire-tests, all caught by name —
+including the render-only revert that escaped in #161, and one that renames
+the pill's anchor, which fails loudly rather than quietly testing nothing.
+
+**A locator trap worth naming.** A lifted JSX `onClick={…}` attribute is the
+arrow *itself*, not a body. Wrapping it as `(t) => { <lifted> }` parses,
+executes, and does nothing — turning the whole driven section into a test of
+the unfixed code, which is exactly how it read on the first run. It has to be
+called: `(t) => (<lifted>)()`.
+
+**State note.** `hq-state/memory/context.json` was not covered by this tick's
+`hq-state/*.json` backup — the memory shelf lives one directory down. It was
+empty at the start of the tick (the header read `1 ENTRY` after the first
+live add) and has been restored to `[]`; the per-tick backup glob should reach
+`hq-state/memory/` from here on.
+
+**Suite: 352/352, zero failures.**
