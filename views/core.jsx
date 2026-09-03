@@ -971,11 +971,51 @@ function CalendarView({ tasks, agents, missions = [], nightShiftBoard = [], nigh
       .sort((a,b) => b[0].localeCompare(a[0]));
   }, [tasks, missions, nightShiftBoard, nightShiftRuns]);
 
-  const fmt = (k) => {
+  /* A day heading has to say WHEN, and this one printed a weekday and a
+     date and stopped — no year, and no line between a day that happened and
+     a day that has not.
+
+     Measured on a live floor at Sep 3, 2026, with one running mission
+     (5-day duration), one task from Aug 13, and one from Sep 2 of the
+     PREVIOUS year, the view read top to bottom:
+
+         Tue, Sep 8   🔬 Competitor pricing sweep — stopped
+         Thu, Aug 13  Research brief: …
+         Tue, Sep 2   Last year's kickoff notes
+
+     Two separate lies in three lines. "Tue, Sep 8" is five days out — a
+     forecast, sitting at the top of a view whose tag reads "your business by
+     day", with nothing marking it as not-yet-happened. And "Tue, Sep 2" is
+     2025, rendered character-for-character the way 2026 would be, so a
+     correctly sorted list looks scrambled: the boss sees Sep 8, Aug 13,
+     Sep 2 and concludes the calendar cannot order its own days. The only
+     tell was the weekday — Sep 2 falls on a Tuesday in 2025 and a Wednesday
+     in 2026 — which is not something anyone reads a date for.
+
+     `Yesterday` and `Tomorrow` are in for the same reason `Today` already
+     was: they are the two days a boss checks by name, and a weekday alone
+     does not answer "was that today or a week ago".
+
+     The sort is left alone. Newest-first is a defensible order for a ledger
+     of the day's business; it is only unreadable when the headings hide
+     which end of the list the future is on, and now they do not. */
+  const dayLabel = (k) => {
+    const t = new Date(officeDate() + 'T12:00:00');   // local, matching the keys
     const d = new Date(k + 'T12:00:00');
-    const today = officeDate();          // local, matching the keys above
-    if (k === today) return 'Today';
-    return d.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' });
+    const days = Math.round((d - t) / 86400000);
+    if (days === 0) return { text: 'Today', ahead: false };
+    if (days === 1) return { text: 'Tomorrow', ahead: true };
+    if (days === -1) return { text: 'Yesterday', ahead: false };
+    return {
+      text: d.toLocaleDateString(undefined, {
+        weekday: 'short', month: 'short', day: 'numeric',
+        // Only when it is not this year — stamping 2026 on every row of a
+        // calendar the boss opens daily is noise, and noise is what got the
+        // year dropped in the first place.
+        ...(d.getFullYear() === t.getFullYear() ? {} : { year: 'numeric' }),
+      }),
+      ahead: days > 0,
+    };
   };
 
   return (
@@ -997,9 +1037,18 @@ function CalendarView({ tasks, agents, missions = [], nightShiftBoard = [], nigh
           </div>
         </div>
       )}
-      {groups.map(([day, items]) => (
+      {groups.map(([day, items]) => {
+        const label = dayLabel(day);
+        return (
         <div key={day} className="cal-day">
-          <div className="cal-day-head">{fmt(day)}<span className="cal-count">{items.length}</span></div>
+          <div className={'cal-day-head' + (label.ahead ? ' ahead' : '')}>
+            {label.text}
+            {/* Said on the heading rather than left to the reader to work
+                out from a date, because every row under it is a forecast and
+                the rows themselves are written in the present tense. */}
+            {label.ahead && <span className="cal-ahead">HASN'T HAPPENED YET</span>}
+            <span className="cal-count">{items.length}</span>
+          </div>
           <div className="cal-day-body">
             {items.map(entry => {
               const time = new Date(entry.at).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
@@ -1062,7 +1111,8 @@ function CalendarView({ tasks, agents, missions = [], nightShiftBoard = [], nigh
             })}
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

@@ -23713,3 +23713,73 @@ from the component. Thirteen fire-tests total; every other break failed by
 name, and a renamed component fails loudly rather than silently.
 
 **Suite: 349/349, zero failures.**
+
+---
+
+## 162. The calendar says which day it means
+
+**The reading.** Live office (127.0.0.1:8896) at Sep 3, 2026, seeded with one
+running mission on a five-day duration, one task from Aug 13, and one from
+Sep 2 of the *previous* year. Top to bottom:
+
+```
+Tue, Sep 8    🔬 Competitor pricing sweep — stopped
+Thu, Aug 13   Research brief: why remote startups lose their best engineers
+Tue, Sep 2    Last year's kickoff notes
+```
+
+Two lies in three lines.
+
+**"Tue, Sep 8" is five days out.** A forecast, sitting at the top of a view
+whose tag reads *"your business by day"*, with nothing marking it as
+not-yet-happened — and the row under it written in the past tense. #158 and
+#161 are about surfaces that point at something they don't open; this is a
+surface that reports something that hasn't occurred as though it had.
+
+**"Tue, Sep 2" is 2025**, rendered character-for-character the way 2026 would
+be. The list is *correctly* sorted — 2025-09-02 really does come after
+2026-08-13 in a newest-first order — but with the year hidden it reads as
+scrambled, so the boss concludes the calendar cannot order its own days. The
+only tell was the weekday: Sep 2 is a Tuesday in 2025 and a Wednesday in 2026,
+which is not what anyone reads a date for.
+
+**The fix.** `fmt` becomes `dayLabel`, returning `{ text, ahead }`:
+
+- `Today` / `Tomorrow` / `Yesterday` are named — the days a boss checks by
+  name, where a bare weekday answers nothing
+- a day in the future carries `HASN'T HAPPENED YET` on the heading, in words,
+  plus an unfilled dashed head
+- a day outside the current year carries its year; a day inside it does not,
+  which is the noise that got the year dropped in the first place
+- both sides of the day arithmetic are built at local noon, so a 23- or
+  25-hour DST day cannot round tomorrow into today
+
+The sort is left alone. Newest-first is defensible for a ledger of the day's
+business; it was only unreadable while the headings hid which end the future
+was on.
+
+**A first pass made it worse and was caught by looking.** The ahead heading
+used diagonal hazard stripes; on the real floor in night mode they ran
+straight through the day name — "Tue, Sep 8" on alternating dark and sun
+bands. One unreadable heading traded for another. An unfilled head against
+the solid ones below says the same thing and leaves the date alone. Contrast
+was then checked in all five palettes; the ahead head is a distinct fill from
+the settled head in every one, on a real `--paper`/`--ink` pairing.
+
+**The test** (`test_the_calendar_says_which_day_it_means.py`, 53 checks) lifts
+`dayLabel` out of `CalendarView` by named locator and runs it under Node
+against a *pinned* `officeDate`, so "today" is an input rather than the wall
+clock — twelve cases including both DST boundaries and the year-earlier trap.
+It also holds the surface: the ahead class and the ahead words come from the
+same value, the chip says the day has not happened rather than merely that it
+is soon, and `.cal-day-head.ahead` may not paint a pattern under the date.
+Thirteen fire-tests, each failing by name; the one that appeared to escape was
+a badly scoped break (it edited the first `white-space: nowrap` in the file,
+not the chip's), and failed correctly once scoped.
+
+**Spotted, not chased:** under `theme-dracula` the *settled* `.cal-day-head`
+paints `#f8f8f2` text on `#f1fa8c` — near-white on pale yellow. Pre-existing,
+unrelated to this change, and a palette-wide question rather than a calendar
+one.
+
+**Suite: 350/350, zero failures.**

@@ -6109,6 +6109,28 @@ body.night .team-ceo-arrow { color: var(--brand-coffee); }
   background: var(--accent-sun);
   border: 2px solid var(--ink);
 }
+/* A day that hasn't happened yet is not the same kind of thing as a day
+   that has, and the calendar sorts newest-first, so it sits at the TOP where
+   the eye lands first. Dashed rather than solid, on the same reasoning the
+   rest of the floor uses for provisional state: the border says "not settled"
+   before the words are read. Text colour and weight are inherited so the
+   heading still reads as a heading.
+
+   A first pass used diagonal hazard stripes here. On a live floor in night
+   mode they cut straight through the day name — "Tue, Sep 8" sitting on
+   alternating dark and sun bands — which trades one unreadable heading for
+   another. An unfilled head against the solid ones below it says the same
+   thing and leaves the date alone. */
+.cal-day-head.ahead {
+  border-style: dashed;
+  background: var(--paper);
+}
+.cal-day-head .cal-ahead {
+  font-family: 'Inter'; font-size: 8px; letter-spacing: 0.12em;
+  padding: 2px 5px; border: 1px solid var(--ink);
+  background: var(--paper); color: var(--ink-2);
+  white-space: nowrap;
+}
 .cal-day-head .cal-count {
   margin-left: auto;
   font-family: 'Inter'; font-size: 10px;
