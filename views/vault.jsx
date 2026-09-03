@@ -966,6 +966,20 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       return '[[' + p + ']]';
     }).join('\n');
     const cur = openNoteRef.current;
+    // The upload above is the async gap, and nothing blocks the tree while
+    // it's in flight — only the Save button is gated on `busy`, so a boss
+    // can click a different note (openByPath swaps openNoteRef.current) or
+    // close this one (closeNote sets it null) before the paste's own upload
+    // resolves. `note` above is captured BEFORE that gap and only guards
+    // "was a note open at all"; re-reading `cur` after the await keeps
+    // concurrent typing in the SAME note from being clobbered, but with no
+    // check that it's still the SAME note, a closed note crashed here
+    // (cur.content on null) and a switched note had the embed spliced into
+    // whatever the boss had opened next — a note that never asked for it.
+    // The file is filed in the Library either way (uploadFiles already
+    // ran); only the in-editor reference is skipped once the note under it
+    // has moved.
+    if (!cur || cur.path !== note.path) return;
     const i = Math.min(at, cur.content.length);
     setOpenNote({ ...cur, content: cur.content.slice(0, i) + refs + cur.content.slice(i), dirty: true });
   };

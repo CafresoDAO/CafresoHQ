@@ -25912,10 +25912,87 @@ instead of `['cmd0']`, Escape closing twice). Reverted and confirmed
 **Build:** `npm run build` → `[ui] built 8 assets -> dist-ui/
 (graphEngine=true)`, no errors.
 
+---
+
+## 185. A pasted screenshot's upload could outlive the note it was pasted into
+
+**The reading.** Assigned area: file upload / drag-and-drop — attaching
+files to chat, vault/Library, drag-and-drop zones, upload progress,
+file-type validation, and how an uploaded file is referenced afterward.
+Grepped every `onDrop`/`onDragOver`/`fileInput` site across `ui/`, `views/`,
+`app/`, `features.jsx`, `serve.py`, and `fs_routes.py`. Most of the obvious
+failure modes in this area are already fixed and covered (the `#`-numbered
+entries and the poetically-named `scripts/test_a_*upload*`/`*paste*` suites
+above this one): dragover state cleans up correctly on every drop zone
+found (`views/vault.jsx`, `views/projects.jsx`, `views/ide.jsx`,
+`ui/office.jsx`), collisions step aside instead of overwriting
+(`fs_routes.free_name`), every picked file is accounted for in
+`uploaded`/`failed` (`upload_name`), and `_vault_resolve` keeps a real
+extension instead of forcing `.md` onto it.
+
+The one gap: `views/vault.jsx`'s `onEditorPaste` — the ⌘V-a-screenshot
+door — captures `note = openNoteRef.current` before `await
+uploadFiles(named, dir)`, then re-reads `cur = openNoteRef.current` after
+the await to build the embed/wikilink at the cursor. Re-reading `cur` is
+deliberate: it means a keystroke typed into the SAME note while its own
+paste-upload is in flight isn't clobbered by content captured before the
+await. But nothing else blocks the Library's tree while an upload is in
+flight — only the Save button is gated on `busy` — so a boss can click a
+different note (`openByPath` swaps `openNoteRef.current`) or close this one
+(`closeNote` sets it null) before the paste's own upload resolves. The old
+guard, `if (!saved.length || !note) return;`, only asked "was a note open
+when the paste STARTED," using the stale `note` — it never checked whether
+`cur` was still that same note.
+
+**The mechanism.** Two live outcomes, reproduced by lifting the real
+handler (brace-matched) and mocking `uploadFiles` to mutate
+`openNoteRef.current` mid-await, mirroring exactly what a tree click or a
+close does while the real `fetch` in `vaultUpload` is pending:
+
+- Note closed mid-upload: `cur` is `null`, and the very next line,
+  `cur.content.length`, threw `Cannot read properties of null (reading
+  'content')`. The file was already filed in the Library (`uploadFiles` had
+  already run) — only the in-editor reference was lost, with an uncaught
+  exception on top.
+- Note switched mid-upload: `cur` is a *different*, currently-open note,
+  and the embed/wikilink was spliced into **its** content at `at`'s cursor
+  offset — a note that never asked for the paste, at a position measured in
+  a buffer it was never typed into.
+
+**The fix.** One line: `if (!cur || cur.path !== note.path) return;` before
+building the splice. A note that moved out from under the upload is left
+alone — the file still lands in the Library (the upload itself is
+unaffected), only the in-editor reference is skipped. The already-good
+concurrent-same-note-edit path is untouched: `cur.path === note.path` still
+lets fresh `cur.content` win over the content captured pre-upload.
+
+**The test**
+(`scripts/test_a_paste_upload_does_not_outlive_its_note.py`, 5 checks) lifts
+`onEditorPaste` verbatim (brace-matched, same technique as
+`test_a_pasted_screenshot_becomes_a_filed_embed.py`) and drives three
+scenarios through a mock `uploadFiles` that mutates `openNoteRef.current`
+before resolving, simulating the exact interleaving a real await produces:
+closing the note mid-upload (no crash, no stray `setOpenNote`), switching to
+a different note mid-upload (the switched-to note's content comes back
+byte-for-byte untouched), and typing into the SAME note during its own
+upload (the reference still lands in the freshest content — the
+pre-existing good behavior stays intact).
+
+Fire-tested: reverted to the pre-fix line (`const i = Math.min(at,
+cur.content.length);` immediately after `const cur = ...`, no guard). 2 of
+5 checks failed by name — "closing the note mid-upload doesn't crash the
+paste handler" (reproducing the exact `Cannot read properties of null`
+exception) and "switching notes mid-upload never touches the newly-open
+note" (reproducing the exact corrupted string, `UNREL![](<Research/Pasted
+image X.png>)ATED CONTENT`, spliced into the wrong note) — while the other
+three checks (including the pre-existing paste-embed test) stayed green.
+Restored the fix and confirmed `views/vault.jsx` byte-identical to the
+pre-sabotage state via `shasum -a 256`.
+
 **Suite: 370/371.** The one failure
 (`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`) is
 the same pre-existing `moc`/M0219 `main.mo` implicit-`transient` toolchain
 mismatch recorded throughout this ledger, on a file this diff never
-touches — `git status --porcelain` covers only `ui/feedback.jsx` and the
+touches — `git status --porcelain` covers only `views/vault.jsx` and the
 one new test file above; `src/cafresohq_state/main.mo` was never read,
 staged, or edited.
