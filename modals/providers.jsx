@@ -116,8 +116,23 @@ function ApiTab() {
   const hbUrl = (hbMeta.local && (s[hbMeta.urlField] || hbMeta.ph)) || '';
   useEffectM(() => {
     if (!hbMeta.local || !C || !C.hermesLocalModels) { setHbModels(null); return; }
-    C.hermesLocalModels(hbUrl).then(r => setHbModels(r.models || []))
-      .catch(() => setHbModels([]));
+    /* Back to null BEFORE the probe, and a `dead` latch on its landing —
+       both were missing, and each hole was its own way to offer the wrong
+       backend's models. Without the reset, switching LM Studio → Ollama
+       kept LM Studio's list live and PICKABLE under the Ollama heading for
+       as long as the new probe took (an unreachable endpoint takes the
+       whole timeout), and picking one writes that model id into the
+       gateway config and restarts it (~15s) — a wrong model applied with
+       full confidence. Without the latch, switching A → B → A let the two
+       probes land out of order, leaving backend A's row showing backend
+       B's models indefinitely. Same cancellation shape as the front-desk
+       driver probe in modals/hire.jsx and MediaKeyRow below; null is
+       already this row's "checking what your backend has…" state. */
+    let dead = false;
+    setHbModels(null);
+    C.hermesLocalModels(hbUrl).then(r => { if (!dead) setHbModels(r.models || []); })
+      .catch(() => { if (!dead) setHbModels([]); });
+    return () => { dead = true; };
   }, [hBackend, hbUrl]);
   const saveLocalBackend = async (prov, url, model) => {
     const meta = HBACKENDS[prov]; if (!meta) return;

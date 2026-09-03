@@ -26930,3 +26930,80 @@ toolchain mismatch recorded in #188 and #193 — a file this diff never
 touches. `git status --porcelain` for this change covers only
 `ui/onboarding.jsx`, this ledger, and the one new test file above;
 `src/cafresohq_state/main.mo` was never read, staged, or edited.
+
+---
+
+## 197. Switching the Hermes local backend kept offering the last backend's models
+
+**The reading.** Assigned area: hiring and provider configuration —
+`modals/hire.jsx`, `modals/providers.jsx`, and the onHire/agent-creation
+handlers in `app.jsx` they call into, with a specific eye on validation
+gaps, half-completed-form persistence, stale model lists after provider
+switches, and duplicate-id/name collisions. The hire flow held up:
+`formToolIds` filters the tool claim at the one read choke point, the
+SEED SWARM tile blocks the hire while probing (`#`-era fix already in
+place), the front-desk cards filter on `hiredIds`, and the driver probe
+effect carries a proper `dead` cancellation latch. The stale surface was
+next door, in `ApiTab`'s Hermes local-backend model row.
+
+**The mechanism.** `modals/providers.jsx` (ApiTab): when the Hermes
+brain is set to a local backend (LM Studio or Ollama), a `useEffectM`
+keyed on `[hBackend, hbUrl]` probes `C.hermesLocalModels(hbUrl)` and
+puts the answer in `hbModels`, which the "Model" row renders as a
+`<select>` whose `onChange` calls
+`saveLocalBackend(hBackend, hbUrl, e.target.value)` — a write that posts
+the model id to the gateway config and restarts the gateway (~15s). The
+effect had neither of the two guards every sibling probe in this area
+carries. (1) No reset at probe start: it only wrote `setHbModels(null)`
+on the *not-local* bail branch, so switching LM Studio → Ollama re-ran
+the effect but left LM Studio's model list in state — live and PICKABLE
+under the OLLAMA heading — for as long as the new probe took, and an
+unreachable endpoint (the default state of a backend you've only just
+selected) takes the whole network timeout to land. Picking one of those
+listed models in that window applies an LM Studio model id to the Ollama
+backend with full confidence, gateway restart included; the
+"(not on this backend)" fallback option shows the select was written
+knowing a mismatch could exist, without preventing this way of creating
+one. (2) No cancellation latch: switching A → B → A fired two probes
+with no ordering guarantee, so if B's response landed last, backend A's
+row showed backend B's models *indefinitely* — with the sub-text
+claiming they were this backend's loaded models. Meanwhile the
+structurally identical probe in `modals/hire.jsx` (the front-desk driver
+list) and `MediaKeyRow` in this very file both already use the
+`let dead = false` / cleanup-flips-it shape.
+
+**The fix.** Two lines of mechanism in the same effect, house
+cancellation shape: `setHbModels(null)` before the probe fires — null is
+already this row's rendered "checking what your backend has…" state, so
+the stale list is replaced by an honest probe indicator instead of a
+wrong offer — and a `dead` latch checked in both `.then` and `.catch`,
+flipped by the effect cleanup, so only the current `[hBackend, hbUrl]`
+pair's probe may write. `npm run build` re-run (dist-ui rebuilt).
+
+**The test**
+(`scripts/test_a_backend_switch_never_offers_the_last_backends_models.py`)
+lifts the REAL `ApiTab` out of `modals/providers.jsx` by brace-balanced
+extraction (same technique as `test_workspace_terminal_key.py`), strips
+comments so prose about the bug can't satisfy a check about the code,
+isolates the one effect keyed on `[hBackend, hbUrl]`, and pins the
+invariants structurally: a `setHbModels(null)` reset positioned after
+the not-local bail branch and before the `hermesLocalModels(hbUrl)`
+call, the `let dead = false` declaration, `if (!dead)` guarding both the
+`.then` and `.catch` writes, and a cleanup that flips the latch.
+
+Fire-tested: reverted the effect to its exact pre-fix body (bare
+`.then(r => setHbModels(r.models || []))` / `.catch(() =>
+setHbModels([]))`, no reset, no latch). All five behavior checks failed
+by name while the five extraction/sanity checks stayed green; restored
+`modals/providers.jsx` byte-identical from the safety copy (md5
+`4b88575eda6e8fd050210384caddd1f2` before and after), test green again,
+bundle rebuilt.
+
+**Suite: 380/381** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` implicit-`transient`
+toolchain mismatch recorded in `#188`/`#193` — a different session's
+in-progress Motoko actor migration on a file this change never touches.
+`git status --porcelain` for this change covers only
+`modals/providers.jsx`, the one new test file above, and this ledger;
+`src/cafresohq_state/main.mo` was never staged or edited.
