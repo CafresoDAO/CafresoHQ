@@ -22927,3 +22927,55 @@ literal and crashed on the real `<div key={m.id} className="memrow">`. Same
 pattern as #149's two casualties, caught in my own file this time; it now finds
 the node by class and walks the tags with a brace-aware scanner, because JSX
 attributes hold `()=>` and a regex cannot read past it.
+
+---
+
+## #151 — A new note opens somewhere you can type
+
+Found in the Library. Pressed **+**, answered "New note path" with
+`Weekly plan`, and landed on a completely blank pane — no cursor, no
+placeholder, and no `<textarea>` in the DOM at all. So I did the obvious next
+thing: clicked in the empty space, typed a heading and a line, pressed Save.
+The server took it:
+
+```
+{"path": "Weekly plan.md", ..., "size": 0}
+```
+
+Every keystroke had gone nowhere, and the empty file was filed anyway.
+
+The cause is that the **Preview checkbox starts ON**, is shared across every
+note the room opens, and the preview branch renders *instead of* the
+textarea — there is no editor behind it. Preview an empty string and you get
+an empty `<div class="vault-preview">`. So the pane a boss is sent to
+immediately after naming a note is, by construction, a wall. The only way in
+is to notice and uncheck a checkbox in a toolbar you have not read yet.
+
+That is the whole first-run shape of the Library: the office asks you to name
+a thing, then gives you nowhere to write it.
+
+It is not only the moment of creation. `openByPath` on an already-empty note
+lands on the same wall — including the zero-byte casualties this bug itself
+filed. So the rule is written once, about content rather than about newness:
+
+```js
+const _nothingToPreview = (content) => !String(content || '').trim();
+```
+
+and both doors — `newNote` and `openByPath` — drop into the editor when it is
+true. **Only ever off, never back on**: a boss who unchecked Preview meant it,
+and an empty note is no reason to overrule them in the other direction.
+
+Verified live in all three directions. A brand-new note now opens with Preview
+unchecked; typed straight into it with real keystrokes and the server took 38
+bytes. The `size: 0` casualty from the hunt reopened into an editor and saved
+41. And after a reload — fresh mount, Preview back on — the Research brief
+still opens in the preview, unchanged.
+
+`scripts/test_a_new_note_opens_somewhere_you_can_type.py` runs the shipped
+helper under Node rather than restating it, and spends more cases on the
+direction that is *not* the bug: `'0'`, `'---'`, a single character, a heading
+after blank lines. Yanking a reader into raw markdown they never asked for
+would be the same rudeness in reverse. Fire-tested six ways, including half a
+fix — `newNote` alone — which leaves every already-filed empty note behind the
+same wall.

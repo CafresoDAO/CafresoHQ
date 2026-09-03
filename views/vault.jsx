@@ -7,6 +7,22 @@ const { useState: useSV, useMemo: useMV, useRef: useRV } = React;
 
 const _isHtmlPath = (path) => /\.html?$/i.test(path || '');
 
+/* A note with nothing a preview could render, i.e. one that must open on
+   the editor instead. #151
+
+   The Preview checkbox starts ON and is shared across every note the room
+   opens, and the preview branch renders INSTEAD of the textarea — there is
+   no textarea behind it. So the office asked for a new note's path, filed
+   the empty buffer, and handed back a blank pane with no cursor, no
+   placeholder and nothing to click: the one thing a boss does next, type,
+   went nowhere at all. Driven live: named a note, typed a heading and a
+   line, pressed Save, and the server took `"size": 0`.
+
+   The rule is the honest one and it covers the already-filed casualties
+   too, not just the moment of creation: when there is nothing to preview,
+   a preview is not a view of the note, it is a wall in front of it. */
+const _nothingToPreview = (content) => !String(content || '').trim();
+
 /* The first path segment that would make a note invisible, or null.
 
    Every listing this room has skips dotted parts — serve.py's fs and oci
@@ -705,6 +721,10 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
         text = await CafresoHQClient.vaultRead(path);
       }
       setOpenNote({ path, id: _pathToId.current[path] || null, content: text, dirty: false });
+      /* Only ever OFF, never back on: a boss who unchecked Preview meant it,
+         and an empty note is no reason to overrule them in the other
+         direction. */
+      if (_nothingToPreview(text)) setPreview(false);
       if (_isMobileV) setVaultTab('editor');
       const parts = path.split('/').filter(Boolean);
       const newExp = new Set(expanded);
@@ -1232,6 +1252,9 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     }
     // id is null for new notes — saveNote() will call bridge.create()
     setOpenNote({ path: norm, id: null, content: '', dirty: true });
+    // Same rule as openByPath: a note the office just asked you to name is
+    // a note you are about to write, and an empty buffer previews to a wall.
+    if (_nothingToPreview('')) setPreview(false);
   };
 
   /* First-run: a brand-new boss used to land on a silently blank tree —

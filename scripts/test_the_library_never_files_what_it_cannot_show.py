@@ -123,6 +123,12 @@ const saveNoteRef = { current: async () => {} };
 // test_new_note_wont_pave_over_an_old_one.py); empty list = fresh vault.
 const files = [];
 const openByPath = async (p) => opened.push({ openedExisting: p });
+// #151: newNote drops the pane into the editor when there is nothing to
+// preview. `preview` is React state, so only the setter is stubbed —
+// `_nothingToPreview` itself is lifted from the app below, because this
+// harness runs the real newNote and a stubbed helper would let the real
+// body call something the app no longer has.
+const setPreview = () => {};
 globalThis.window = globalThis;
 """
 
@@ -130,6 +136,11 @@ globalThis.window = globalThis;
 def client_checks():
     print('=== the client: refuse at the prompt, before the buffer ===')
     helpers = brace_lift(VAULT_RAW, 'const _hiddenPart = (path) => {')
+    nothing = re.search(r'const _nothingToPreview =[\s\S]*?;\n', VAULT_RAW)
+    if not nothing:
+        check('_nothingToPreview exists in views/vault.jsx', False)
+        return
+    helpers = helpers + '\n' + nothing.group(0)
     msg = re.search(r'const _hiddenMsg =[\s\S]*?;\n', VAULT_RAW)
     if not msg:
         check('_hiddenMsg exists in views/vault.jsx', False)
