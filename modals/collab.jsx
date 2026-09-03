@@ -2,9 +2,49 @@ import { CafresoHQChain } from '../claude-client.jsx';
 import { HQ } from '../hq-runtime.jsx';
 import { MSG_STATES } from '../app/windows.jsx';
 import { isParked, cardNote } from '../app/worklog.jsx';
+import { xpLastAttempt } from '../app/experience.jsx';
 import { Modal } from './base.jsx';
 const { useState: useStateM, useEffect: useEffectM, useRef: useRefM } = React;
-function WorkflowModal({ open, onClose, tasks, workflows, onSave, onOpenBoard }) {
+
+/* One line, five scenarios: done/total, in progress, stopped (parked —
+   `doing` with a blockedReason, waiting on a human), failed, removed.
+
+   `failed` is the one this list was missing. onTaskDropOnAgent's catch
+   branch (app.jsx) sends a snagged run back to `inbox` with `assignedTo`
+   and `blockedReason` both cleared — right, because the step must stay
+   re-delegatable — but that leaves nothing on the task itself saying a
+   run was ever attempted. The card already answers this from the XP
+   ledger (`xpLastAttemptText`, app/experience.jsx) since the exact same
+   gap was fixed there once already; this panel was still reading
+   `t.status` alone, so the one place a boss checks how their PIPELINE is
+   doing read a step that had already thrown as identical to one nobody
+   had touched — "0/2 done" either way.
+
+   `doing` already excludes a running task from `parked`; `failed` excludes
+   both plus `done`, so a step only lands here once nothing else is a more
+   current answer, and it clears itself the moment a retry succeeds
+   (`xpLastAttempt` reads the ledger's newest entry for the id). Pulled out
+   of the render so this component and its own test run the same function,
+   not a description of it. */
+function workflowStatusBits(wf, tasks, experience) {
+  const stepTasks = wf.steps.map(id => tasks.find(t => t.id === id));
+  const known = stepTasks.filter(Boolean);
+  const done = known.filter(t => t.status === 'done').length;
+  const parked = known.filter(isParked).length;
+  const doing = known.filter(t => t.status === 'doing' && !isParked(t)).length;
+  const snagged = known.filter(t =>
+    t.status !== 'done' && t.status !== 'doing' &&
+    (xpLastAttempt(experience, t.id) || {}).outcome === 'snag').length;
+  const missing = stepTasks.length - known.length;
+  const bits = [`${done}/${stepTasks.length} done`];
+  if (doing) bits.push(`${doing} in progress`);
+  if (parked) bits.push(`${parked} stopped — needs you`);
+  if (snagged) bits.push(`${snagged} failed — needs you`);
+  if (missing) bits.push(`${missing} removed`);
+  return bits.join(' · ');
+}
+
+function WorkflowModal({ open, onClose, tasks, workflows, onSave, onOpenBoard, experience = [] }) {
   const [name, setName] = useStateM('');
   const [desc, setDesc] = useStateM('');
   const [steps, setSteps] = useStateM([]); // array of task ids in order
@@ -125,10 +165,7 @@ function WorkflowModal({ open, onClose, tasks, workflows, onSave, onOpenBoard })
             <div className="cb-panel" style={{marginBottom: 12}}>
               <h4>YOUR WORKFLOWS ({workflows.length})</h4>
               <div className="stack">
-                {workflows.map(wf => {
-                  const stepTasks = wf.steps.map(id => tasks.find(t => t.id === id));
-                  const known = stepTasks.filter(Boolean);
-                  const done = known.filter(t => t.status === 'done').length;
+                {workflows.map(wf => (
                   /* `status === 'doing'` was the whole test, and it read a
                      stopped pipeline as a moving one: measured 2026-08-16,
                      a two-step chain whose first step spent its tool budget
@@ -139,24 +176,15 @@ function WorkflowModal({ open, onClose, tasks, workflows, onSave, onOpenBoard })
                      doing, so the wrong answer here is the only answer they
                      get. Read from worklog.jsx rather than spelled again;
                      four copies of "is this really running" is how they
-                     start disagreeing. */
-                  const parked = known.filter(isParked).length;
-                  const doing = known.filter(t => t.status === 'doing' && !isParked(t)).length;
-                  const missing = stepTasks.length - known.length;
-                  const bits = [`${done}/${stepTasks.length} done`];
-                  if (doing) bits.push(`${doing} in progress`);
-                  /* Named, not folded into a silence: a stopped step is the
-                     whole reason the rest of the chain is not moving, and
-                     it is the one the boss can do something about. */
-                  if (parked) bits.push(`${parked} stopped — needs you`);
-                  if (missing) bits.push(`${missing} removed`);
-                  return (
-                    <div key={wf.id} className="row" style={{padding:'4px 6px'}}>
-                      <span className="grow tiny">{wf.name}</span>
-                      <span className="sub">{bits.join(' · ')}</span>
-                    </div>
-                  );
-                })}
+                     start disagreeing. `workflowStatusBits` above is the
+                     next line that had not learned it: a step whose run
+                     THREW never reaches `doing`+blockedReason at all — see
+                     its own comment. */
+                  <div key={wf.id} className="row" style={{padding:'4px 6px'}}>
+                    <span className="grow tiny">{wf.name}</span>
+                    <span className="sub">{workflowStatusBits(wf, tasks, experience)}</span>
+                  </div>
+                ))}
               </div>
             </div>
           )}

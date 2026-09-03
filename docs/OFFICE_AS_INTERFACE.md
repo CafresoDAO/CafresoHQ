@@ -24002,3 +24002,72 @@ at these exact lines, so the fix transplants identically rather than by
 analogy.
 
 **Suite: 352/352, zero failures.**
+
+## 166. The workflow panel called a failed step untouched
+
+**The reading.** Live office (127.0.0.1:8902), fresh install — one hired
+coworker, no AI key configured. A two-step workflow ("Docs Pipeline"), step
+one dropped on the coworker's desk:
+
+```
+the coworker's chat bubble   ⚠ No Anthropic API key — open Settings
+                                → Connections. This run failed.
+the task board card          ⚠ Rocky hit a snag on this
+tasks.json (step one)        status "inbox", assignedTo null,
+                              blockedReason "", stalledNote null
+⛓ Workflows panel            "DOCS PIPELINE · 0/2 done"
+```
+
+Three surfaces agree a run was attempted and failed. The fourth — the one
+place a boss goes to ask how their PIPELINE is doing — read the exact same
+step as identical to one nobody had ever touched.
+
+**The mechanism.** `onTaskDropOnAgent`'s catch branch (app.jsx) sends a
+snagged run back to `status: 'inbox'` with `assignedTo` and `blockedReason`
+both cleared. That's correct — the step has to stay re-delegatable, and #86
+(`test_a_stalled_workflow_says_so.py`) already established that a task's own
+live fields are not where a failure gets remembered once the run ends. What
+the office actually keeps is the XP ledger, and the task card already reads
+it (`xpLastAttemptText`, app/experience.jsx) to print "Rocky hit a snag on
+this" — the same gap, fixed once already, on that surface. The workflow
+panel's per-pipeline summary (modals/collab.jsx) never got the matching fix:
+it counted `done`, `doing` and `isParked` off `t.status` alone, and a step
+that threw is none of those three — it reads as untouched.
+
+**The fix.** Pulls the per-workflow summary out into a named function,
+`workflowStatusBits(wf, tasks, experience)`, and adds a fourth bucket —
+`snagged`: not done, not doing, and the ledger's newest entry for this task
+id is an `outcome: 'snag'`. It clears itself the moment a retry succeeds (a
+fresh `done` entry outranks the old `snag` one by timestamp) or starts again
+(`status: 'doing'` moves the step to "in progress" instead, so a run in
+flight right now never reads as failed). `app.jsx`'s `WorkflowModal` call
+site already had `experience` sitting in state two lines above it — passed
+to `TasksView` and `TeamView` — just never handed to this modal; it's wired
+through now. "DOCS PIPELINE" now reads "0/2 done · 1 failed — needs you".
+
+**The test** (`test_the_workflow_panel_knows_a_step_failed.py`, 17 checks)
+lifts the real `isParked`, `xpLastAttempt` and `workflowStatusBits` out of
+their source files by name and runs them together under Node across eleven
+scenarios — untouched, one done, genuinely running, parked (both regression
+guards for #86), the failed case itself, two failures at once, a retry that
+succeeded, a retry in flight, another task's snag not leaking in, a failed
+step beside a removed one, and the missing-prop default — plus six static
+checks on the wiring (the import sources, the JSX call site, the `app.jsx`
+prop, the defaulted signature). Eight fire-tests, each caught by name:
+dropping the `xpLastAttempt` call or its import, swapping `isParked`'s
+import path, an inline recompute replacing the named call, `app.jsx` dropping
+the `experience` prop, the signature losing its default, the failed-bit
+wording changing, and the `doing` exclusion missing from the snag filter (so
+a live retry would misread as failed).
+
+**Provenance.** Found and fixed by one of five agents dispatched in parallel
+this tick to hunt for beta-blocking bugs across distinct areas of the app;
+this one's worktree hit an unrelated `moc` compiler failure
+(`test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`, `M0219:
+implicitly transient`) it correctly judged pre-existing and out of scope.
+Re-run on this branch during integration, that test passes clean —
+`main.mo` compiles without error here — so the mismatch was specific to that
+worktree's own toolchain state, not this tree; noted rather than chased
+further.
+
+**Suite: 353/353, zero failures.**

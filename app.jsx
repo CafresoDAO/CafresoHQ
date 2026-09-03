@@ -7525,6 +7525,9 @@ ${d.text}` : d.text,
         onClose={()=>setWorkflowOpen(false)}
         tasks={tasks}
         workflows={workflows}
+        /* So a failed step reads as failed here too — see
+           workflowStatusBits in modals/collab.jsx. */
+        experience={experience}
         /* The empty state tells the boss what the board would have to hold
            before a workflow is possible; without this it had no way to go
            and look. The mobile drawer opens this modal but carries no Tasks
