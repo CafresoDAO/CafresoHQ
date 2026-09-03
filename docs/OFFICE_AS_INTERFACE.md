@@ -22679,3 +22679,63 @@ cannot, once the break is off. The box shrinks back to 57.8px and the name
 **overflows** it, harmless until something clips and then a lost letter. The
 check was right; its stated reason was invented. Same family as the
 brittle-literal pattern — a plausible sentence nobody had run.
+
+### #147 — the office judged the boss's thinking from one delivery
+
+Followed the getting-started checklist end to end on a fresh office: hire
+Llama, take the FIRST ASSIGNMENT, watch the brief get written and filed,
+press "Open it →". The Library opened on the delivered file — #142's fix
+holding, and the brief's opening line carrying #145's honest sentence about a
+certificate — and the analytics panel beside it read:
+
+> **Biased**
+> One dominant topic — add contrasting ideas.
+> On the map: 3 · Topics: 1 · Separate clusters: 1
+
+Three nodes: the brief, its file, and the coworker who wrote it. The office's
+opening assessment of the boss's first piece of work was that it is biased and
+needs correcting.
+
+**The first fix was wrong, and this is the more useful half of the entry.**
+I read "one dominant topic" as vacuous when there is only one topic, added a
+sixth state (`unified`) for every single-community graph, fire-tested it five
+ways, and it passed all five. Then the full suite failed —
+`test_a_dominant_topic_is_actually_dominant.py`, which owns this exact branch
+and pins the promise the chip makes: *if the panel claims one topic dominates,
+the topic list under it has to agree.* Here it does. One topic holding 100% of
+the map is maximal dominance, not a missing comparison, and a mature library
+that really has drifted onto a single theme should be told so — that advice is
+the point of the panel. My change had silenced a ten-node clique and a
+twelve-node star that suite defends on purpose.
+
+Worth recording how it got that far: five fire-tests in both directions all
+passed, because every one of them was derived from my own framing. Fire-testing
+proves a check catches what you aimed it at; it cannot tell you that you aimed
+at the wrong thing. The neighbouring suite could, and did.
+
+**What was actually wrong is the evidence, not the arithmetic.** "Add
+contrasting ideas" is a judgement about the balance of somebody's thinking, and
+after one delivery there is nothing for it to be a balance between. A brand-new
+office cannot be anything except single-topic, so the verdict carries no
+information about the boss and lands as criticism of their first piece of work.
+
+So the floor rises instead of the line moving: `clusters.length < 2 && N < 8 →
+unformed`. No sixth state — `unformed` already says "not enough here to read a
+shape yet", which is exactly the situation. The guard is deliberately narrow:
+single community **and** small, so nothing with real topic structure is
+silenced at any size. Eight is a judgement call and the comment says so — above
+the first-delivery shape with room for a couple more, below the smallest
+single-topic map anyone has argued should carry the verdict.
+
+`scripts/test_a_first_run_is_not_judged.py` runs the real `analyze` bundled
+with the project's own esbuild. It now carries the correction as live
+assertions: `clique10` and `star12` must **keep** `biased`, so the same
+over-correction fails here as well as next door. Fire-tested three ways —
+removing the floor, flooring every single-community graph, and flooring on size
+alone. One of its own fixtures was wrong on the first run (a six-node hub-plus-
+tail that Louvain split in two, so it never exercised the single-community case
+at all) and the suite said so.
+
+Noted, not chased: raw `[BROWSER_FETCH: …]` and `[MEMORY_WRITE: …]` markers are
+visible in the chat bubble **while the reply streams**, and gone once it
+completes. Transient, and §6 does not obviously licence it.

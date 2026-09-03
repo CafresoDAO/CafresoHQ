@@ -259,8 +259,54 @@ function analyze({ nodes, edges }) {
      topic put together. Above that line the advice on the chip is worth
      taking. Below it the honest reading is the one the shape supports — the
      topics run together. */
+  /* A first run is not a body of work, and the chip was judging one.
+
+     Measured live (#147): the getting-started checklist end to end on a
+     fresh office -- hire, take the FIRST ASSIGNMENT, watch the brief get
+     filed, press "Open it". The Library opened on the delivered file and
+     the panel beside it read
+
+         Biased
+         One dominant topic -- add contrasting ideas.
+         On the map: 3   Topics: 1   Separate clusters: 1
+
+     over three nodes: the brief, its file, and the coworker who wrote it.
+
+     The first reading of this was that "one dominant topic" is vacuous when
+     there is only one topic, and the fix a new state for every
+     single-community graph. That was wrong, and the suite next door said so
+     -- test_a_dominant_topic_is_actually_dominant.py pins the promise the
+     chip makes: if the panel claims one topic dominates, the topic list
+     under it has to agree. Here it does. One topic holding 100% of the map
+     is maximal dominance, not an absent comparison, and a mature library
+     that really has drifted onto a single theme should be told so -- that
+     advice is the whole point of the panel. Deleting the verdict for every
+     one-topic graph broke a 10-clique and a 12-star that suite defends on
+     purpose.
+
+     What is actually wrong is the evidence, not the arithmetic. "One
+     dominant topic -- add contrasting ideas" is a judgement about the
+     balance of somebody's thinking, and after one delivery there is nothing
+     to have a balance between. A brand-new office cannot be anything except
+     single-topic, so the verdict carries no information about the boss and
+     reads as a criticism of their first piece of work.
+
+     So this raises the floor rather than moving the line. `unformed`
+     already exists and already says the honest thing -- "not enough here to
+     read a shape yet" -- which is exactly the situation, and needs no sixth
+     state. The existing floor (N < 3) was drawn for graphs with no shape at
+     all; this one is drawn for graphs too small for the shape to mean
+     anything, and applies only when there is a single community, so nothing
+     with real topic structure is silenced.
+
+     Eight is a judgement call and worth saying so: it sits above the
+     first-delivery shape (three nodes, plus room for a couple more
+     deliveries) and below the smallest single-topic map anyone has argued
+     should carry the verdict, which is the neighbouring suite's ten-node
+     clique. */
   let structure;
   if (!Number.isFinite(modularity) || E === 0 || N < 3) structure = 'unformed';
+  else if (clusters.length < 2 && N < 8) structure = 'unformed';
   else if (modularity < 0.2) structure = (C > 0.5) ? 'biased' : 'overlapping';
   else if (modularity < 0.4) structure = 'focused';
   else if (modularity <= 0.65) structure = (C < 0.5 && E_entropy >= 1.0) ? 'diversified' : 'focused';
