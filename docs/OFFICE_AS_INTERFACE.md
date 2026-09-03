@@ -23783,3 +23783,68 @@ unrelated to this change, and a palette-wide question rather than a calendar
 one.
 
 **Suite: 350/350, zero failures.**
+
+---
+
+## 163. The chat header survives the theme
+
+**The reading.** Live office (127.0.0.1:8894), shipped default — night mode,
+no theme class. The chat panel's header names the room you are standing in.
+It was not on screen:
+
+```
+.monitor .bezel   color rgb(34,21,12)  on  rgb(13,15,30)   ratio 1.07
+.composer-mini    color rgb(93,67,50)  on  rgb(16,18,31)   ratio 2.05
+```
+
+"DIRECT" simply absent; only the smaller "YOU & CAFRESOHQ" beneath it showed,
+faintly. "Delegate", beside Send, nearly as bad. Screenshots before and after
+confirm both.
+
+**The mechanism.** The surface and its text are themed in two different
+places. `body.night .bezel` flips the *background* to `#0d0f1e` and says
+nothing about the colour, which stayed pinned to `--brand-coffee` — the
+*light* palette's near-black.
+
+`styles.css` carries two colour families. `--brand-*` is the master palette
+and **no palette block redefines it**, so it is theme-invariant by
+construction. `--ink` / `--paper` / `--rule` are legacy aliases that `:root`
+defines *as* the brand tokens and that every palette block overrides. A rule
+that paints text with `--brand-*` on a surface the theme can move has quietly
+opted out of the theme system. This one had.
+
+**The fix** points the five chat-header rules at `--ink` / `--ink-2` /
+`--ink-3`, and `.composer-mini:hover`'s hardcoded `hsl(36 67% 94%)` wash at
+`--paper-2`. This is provably safe in the direction that matters: `:root`
+says `--ink: var(--brand-coffee)`, so in the default light theme the swap is
+an **identity** — verified by measuring the computed colours before and after
+(`rgb(34,21,12)` and `rgb(93,67,50)`, unchanged) — while night and all four
+`theme-*` palettes start working for free. Another `body.night` override would
+have fixed one palette of five, which is how the bug got here.
+
+**Not swept, and why.** 39 other rules still paint brand ink on a themable
+surface. They are not uniformly broken — a rule that sits on a brand *accent*
+(banana, peach, plum) wants near-black text in every palette and must keep it,
+and several of the rest are covered by a hand-written `body.night` override
+list (bubbles, composer, task rail) that covers night and none of the four
+named themes. Sorting 39 rules into those buckets is a bigger job than one
+tick; the test ratchets the count instead, so it can fall but never rise.
+
+**A measurement hazard, new shape.** `getComputedStyle` and
+`document.styleSheets` were read repeatedly against a **partially parsed**
+stylesheet — the rule count flapped between 191 and 2066 across calls, and in
+the 191 state `.composer-mini` genuinely had no matching rule, so the fix read
+as not applied four times running. A screenshot settled it in one shot. This
+is the same family as the post-`resize_window` geometry desync (#\_t53): the
+browser pane's *readings* can be stale in ways the *render* is not. Corroborate
+with a screenshot.
+
+**The test** (`test_the_chat_header_survives_the_theme.py`, 25 checks) is
+static over `styles.css`. It pins the premise (no palette themes the brand
+tokens; the legacy aliases really are defined from them, which is what makes
+the swap an identity), holds the five repaired rules, and ratchets the rest.
+Ten fire-tests, each failing by name — including one that has a palette start
+theming `--brand-coffee`, which invalidates the file's own reasoning and says
+so rather than passing.
+
+**Suite: 351/351, zero failures.**

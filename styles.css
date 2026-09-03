@@ -3118,12 +3118,37 @@ body.night .subord-name { color: var(--accent-teal, #00d4b5); }
      10,144px inside a 417px window and pushed the composer off the screen. */
   flex: 1 1 0;
 }
+/* The chat panel's header names the room you are standing in, and in the
+   shipped default (night) it was invisible: measured at a contrast ratio of
+   1.07 — `rgb(34,21,12)` on `rgb(13,15,30)`. The word "DIRECT" was simply
+   not there; only the smaller "YOU & CAFRESOHQ" beneath it showed, faintly.
+
+   The cause is that the surface and its text were themed in two different
+   places. `body.night .bezel` (further down this file) flips the BACKGROUND
+   to #0d0f1e and says nothing about the colour, which stayed pinned to
+   `--brand-coffee` — the LIGHT palette's near-black. The brand tokens are
+   the master palette and no palette block redefines them; only the legacy
+   `--ink`/`--paper`/`--rule` aliases are themed. A component that paints
+   with `--brand-*` directly therefore opts out of the theme system, and
+   this one did.
+
+   `--ink` is the fix rather than another `body.night` override, because
+   there are five palettes (night plus four `theme-*`) and the override list
+   only ever covered one of them. In the default theme `:root` defines
+   `--ink: var(--brand-coffee)`, so this swap is an identity there — the
+   light office renders byte-identically — and every other palette starts
+   working for free.
+
+   43 other rules in this file still paint brand ink on a surface the theme
+   can move. They are not all broken (some sit on a brand ACCENT, where dark
+   ink is correct and must stay), and sweeping them is a bigger job than one
+   fix; see the ledger. */
 .monitor .bezel {
   background: linear-gradient(180deg, hsl(36 67% 96% / 0.96), hsl(36 60% 92% / 0.92));
   padding: 12px 16px;
   border-bottom: 1px solid var(--brand-rule);
   display: flex; align-items: center; justify-content: space-between;
-  color: var(--brand-coffee);
+  color: var(--ink);
   font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 600;
   letter-spacing: -0.005em;
 }
@@ -3141,12 +3166,12 @@ body.night .subord-name { color: var(--accent-teal, #00d4b5); }
   color: var(--brand-coffee);
 }
 .monitor .bezel .ceo-label {
-  color: var(--brand-coffee);
+  color: var(--ink);
   line-height: 1.25;
   font-family: 'Inter', sans-serif;
 }
 .monitor .bezel .ceo-label .sub {
-  font-family: 'Inter', sans-serif; font-size: 10px; color: var(--brand-coffee-3);
+  font-family: 'Inter', sans-serif; font-size: 10px; color: var(--ink-3);
   letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600;
   margin-top: 1px;
 }
@@ -3446,18 +3471,22 @@ body.night .subord-name { color: var(--accent-teal, #00d4b5); }
   padding: 4px 10px;
   min-height: 26px;
   border-radius: 999px;
-  border: 1px solid var(--brand-rule);
+  border: 1px solid var(--rule);
   background: transparent;
-  color: var(--brand-coffee-2);
+  color: var(--ink-2);
   cursor: pointer;
   display: inline-flex; align-items: center; gap: 4px;
   transition: background .12s, border-color .12s, color .12s, transform .12s;
   white-space: nowrap;
 }
+/* Was a hardcoded `hsl(36 67% 94%)` — a light wash that only makes sense
+   under a light surface. Paired with `--ink` below it would put dark-theme
+   ink on a light-theme fill; `--paper-2` moves with the palette the way the
+   text now does. */
 .composer-mini:hover {
-  background: hsl(36 67% 94%);
-  border-color: var(--brand-coffee);
-  color: var(--brand-coffee);
+  background: var(--paper-2);
+  border-color: var(--ink);
+  color: var(--ink);
 }
 .composer-mini:active { transform: scale(0.97); }
 .composer-mini--ghost { /* default style above */ }
