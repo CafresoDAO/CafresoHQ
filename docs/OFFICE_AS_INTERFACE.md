@@ -26147,3 +26147,83 @@ merging the worktree's own stale-base ledger diff.
 is the pre-existing `moc`/M0219 `main.mo` toolchain mismatch recorded throughout this ledger, on a
 file this diff never touches — `git status --porcelain` covers only `views/projects.jsx` and the
 one new test file above; `src/cafresohq_state/main.mo` was never read, staged, or edited.
+
+---
+
+## 188. The bell could mark an unresolved "needs you" row read all by itself
+
+**The reading.** Assigned area: the notification/toast system — where
+toasts, badges, and unread/activity counts get generated, deduped,
+persisted, and dismissed. `ui/feedback.jsx`'s `ToastProvider` (dedup via
+`dismissingRef`, per `test_toast_dismiss_double_click_does_not_evict_a_live_toast.py`)
+and the bell's per-row click wiring
+(`test_notification_click_marks_read.py`, `test_notification_bell_clear_all_clears_receipts_too.py`,
+`test_a_notification_row_is_not_a_dead_button.py`) were all already fixed
+and tested. `app/attention.jsx`'s grouping/roster-filtering
+(`test_attention.py`) was also already in place. The gap was in the seam
+between two of those fixes: `markNotifsSeen` (app.jsx) already knows an
+attention-priority `activity` row must stay unread on its own canonical
+flag until resolved in the Team inbox — its own body skips exactly that
+case, `x.priority === 'attention' ? x : { ...x, unread: false }` — but
+`mergedNotifications`, the bell's OWN data source, never got the matching
+carve-out.
+
+**The mechanism.** `mergedNotifications`'s activity loop computed every
+row's `unread` with one formula regardless of priority: `e.unread &&
+(e.ts || 0) > notifSeenAt`. `notifSeenAt` is the bell's "have I glanced at
+this" watermark, bumped by `markNotifsSeen` — and after the fix behind
+`test_notification_click_marks_read.py`, that callback now fires from
+closing the panel, "Mark all read", **and every receipt/activity row's own
+onClick**. So the moment a boss clicked or dismissed anything in the bell,
+`notifSeenAt` jumped past every row already sitting in the feed —
+including an attention row nobody had actually resolved. `e.unread` itself
+was untouched (`app/attention.jsx`'s `attentionCount`, the Team-nav badge
+and office pill's real source, still saw it as unresolved, correctly), but
+the bell's own badge count and each row's `is-unread` highlight went
+quiet for that same row. Reproduced by lifting the real
+`mergedNotifications` activity loop (`scripts/test_mission_notifications_reach_the_bell.py`
+already established the same extraction markers on this exact loop) and
+running it under Node: an attention row logged before a stale `notifSeenAt`
+watermark computed `unread: false` in the bell while `attentionCountOf`
+(the real `app/attention.jsx`) still counted it — two surfaces reading the
+same `activity` array disagreeing about whether the same thing still
+needed the boss. Worse than a one-time miss: `notifSeenAt` only ever
+increases, so once it passed a row's `ts` the bell could never show that
+row unread again on its own — the only way back was already knowing to
+go resolve it in the Team inbox, which a quiet bell gave no reason to do.
+
+**The fix.** `mergedNotifications`'s activity loop now special-cases
+attention rows to mirror `e.unread` directly, ignoring `notifSeenAt`:
+`unread: e.priority === 'attention' ? e.unread : (e.unread && (e.ts || 0)
+> notifSeenAt)`. Routine and mission rows are unchanged. This is the same
+rule `markNotifsSeen` already enforces on the flag itself, now honored on
+the read side that actually drives the bell's badge and row styling.
+
+**The test**
+(`scripts/test_notification_bell_could_hide_an_unresolved_attention_row.py`)
+lifts the real `mergedNotifications` activity loop verbatim (brace/marker
+extraction, the same markers `test_mission_notifications_reach_the_bell.py`
+uses on this loop) and the real `app/attention.jsx`, and runs both under
+Node: an unresolved attention row (`unread: true`) stays unread in the
+bell even with a `notifSeenAt` watermark set well past its `ts`; an
+attention row already resolved via the Team inbox (`unread: false`) still
+reads as read (the fix mirrors the flag, it doesn't just force every
+attention row unread); an ordinary routine row is unaffected, still gated
+on `notifSeenAt` exactly as before; and a final check runs the real
+`attentionCount` against the same fixture to confirm the pill and the
+bell now agree.
+
+Fire-tested: reverted the one-line formula to the pre-fix
+`e.unread && (e.ts || 0) > notifSeenAt`. Two checks failed by name — the
+extraction-shape check and the "stays unread" behavioral check — while the
+already-resolved-row and routine-row checks stayed green (they never
+depended on the attention carve-out). Restored the line and confirmed
+`app.jsx` byte-identical to the pre-revert state via `md5`.
+
+**Suite: 370/371.** The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`) is
+the same pre-existing `moc`/M0219 `main.mo` implicit-`transient` toolchain
+mismatch recorded throughout this session, on a file this diff never
+touches — `git status --porcelain` covers only `app.jsx` and the one new
+test file above; `src/cafresohq_state/main.mo` was never read, staged, or
+edited.

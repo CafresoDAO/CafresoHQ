@@ -6717,7 +6717,23 @@ ${d.text}` : d.text,
         kind: e.action === 'mission' ? 'mission' : (e.priority === 'attention' ? 'system' : 'agent'),
         msg: `${e.agentName || 'HQ'} ${e.text}`,
         ts: e.ts,
-        unread: e.unread && (e.ts || 0) > notifSeenAt,
+        /* Attention rows are unread until RESOLVED (via the Team inbox),
+           not until SEEN — same rule markNotifsSeen already enforces on
+           the canonical `activity` flag (it deliberately skips attention
+           entries when clearing unread). Gating this one on notifSeenAt
+           too undid that: opening/closing the bell, hitting "Mark all
+           read", or clicking any OTHER row now all call markNotifsSeen(),
+           each of which bumps notifSeenAt and — because this formula
+           didn't distinguish attention from routine — silently flipped
+           every attention row to "read" in the bell's own count and
+           is-unread styling, even though `e.unread` (and therefore the
+           Team-nav badge / office pill, both driven by app/attention.jsx)
+           still says it needs the boss. The bell would report "all caught
+           up" while the pill still read "N need you", and once notifSeenAt
+           passed that row's ts the bell could never show it unread again —
+           the only real fix was visiting Team and resolving it there,
+           which the bell gave the boss no reason to do. */
+        unread: e.priority === 'attention' ? e.unread : (e.unread && (e.ts || 0) > notifSeenAt),
         source: e.agentName || 'a coworker',
         icon: e.priority === 'attention' ? '⚠' : undefined,
         /* Same gap as the receipt row above: this is the ⚠ "night shift
