@@ -25741,3 +25741,102 @@ session, on files this fix's diff never touches (`app.jsx`,
 `features.jsx`, and the one new test file above; `serve.py` was patched
 to a 6-second TTL for the live repro above and reverted — confirmed
 byte-identical via `git diff` — before this run).
+
+---
+
+## 183. The Meeting Room's "+ Seat" popover could shove the whole modal into horizontal scroll on a phone
+
+**A worktree note.** `git status --short` was clean, and `git log --oneline
+HEAD..chore/oss-reduction | wc -l` showed 3 commits — a small gap, but two
+of them touched `features.jsx` (`FocusMode`'s send() and `ReceiptsModal`,
+per `git diff --stat`), well clear of the `MeetingRoom` region this fix
+lives in, and one appended 294 lines to this very ledger. `git merge
+--ff-only` refused outright ("local changes... would be overwritten") with
+the fix already written and live-verified in the working tree, so the fix
+was `git stash push -- features.jsx styles.css` (leaving the new,
+untracked test file alone), the fast-forward landed clean, and `git stash
+pop` auto-merged both files with zero conflicts — confirmed after by
+re-running the new test and re-grepping for `seatAddRef`/`align-right` in
+both files.
+
+**The reading.** Assigned area: mobile responsiveness on Memory, Graph,
+Terminal, Workspace/Projects, Calendar, Meeting Room, the notification
+bell, the command palette, and modal layouts generally — excluding Vault,
+Team, Tasks, Settings, chat, and onboarding, which already have dedicated
+mobile tests. Memory and Calendar's tab-bar clearance were already fixed
+(`.view-memory`/`.view-calendar` both already sit in the shared
+`padding-bottom` selector lists in `styles.css`). Terminal is intentionally
+desktop-only per the north-star doc (`ui/office.jsx`'s `MobileTabBar`
+comments say so explicitly) and was left alone. The embedded Vault graph
+and the desktop-only `GraphPopout` (`app.jsx`, gated on `?popout=graph`)
+aren't in scope either way. `NotificationCenter` (`ui/onboarding.jsx`) is a
+full-height fixed overlay above the tab bar's z-index — no clearance bug
+there.
+
+The real one: the office floor's meeting door (`.px-meetdoor`,
+`ui/office.jsx`) opens the real seated `MeetingRoom` (`features.jsx`) — a
+`.meeting-table` of `.seat` tiles plus one dashed `.seat-add` tile that
+opens a "+ Seat someone" popover. Reproduced live at 375×812 with an odd
+number of coworkers already seated: `.meeting-attendee-grid`'s
+`repeat(auto-fill, minmax(140px, 1fr))` packed two columns into the modal,
+which put the seat-add tile in the *right* column, and the popover — fixed
+at `width: 240px`, anchored `position: absolute; left: 0` off that tile —
+ran roughly 58px past the modal's own right edge. `.modal-body` only sets
+`overflow-y: auto`, and CSS pairs that with a computed `overflow-x: auto`,
+so the overflow wasn't silently clipped: `.modal-body`'s `scrollWidth`
+measured 437 against a 375 `clientWidth`, i.e. the whole Meeting Room
+modal picked up an unwanted horizontal scrollbar, not just a cosmetic
+edge-bleed on one popover.
+
+**The mechanism.** Which grid column the seat-add tile lands in depends on
+the *runtime* seated-participant count, so a static `left: 0` (or a
+flipped static `right: 0`) can only ever be correct for one parity of that
+count — the same shape of bug `views/terminal.jsx`'s add-session `+` menu
+already had, and already fixed there with a measure-then-clamp approach
+that `MeetingRoom` never inherited.
+
+**The fix.** `MeetingRoom` (`features.jsx`) gets a `seatAddRef` on the
+`.seat.seat-add` tile and a `toggleAdd()` that, only on the opening
+transition, reads `seatAddRef.current.getBoundingClientRect()` and sets
+`addAlignRight` to `r.left + 240 > window.innerWidth - 8` (240 matching
+`.seat-add-popover`'s real CSS width, 8px matching this codebase's usual
+viewport-edge margin). The seat-add div's `onClick` now calls `toggleAdd`
+instead of a raw `setAddOpen` toggle, and the popover's `className`
+appends `' align-right'` when `addAlignRight` is set. `styles.css` gets
+one rule: `.seat-add-popover.align-right { left: auto; right: 0; }`,
+unconditional (not inside any `@media` block) since the JS — not a fixed
+breakpoint — decides when it applies, checked against `window.innerWidth`
+so it also covers a narrow desktop window, not just phones.
+
+**The test**
+(`scripts/test_meeting_room_seat_add_popover_mobile_overflow.py`) lifts
+`MeetingRoom` out of `features.jsx` by a balanced-brace slice on the
+function name, then regexes for: the ref declared and actually attached to
+the `.seat.seat-add` div; `toggleAdd()` measuring
+`getBoundingClientRect()` against both the `240`px `POPOVER_W` constant and
+`window.innerWidth`, and writing `addAlignRight`; the tile's `onClick`
+wired to `toggleAdd` (not a raw toggle); and the popover's `className`
+conditionally carrying `align-right`. On the CSS side it confirms
+`.seat-add-popover` still ships its `240px` width (so the JS threshold
+can't silently drift from the real value), and that `.seat-add-popover
+.align-right` exists *outside* every `@media (max-width: 768px)` block —
+folding it into one would make it wrong at exactly the widths the JS was
+measuring for — and that it actually sets both `left: auto` and `right:
+0` (either alone leaves the base rule's `left: 0` still winning).
+
+Fire-tested both halves of the fix independently: removing the
+`.align-right` CSS rule failed the two CSS-side checks by name (the
+"exists at the top level" and "re-anchors to the tile's right edge"
+checks); separately reverting the tile's `onClick` to a raw
+`setAddOpen(o => !o)` toggle and stripping the popover's conditional
+class failed the two matching JSX-side checks by name. Both reverts
+restored `md5sum`-identical to the pre-revert state before the next break
+was applied.
+
+**Suite: 369/370.** The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`) is
+the same pre-existing `moc`/M0219 `main.mo` implicit-`transient`
+toolchain mismatch recorded throughout this session, on a file this
+diff never touches — `git status --porcelain` covers only `features.jsx`,
+`styles.css`, and the one new test file above; `src/cafresohq_state/main.mo`
+was never read, staged, or edited.

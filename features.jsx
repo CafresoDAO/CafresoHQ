@@ -505,6 +505,33 @@ function MeetingRoom({ participants, agents, onClose, onRemove, onAdd, onUpdateA
   const [input, setInput] = useSF('');
   const [streaming, setStreaming] = useSF(false);
   const [addOpen, setAddOpen] = useSF(false);
+  /* The "+ Seat someone" popover reuses .meeting-attendee-grid at a fixed
+     240px width (styles.css), anchored `left: 0` off the seat-add tile.
+     That tile's own column flips between the grid's left and right slot
+     as attendee count changes (`repeat(auto-fill, minmax(140px, 1fr))`
+     packs 2 columns on a narrow modal) — with an ODD number already
+     seated it lands in the right column, and a 240px popover glued to
+     that tile's left edge runs 40-60px past the modal's right edge.
+     Measured live at 375px: .modal-body's scrollWidth (437) exceeded its
+     clientWidth (375), i.e. the fixed-width popover forced the whole
+     Meeting Room modal into unwanted horizontal scroll — same shape as
+     the add-session menu clamp in views/terminal.jsx's ProjectTerminal,
+     just never applied here. A static CSS anchor can't fix this: which
+     column the tile lands in depends on the runtime seat count, so the
+     side that needs clamping flips too. Measuring the tile's own rect at
+     open time (same technique terminal.jsx uses) and flipping the
+     anchor only when there isn't 240px of room to its right keeps the
+     popover inside the modal from either column. */
+  const seatAddRef = useRF(null);
+  const [addAlignRight, setAddAlignRight] = useSF(false);
+  const toggleAdd = () => {
+    if (!addOpen && seatAddRef.current) {
+      const r = seatAddRef.current.getBoundingClientRect();
+      const POPOVER_W = 240; // .seat-add-popover's fixed width in styles.css
+      setAddAlignRight(r.left + POPOVER_W > window.innerWidth - 8);
+    }
+    setAddOpen(o => !o);
+  };
   const logRef = useRF(null);
   useEF(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [msgs]);
   /* Whoever's left once seated — the "+ Seat" tile below only shows a
@@ -688,11 +715,11 @@ function MeetingRoom({ participants, agents, onClose, onRemove, onAdd, onUpdateA
             </div>
           ))}
           {onAdd && available.length > 0 && (
-            <div className="seat seat-add" onClick={() => setAddOpen(o => !o)} title="Seat another coworker">
+            <div className="seat seat-add" ref={seatAddRef} onClick={toggleAdd} title="Seat another coworker">
               <div className="seat-add-plus">+</div>
               <div className="seat-role">Seat someone</div>
               {addOpen && (
-                <div className="meeting-attendee-grid seat-add-popover" onClick={e => e.stopPropagation()}>
+                <div className={'meeting-attendee-grid seat-add-popover' + (addAlignRight ? ' align-right' : '')} onClick={e => e.stopPropagation()}>
                   {available.map(a => (
                     <div
                       key={a.id}

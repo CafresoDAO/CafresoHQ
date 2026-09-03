@@ -5053,6 +5053,11 @@ body.night .settings-shell .cb-panel {
   box-shadow: var(--shadow-hard);
   padding: 8px; cursor: default; text-align: left;
 }
+/* Flipped by MeetingRoom (features.jsx) when the seat-add tile's measured
+   rect leaves less than 240px of room to its right — the tile's own grid
+   column flips with the runtime seat count, so a static left/right anchor
+   can't cover both cases. See the toggleAdd() comment there. */
+.seat-add-popover.align-right { left: auto; right: 0; }
 .meeting-log { padding: 14px; max-height: 260px; overflow: auto; background: #fdf6e3; }
 .mtg-msg { display: flex; gap: 8px; margin-bottom: 10px; align-items: flex-start; }
 .mtg-msg.you { flex-direction: row-reverse; }
