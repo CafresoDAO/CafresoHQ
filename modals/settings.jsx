@@ -94,7 +94,15 @@ const SETTINGS_INDEX = [
      search box is a real thing people do when they cannot find the field. */
   { tab:'connections', label:'Claude API key (pay-per-token)', hint:'for coworkers pinned to an anthropic: brain — kept in this browser, sent straight to Anthropic', kw:'connections anthropic claude api key sk-ant opus sonnet haiku brain model credits pay token byok signed in' },
   { tab:'connections', label:'Gemini API key (pay-per-token)', hint:'for coworkers pinned to a google: brain — kept in this browser, sent straight to Google', kw:'connections google gemini api key aiza brain model credits pay token byok signed in' },
-  { tab:'account', label:'Usage this session', hint:'tokens your crew has spent since load', kw:'usage tokens spend cost billing' },
+  /* Label/hint mirror AccountTab's own "Usage so far" row below — NOT a
+     fresh description. This entry was still saying "this session" /
+     "since load" after the panel itself was corrected to the cumulative
+     since-hire span (see the note on AccountTab's Usage row): the search
+     index is a separate array, so fixing the visible panel never touched
+     the copy shown when a boss searches Settings for "usage" or
+     "session". `kw` keeps 'session' so that old muscle-memory search
+     still lands here, without the wrong span being asserted as fact. */
+  { tab:'account', label:'Usage so far', hint:'tokens your crew has spent since you hired them', kw:'usage tokens spend cost billing session since load' },
   { tab:'account', label:'Copy diagnostics', hint:'one-click support snapshot', kw:'diagnostics debug support copy help' },
   { tab:'account', label:'Reset onboarding', hint:'replay the new-user guide', kw:'onboarding tour guide reset replay' },
   { tab:'icp-services', label:'Modules', hint:'optional add-ons — the OS works the same with all of them off', kw:'modules add-ons addons optional capabilities icp internet computer dfinity service catalog install marketplace on-chain blockchain' },

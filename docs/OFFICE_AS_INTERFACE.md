@@ -24991,3 +24991,121 @@ the same pre-existing `moc`/M0219 Motoko-toolchain error on
 `src/cafresohq_state/main.mo` recorded by the previous entry — a file this
 diff never touches (`git diff --stat` covers only `serve.py` and
 `scripts/test_security_boundaries.py`).
+---
+
+## 176. Settings search told the boss a different number's story than the panel it points to
+
+**A worktree note.** This worktree also started 739 commits behind
+`chore/oss-reduction` — `git merge-base --is-ancestor HEAD chore/oss-reduction`
+passed cleanly (no divergence), which only proves fast-forwardability, not
+currency. `git log --oneline HEAD..chore/oss-reduction | wc -l` (739) caught
+the real gap; `git status --short` was clean, so `git merge --ff-only
+chore/oss-reduction` landed without anything to preserve across it, before
+any of the work below started.
+
+**The reading.** Assigned area: billing / cycles / plan / usage-cap UI.
+CafresoHQ has no cycles balance or billing surface in the ICP sense — no
+`cycles`, `upgrade plan`, or payment-cap UI exists anywhere in app.jsx,
+views/*.jsx, or modals/*.jsx (checked by grep; the only `cycles` hit is
+`views/terminal.jsx`'s `dfx canister status` help text, unrelated). The
+closest real surface is `modals/settings.jsx`'s ACCOUNT tab — "plan ·
+hosting · usage" — which is exactly what north-star §1's self-hosted
+audience reads for "is my HQ up, what have I spent, what plan am I on."
+Its own history (the comment sitting above `AccountTab`'s Usage row right
+now) already documents two rounds of this exact defect: a hardcoded
+"Cafreso HQ Premium … active" banner shown with no gate at all, and a
+"Usage this session"/"since load" label on a number (`usageTokens`,
+app.jsx's `totalTokens`) that is cumulative since hire and survives a
+reload byte for byte — both fixed, and the fix comment explicitly names
+the roster card and the Situation Wall as the other two places the same
+false span had already been found and unified onto `totalTokens`
+(`officeEffort={totalTokens}` in app.jsx, see the note there).
+
+What none of those fixes touched: `SETTINGS_INDEX`, the separate array
+that powers the Settings search box. It carries its OWN hand-typed copy
+of the label and hint for anything a boss might search for — independent
+of whatever the target panel currently says — and its Usage entry still
+read `label:'Usage this session'`, `hint:'tokens your crew has spent
+since load'` after `AccountTab`'s own row had already been corrected to
+`'Usage so far'` / `'tokens your crew has spent since you hired them'`.
+
+Reproduced live: built the UI bundle and ran serve.py, then hit a wall
+this session's other agents also hit — the shared checkout means several
+concurrent `serve.py`/`npm run build` processes are running against the
+*same* repo path, and the named preview config (`.claude/launch.json`'s
+`cafresohq` entry) intermittently resolved to a *different* agent's
+worktree entirely: `lsof -a -p <pid> -d cwd` on the process bound to the
+preview's port showed `cwd` was the root `CafresoHQ` checkout, not this
+worktree, so the browser was loading someone else's `dist-ui/` and the
+manifest hash kept changing under a stationary curl. Worked around by
+starting a second `serve.py` explicitly from this worktree on its own
+port, confirmed root with the same `lsof -a -p <pid> -d cwd` check, then
+verified against that instance: opened Settings, typed "since load" into
+the search box. Before the fix: one result, "Usage this session" /
+"tokens your crew has spent since load", tab ACCOUNT — clicking through
+landed on a panel reading "Usage so far" / "tokens your crew has spent
+since you hired them", a live, visible contradiction one click apart.
+After the fix (rebuilt, same instance): the search result itself reads
+"Usage so far" / "tokens your crew has spent since you hired them",
+matching the panel exactly.
+
+**The mechanism.** Two independent copies of the same sentence — the
+visible panel row in `AccountTab`'s JSX, and a hand-duplicated
+`label`/`hint` string in `SETTINGS_INDEX` built for the search box — and
+fixing one never had a reason to reach the other, because nothing reads
+either off the other; they are two separately-typed literals that happen
+to describe the same field. The exact shape this ledger already has a
+name for one layer down, at the level of the *number itself* (roster
+card / Situation Wall / topbar HUD each summing tokens differently before
+`officeEffort` was unified onto `totalTokens`) — here it recurred one
+layer up, in the *copy describing* the number, in the same file, right
+next to the comment explaining why the false span mattered the first
+two times.
+
+**The fix.** `modals/settings.jsx`'s `SETTINGS_INDEX` entry for the Usage
+row now carries the identical `label`/`hint` text `AccountTab`'s own row
+does — `'Usage so far'` / `'tokens your crew has spent since you hired
+them'` — instead of a hand-duplicated copy that could drift again. `kw`
+keeps `'session'`/`'since load'` as search keywords so a boss's old
+muscle-memory search (`"usage this session"`) still surfaces the result;
+those words no longer appear in the label or hint a boss actually reads,
+only in the silent match list.
+
+**The test**
+(`scripts/test_settings_search_usage_matches_account_panel.py`, 13
+checks) lifts both real strings out of `modals/settings.jsx` by regex —
+the `SETTINGS_INDEX` entry via its own `{ tab:'account', label:'...Usage...',
+hint:'...', kw:'...' }` shape (found wherever it sits in the array, not by
+line number), and `AccountTab`'s JSX row via its own
+`<div className="lbl">Usage...</div><div className="sub">...</div>`
+shape — then asserts the two are byte-identical, and separately pins that
+neither the search label nor the panel label/sub-line contains `'this
+session'` or `'since load'` (checked on both surfaces, both phrases, so a
+regression landing in either direction still fails by name), while `kw`
+is confirmed to still carry `'session'` for discoverability. Three
+fire-tests against real one-line edits to `modals/settings.jsx` — reverting
+the `SETTINGS_INDEX` entry's label/hint back to the old text, reverting
+only the `AccountTab` panel row's text (the opposite direction), and
+stripping `'session'`/`'since load'` back out of `kw` — each failed by
+exactly the expected check names, and the file was restored `cmp`-
+identical before the next break was applied.
+
+**A closed lead, recorded not chased.** `app/cast.jsx`'s `payrollLabel()`
+(the roster card's per-coworker cost column — `'in-house'` / `'on your
+plan'` / a real per-word rate) was read end-to-end looking for a second
+instance of the same false-span defect. Its three branches are gated on
+the actual `model` string (`PAYROLL_LOCAL`, `PAYROLL_PLAN` regexes) and
+each names precisely what it's claiming ("no rate is configured here, and
+a made-up one would be worse than none") — no hardcoded state, no
+duplicated copy anywhere else in the file. Not a bug; the closest
+adjacent billing-shaped surface that turned out to already be clean.
+
+**Suite: 361/362.** The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`) is
+the same pre-existing `moc`/M0219 `main.mo` toolchain mismatch noted in
+#172/#173 — this worktree's diff touches only `modals/settings.jsx` and
+the new test file above, nothing under `src/cafresohq_state/`.
+
+**Provenance.** Found and fixed by one of five agents dispatched in
+parallel this tick to hunt for beta-blocking bugs across distinct areas
+of the app, assigned to billing / cycles / plan / usage-cap UI.
