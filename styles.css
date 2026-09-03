@@ -1738,6 +1738,27 @@ body.theme-coffeeshop .desk::after {
 .app {
   display: grid;
   grid-template-columns: 232px minmax(0, 1fr);
+  /* `height: 100vh` sets the BOX, not the row. With no grid-template-rows the
+     shell had one implicit `auto` track, and an auto track grows to its
+     content's max-content height whatever the box says — so the whole shell
+     grew past the window and `overflow: visible` spilled the excess off the
+     bottom of the screen, where there is no scrollbar to reach it.
+
+     Measured at 1024×700: the rail's own content wants 707px + 16px padding,
+     so the row resolved to 723.219px and everything in BOTH columns hung 23px
+     below the fold. Casualties were the rail's identity chip (bottom at 707,
+     and it is `margin-top: auto` precisely because it is meant to sit on the
+     window's bottom edge) and, in Chat, the DIRECT/TEAM/RESEARCH switcher at
+     722 — the control that gets you from your CEO to the whole team, with
+     13px of a 35px button left on screen. A 1366×768 or 1280×800 laptop lands
+     inside that band once browser chrome is taken off the top.
+
+     `minmax(0, 1fr)` pins the row to the height the box already declares, so
+     nothing inside can push the shell off the window again. Both columns are
+     already built to live inside a fixed height: `.main` is
+     `52px minmax(0,1fr) auto` with `min-height: 0`, and the rail's nav scrolls
+     (see `.rail nav` below). */
+  grid-template-rows: minmax(0, 1fr);
   height: 100vh;
   width: 100vw;
   min-width: 0;
@@ -1783,7 +1804,21 @@ body.theme-coffeeshop .desk::after {
 }
 @keyframes pulse { 50% { opacity: 0.5; } }
 
-.rail nav { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+/* The rail is now held to the window (see `.app` above), so on a short screen
+   something in it has to give. It is the nav list, and only the nav list: the
+   brand, the SETTINGS door and the identity chip stay where they are, because
+   the two things a boss reaches for when the office confuses them must not be
+   the two things that scrolled away. `min-height: 0` is what lets a flex item
+   shrink below its content at all.
+
+   The scroll goes here rather than on `.rail` on purpose: `.rail-toggle` is
+   `position: absolute; right: -13px` and deliberately overhangs the rail's
+   edge, and a scroll container clips both axes — `overflow-y: auto` on the
+   rail itself would cut the collapse handle in half. */
+.rail nav {
+  display: flex; flex-direction: column; gap: 2px; margin-top: 4px;
+  min-height: 0; overflow-y: auto;
+}
 .rail nav a {
   display: flex; align-items: center; gap: 10px;
   padding: 8px 10px;

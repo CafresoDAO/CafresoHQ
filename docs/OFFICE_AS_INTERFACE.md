@@ -23033,3 +23033,69 @@ in either theme. It found the twin on its own: parameterised over both bars,
 it failed on `.pb-seg` before that fix was written. A selector it cannot model
 fails too, rather than passing quietly. Fire-tested four ways after the
 rewrite, six before it.
+
+## #153 — The office fits in the window
+
+Measured live at 1024×700, on the Chat view:
+
+```
+.app  height: 100vh          → the box is 700px
+.app  grid-template-rows     → (not declared)
+computed grid-template-rows  → 723.219px
+```
+
+`height` sets the **box**. It does not size the **rows**. With no
+`grid-template-rows` the shell had one implicit `auto` track, and an auto
+track is sized to its content no matter what the box says — so the track
+resolved to 723.219px inside a 700px box, and `overflow: visible` spilled the
+excess off the bottom of the screen, where there is no scrollbar to reach it.
+Both columns went over the edge together:
+
+| element | bottom | |
+|---|---|---|
+| `.rail .me` | 707 | the boss's own identity chip, clipped |
+| `.thread-tabs` | 722 | DIRECT / TEAM / RESEARCH — 13px of a 35px button left |
+
+The rail is what wants the 723: its content measures 707px plus 16px of
+padding. And `.rail .me` is `margin-top: auto` — it is written to sit *on*
+the window's bottom edge, which is only meaningful if the rail cannot grow
+past it. The layout had an intent the containment never enforced.
+
+The second casualty is the one that costs something. The thread switcher is
+how a boss gets from talking to their CEO to talking to the whole team, and to
+Research. A 1366×768 or 1280×800 laptop lands inside the broken band once
+browser chrome comes off the top, and there is no scrollbar, no clipped edge,
+no cue of any kind that the row is down there at all.
+
+Two comments already in this stylesheet had *assumed* the fix:
+
+> `/* fixed height so descendants can use height:100% */`
+> `/* With .app at 100dvh this row gets the full remaining height. */`
+
+Neither was true. The mobile blocks had reached for `overflow: hidden`, which
+hides the spill without recovering the content; desktop had neither.
+
+`grid-template-rows: minmax(0, 1fr)` pins the row to the height the box
+already declares. **`1fr` would not have fixed it** — `1fr` means
+`minmax(auto, 1fr)`, so its floor is still the content. Confirmed against a
+real engine: `1fr`, `auto` and `minmax(auto, 1fr)` all resolve to 723.219px;
+only `minmax(0, 1fr)` gives 700.
+
+Holding the shell to the window means something in the rail has to give on a
+short screen, and *which* thing matters: the give goes on `.rail nav`, not on
+`.rail`, so the brand, the SETTINGS door and the identity chip stay put —
+the parts a boss reaches for when the office confuses them must not be the
+parts that scrolled away. It also cannot go on `.rail` for a second reason:
+`.rail-toggle` is `position: absolute; right: -13px` and deliberately
+overhangs, and a scroll container clips both axes.
+
+`scripts/test_the_office_fits_in_the_window.py` is not a grep for the fix. It
+implements the grid track-sizing rule that caused the bug — *does this track
+grow with its content?* — and runs it over the real declarations for every
+full-window grid shell in the stylesheet, in each media context the file
+actually defines, so the sweep covers shells that do not exist yet. The rail's
+three supporting facts are derived rather than assumed: the overhang check
+reads `.rail-toggle`'s own negative inset instead of hardcoding 13px, and the
+`margin-top: auto` check exists so that if the identity chip stops being
+bottom-pinned the file says its premise changed rather than passing quietly.
+Fire-tested six ways, including the plausible wrong fix (`1fr`). Suite 341/341.
