@@ -1767,7 +1767,14 @@ function MessageBody({ text }) {
    the inner runs in <code>; everything else preserves newlines via
    white-space: pre-wrap. Also renders ![alt](url) markdown image embeds
    inline — used by BROWSER_SCREENSHOT to surface PNGs (the data: URL
-   sits in the message text). */
+   sits in the message text).
+
+   .msg-image has always shipped with `cursor: zoom-in` and a CSS comment
+   promising "click to open at full size in a new tab" (styles.css, since
+   the very first commit) — but the <img> itself never carried an onClick.
+   A screenshot capped to the chat column's width by max-width:100% had no
+   way to be seen at native resolution; the cursor just lied. Wired here so
+   the click actually does what the affordance has always claimed. */
 const _MD_IMAGE_RE = /!\[([^\]]*)\]\((data:image\/[a-z]+;base64,[A-Za-z0-9+/=]+|https?:\/\/[^)\s]+)\)/g;
 function MessageProse({ text }) {
   if (!text) return null;
@@ -1796,7 +1803,8 @@ function MessageProse({ text }) {
     return <p key={key} style={{whiteSpace:'pre-wrap', margin:0}}>{parts}</p>;
   };
   return <>{blocks.map((b, i) => b.kind === 'img'
-    ? <img key={'img'+i} src={b.src} alt={b.alt || 'screenshot'} className="msg-image" loading="lazy"/>
+    ? <img key={'img'+i} src={b.src} alt={b.alt || 'screenshot'} className="msg-image" loading="lazy"
+        onClick={() => window.open(b.src, '_blank', 'noopener,noreferrer')}/>
     : renderText(b.value, 'b'+i))}</>;
 }
 

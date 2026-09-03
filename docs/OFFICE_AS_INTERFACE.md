@@ -26227,3 +26227,94 @@ mismatch recorded throughout this session, on a file this diff never
 touches — `git status --porcelain` covers only `app.jsx` and the one new
 test file above; `src/cafresohq_state/main.mo` was never read, staged, or
 edited.
+
+---
+
+## 189. A screenshot's zoom-in cursor promised a click that never opened anything
+
+**The reading.** Assigned area: chat message rendering — markdown
+parsing/rendering, code block syntax highlighting and copy buttons, inline
+image display, link handling, and streaming-message rendering as tokens
+arrive. `ui/chat.jsx` is the whole surface: `MessageBody` splits a message
+on fenced code blocks, `CodeBlock` renders each one with heuristic
+tinting (`tintCode`) and a copy button, and `MessageProse` handles the
+prose in between — inline `` `code` `` spans and `![alt](url)` image
+embeds. `throttleTokens` (`hq-runtime.jsx`) is the one chokepoint every
+streamed reply passes through before any of this ever sees the text.
+Most of what this area could plausibly break was already fixed and
+covered: the two copy buttons now await `clipboard.writeText` and only
+toast success on a real resolve
+(`test_chat_copy_claimed_success_it_never_checked.py`,
+`test_two_copy_buttons_flashed_success_that_never_happened.py`), the
+scroll-to-bottom effect follows a `MutationObserver` so late image/markdown
+layout shifts don't strand the view, and `cleanHarmony`/`stripReasoning`
+have their own deep test coverage for the streaming-token edge cases
+(`#73`, `#75`).
+
+The gap was narrower and easy to miss because nothing throws: styles.css's
+`.msg-image` rule — present since the very first commit, `0721113`
+("Initial V0.01") — sets `cursor: zoom-in` directly under a comment
+reading "Capped width so a 1280×800 cap doesn't blow out the chat layout;
+click to open at full size in a new tab." `BROWSER_SCREENSHOT` embeds its
+capture as `![alt](data:image/png;base64,...)`, `MessageProse` renders it
+as `<img className="msg-image" loading="lazy"/>`, and `.msg-image`'s own
+`max-width: 100%` is exactly what caps a real screenshot to the chat
+column's width, well below native resolution. `git log -p` across both
+the pre-refactor `ui.jsx` and the post-split `ui/chat.jsx` turns up
+exactly one place this `<img>` was ever written, in the initial snapshot
+commit itself — and it never carried an `onClick`, before or after the
+2026-08-01 module split (`f598071`). The cursor has told every boss to
+click a screenshot to see it properly since day one; the click has always
+been a no-op.
+
+**The mechanism.** Nothing to reproduce with a debugger — the defect is
+the absence of a handler, not a thrown error. Confirmed by grepping the
+whole tree for `msg-image`: it appears in exactly one JSX site
+(`ui/chat.jsx`) and one CSS rule (`styles.css`), with no delegated
+click listener anywhere else that could be picking up the slack. A boss
+who asks a coworker to check a page and gets back a screenshot capped to
+~640px of chat width — frequently the actual failure mode, since text in
+a 1280×800 capture is often unreadable at that width — has the "zoom-in"
+cursor as the only visible affordance for seeing it at real size, and
+clicking does nothing.
+
+**The fix.** One `onClick` on the `<img>`, using the same
+`window.open(url, '_blank', 'noopener,noreferrer')` convention this file's
+neighbors already use for "open in a new tab" (`views/graph.jsx`'s share
+link, `views/terminal.jsx`'s last-URL button):
+`onClick={() => window.open(b.src, '_blank', 'noopener,noreferrer')}`,
+opening the same `data:`/`https:` URL the `<img>` itself renders — the
+full-resolution capture, at native size, in whatever the browser's native
+image viewer does with a `data:image/...` URL (the same thing "open image
+in new tab" already does for any inline image). No change to what
+`_MD_IMAGE_RE` matches or how `MessageProse` splits text around an embed;
+this only wires the tag the split already produces.
+
+**The test**
+(`scripts/test_the_screenshot_zoom_cursor_was_a_dead_click.py`, 8 checks)
+reads the real `ui/chat.jsx` and `styles.css` rather than reimplementing
+either: it first confirms the premise still holds — `.msg-image` still
+carries `cursor: zoom-in` and the CSS comment still promises a
+click-to-open, so the test stays honest about what it's checking against
+— then isolates the exact `<img>` JSX by its literal `key={'img'+i}
+src={b.src}` prefix and asserts it now carries an `onClick` that calls
+`window.open` on `b.src` with `'_blank'` and `noopener`, matching the
+convention already established elsewhere in this file's tree.
+
+Fire-tested: removed the `onClick` prop, restoring the exact tag this
+file shipped with since `0721113`. 4 of 8 checks failed by name — "the
+`<img>` now carries an onClick handler," "...that opens b.src," "...as a
+new tab, not the same window," and "...without handing the new tab an
+opener back" — while the two premise checks (the CSS still promising the
+click) and the two tag-identity checks stayed green, confirming the test
+is actually pinned to the handler and not just to the tag's existence.
+Restored the fix and confirmed `ui/chat.jsx` byte-identical to the
+pre-revert state via `md5`.
+
+**Suite: 375/376.** The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`) is
+the same pre-existing `moc`/M0219 `main.mo` implicit-`transient` toolchain
+mismatch recorded throughout this ledger, on a file this diff never
+touches — `git status --porcelain` covers only `ui/chat.jsx` and the one
+new test file above; `src/cafresohq_state/main.mo` was never read,
+staged, or edited.
