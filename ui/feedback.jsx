@@ -546,7 +546,19 @@ function PaletteUI({ query, setQuery, selectedIdx, setSelectedIdx, grouped, flat
             placeholder="Search commands…"
             value={query}
             onChange={e => { setQuery(e.target.value); setSelectedIdx(0); }}
-            onKeyDown={handleKey}
+            /* No onKeyDown here — the dialog div below already carries
+               handleKey, and a native keydown on this input bubbles up to
+               it same as it would from anywhere else in the dialog (the
+               close button, an empty-state div, etc). Attaching the SAME
+               handler here too used to mean every keystroke ran handleKey
+               twice per event (input handler, then the bubbled copy at the
+               div): ArrowDown/ArrowUp skipped two rows instead of one —
+               unreachable via keyboard for a row at an odd offset from the
+               current selection whenever the list length made the second
+               step land back on an already-visited index — and Enter
+               invoked onPick (so cmd.run()) twice, double-firing whatever
+               the selected command does (a second confirm dialog, a
+               second dispatch, etc). */
           />
           <button className="oc-palette-close" onClick={onClose} aria-label="Close">✕</button>
         </div>

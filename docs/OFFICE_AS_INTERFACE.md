@@ -25840,3 +25840,82 @@ toolchain mismatch recorded throughout this session, on a file this
 diff never touches — `git status --porcelain` covers only `features.jsx`,
 `styles.css`, and the one new test file above; `src/cafresohq_state/main.mo`
 was never read, staged, or edited.
+## 184. The command palette ran every keystroke's handler twice
+
+**A worktree note.** This session's worktree started 749 commits behind
+`chore/oss-reduction` — spanning the whole `app.jsx`/`ui.jsx`/`views.jsx`/
+`modals.jsx` split into `app/`, `ui/`, `views/`, `modals/`. `git status
+--short` was clean and `chore/oss-reduction..HEAD` had zero commits of its
+own, so `git merge --ff-only chore/oss-reduction` fast-forwarded cleanly
+before any of the work below started.
+
+**The reading.** Assigned area: the app-wide search entry point — the
+command palette (Cmd/Ctrl-K), not the Settings-page search fixed in #176
+and not any per-view filter box. It lives in `ui/feedback.jsx`
+(`CommandPaletteProvider` + `PaletteUI`) and is fed almost entirely by one
+component, `AppGlobalCommands` in `app/commands.jsx`: a "Navigation"
+section per view, one "DM @agent" entry per hired coworker, and a "Recent
+chat" section the file's own comment calls out as doubling for chat
+search. The ranking logic (`filtered`'s prefix/word-start/substring
+scoring) already carries a fix from a previous pass
+(`scripts/test_command_palette_word_start_outranks_substring.py`), so that
+angle was already closed; this pass instead reproduced the palette live
+and worked the keyboard, not the ranking.
+
+**The bug.** `PaletteUI` attached the exact same `handleKey` function to
+`onKeyDown` on two nested elements: the outer dialog
+(`<div className="oc-palette" role="dialog" ... onKeyDown={handleKey}>`)
+and the `<input>` inside it, which is where focus sits for the entire time
+the palette is open on desktop (autofocused 30ms after mount). Neither
+handler called `stopPropagation`, and a native keydown always bubbles — so
+every keystroke while the input had focus ran `handleKey` twice per
+physical keypress: once as the input's own handler, then again as the
+bubbled copy reaching the dialog. Concretely: ArrowDown/ArrowUp advanced
+the selection by 2 rows instead of 1 (with an even-length result list this
+makes every odd-offset row permanently unreachable by keyboard — arrowing
+down from row 0 only ever lands on 2, 4, 6, ...), and Enter invoked
+`onPick(flatVisible[selectedIdx])` — so the selected command's own
+`run()` — twice per press. Harmless for an idempotent navigation command,
+but for `app/commands.jsx`'s `ws.del.*` ("Delete workspace…") it meant
+`window.hqConfirm` popping twice, and for any one-shot dispatch (DM
+prefill, jump-to-message, stop-all, retry-failed-message) it meant the
+side effect fired twice from a single Enter.
+
+**The fix.** Removed the redundant `onKeyDown={handleKey}` from the
+`<input>` in `ui/feedback.jsx`. The outer dialog's handler is sufficient
+on its own: a keydown anywhere inside the dialog — the input, the close
+button, an empty-state row — bubbles up to it regardless of what has
+focus, which is also why it has to stay wired the way it is for the
+mobile case (`PaletteUI` deliberately skips autofocusing the input when
+`window.innerWidth <= 768`, so focus may sit on nothing inside the dialog
+at all).
+
+**The test**
+(`scripts/test_a_palette_keystroke_is_heard_once.py`) lifts `PaletteUI`
+verbatim out of `ui/feedback.jsx` by a balanced-brace slice on its
+declaration, then: counts `onKeyDown={handleKey}` attachments in the
+extracted source (must be exactly 1, and it must sit on the dialog, not
+the `<input>`); and genuinely executes the extracted `handleKey` body
+under Node, replaying one physical keystroke by invoking it the same
+number of times the current wiring would (read from that attachment
+count, not hard-coded), asserting the resulting cursor movement lands on
+exactly the next/previous row and that a single Enter calls `onPick`
+exactly once.
+
+Fire-tested by reintroducing `onKeyDown={handleKey}` on the `<input>`:
+all six of the relevant checks failed by name (2 attachments found, the
+`<input>` still carrying the prop, ArrowDown landing on row 2 instead of
+1, ArrowUp landing on row 3 instead of 4, Enter picking `['cmd0', 'cmd0']`
+instead of `['cmd0']`, Escape closing twice). Reverted and confirmed
+`shasum`-identical to the pre-break file.
+
+**Build:** `npm run build` → `[ui] built 8 assets -> dist-ui/
+(graphEngine=true)`, no errors.
+
+**Suite: 370/371.** The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`) is
+the same pre-existing `moc`/M0219 `main.mo` implicit-`transient` toolchain
+mismatch recorded throughout this ledger, on a file this diff never
+touches — `git status --porcelain` covers only `ui/feedback.jsx` and the
+one new test file above; `src/cafresohq_state/main.mo` was never read,
+staged, or edited.
