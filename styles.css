@@ -4865,7 +4865,27 @@ body.night .settings-shell .cb-panel {
 .memshelf { display: flex; flex-direction: column; gap: 8px; max-height: 400px; overflow: auto; padding: 4px; }
 .memrow {
   display: grid;
-  grid-template-columns: 70px 1fr auto auto;
+  /* Three named tracks — tag, text, date — and then EVERY action button
+     after them flows into an implicit column of its own.
+
+     This used to read `70px 1fr auto auto`: a hard-coded four, one track
+     per child, which held only while the row rendered exactly four
+     children. It grew a fifth (📌 pin to corkboard) and the count was
+     never updated, so on the Memory page — where app.jsx always passes
+     `onPin`, i.e. on every entry the boss has ever saved — the ✕ delete
+     wrapped onto a second grid row and landed in column 1, stretched to
+     the tag's 70px, sitting directly under the NOTE/PREF/RULE chip. A
+     destructive control, displaced into the badge column, reading as part
+     of the label. It also took the row from 44px to 75px, so `.memshelf`'s
+     400px window held not quite half the entries it should.
+
+     `grid-auto-flow: column` is the point of the fix, not a shorthand for
+     it: the row can now grow another button without anyone remembering to
+     come back here and add a track. The count cannot drift again because
+     there is no longer a count. */
+  grid-template-columns: 70px 1fr auto;
+  grid-auto-columns: auto;
+  grid-auto-flow: column;
   align-items: center; gap: 10px;
   padding: 8px 10px;
   background: var(--bg);

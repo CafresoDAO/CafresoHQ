@@ -22868,3 +22868,62 @@ This is the fifth tick it has cost something, and this time it cost two:
 
 Both retargeted suites were fire-tested against the three original guarantees
 and still catch all of them. Suite: 337/337.
+
+---
+
+## #150 — A row holds everything it renders
+
+Found by following the office's own empty-state prompt on the Memory page —
+"↓ start typing in the box below" — and saving one note. It came back like
+this:
+
+```
+[ NOTE ]  We ship on Fridays, never on Mondays.        JUST NOW   [📌]
+[  ✕   ]
+```
+
+`.memrow` is a CSS grid, and its template read `70px 1fr auto auto`: four
+tracks, one per child. That holds exactly as long as the row renders four
+children. It grew a fifth — 📌, pin to corkboard — and nobody came back to the
+stylesheet. Five children into four columns under the default
+`grid-auto-flow: row` wraps the fifth onto a second grid row and places it in
+**column 1**. So the ✕ delete came to rest stretched to the tag column's fixed
+70px, directly under the NOTE/PREF/RULE chip, reading as part of the label.
+
+`app.jsx`'s only call site passes `onPin`, so this was not an edge case. It was
+every entry the boss had ever saved.
+
+Two things put it past cosmetic. **The displaced child is the destructive
+one** — a 70px block sitting in the badge column is not where anyone expects
+"throw this away" to live. And the row went from 44px to 75px inside
+`.memshelf`, a fixed 400px scroller, so the shelf showed a little over half the
+entries it was sized for.
+
+The fix is not changing a four to a five. That would be correct today and
+wrong again on the next button:
+
+```css
+grid-template-columns: 70px 1fr auto;
+grid-auto-columns: auto;
+grid-auto-flow: column;
+```
+
+Three named tracks — tag, text, date — and then every action button after them
+flows into an implicit column of its own. The count cannot drift again because
+there is no longer a count. Measured live: 75px → 44px, ✕ back at the right
+edge beside 📌, and `elementFromPoint` at its centre returns the button itself.
+Checked at 375px too, where all five still sit on one row.
+
+`scripts/test_a_memory_row_holds_everything_it_renders.py` does not match the
+fix's text. It reads the real template out of `styles.css` and the real child
+list out of `views/core.jsx`, then runs CSS grid's own auto-placement rule over
+the two to work out which row and column each child lands in — the same two
+facts measured in the browser. Fire-tested six ways. The one worth naming:
+`70px 1fr auto auto auto` — the bigger-number fix — passes the placement checks
+and still fails §4, which is the whole point.
+
+Its own child-counting helper started life with a `<div className="memrow">`
+literal and crashed on the real `<div key={m.id} className="memrow">`. Same
+pattern as #149's two casualties, caught in my own file this time; it now finds
+the node by class and walks the tags with a brace-aware scanner, because JSX
+attributes hold `()=>` and a regex cannot read past it.
