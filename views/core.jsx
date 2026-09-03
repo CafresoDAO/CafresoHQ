@@ -188,10 +188,24 @@ function MemoryPage({ memory, onAdd, onRemove, onPin }) {
   const tags = ['ALL','NOTE','PREF','PROJECT','PEOPLE','RULE','TONE'];
   const filtered = filter === 'ALL' ? memory : memory.filter(m => m.tag === filter);
 
+  /* Measured live. Filter the shelf to RULE with one NOTE on it and the page
+     says "No entries tagged RULE. Pick another tag above, **or add one
+     below.**" Adding one below — the composer sits at NOTE, and nothing ties
+     it to the filter — bumped the header from 1 ENTRY to 2 ENTRIES, cleared
+     the box, showed nothing, and left the same instruction on screen. Follow
+     it twice and you have stacked up entries you cannot see, which is the
+     exact loop #154 fixed on the Tasks board.
+
+     Same rule as `addVisible` there, and as the Calendar highlight effect
+     before it: whichever filter would hide the thing the boss just made,
+     drop it. Only that one, and only when it would actually hide it — an
+     entry added while the shelf is showing ALL, or tagged the same as the
+     filter, leaves the view exactly as the boss set it. */
   const submit = () => {
     if (!text.trim()) return;
     onAdd({ id: 'mem_'+Math.random().toString(36).slice(2,6), tag, text: text.trim(), date: Date.now() });
     setText('');
+    if (filter !== 'ALL' && filter !== tag) setFilter('ALL');
   };
 
   /* `date` used to be persisted as the literal string 'Today' — every entry,

@@ -23227,7 +23227,8 @@ ways, each break caught on exactly the checks that name it. Verified live in
 four directions: Llama lands on Activity with 14 real rows; Codex lands on
 Activity reading "Nothing from your team yet" with no see-all door offered;
 the manual attention tab shows the door and it works; the button's tooltip is
-now true. Suite 78/78 files.
+now true. Suite 345/345 files (the "78/78" first written here was a
+truncated run — see #157).
 
 The locators in the new file are named, not literal — the sweep flagged in
 #154 is still open, but nothing new was added to it.
@@ -23273,4 +23274,48 @@ becomes a directory on disk.** The Local tab's own three-way validation is
 driven too, so this file cannot pass by breaking the tab it was not about.
 Fire-tested five ways. Verified live in both directions: the stale error is
 gone, the folder box is blank on arrival, and a value typed on either side
-survives a round trip without leaking into the other. Suite 80/80 files.
+survives a round trip without leaking into the other. Suite 345/345 files (the
+"80/80" first written here was a truncated run — see #157).
+
+---
+
+### #157 — The memory shelf shows what you just saved
+
+Filter the Long-term Memory shelf to a tag it has nothing under and the page
+says, in as many words:
+
+> No entries tagged RULE. Pick another tag above, **or add one below.**
+
+The composer below is a separate control with its own tag, defaulting to NOTE,
+and nothing tied the two together. Measured live on a real office: following
+that instruction moved the header from **1 ENTRY** to **2 ENTRIES**, cleared
+the box, showed nothing, and left the same sentence on screen. Follow it twice
+and you have stacked up entries you cannot see — and this is long-term memory,
+so the invisible duplicates go out with every job the team picks up.
+
+This is the loop #154 fixed on the Tasks board, on a different shelf, and it
+takes the same rule `addVisible` uses there and the Calendar highlight effect
+used before it: **whichever filter would hide the thing the boss just made,
+drop it.** Only that one, and only when it would actually hide it — an entry
+added while the shelf shows ALL, or tagged the same as the filter, leaves the
+view exactly as the boss set it. Verified live in both directions.
+
+Worth naming as a class, since this is the third instance: a surface with a
+filter and a create control, where the create control does not know the filter
+exists. The Tasks board, the memory shelf. Any other pair of the same shape is
+a lead, not a guess.
+
+`scripts/test_the_memory_shelf_shows_what_you_just_saved.py` lifts the real
+`submit` and runs it under Node across five combinations, then re-derives
+visibility from the real `filtered` expression rather than restating it — so a
+change to how filtering works cannot leave the visibility claim passing by
+accident. Fire-tested five ways.
+
+**A correction to #155 and #156.** Both entries reported the suite as "78/78"
+and "80/80 files". Those were truncated runs: the backgrounded loop was being
+killed when its parent call returned, and it had only reached the `a…` files
+alphabetically. The suite is **345 files**. Re-run detached to completion:
+**345/345, zero failures**, including everything #155, #156 and this entry
+touch. The fixes were real and the fire-tests were real; the totals printed
+beside them were not. Suite runs from here are launched detached with a done
+marker and polled, rather than trusted because they exited 0.
