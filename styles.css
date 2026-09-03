@@ -7013,8 +7013,8 @@ body.night .delivery-path { background: #241d33; color: #e8dcff; }
 .ws-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px solid var(--rule); }
 .ws-pane-hd { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3); border-bottom: 1px solid var(--rule); flex-shrink: 0; }
 .ws-hd-acts { margin-left: auto; display: flex; gap: 3px; }
-.ws-hd-acts button, .ws-talk { background: none; border: 1px solid var(--rule); border-radius: 5px; font: inherit; font-size: 10px; padding: 2px 7px; color: var(--ink-2); cursor: pointer; }
-.ws-hd-acts button:hover { background: rgba(0, 0, 0, 0.06); }
+.ws-hd-acts button, .ws-talk, .ws-addproj { background: none; border: 1px solid var(--rule); border-radius: 5px; font: inherit; font-size: 10px; padding: 2px 7px; color: var(--ink-2); cursor: pointer; }
+.ws-hd-acts button:hover, .ws-addproj:hover { background: rgba(0, 0, 0, 0.06); }
 .ws-talk:disabled { opacity: 0.4; cursor: default; }
 .ws-tree { flex: 1; overflow: auto; padding: 4px 0; position: relative; }
 .ws-tree.drag { outline: 2px dashed var(--accent-sun); outline-offset: -2px; background: rgba(240, 198, 116, 0.12); }
@@ -7074,7 +7074,7 @@ body.night .delivery-path { background: #241d33; color: #e8dcff; }
 .ws-led.k-noted .v { background: #7fb0d6; }
 /* Keyboard focus rings for Workspace controls (were missing). */
 .ws-seg button:focus-visible, .ws-projsel:focus-visible, .ws-save:focus-visible, .ws-talk:focus-visible,
-.ws-hd-acts button:focus-visible, .ws-led:focus-visible, .ws-follow input:focus-visible {
+.ws-hd-acts button:focus-visible, .ws-led:focus-visible, .ws-follow input:focus-visible, .ws-addproj:focus-visible {
   outline: 2px solid var(--accent-sun); outline-offset: 2px;
 }
 /* Mobile stopgap: the fixed tri-pane grid crushes a phone. Stack the panes into

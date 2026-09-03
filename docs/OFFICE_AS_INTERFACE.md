@@ -25258,3 +25258,124 @@ above, in `src/cafresohq_state/main.mo`, untouched by this fix; all 19 of
 this fix's own checks pass.**
 
 ---
+## 178. Workspace could add a first project, never a second
+
+**A worktree note.** This session's worktree started 739 commits behind
+`chore/oss-reduction` despite a clean `git merge-base --is-ancestor HEAD
+chore/oss-reduction` — `git log --oneline HEAD..chore/oss-reduction | wc -l`
+showed the real gap. `git status` was clean, so `git merge --ff-only
+chore/oss-reduction` landed before any of the work below started.
+
+**The reading.** Assigned area: Workspace / project-workspace views and
+embedded-iframe surfaces. Ran `serve.py` + the built UI bundle live, on a
+throwaway port well clear of both a pre-existing Docker container already
+bound to `:8787` on this host (real, populated `hq-state` — its `/health`
+answered with `platform: Linux`, `runtime_env: container`, and an uptime in
+the millions of seconds) and several sibling agents' own dev servers
+(`:8799`, `:18787`, …, one of which was already occupying the very port
+this session tried first). Confirmed the browser tab was actually talking
+to a freshly-started, empty-state instance of THIS worktree via `/health`'s
+`uptime_seconds`/`platform` fields before trusting anything it rendered —
+`localhost:8787` alone resolved ambiguously (IPv6 wildcard vs. IPv4
+loopback) to the Docker container instead.
+
+Opened Projects (lands on Workspace, the default mode) with zero projects:
+the empty state's "Create your first project" button opens Add Project in
+place, as an earlier fix in this same file already established. Added one
+project — and from there the topbar offered only the mode toggle, a
+`<select>` that switches between EXISTING projects, the path label,
+Follow-along, and the status pip. No button anywhere opened Add Project
+again. `⌨ Shortcuts` confirmed there's no keybinding for it either (H hire,
+S settings, M memory, N sticky note, U stand-up, F 1:1, D day/night, /
+focus chat). The only surviving door was Classic mode's own "+ ADD" —
+rendered unconditionally in `ProjectsView`'s sidebar header regardless of
+`projects.length` — undiscoverable from the mode a boss actually lands in.
+
+**The mechanism.** `showAdd` (`views/projects.jsx`, `WorkspaceView`) is set
+by exactly one call site: the `!project` empty state's own CTA (the
+`ws-noproj` "Create your first project" button, fixed in an earlier tick —
+see the comment directly above the `showAdd` declaration: "Before this,
+creating a project was Classic-only"). That branch is the entire topbar +
+body path for "no projects yet"; the instant `projects.length > 0`, React
+takes the sibling branch (`mode === 'workspace' && project && (...)`) and
+the empty-state CTA — the only thing that ever called `setShowAdd(true)`
+for a brand-new project — unmounts for good. Nothing in the non-empty
+branch replaced it. Classic mode's `ProjectsView` never had this gap: its
+`addProject`/`+ ADD` button sits outside the `projects.length === 0`
+conditional in both the desktop sidebar header and the mobile list header,
+so it survives having projects. Workspace's own file already documents the
+identical shape of bug twice over — "Workspace had no assignment control at
+all... the roster lived only in Classic" (the `ws-crew` fix) and the
+Add-Project empty-state fix quoted above — this is the same species of gap
+in the one branch neither of those fixes reached.
+
+**A closed lead, recorded not chased.** Reproducing the bug above, a
+project got added while pointed OUTSIDE `CAFRESOHQ_ALLOWED_DIRS`, during a
+self-inflicted dev-server crash: the add-time door check's `/fs/browse`
+probe hit a connection refusal rather than a 403, and
+`_addRefusedOutsideSandbox`'s catch — "browse unreachable — let the add
+proceed" — let it through. Once the server came back, the FILES tree still
+listed the folder successfully while opening any file inside it correctly
+refused with the "outside the folders this office can show you" banner.
+Traced it: `LocalTree` (`views/ide.jsx`) lists via
+`CafresoHQClient.toolExec('DIR_LIST', path)` → `/tools/exec`, whose path
+resolution (`_validate_path`, `strict=False`) explicitly skips the
+allowed-dirs check in local mode with no explicit env var ("the user is
+developing locally and can access their own files" — `serve.py`'s own
+docstring). Opening a file goes through `fsReadText` → `/fs/file`, gated by
+`_within_allowed_dirs`, enforced in every mode because that route is
+keyless. This is the exact, intentional asymmetry `_addRefusedOutsideSandbox`
+already exists to narrow — its own comment names this precise "tree half-
+works forever" failure — and the add-time check closes it for the ordinary
+case; this reproduction only slipped past it because the test server had
+crashed mid-probe. Confirmed with the server healthy that `/fs/browse` and
+`/fs/file` both correctly 403 the same out-of-sandbox path via `curl`. Not
+a fresh bug — a documented, deliberate trade-off, with a narrow known gap
+(an unreachable-server race at add-time) the code already discloses.
+
+Also checked and ruled out: the multi-file "Site preview" iframe
+(`views/ide.jsx`'s `FilePreview`, `/fs/site` in `fs_routes.py`) — relative
+`<link>`/`<script>` refs resolved correctly when the exact iframe URL was
+loaded directly (both the CSS and the JS applied), but the same URL failed
+inside the app's own iframe with `net::ERR_BLOCKED_BY_CLIENT` — a
+same-origin request, so not a CSP or sandbox issue in the app's own code.
+Reads as the automated browser-tooling's own iframe policy, not a product
+bug; recorded rather than chased further.
+
+**The fix.** One button, in `views/projects.jsx`'s `WorkspaceView` topbar,
+inside the existing `mode === 'workspace' && project && (...)` branch, next
+to the project `<select>`:
+`<button className="ws-addproj" onClick={() => setShowAdd(true)} title="Add another project">+ Add</button>`.
+No new plumbing needed — `WorkspaceView` already renders its own
+`<AddProjectModal>` unconditionally at the end of the component (added
+alongside the original empty-state fix), and `commitProject` already
+handles selecting the new project and closing the modal. `styles.css`
+gets `.ws-addproj` added to the existing small-button rule shared with
+`.ws-talk`/`.ws-hd-acts button` (border + radius + font-size, matching the
+TALK button's look) plus its own `:focus-visible` outline.
+
+**The test** (`scripts/test_a_second_project_had_no_door_in_workspace.py`)
+lifts the real `WorkspaceView` function body out of `views/projects.jsx` by
+name (bounded between `function WorkspaceView` and `function ProjectsView`,
+the same slice `test_workspace_crew.py` uses), then regexes the
+`mode === 'workspace' && project && (<>...</>)` topbar branch specifically
+for `onClick={() => setShowAdd(true)}`, checks it sits after the `<select>`
+inside that SAME branch (not a stray copy left only in the empty state),
+confirms `WorkspaceView` still renders `<AddProjectModal>` (or the button
+opens nothing), and confirms `styles.css` actually defines `.ws-addproj`
+(an unstyled control ships invisible/unclickable — the same risk
+`test_workspace_crew.py` already flags for its crew strip).
+
+Three fire-tests against real one-line edits — the whole button+comment
+block deleted, the `onClick` rewired to `flipMode('classic')` instead of
+`setShowAdd(true)`, and the `.ws-addproj` rule (plus its `:focus-visible`
+entry) stripped from `styles.css` — all three failed by a properly named
+check, and every restore came back `cmp`-identical (also verified by MD5
+before and after) before the next break was applied.
+
+**Suite: 361/362.** The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`) is
+the same pre-existing `moc`/`main.mo` implicit-`transient` toolchain
+mismatch recorded above, on a file this session's diff never touches
+(`git status --porcelain` covers only `views/projects.jsx`, `styles.css`,
+and the new test file).

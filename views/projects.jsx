@@ -681,6 +681,17 @@ function WorkspaceView({ projects, setProjects, agents = [], onSwitchView }) {
             <select className="ws-projsel" value={project.id} onChange={e => switchProject(e.target.value)}>
               {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
+            {/* The "own Add-Project modal" comment above (`showAdd`) only ever
+                closed the gap for an EMPTY project list — the button that opens
+                it was the empty state's "Create your first project" CTA, which
+                unmounts the instant `project` exists. From then on this mode
+                had no button, no menu, and no shortcut that opened Add Project:
+                the one still standing was Classic's own "+ ADD", undiscoverable
+                from here — the exact "Classic means nothing to a four-minute-
+                old boss" problem that CTA was rewritten to avoid. Measured
+                live: add a first project, and Workspace — the DEFAULT mode —
+                has no way to add a second one without switching modes. */}
+            <button className="ws-addproj" onClick={() => setShowAdd(true)} title="Add another project">+ Add</button>
             <span className="ws-env" title={project.path}><span className="ico">⬡</span> {project.source === 'github' ? 'repo' : 'local'} · {shortPath(project.path) || project.path}</span>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
               <label className="ws-follow" title="Auto-open whatever file they are writing"><input type="checkbox" checked={followAgent} onChange={e => { setFollowAgent(e.target.checked); LSset('follow', e.target.checked); }} /> Follow along</label>
