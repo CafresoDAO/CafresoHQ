@@ -6274,7 +6274,28 @@ body.night .proj-name-input { color: #f3e8ff; border-bottom-color: #6a5a8a; }
 }
 .post-card:hover { transform: translate(-1px,-1px); box-shadow: 3px 3px 0 0 var(--ink); }
 .post-head { display: flex; align-items: center; gap: 8px; }
-.post-name { font-family: 'Press Start 2P'; font-size: 10px; }
+/* A coworker's name is one word and is never broken across two lines.
+   `.modal-body` carries `overflow-wrap: anywhere; word-break: break-word`
+   (with .chat-bubble and .task-card) so an unbreakable URL in a message
+   cannot burst its container. That rule INHERITS, and JOB POSTINGS lives in
+   a modal body, so it reached these pixel-font names too. It only showed on
+   the one card whose badge was wide enough to squeeze the name below its own
+   width: "NOT RUNNING" left Hermes 57.8px for a 60px word, and with
+   break-anywhere in force the flex item was free to shrink and split it —
+   "Herme" over "s", measured live (#146). Every other name either fit or had
+   a narrower badge beside it.
+
+   Resetting the inherited rule is the whole fix; no flex property is
+   involved. A flex item's default `min-width: auto` already floors it at its
+   min-content width, and once the word cannot break, min-content IS the
+   whole word — so the name simply stops shrinking and the badge, which is
+   two words and wraps honestly, takes the second line instead. Verified
+   against names of 6, 9 and 11 characters: one line each, nothing clipped,
+   card heights unchanged. */
+.post-name {
+  font-family: 'Press Start 2P'; font-size: 10px;
+  overflow-wrap: normal; word-break: normal;
+}
 .post-role {
   font-family: 'Inter'; font-size: 10px; text-transform: uppercase;
   letter-spacing: 0.1em; color: var(--ink-2);

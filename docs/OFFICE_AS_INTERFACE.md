@@ -22630,3 +22630,52 @@ allowed to fall out of scope, so the read got a connection reset and the
 table classified it as a network fault. Fire-tested three ways — restoring
 the formatted exception, collapsing the table to one vague sentence, and
 dropping `detail` — each caught by different checks.
+
+### #146 — the front desk spelled a coworker's name across two lines
+
+First run, at the step the getting-started checklist sends you to ("Hire your
+first specialist"). Eleven cards at the front desk, and one of them read:
+
+> Herme
+> s&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NOT RUNNING
+
+The name element measured 29px tall against 14.5px on every other card, and
+57.8px wide for a word that needs 60. Nothing about Hermes is special except
+the badge beside it: `NOT RUNNING` is the widest of the status tags, so it
+squeezed the name below its own width — and the name, a flex item, was free
+to shrink and split the word because of a rule it never asked for.
+
+`.modal-body` carries `overflow-wrap: anywhere; word-break: break-word`,
+shared with `.chat-bubble` and `.task-card`. It is there so an unbreakable URL
+in a message cannot burst its container, and for a URL it is right. But it
+**inherits**, and JOB POSTINGS is a modal body, so it reached the pixel-font
+proper nouns on every card. Only the one with the widest badge had the room to
+show it. A defensive rule written for one kind of text, quietly deciding how
+names are spelled.
+
+The whole fix is to stop inheriting it on the name. **No flex property is
+involved** — a flex item's default `min-width: auto` already floors it at its
+min-content width, and once the word cannot break, min-content *is* the whole
+word. The name stops shrinking and the badge, which is two words and wraps
+honestly, takes the second line instead. Card heights are unchanged.
+
+**The tempting fixes are worse than the bug**, which is what the new suite
+mostly defends. `white-space: nowrap` with `text-overflow: ellipsis` also
+yields one line — and renders "Herme…", which is not the coworker's name;
+measured, it truncated a perfectly ordinary 9-character name. A misspelt name
+is a worse failure than an ugly one.
+
+`scripts/test_a_coworker_name_is_never_broken_in_half.py` **runs the cascade**
+rather than grepping for a string: it parses the stylesheet, walks the real
+ancestor chain taken from the live DOM, and lets specificity and source order
+pick the winner as a browser would. Fire-tested four ways, including resetting
+the rule on an *ancestor* instead of the name — which correctly passes the
+resolved-value check and fails the ownership one, proving the walk models
+inheritance rather than just reading the local rule.
+
+One correction worth recording: the first draft's failure message for
+`min-width: 0` claimed the word would split again. Measured, it does not — it
+cannot, once the break is off. The box shrinks back to 57.8px and the name
+**overflows** it, harmless until something clips and then a lost letter. The
+check was right; its stated reason was invented. Same family as the
+brittle-literal pattern — a plausible sentence nobody had run.
