@@ -26869,3 +26869,64 @@ session's in-progress Motoko actor migration on a file this change never
 touches. `git status --porcelain` for this change covers only
 `missions.jsx`, the new test file above, and this ledger;
 `src/cafresohq_state/main.mo` was never read, staged, or edited.
+
+---
+
+## 196. Typing your AI key inside the tour drove the tour instead of the text cursor
+
+**The reading.** Assigned area: the first-run/onboarding surface —
+`ui/onboarding.jsx`, `modals/starter.jsx`, and the first-run
+seeding/welcome paths in `app.jsx`. The CEO-led welcome, the starter-task
+sheet, the getting-started checklist, and the coach-mark pill have all
+been through this ledger repeatedly (#169, #173, #177, #179) and read
+clean. The live gap was in the tour itself, at the intersection of two
+features that are each correct alone.
+
+**The mechanism.** `OnboardingTour` registers a window-level keydown
+handler that maps `Enter`/`ArrowRight` to Next and `ArrowLeft` to Back —
+reasonable for a slideshow, and it never checked where the keystroke came
+from. But step 2 of both the mobile and desktop tours embeds
+`<OnboardingKeyStep />`, a real form: its OpenRouter-key input saves on
+`Enter` (its own `onKeyDown`) and does not stop propagation, so the same
+keystroke bubbled to the window handler. Paste a key, press Enter — the
+save fires AND the tour advances in one stroke, and the next step's
+`action()` navigates views (`goTo('visual')`), unmounting the key step
+before the "✓ Key saved" confirmation could render. The boss lands on
+the office floor not knowing whether the save (which is async — it may
+still be in flight to `hermesSetOpenRouterKey`) happened at all. Arrow
+keys were worse: moving the text cursor inside the field —
+the first thing anyone does to fix a mangled paste — flipped tour steps,
+unmounting the input mid-edit and eating whatever was typed. Every
+`INPUT`/`TEXTAREA`/contenteditable a future step embeds inherits the
+same trap.
+
+**The fix.** A plain lifted-by-name helper `isTypingTarget(t)` in
+`ui/onboarding.jsx` (same precedent as `resolveSpotlight` in the same
+file) answers "did this keydown originate in something the user types
+into" — `INPUT`/`TEXTAREA`/`SELECT` or `isContentEditable` — and the
+tour's `onKey` returns early for those before Next/Back can fire.
+`Escape` is checked before the guard on purpose: closing the tour from
+inside a field is the one navigation a typist still means.
+
+**The test** (`scripts/test_tour_keys_dont_fire_while_typing.py`) lifts
+the REAL `isTypingTarget` out of `ui/onboarding.jsx` by brace-balanced
+extraction and runs it in Node against stand-in targets (null, the tour
+card, buttons, input/textarea/select, a lowercased `tagName`, a
+contenteditable region), then structurally asserts the `onKey` handler
+consults `isTypingTarget(e.target)` with an early return placed after
+the Escape close and before any `next()`/`back()` dispatch.
+
+Fire-tested: removed the one guard line from `onKey` (restoring the
+pre-fix handler exactly). The five structural checks failed by name
+while the eight behavioral helper checks stayed green; restored the file
+byte-identical from the /tmp-side safety copy (md5-verified,
+`cddef12abf64c7daaa3d5fe1217fccb4` before and after), re-ran to all
+green, and rebuilt the bundle (`npm run build` — 8 assets).
+
+**Suite: 380/381** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` implicit-`transient`
+toolchain mismatch recorded in #188 and #193 — a file this diff never
+touches. `git status --porcelain` for this change covers only
+`ui/onboarding.jsx`, this ledger, and the one new test file above;
+`src/cafresohq_state/main.mo` was never read, staged, or edited.

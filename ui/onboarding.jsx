@@ -138,6 +138,29 @@ function resolveSpotlight(target, onRect, env) {
   return () => { if (!done) { done = true; stop(); } };
 }
 
+/* True when a keydown originated inside something the user types into.
+   The tour's window-level keydown handler treats Enter/ArrowRight as Next
+   and ArrowLeft as Back — correct for a slideshow, wrong the moment a step
+   embeds a form: the "Your AI brain" step's key input saves on Enter and
+   never stops propagation, so hitting Enter after pasting a key saved it
+   AND advanced the tour in the same keystroke — the next step's action()
+   navigates views, so the boss was yanked to the office floor before the
+   "✓ Key saved" line could render, left unsure whether the save happened.
+   Arrow keys were worse: moving the text cursor inside the key field
+   flipped tour steps, unmounting the input mid-edit and eating the key.
+   Escape is exempt on purpose — closing the tour from inside a field is
+   the one navigation a typist still means.
+
+   Lives out here as a plain function (see resolveSpotlight above for the
+   precedent): scripts/test_tour_keys_dont_fire_while_typing.py lifts it by
+   name and drives it against stand-in targets. */
+function isTypingTarget(t) {
+  if (!t) return false;
+  const tag = (t.tagName || '').toUpperCase();
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  return !!t.isContentEditable;
+}
+
 function OnboardingTour({ open, steps = [], onClose, onComplete }) {
   const [idx, setIdx] = useState(0);
   const [spotlight, setSpotlight] = useState(null);
@@ -171,6 +194,7 @@ function OnboardingTour({ open, steps = [], onClose, onComplete }) {
     if (!open) return;
     const onKey = (e) => {
       if (e.key === 'Escape') onClose && onClose();
+      if (isTypingTarget(e.target)) return;  // see isTypingTarget above
       if (e.key === 'ArrowRight' || e.key === 'Enter') next();
       if (e.key === 'ArrowLeft') back();
     };
