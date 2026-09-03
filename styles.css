@@ -6351,7 +6351,14 @@ body.night .proj-name-input { color: #f3e8ff; border-bottom-color: #6a5a8a; }
   text-transform: uppercase; color: var(--ink-3); opacity: 0.85;
   padding-top: 4px;
 }
-body.night .pb-seg { background: #241d33; border-color: #3a3050; }
+/* The same fix as `body.night .sb-seg:not(.on)` further down, because this
+   is the same widget and it had the same bug. `.pb-seg` is the job-posting
+   card's copy of the four-bar block, on the surface where the boss picks
+   WHICH coworker to bring in — so a flattened bar here does not just hide a
+   number, it hides the difference the choice is being made on. Found by
+   asking which other `body.night .X` rules outrank a state modifier they
+   share a property with; this was the only other one that did. */
+body.night .pb-seg:not(.on) { background: #241d33; border-color: #3a3050; }
 
 /* Front desk — detection-driven FOUND cards at the top of the hire board. */
 .frontdesk-head {
@@ -6497,7 +6504,19 @@ body.night .starter-outcome { color: #b0a3c8; }
 }
 .jobdesc:focus { outline: none; border-style: solid; border-color: var(--accent-teal, #2a9d8f); }
 body.night .powered-chip { background: #241d33; color: #b7a8d6; border-color: #3a3050; }
-body.night .sb-seg { background: #241d33; border-color: #3a3050; }
+/* `:not(.on)` is the fix, not a tidy-up. This read `body.night .sb-seg`,
+   which matches a filled segment too and outranks `.sb-seg.on` (0,2,1 beats
+   0,2,0) — so in the office's DEFAULT theme every segment painted #241d33
+   and "Speed: 3 of 4" looked exactly like 0 of 4. The whole four-row readout
+   on the PERFORMANCE REVIEW panel was blank for every coworker, which is the
+   only place the office compares one brain against another before you hire
+   or swap one. The `aria-label` carried the real number the entire time, so
+   a screen reader was told the truth and the eye was not.
+
+   A night block is a palette swap for the RESTING state; it has no business
+   outranking a state modifier. Saying so in the selector keeps the next
+   modifier added here from being erased the same way. */
+body.night .sb-seg:not(.on) { background: #241d33; border-color: #3a3050; }
 body.night .jobdesc { background: #241d33; color: #e8dcff; border-color: #4a3f63; }
 
 /* Ship-to-chain share row — pages only, shell only (see delivery.jsx). */

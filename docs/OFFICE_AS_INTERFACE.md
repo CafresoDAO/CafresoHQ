@@ -22979,3 +22979,57 @@ after blank lines. Yanking a reader into raw markdown they never asked for
 would be the same rudeness in reverse. Fire-tested six ways, including half a
 fix — `newNote` alone — which leaves every already-filed empty note behind the
 same wall.
+
+---
+
+## #152 — A filled stat bar looks filled
+
+Found on Team → click a coworker → **PERFORMANCE REVIEW**. Four rows — Speed,
+Depth, Code, Cost — four segments each, and every single one painted the same
+flat `rgb(36, 29, 51)`. "Speed: 3 of 4" looked exactly like 0 of 4, on every
+coworker, in the office's default theme.
+
+The markup was right the whole time:
+
+```html
+<span class="sb-track" aria-label="Speed: 3 of 4">
+  <span class="sb-seg on"></span> … <span class="sb-seg"></span>
+```
+
+A screen reader was told the truth. The eye was told nothing. The stylesheet
+was the liar:
+
+```css
+.sb-seg.on         { background: var(--accent-teal); … }   /* (0,2,0) */
+body.night .sb-seg { background: #241d33; … }              /* (0,2,1) */
+```
+
+`body.night .sb-seg` matches a *filled* segment too, and outranks the `.on`
+rule by one element, so the night palette repainted both states identically.
+A night block is a palette swap for the **resting** state; it has no business
+outranking a state modifier. `:not(.on)` says so in the selector, which also
+keeps the next modifier added here from being erased the same way.
+
+Why this is worse than a missing colour: those four rows are the only place
+the office compares one brain against another, and a boss reads them before
+hiring or swapping one. Blank bars do not read as "no data" — they read as
+"these coworkers are the same". They are not: after the fix Codex came back
+Depth 3 / Cost 3 and Llama Depth 2 / Cost 4.
+
+**There was a twin.** Asking which other `body.night .X` rules outrank a state
+modifier they share a property with turned up 23 candidates and exactly one
+real one: `.pb-seg`, the same four-bar block on the job-posting card in the
+hire modal — the surface where the boss picks *which* coworker to bring in,
+where a flat bar hides not a number but the difference the choice is being
+made on. It renders only when the candidates on screen differ by brain
+(`barsDiscriminate`), so the seed roster never shows it, which is why it had
+survived. Same one-word fix.
+
+`scripts/test_a_filled_stat_bar_looks_filled.py` does not grep for
+`:not(.on)`. It resolves the cascade the way a browser does — every rule for
+each bar in the real stylesheet, with real specificity and real source order —
+and asserts a filled segment and an empty one cannot land on the same paint,
+in either theme. It found the twin on its own: parameterised over both bars,
+it failed on `.pb-seg` before that fix was written. A selector it cannot model
+fails too, rather than passing quietly. Fire-tested four ways after the
+rewrite, six before it.
