@@ -24785,3 +24785,84 @@ discovery.
 backend subsystem (the worker-payout sweep), on a file this session's diff
 never touches (`git diff --stat` covers only `app.jsx`, `app/windows.jsx`,
 and the two test files above). Not a regression from this fix.
+
+## 174. A coworker's streak lit two different fires
+
+**A worktree note.** This session's worktree also started behind
+`chore/oss-reduction` — 739 commits, by `git log --oneline
+HEAD..chore/oss-reduction | wc -l` — despite `git merge-base --is-ancestor
+HEAD chore/oss-reduction` reporting a clean fast-forward path. `git merge
+--ff-only chore/oss-reduction` landed cleanly before any investigation
+started, same shape as the worktree note two ticks up.
+
+**The reading.** Assigned area: hiring economics / payroll / XP / Jobs.
+Ran the app for real (`npm run build`, `python3 serve.py`), hired Llama at
+the front desk, then seeded `hq-state/experience.json` via `PUT
+/hq/state/experience` with two `done` ledger entries for that agent and no
+snags — a streak of 2, the smallest number a boss could plausibly call "a
+streak" at all. Reloaded. The Team roster card (`TeamView`, views/core.jsx)
+read `JOBS 2` with no flame. Opening that identical coworker's Performance
+review (`InspectPanel`, ui/panels.jsx) — two clicks away, same session, same
+ledger — read `CURRENT STREAK 2 🔥`. Same agent, same append-only ledger,
+same computed number, two different verdicts depending on which of two
+twin surfaces the boss happened to be reading. Added a third `done` entry
+(streak 3) and reloaded again: the roster card then read `JOBS 3 🔥` and the
+panel `CURRENT STREAK 3 🔥` — the two only ever agreed once the streak
+cleared the roster card's own, higher bar.
+
+**The mechanism.** Both cards call the identical `xpStats()`
+(app/experience.jsx) for the identical agent and render the identical
+judgement — "is `xp.streak` long enough to earn a flame" — but each
+hardcoded its own answer, in the very same commit that introduced both
+(`76b8070`, "XP counters: append-only experience ledger"): the roster
+card's Jobs cell fires at `xp.streak >= 3`, the Performance review's
+Current-streak row fires at `xp.streak >= 2`. Nothing since has ever
+compared the two numbers. OFFICE_AS_INTERFACE #155 happens to document the
+roster card's own threshold in passing — a live measurement reading "Llama:
+Effort 8,286, Jobs 3 🔥" — which is where "3" is confirmed as the roster
+card's real, intended number; nothing anywhere pinned the panel to agree
+with it, so the panel's `2` was never a later regression, just an
+inconsistency baked in from day one and never caught because nobody had
+read both cards for the same coworker at the same moment.
+
+**The fix.** One shared constant, `XP_HOT_STREAK = 3` (app/experience.jsx),
+exported alongside `xpStats`. `TeamView` (views/core.jsx) and
+`InspectPanel` (ui/panels.jsx) both import it and gate their flame on
+`xp.streak >= XP_HOT_STREAK` instead of a re-typed literal — the roster
+card's own `3` is now the shared identifier too, not just a fix to the
+panel's `2`, so the two cannot drift apart again the next time either file
+is touched; there is exactly one number in the app that answers "how long a
+streak has to be to count as hot."
+
+**The test**
+(`scripts/test_a_hot_streak_meant_two_different_numbers.py`, 13 checks)
+confirms the constant is defined once, exported, and matches the roster
+card's own documented value (3, against the #155 measurement above); that
+both `TeamView` and `InspectPanel` (lifted by brace-matching, same pattern
+as `test_the_inspect_panel_showed_half_a_coworkers_record.py`) reference
+`XP_HOT_STREAK` by name at their fire checks rather than a re-typed number;
+and, under Node, evaluates the two real ternary expressions (lifted
+verbatim via regex, not retyped) side by side with the two ORIGINAL
+hardcoded thresholds this bug shipped with, across streak lengths 0
+through 5 — proving the old code really did disagree at streak 2 (roster:
+no flame, panel: flame) and the fixed code agrees at every length checked,
+matching the live repro exactly at streak 2 (no flame, either surface) and
+streak 3 (flame, both).
+
+Fire-tested four arms against the three touched files — reverted
+`ui/panels.jsx` to its original `>= 2` literal, reverted `views/core.jsx`
+to a re-typed `>= 3` literal instead of the identifier, changed
+`XP_HOT_STREAK`'s value to 5 (breaking both the documented-example check
+and the streak-3 agreement check), and dropped `XP_HOT_STREAK` from
+`app/experience.jsx`'s export line — 4/4 caught by a properly named check,
+and every restore came back `cmp`-identical to the fixed baseline
+(confirmed by md5sum before the arm and after the restore) before the next
+break was applied.
+
+**Suite: 361/362** (up from 360/361; one new file). The one failure is the
+same pre-existing one two ticks up documents: `moc` refuses to compile
+`src/cafresohq_state/main.mo` over implicit-`transient` declarations, a
+Motoko toolchain/version mismatch in the unrelated worker-payout-sweep
+subsystem, on a file this fix's diff never touches (`app/experience.jsx`,
+`ui/panels.jsx`, `views/core.jsx`, and the one new test file above). Not a
+regression from this fix.

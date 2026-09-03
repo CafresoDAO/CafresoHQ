@@ -26,6 +26,24 @@
    already-persisted coworkers are harmless because no surface reads them.
    If you want jobs completed, it is `xpStats(experience, agentId)`. */
 
+/* Streak length at which a card calls it "on fire" (🔥). One number, read
+   by both twin surfaces (the roster card in views/core.jsx and the
+   Performance-review panel in ui/panels.jsx) so the same `xp.streak` value
+   earns the same badge everywhere.
+
+   Before this constant existed, each file hardcoded its own threshold —
+   the roster card fired at `>= 3` (documented live: "Jobs 3 🔥" in
+   OFFICE_AS_INTERFACE #155), the panel at `>= 2` — an inconsistency present
+   since both were introduced in the same commit (76b8070) and never
+   reconciled. A coworker sitting at streak 2 read as "just delivering,
+   nothing special" on the roster tile and "2 🔥 — on a hot streak" the
+   moment the boss opened their Performance review, for the identical fact
+   about the identical coworker. Measured live: hired Llama, seeded the
+   ledger with two 'done' entries via /hq/state/experience, and the roster
+   card showed "JOBS 2" with no flame while the panel opened on the same
+   card showed "CURRENT STREAK 2 🔥". */
+const XP_HOT_STREAK = 3;
+
 /* Kind → [singular, plural]. Kinds mirror the starter cards
    (modals/starter.jsx) plus the two host-minted ones. Unknown kinds are
    preserved verbatim in the ledger (Phase C forward-compat) and label as
@@ -145,4 +163,4 @@ function xpLastAttemptText(attempt) {
   return `${who} hit a snag on this`;
 }
 
-export { taskKind, xpAffinityText, xpKindLabel, xpLastAttempt, xpLastAttemptText, xpRecord, xpStats, XP_KIND_LABEL };
+export { taskKind, xpAffinityText, xpKindLabel, xpLastAttempt, xpLastAttemptText, xpRecord, xpStats, XP_HOT_STREAK, XP_KIND_LABEL };

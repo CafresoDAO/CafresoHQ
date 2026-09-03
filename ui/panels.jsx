@@ -1,6 +1,6 @@
 import { SPRITES, Sprite } from '../sprites.jsx';
 import { Ico } from './primitives.jsx';
-import { xpAffinityText, xpStats } from '../app/experience.jsx';
+import { xpAffinityText, xpStats, XP_HOT_STREAK } from '../app/experience.jsx';
 import { brainName, CAN_USE_OFF_TIP, CAN_USE_TIP, EFFORT_TIP, grantedTools, OFFICE_EFFORT_TIP, poweredBy, specialtyTag, statBars, payrollLabel } from '../app/cast.jsx';
 import { HQ } from '../hq-runtime.jsx';
 import { officeDate } from '../app/artifacts.jsx';
@@ -175,7 +175,7 @@ function InspectPanel({ agent, activity = [], experience = [], onClose, onUpdate
           <div className="stat"><span className="lbl">Snags</span>
             <span title={`${xp.snags} run${xp.snags === 1 ? '' : 's'} came back empty or failed. Runs you stopped yourself are not counted.`}>{xp.snags}</span></div>
         )}
-        <div className="stat"><span className="lbl">Current streak</span><span>{xp.streak >= 2 ? `${xp.streak} 🔥` : xp.streak}</span></div>
+        <div className="stat"><span className="lbl">Current streak</span><span>{xp.streak >= XP_HOT_STREAK ? `${xp.streak} 🔥` : xp.streak}</span></div>
         <div>
           <div style={{fontFamily:'Inter',fontSize:10,textTransform:'uppercase',letterSpacing:'0.1em',color:'var(--ink-2)',marginBottom:5}}>
             Job description <span style={{textTransform:'none',letterSpacing:0,opacity:0.7}}>· what they believe their job is — edit it and they'll work to it</span>

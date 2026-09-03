@@ -1,7 +1,7 @@
 import { CafresoHQV2 } from '../features.jsx';
 import { CafresoHQClient } from '../claude-client.jsx';
 import { Sprite } from '../sprites.jsx';
-import { xpStats } from '../app/experience.jsx';
+import { xpStats, XP_HOT_STREAK } from '../app/experience.jsx';
 import { officeDate } from '../app/artifacts.jsx';
 import { brainName, CAN_USE_OFF_TIP, CAN_USE_TIP, EFFORT_TIP, grantedTools, memoryLabel, memoryNotes, payrollLabel, poweredBy } from '../app/cast.jsx';
 import { attentionCount as attentionCountOf, groupAttention, onRoster } from '../app/attention.jsx';
@@ -809,7 +809,7 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
                       Effort and delivery are different claims. */}
                   <div><span className="lbl">Effort</span><span className="val" title={EFFORT_TIP}>{(a.tokens||0).toLocaleString()}</span></div>
                   <div><span className="lbl">Payroll</span><span className="val" title={pay.title}>{pay.text}</span></div>
-                  <div><span className="lbl">Jobs</span><span className="val">{xp.jobs}{xp.streak >= 3 ? ' 🔥' : ''}</span></div>
+                  <div><span className="lbl">Jobs</span><span className="val">{xp.jobs}{xp.streak >= XP_HOT_STREAK ? ' 🔥' : ''}</span></div>
                   {/* Reliability. xpStats has always computed snags and no
                       surface showed it, so a boss could see how much a
                       coworker delivered but never how often they came back
