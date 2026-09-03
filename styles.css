@@ -8173,7 +8173,7 @@ body.night .bn-item.active { background: rgba(0,212,181,0.15); color: var(--acce
   /* Reserve space at the bottom so the tab bar doesn't cover content.
      Apply clearance on scrollable content containers, not on .app/.main. */
   body { padding-bottom: 0; }
-  .view, .view-projects, .vault-view, .vault-mobile, .view-team, .view-tasks, .view-memory, .view-calendar {
+  .view, .view-projects, .vault-view, .vault-mobile, .view-team, .mobile-chat-view, .view-tasks, .view-memory, .view-calendar {
     padding-bottom: calc(72px + env(safe-area-inset-bottom)) !important;
   }
 

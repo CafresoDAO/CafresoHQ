@@ -26621,3 +26621,84 @@ mismatch recorded throughout this ledger, on a file this diff never
 touches — `git status --porcelain` covers only `app.jsx`,
 `modals/settings.jsx`, and the two test files above;
 `src/cafresohq_state/main.mo` was never read, staged, or edited.
+
+---
+
+## 193. The Chat tab's composer sat behind the fixed mobile tab bar on a plain browser session
+
+**The reading.** Assigned area: PWA/offline/service-worker behavior —
+`sw.js` cache strategy, offline fallback, update/reload prompts, and the
+install-to-homescreen flow. `sw.js` and `manifest.webmanifest` turned out
+to already be solid and thoroughly hardened: `scripts/test_sw_never_caches_state.py`
+already pins the fetch handler's allowlist shape (no endpoint that
+reports live state is cacheable, the static shell still is, no HTML
+served for a failed API call, the cache name bumped, and the worker
+still deliberately unregistered pending a product decision —
+`docs/strategy/06-app-update-todo.md`). All nine of its checks pass
+as-is; no update-prompt feature exists to be broken since the worker
+never runs. The one on-topic surface that IS live today regardless of
+the worker being off — iOS/Android/macOS "Add to Home Screen" does not
+require a service worker — is the `@media all and (display-mode:
+standalone)` CSS block, and its sibling `@media (max-width: 768px)`
+block that applies the same clearance to a plain, non-installed mobile
+browser tab.
+
+**The mechanism.** Both blocks exist to reserve bottom padding on every
+primary mobile-tab view so the fixed, `position: fixed; bottom: 0;
+z-index: 150` `.mobile-tabbar` never covers content — the same
+clearance mechanism already fixed three times before for other tabs
+(TeamView's reversed class name, Memory+Calendar's outright omission,
+then the "Library's mobile view was the one primary tab missing its
+tab-bar clearance" entry fixing VaultView's `.vault-mobile` the same
+way). `app.jsx`'s `renderViewBody` renders the mobile Chat tab
+— one of only five primary destinations on the bar (Chat, Office, Team,
+Library, Projects) — as `className="mobile-chat-view"`. That class was
+already present in the standalone/PWA (80px) clearance list, but never
+appeared in the base, ordinary-mobile-browser (72px) list at all.
+`.mobile-chat-view` itself carries no padding-bottom of its own
+(styles.css ~9312), and its composer is `position: sticky; bottom: 0`
+inside that unpadded container (styles.css ~9228) — so on a plain
+mobile browser tab it sticks to the true bottom of the viewport, directly
+under the fixed tab bar. Confirmed live in a real browser at 375×812
+against the actual served page: `.mobile-chat-view`'s computed
+`padding-bottom` was `0px`, and the composer's `getBoundingClientRect()`
+(`bottom: 766`) extended 24px past the tab bar's own `top: 742` — the
+message input and send button were the part of the screen this covered.
+Installing the app to the home screen was the one way to accidentally
+get it right.
+
+**The fix.** Added `.mobile-chat-view` to the base (72px) clearance
+selector list in styles.css, mirroring its existing entry in the
+standalone (80px) list exactly — a one-line change. Re-measured live:
+injecting the corrected rule against the running page changed the
+composer's `bottom` from 766 to 694, moving it from 24px *past* the tab
+bar's top edge to 48px *clear* of it.
+
+**The test** (`scripts/test_chat_mobile_tabbar_clearance.py`) reuses the
+`mobile_blocks`/`selector_lists_naming` cascade-parsing helpers
+`scripts/test_vault_mobile_tabbar_clearance.py` established for this
+exact bug shape, rather than reimplementing them: it locates both
+media-query blocks structurally (by their padding-bottom values, not by
+line number), confirms `app.jsx` still renders the mobile Chat tab as
+`"mobile-chat-view"`, and asserts the class is named in *both* selector
+lists with the matching `padding-bottom: calc(NNpx + ...)` body — not
+just present anywhere in the block, so a stray comment mention can't
+pass it.
+
+Fire-tested: removed `.mobile-chat-view` from the base list (restoring
+the pre-fix selector list exactly). Exactly one check failed, by name —
+`.mobile-chat-view is in the base-mobile clearance selector list` — while
+the standalone-list check and the two sanity checks stayed green.
+Restored the line and confirmed `styles.css` byte-identical to the
+pre-revert state via `diff`.
+
+**Suite: 378/379** (`python3 scripts/run_tests.py`, run twice: 375/376
+pre-rebase, then 378/379 after rebasing onto the tip that added
+`#189`–`#191`; fresh `npm ci` + `npm run build`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` implicit-`transient`
+toolchain mismatch recorded in `#188` and elsewhere — a different
+session's in-progress Motoko actor migration on a file this change never
+touches. `git status --porcelain` for this change covers only
+`styles.css` and the one new test file above; `src/cafresohq_state/main.mo`
+was never read, staged, or edited.
