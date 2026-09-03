@@ -113,6 +113,33 @@ def main() -> int:
     finally:
         serve.CAFRESOHQ_API_KEY = saved_key
 
+    print('=== /brave/search spends the office\'s own key like any other proxy ===')
+    # /brave/search falls back to the server-side BRAVE_API_KEY env var when
+    # the caller sends no X-Brave-Key (see _brave_search) — so it MUST sit
+    # behind the same CAFRESOHQ_API_KEY gate as every other route that spends
+    # a shared credential on the caller's behalf (/hermes, /tools). It used to
+    # be entirely absent from _KEY_PROTECTED_PREFIXES: a plain
+    # `curl /brave/search?q=x` with zero headers reached api.search.brave.com
+    # even with a key configured.
+    serve.CAFRESOHQ_API_KEY = 's3cret-key'
+    try:
+        check('no key at all is rejected once a key is configured',
+              not H._api_key_ok(handler(peer='127.0.0.1', path='/brave/search?q=x')))
+        check('the correct key is accepted',
+              H._api_key_ok(handler(peer='203.0.113.9', path='/brave/search?q=x',
+                                    api_key='s3cret-key')))
+    finally:
+        serve.CAFRESOHQ_API_KEY = saved_key
+    serve.CAFRESOHQ_API_KEY = ''
+    try:
+        check('with no key configured, a LAN peer still cannot reach it',
+              not H._api_key_ok(handler(peer='192.168.1.50', path='/brave/search?q=x')))
+    finally:
+        serve.CAFRESOHQ_API_KEY = saved_key
+    check("/brave is listed alongside its key-gated siblings in "
+          "_HOST_DATA_PREFIXES (an untrusted Origin must get no ACAO, not '*')",
+          '/brave' in serve._HOST_DATA_PREFIXES)
+
     print('=== Bash is not executable by default ===')
     check('Bash is absent from the default allowed-tools set',
           'Bash' not in serve._cafresohq_allowed_tools,

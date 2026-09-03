@@ -347,6 +347,17 @@ _KEY_PROTECTED_PREFIXES = (
     '/vault', '/hermes', '/terminal', '/cafresohq', '/codex', '/claudecode',
     '/agents', '/hq/', '/hq-state', '/spawn', '/graph/publish', '/approvals',
     '/browser', '/missions',
+    # /brave proxies to the office's own Brave Search subscription — it falls
+    # back to the server-side BRAVE_API_KEY env var when the caller sends no
+    # X-Brave-Key (see _brave_search), so an unauthenticated caller who omits
+    # that header still gets the office's paid key used on their behalf and
+    # the results read back (measured: with CAFRESOHQ_API_KEY configured and
+    # BRAVE_API_KEY set, `curl /brave/search?q=x` with NO headers at all
+    # reached api.search.brave.com — every sibling "spend the office's
+    # credential" route (/hermes, /tools) already requires the key; this one
+    # didn't). It also isn't in _HOST_DATA_PREFIXES, so an untrusted Origin
+    # got ACAO:'*' back — any page a user had open could read the results.
+    '/brave',
     # Code-execution + filesystem routes: RCE-/write-equivalent to the routes
     # above and MUST sit behind the same key. /tools/exec runs a shell;
     # /projects,/export,/generate touch the host; the /fs mutation routes
@@ -376,6 +387,7 @@ _KEY_PROTECTED_PREFIXES = (
 # too — the key already stops them, and defence in depth costs nothing here.
 _HOST_DATA_PREFIXES = (
     '/fs', '/vault', '/projects', '/export', '/tools', '/terminal', '/hq/',
+    '/brave',
 )
 
 # Background CLI-install jobs (POST /agents/install returns 202 immediately;

@@ -24866,3 +24866,128 @@ Motoko toolchain/version mismatch in the unrelated worker-payout-sweep
 subsystem, on a file this fix's diff never touches (`app/experience.jsx`,
 `ui/panels.jsx`, `views/core.jsx`, and the one new test file above). Not a
 regression from this fix.
+## 175. The search box that answered to no key at all
+
+**A worktree note.** Same gap the previous entry recorded: this session's
+worktree also started 739 commits behind `chore/oss-reduction` despite a
+clean `git merge-base --is-ancestor` pass. `git status --short` was clean,
+so `git merge --ff-only chore/oss-reduction` landed at `66a613f` before any
+review started. Assigned area: a security pass over the auth flow (Internet
+Identity, the vault's vetKeys blob store, and any `serve.py` route that
+trusts a client-supplied identity without checking it). The derivationOrigin
+canonical value and its II whitelist were explicitly out of bounds this
+tick — confirmed via `grep -rn cqyto` that the actual II login flow
+(`frontend/src/lib/stores/auth.js`) does not even live in this repo, so
+there was nothing here to touch either way.
+
+**The reading.** Every "dangerous" route in `serve.py` — `/vault`, `/hermes`,
+`/terminal`, `/tools`, `/agent/stream` (the last one specifically called
+out by an existing comment as a prior near-miss: `'/agents'.startswith`
+missed the singular `/agent/stream`, since fixed) — sits behind
+`_KEY_PROTECTED_PREFIXES`: once `CAFRESOHQ_API_KEY` is configured, every one
+of them 401s a caller with no key, even from loopback
+(`test_security_boundaries.py` already pins this). `/brave/search` did not.
+Booted a real local instance
+(`PORT=18787 CAFRESOHQ_API_KEY=test-secret-123 BRAVE_API_KEY=fake-brave-key
+python3 serve.py`, no other office affected — a real one was already
+running on the default 8787) and hit it directly, bypassing the UI
+entirely:
+
+```
+$ curl -s -w '\n%{http_code}\n' 'http://127.0.0.1:18787/vault/note?path=x'
+{"error": "API key required"}
+401
+
+$ curl -s -w '\n%{http_code}\n' 'http://127.0.0.1:18787/brave/search?q=test'
+{"error":{"code":"SUBSCRIPTION_TOKEN_INVALID", ...}}
+422
+```
+
+No `X-API-Key`, no `X-Brave-Key` — nothing. `/vault/note` correctly refused
+it. `/brave/search` forwarded the request all the way to
+`api.search.brave.com`, which only rejected it because the *test* key was
+garbage, not because CafresoHQ ever asked who was calling. With a real
+`BRAVE_API_KEY` configured (the documented normal setup, per
+`docs/SEARCH_NETWORK.md`), that request would have succeeded and read back
+real results. A second check showed the same route also handed an
+untrusted `Origin` an `Access-Control-Allow-Origin: *`, because `/brave`
+wasn't in `_HOST_DATA_PREFIXES` either — so a page merely open in the same
+browser (no CORS preflight needed for a plain keyless GET) could read the
+response back.
+
+**The mechanism.** `_brave_search` (serve.py) forwards `/brave/search` to
+Brave's Web Search API, authenticating upstream with `X-Subscription-Token`
+sourced from either the caller's own `X-Brave-Key` header or, when that's
+absent, the server's own `BRAVE_API_KEY` environment variable — a
+convenience for `night_runner.py`'s server-side agent, which already
+authenticates its own self-calls via `_self_call`'s `X-API-Key` injection.
+But `_KEY_PROTECTED_PREFIXES` — the tuple every other credential-spending
+proxy route (`/hermes`, `/tools`) sits behind — never listed `/brave`, so
+the fallback-to-env-var path was reachable by anyone, key or no key. This
+is the exact same class of gap the file's own comment already documents
+having found and closed once for `/agent/stream` (`'/agents'.startswith`
+not matching the singular route) — a route that spends a shared,
+office-paid credential on an unauthenticated caller's behalf, missing from
+the one list that was supposed to be exhaustive for exactly that reason.
+
+**The fix.** Added `/brave` to `_KEY_PROTECTED_PREFIXES`, with a comment
+recording the measured `curl` reproduction so the next reader doesn't have
+to re-derive why a search-proxy route needs the same gate as a
+shell-execution one. Also added `/brave` to `_HOST_DATA_PREFIXES` — that
+tuple's own comment already states the intent ("the key-gated members are
+listed too — the key already stops them, and defence in depth costs
+nothing here"), so this closes the same gap for the ACAO side rather than
+leaving `/brave` as the one key-gated route inconsistent with that stated
+policy. Verified against the running instance after the fix: the identical
+no-header request now gets `{"error": "API key required"}` / 401, the
+identical request with the correct `X-API-Key` still reaches Brave's real
+API (proving the fix doesn't just fail-closed everything), and the
+untrusted-`Origin` request no longer gets any `Access-Control-Allow-Origin`
+header back at all.
+
+**Found, not fixed — deferred to human review.** `_hermes_proxy` and
+`_hermes_trial_status` meter the shared trial-brain key per caller using
+`X-User-Principal`, a header the client sets and the server never
+verifies against anything (`docs/CAFRESOHQ_ARCHITECTURE_REVIEW.md` already
+lists this as S3: "principal is an unverified header … so usage is
+spoofable"). It's real — any caller who already has the `CAFRESOHQ_API_KEY`
+(or reaches the box over loopback) can claim any principal string and get
+a fresh daily trial-completions cap, or attribute usage to someone else's
+name in `hermes-usage.log`. Not fixed here: no PII or vault content sits
+behind this header, only a shared-pool usage counter, and a real fix means
+verifying an actual authenticated identity — which in this architecture is
+established by the Caddy gateway + verifier in front of OCI-fleet
+containers, a component that lives outside this repo (per the fleet-split
+memory note) and wasn't available to inspect or change from here. Flagging
+for whoever owns that gateway rather than guessing at a Python-side
+verification serve.py has no way to actually perform.
+
+**The test.** Extended `scripts/test_security_boundaries.py` (the existing
+home for exactly this class of check, already exercising `_api_key_ok`
+against the real `serve` module) with a new section: `/brave/search` is
+rejected with no key once `CAFRESOHQ_API_KEY` is configured, accepted with
+the correct key, still loopback-only-not-open when no key is configured at
+all, and `/brave` is present in `_HOST_DATA_PREFIXES`. All lift the real
+`serve.Handler._api_key_ok` and the real `serve._HOST_DATA_PREFIXES` by
+name — no reimplementation.
+
+Two fire-tests against real one-line reverts — removing the `/brave` entry
+from `_KEY_PROTECTED_PREFIXES`, and separately from `_HOST_DATA_PREFIXES`
+— both failed by the newly named checks (`FAIL  no key at all is rejected
+once a key is configured` / `FAIL  with no key configured, a LAN peer
+still cannot reach it` for the first; `FAIL  /brave is listed alongside
+its key-gated siblings…` for the second), and `serve.py` came back
+`cmp`-identical (confirmed via `shasum -a 256`) before the next break was
+applied.
+
+**Suite: 360/361.** The worktree needed `npm install` before
+`scripts/test_the_bundle_still_builds_and_boots.py` and
+`scripts/test_terminal_cwd_wired.py` would pass — a fresh worktree with no
+`node_modules/` yet, not a regression from anything in this diff (confirmed
+by rerunning both clean after the install, before touching either test
+file). The remaining failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`) is
+the same pre-existing `moc`/M0219 Motoko-toolchain error on
+`src/cafresohq_state/main.mo` recorded by the previous entry — a file this
+diff never touches (`git diff --stat` covers only `serve.py` and
+`scripts/test_security_boundaries.py`).
