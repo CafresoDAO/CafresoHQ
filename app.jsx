@@ -7516,6 +7516,11 @@ ${d.text}` : d.text,
         onClose={()=>setWorkflowOpen(false)}
         tasks={tasks}
         workflows={workflows}
+        /* The empty state tells the boss what the board would have to hold
+           before a workflow is possible; without this it had no way to go
+           and look. The mobile drawer opens this modal but carries no Tasks
+           entry, so on a phone this was the only door. */
+        onOpenBoard={() => { setWorkflowOpen(false); navTo('tasks'); }}
         onSave={({ workflow, taskPatches }) => {
           setWorkflows(prev => [...prev, workflow]);
           setTasks(prev => prev.map(t => {

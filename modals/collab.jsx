@@ -4,7 +4,7 @@ import { MSG_STATES } from '../app/windows.jsx';
 import { isParked, cardNote } from '../app/worklog.jsx';
 import { Modal } from './base.jsx';
 const { useState: useStateM, useEffect: useEffectM, useRef: useRefM } = React;
-function WorkflowModal({ open, onClose, tasks, workflows, onSave }) {
+function WorkflowModal({ open, onClose, tasks, workflows, onSave, onOpenBoard }) {
   const [name, setName] = useStateM('');
   const [desc, setDesc] = useStateM('');
   const [steps, setSteps] = useStateM([]); // array of task ids in order
@@ -34,6 +34,43 @@ function WorkflowModal({ open, onClose, tasks, workflows, onSave }) {
      the hand-off silently no-ops (nextTask.status !== 'inbox') with no
      error and no sign to the boss that the chain never actually took. */
   const inboxTasks = tasks.filter(t => t.status === 'inbox' && !t.workflowId && !steps.includes(t.id));
+
+  /* Three different situations shared one sentence. `inboxTasks` excludes on
+     three grounds — not `inbox`, already claimed by another workflow, and
+     already a step above — and all three collapsed into "No inbox tasks
+     available." over a footer reading "Add at least 2 tasks to create a
+     workflow."
+
+     Measured live on a real office holding exactly one task, status `done`:
+     the board showed it, the Calendar showed it, and this panel said there
+     were none and asked for more. A boss who follows that instruction adds
+     two tasks, delegates them (which is what the office invites next), and
+     the list is empty again — because `doing` is not `inbox` either, and
+     nothing here ever said so.
+
+     `startable` separates the two exclusions the boss can do something
+     about (nothing on the board is waiting) from the one they already did
+     (it's a step above), so the sentence names the right one. The footer
+     asks for more tasks off `steps.length + inboxTasks.length` — the number
+     of steps actually reachable from here — so the panel and its own
+     instruction cannot disagree. */
+  const startable = tasks.filter(t => t.status === 'inbox' && !t.workflowId);
+  const emptyNote = (() => {
+    if (inboxTasks.length) return null;
+    if (startable.length) {
+      return `Every task that could be chained is already a step above.`;
+    }
+    if (!tasks.length) {
+      return 'You have no tasks yet. A workflow chains tasks that have not started.';
+    }
+    const claimed = tasks.filter(t => t.status === 'inbox' && t.workflowId).length;
+    const busy = tasks.filter(t => t.status !== 'inbox').length;
+    const bits = [];
+    if (busy) bits.push(`${busy} already underway or finished`);
+    if (claimed) bits.push(`${claimed} already in another workflow`);
+    return `You have ${tasks.length} task${tasks.length === 1 ? '' : 's'}, `
+      + `but ${bits.join(' and ')}. A workflow chains tasks that have not started.`;
+  })();
   const addStep = (taskId) => setSteps(s => [...s, taskId]);
   const removeStep = (taskId) => setSteps(s => s.filter(id => id !== taskId));
   const moveUp = (i) => { if (i === 0) return; const s = [...steps]; [s[i-1], s[i]] = [s[i], s[i-1]]; setSteps(s); };
@@ -65,7 +102,15 @@ function WorkflowModal({ open, onClose, tasks, workflows, onSave }) {
       footer={
         <>
           <div className="hint" style={{marginRight: 'auto'}}>
-            {steps.length < 2 ? 'Add at least 2 tasks to create a workflow.' : `${steps.length} steps ready.`}
+            {/* The old footer said "Add at least 2 tasks" whatever the reason
+                the list was short — including when the board holds plenty and
+                none of them can be chained, where adding two more and starting
+                them lands the boss in exactly the same place. It only asks for
+                more tasks when more tasks would actually help. */}
+            {steps.length >= 2 ? `${steps.length} steps ready.`
+              : steps.length + inboxTasks.length >= 2
+                ? `Add ${2 - steps.length} more task${steps.length === 1 ? '' : 's'} — a workflow needs 2 steps.`
+                : 'A workflow needs 2 tasks that have not started yet.'}
           </div>
           <button className="px-btn primary" onClick={submit} disabled={!name.trim() || steps.length < 2}>CREATE WORKFLOW ✓</button>
         </>
@@ -160,7 +205,14 @@ function WorkflowModal({ open, onClose, tasks, workflows, onSave }) {
               </div>
               <h4 style={{marginTop:8}}>AVAILABLE TASKS</h4>
               <div className="stack">
-                {inboxTasks.length === 0 && <div className="muted">No inbox tasks available.</div>}
+                {emptyNote && (
+                  <div className="muted">
+                    {emptyNote}
+                    {onOpenBoard && (
+                      <> <a href="#" onClick={(e)=>{e.preventDefault(); onOpenBoard();}}>Open the board →</a></>
+                    )}
+                  </div>
+                )}
                 {inboxTasks.map(t => (
                   <div key={t.id} className="row" style={{padding:'4px 6px',cursor:'pointer'}} onClick={()=>addStep(t.id)}>
                     <span className="grow tiny" title={t.title}>{cardNote(t.title, 50)}</span>

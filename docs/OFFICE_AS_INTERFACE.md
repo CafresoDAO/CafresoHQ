@@ -23632,3 +23632,84 @@ whitespace — but the *silence* side is measured and clear.
 
 **Suite: 348/348, zero failures**, launched detached with a done marker and
 polled.
+
+---
+
+## 161. The workflow panel says why the list is empty
+
+**The reading.** Mobile Tools drawer → ⚡ Workflow, on a real office
+(127.0.0.1:8898) holding exactly one task:
+
+```
+AVAILABLE TASKS
+No inbox tasks available.
+Add at least 2 tasks to create a workflow.
+CREATE WORKFLOW ✓
+```
+
+`hq-state/tasks.json` at that moment: one record, `tk_fbevo`, status `done`.
+The Calendar showed it. The board showed it. This panel said there were none,
+and asked for two more.
+
+**The mechanism.** One filter, three different exclusions:
+
+```js
+const inboxTasks = tasks.filter(t =>
+  t.status === 'inbox' && !t.workflowId && !steps.includes(t.id));
+```
+
+— the task has started or finished; another workflow already claims it; it is
+already a step in the workflow being built. All three arrived as the same
+sentence, and the footer read the same however short the list was.
+
+The instruction is the part that stings. A boss who obeys it adds two tasks
+and delegates them — which is exactly what the office invites next — and lands
+back on the identical sentence, because `doing` is not `inbox` either and
+nothing here ever said so. This is the tracked shape *a surface answers a
+question it was not asked* (#155, #157, #159) with #158's other half attached:
+the sentence pointed at the task board and the modal had no door to it. On a
+phone that is not a detail — the mobile drawer that opens this modal carries
+no Tasks entry at all, and neither does the mobile tab bar.
+
+**The fix.** `startable` (inbox, unclaimed) separates the exclusion the boss
+can act on from the one they caused, and `emptyNote` names and counts
+whichever applies:
+
+- *You have no tasks yet. A workflow chains tasks that have not started.*
+- *You have 1 task, but 1 already underway or finished. …*
+- *You have 3 tasks, but 1 already underway or finished and 2 already in
+  another workflow. …*
+- *Every task that could be chained is already a step above.*
+
+The footer now asks for more tasks off `steps.length + inboxTasks.length` —
+the number of steps actually reachable from this panel — so it can no longer
+ask for something that would not help, and it counts down (*Add 1 more task*).
+And a new `onOpenBoard` prop, supplied at `app.jsx` as
+`setWorkflowOpen(false); navTo('tasks')`, gives the sentence a door: the modal
+closes and the board opens behind it rather than under it.
+
+**Verified live in five directions** on the real office: one `done` task (the
+measured case); after adding one `inbox` task; after adding a second; after
+adding both as steps; and after actually creating the workflow, which produced
+the compound *"1 already underway or finished and 2 already in another
+workflow"*. The door was clicked and landed on the board, which agreed —
+`INBOX · 0 · Nothing waiting`.
+
+**The test** (`test_the_workflow_panel_says_why_the_list_is_empty.py`, 56
+checks) lifts `inboxTasks`, `startable`, `emptyNote` and the footer expression
+out of `WorkflowModal` by named locators and runs the real branch logic under
+Node over ten fixtures. Beyond the per-case expectations it asserts four rules
+over every case: a sentence appears exactly when the list is empty; "you have
+none" and "you have some, none usable" are never the same sentence; the footer
+asks for tasks only when tasks would help; and no two distinct reasons share a
+string.
+
+**One fire-test escaped, and closed a hole.** Reverting only the *render* —
+gating the block on `inboxTasks.length === 0` and printing the flat sentence
+again — passed all 53 checks, because nothing asserted that the panel prints
+what the branch logic computes. §2b now checks the block is gated on
+`emptyNote`, prints `{emptyNote}`, and that `No inbox tasks available` is gone
+from the component. Thirteen fire-tests total; every other break failed by
+name, and a renamed component fails loudly rather than silently.
+
+**Suite: 349/349, zero failures.**
