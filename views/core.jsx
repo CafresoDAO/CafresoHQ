@@ -297,7 +297,7 @@ const ACT_ICON = {
    (passed as a prop; app.jsx is the single source of truth — no own listener).
    Tabs split routine flow from items that NEED THE USER and from completions;
    each row drills down to its detail + jump links. */
-function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onOpenTasks, onMarkRead, approvals = [], onApprove, onReject, onRetry, onClose }) {
+function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onOpenTasks, onMarkRead, approvals = [], onApprove, onReject, onRetry, onClose, focusRequest = 0 }) {
   const [tab, setTab] = useSV('attention');   // 'attention' | 'all' | 'done'
   const [expandedId, setExpandedId] = useSV(null);
 
@@ -345,17 +345,43 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
      log. This is the split that keeps grouping honest — the queue answers
      "what needs me", the log still shows every single event that happened,
      so nothing is ever actually hidden from the boss. */
+  /* onRoster here as well as in the count — if the pill filtered ghosts
+     and this list didn't, the badge would say 3 over a list of 15, which
+     is a worse bug than the one being fixed. One rule, both surfaces.
+
+     Hoisted out of `filtered` so the focus effect below can ask "would the
+     attention tab have anything to show?" without re-deriving the rule.
+     Deliberately NOT `attentionCount`, which counts only UNREAD items: a
+     failure the boss has already opened once still sits in this list, and
+     answering from the badge would have routed them past a row that was
+     visible on screen. */
+  const attentionGroups = React.useMemo(
+    () => groupAttention(onRoster(scopedActivity, agents).filter(e => e.priority === 'attention')),
+    [scopedActivity, agents]);
+
+  /* The roster card's 📥 promises "show what this coworker has been doing",
+     and this panel opens on whichever tab it was last left on — in practice
+     "Needs attention". Measured live: Llama with 14 events and 3 completed
+     answered that click with "Nothing needs you right now. 🎉" over a header
+     reading 14 EVENTS and a Done tab reading · 3. Three numbers on screen,
+     and the one sentence the boss actually read said the coworker had done
+     nothing.
+
+     So the button lands on the tab that answers its own question: what needs
+     you, when something does; otherwise what they have been doing. Keyed on
+     the request alone, not on the counts — this is a response to a click,
+     not a rule that should yank the tab out from under someone reading. */
+  React.useEffect(() => {
+    if (!focusRequest) return;
+    setTab(attentionGroups.length || pendingApprovals.length ? 'attention' : 'all');
+  }, [focusRequest]);
+
   const filtered = React.useMemo(() => {
     let xs = scopedActivity;
-    if (tab === 'attention') {
-      /* onRoster here as well as in the count — if the pill filtered ghosts
-         and this list didn't, the badge would say 3 over a list of 15, which
-         is a worse bug than the one being fixed. One rule, both surfaces. */
-      return groupAttention(onRoster(xs, agents).filter(e => e.priority === 'attention'));
-    }
+    if (tab === 'attention') return attentionGroups;
     if (tab === 'done') xs = xs.filter(e => e.action === 'done');
     return xs.map(e => ({ key: e.id, entry: e, count: 1, ids: [e.id] }));
-  }, [scopedActivity, tab, agents]);
+  }, [scopedActivity, tab, agents, attentionGroups]);
 
   /* Opening a group marks every occurrence read, not just the newest —
      otherwise the count would drop by one and the same row would come
@@ -453,6 +479,21 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
                 ? 'Failures, blocks, and approval requests surface here.'
                 : 'Assign a task or chat with the team and every real action lands here.'}
             </span>
+            {/* An empty attention queue is good news, but on its own it is the
+                only sentence on screen — and next to a header reading "14
+                events" it reads as a contradiction rather than as relief. The
+                work exists one tab away; say so, and hand over the door
+                instead of leaving the boss to find it. Only when there IS
+                something over there. */}
+            {tab === 'attention' && scopedActivity.length > 0 && (
+              <div style={{marginTop:'var(--sp-3)'}}>
+                <button className="px-btn ghost oc-inbox-see-all"
+                  style={{fontSize:'var(--text-9)'}}
+                  onClick={() => setTab('all')}>
+                  See all {scopedActivity.length} thing{scopedActivity.length === 1 ? '' : 's'} that happened →
+                </button>
+              </div>
+            )}
           </div>
         )}
         {filtered.map(g => {
@@ -536,6 +577,10 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
 function TeamView({ agents, activity = [], experience = [], onHire, onInspect, onDismiss, onShowCEO, onOpenTasks, onMarkRead, approvals = [], onApprove, onReject, onRetry }) {
   const [selectedAgentId, setSelectedAgentId] = useSV(null);
   const [showInbox, setShowInbox] = useSV(false);
+  /* Bumped, never read here: the panel owns the rule for which tab answers
+     "what has this coworker been doing", because the panel is the only place
+     that knows what each tab would actually contain. This is the click. */
+  const [inboxFocus, setInboxFocus] = useSV(0);
 
   /* The roster grid was blind to a coworker who just failed. Watching a real
      one (Miko, no brain configured) confirmed it: the floor sprite two
@@ -770,7 +815,7 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
                 <button
                   className="px-btn ghost team-inbox-btn"
                   style={{fontSize: 'var(--text-9)', position: 'absolute', top: 6, right: 6}}
-                  onClick={(e)=>{ e.stopPropagation(); setShowInbox(true); setSelectedAgentId(a.id); }}
+                  onClick={(e)=>{ e.stopPropagation(); setShowInbox(true); setSelectedAgentId(a.id); setInboxFocus(n => n + 1); }}
                   title="Show what this coworker has been doing"
                 >📥</button>
                 {lastFailed && onRetry ? (
@@ -804,6 +849,7 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
               onReject={onReject}
               onRetry={onRetry}
               onClose={() => setShowInbox(false)}
+              focusRequest={inboxFocus}
             />
           </div>
         )}

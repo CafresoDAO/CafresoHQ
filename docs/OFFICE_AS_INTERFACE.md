@@ -23176,3 +23176,58 @@ nothing the file is about. All three locators now find the function by name,
 and two adjacent-pair signature checks were relaxed to assert the fact rather
 than its neighbours. Fire-tested that the repaired file survives an added prop
 and still catches all three real breakages it was written for. Suite 342/342.
+
+---
+
+### #155 — The inbox button answers its own question
+
+The 📥 on every roster card is titled **"Show what this coworker has been
+doing"**. It opened the Coworker Inbox on whichever tab the panel was last left
+on, which in practice is the default: **Needs attention**.
+
+Measured live on the real office. Llama: Effort 8,286, Jobs 3 🔥, fourteen
+events on the books, three of them finished. Clicking their 📥 produced a panel
+whose header read **14 EVENTS**, whose Done tab read **· 3**, and whose only
+sentence read **"Nothing needs you right now. 🎉"** over an empty list. Three
+numbers on screen and the one a boss actually reads said their coworker had
+done nothing. Codex — who genuinely has never worked — got the identical
+sentence, so the panel could not tell the two apart either.
+
+This is the recurring shape (1) again: a surface answers a question it was not
+asked. The attention queue's own answer was true; it just was not an answer to
+"what has this coworker been doing", and it was the only thing on screen.
+
+Three changes, one file:
+
+- **`AgentInbox` takes a `focusRequest` nonce.** The card's 📥 bumps it; the
+  *panel* decides which tab that click lands on, because the panel is the only
+  place that knows what each tab would contain. Something needs you → Needs
+  attention. Nothing does → Activity, which is the question that was asked.
+  Keyed on the request alone and not on the counts: this is a response to a
+  click, not a rule that yanks the tab out from under someone mid-read.
+- **`attentionGroups` is hoisted out of `filtered`** so the routing decision
+  and the list read one rule and cannot drift. Deliberately *not*
+  `attentionCount` — that counts only UNREAD items, and a failure the boss has
+  already opened once still sits in the list. Routing from the badge would have
+  sent them to Activity past a row visible on screen. The regression test
+  proves that distinction with its own case.
+- **The attention tab's empty state stops dead-ending.** "Nothing needs you
+  right now 🎉" is good news, but beside a header reading 14 events it reads as
+  a contradiction. When there IS something one tab over, the empty state now
+  hands over the door — *"See all 14 things that happened →"* — and when there
+  is nothing, it stays exactly as it was.
+
+`scripts/test_the_inbox_button_answers_its_own_question.py` runs the real
+routing rule under Node: `app/attention.jsx` verbatim (it is import-free by
+design) plus the four lifted bodies — `pendingApprovals`, `scopedActivity`,
+`attentionGroups` and the focus effect itself. Eight cases, including the
+already-read failure, a colleague's failure that must not hijack this card, an
+approval waiting on someone else, and a ghost employee's. Fire-tested five
+ways, each break caught on exactly the checks that name it. Verified live in
+four directions: Llama lands on Activity with 14 real rows; Codex lands on
+Activity reading "Nothing from your team yet" with no see-all door offered;
+the manual attention tab shows the door and it works; the button's tooltip is
+now true. Suite 78/78 files.
+
+The locators in the new file are named, not literal — the sweep flagged in
+#154 is still open, but nothing new was added to it.
