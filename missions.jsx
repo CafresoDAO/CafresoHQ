@@ -661,7 +661,19 @@ function useMissionRunner(missions, setMissions, ctx) {
             }
             return;
           }
-          _haveMissionLease();   // renew the heartbeat while we work
+          /* Fire-time lease check. The `!_haveMissionLease()` gate up in the
+             scheduling loop only stops NEW timers from being armed — a tab
+             that loses the lease AFTER arming one (heartbeat starved by
+             background-tab timer throttling, a laptop suspend, the pagehide
+             handover) still holds that timer, and this call's result used to
+             be discarded. Its next fire then ran a full iteration
+             concurrently with the new leader tab's: duplicate vault notes,
+             double token burn, racing PUTs — the exact failure the lease
+             block above says it exists to prevent. When we still hold (or
+             can reclaim a stale) lease this same call renews the heartbeat,
+             as before; when another tab verifiably owns it, stand down and
+             let the leader do the work. */
+          if (!_haveMissionLease()) return;
           const agent = ctxWithSetters.agentsRef.current.find(a => a.id === latest.agentId);
           if (!agent) {
             setMissions(prev => prev.map(x => x.id === m.id ? { ...x, status: 'error', endedAt: Date.now(), lastError: 'agent removed' } : x));

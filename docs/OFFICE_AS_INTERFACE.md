@@ -26791,3 +26791,81 @@ in-progress Motoko actor migration on a file this change never touches.
 `git status --porcelain` for this change covers only `views/graph.jsx`,
 `graph-engine.js`, and the one new test file above;
 `src/cafresohq_state/main.mo` was never read, staged, or edited.
+
+---
+
+## 195. A tab that lost the mission lease kept running the mission anyway
+
+**The reading.** Assigned area: missions and schedules — `missions.jsx`'s
+browser-side research-mission loop and the `/missions/*` night-shift
+endpoints in `serve.py`, hunting edit-vs-running races, schedule time
+round-trips, duplicate fires, and stale state after pause/resume or
+reload. The server side held up well: `_missions_delete` already aborts
+an in-flight night run, `_night_scan`'s daily advance already does the
+DST-safe local-calendar-day arithmetic, and the schedule POST's bounds
+and update-by-id path round-trip cleanly. The browser loop is where the
+duplicate-fire hunt landed, in the single-runner lease that exists
+precisely to prevent duplicate fires.
+
+**The mechanism.** Mission state persists to localStorage AND the shared
+server file, so two open tabs both see `status: 'running'` — the
+`MISSION_LEASE_KEY` heartbeat (15s TTL, 5s beat) elects ONE runner tab
+so only one fires iterations; the block's own comment names the failure
+it prevents: "duplicate vault notes, double token burn, and racing
+PUTs." But the lease was only consulted when ARMING a timer — the
+scheduling loop's `if (!_haveMissionLease()) continue;`. Inside `fire`
+itself the call was `_haveMissionLease();` with the result discarded — a
+heartbeat renewal only. So a tab that lost the lease AFTER arming a
+timer still held that timer, and nothing at fire time asked whether it
+was still the leader. And losing the lease with a timer armed is not
+exotic; it is the normal life of a second tab: background-tab timer
+throttling clamps the 5s heartbeat to ≥60s beats, starving it past the
+15s TTL, and a laptop suspend or the `pagehide` handover does the same.
+The foreground tab takes over (correctly — that is the takeover the
+lease is FOR), starts firing iterations, and then the old leader's
+armed timer fires — mission intervals run 1–20 minutes, ample time —
+re-arms itself through its own 1500ms retry if needed, and runs a full
+iteration concurrently with the new leader's. Each iteration is a real
+agent stream with real `[SEARCH:]`/`[VAULT_NEW:]` tool calls: duplicate
+vault notes, double token spend, racing state PUTs — the exact triple
+the lease block promises to prevent, through the one code path it never
+gated. The per-tab `runningRef` guard is no help; it only serializes
+fires within a single tab.
+
+**The fix.** One line in `fire` (missions.jsx): the renew-only
+`_haveMissionLease();` became `if (!_haveMissionLease()) return;`. Same
+call, result consumed: when this tab still holds the lease (or can
+reclaim a genuinely stale one) it renews the heartbeat exactly as
+before and the iteration proceeds; when another tab verifiably owns a
+fresh lease, the fire stands down. The timer was already deleted at
+fire entry and the arm-time gate keeps a follower from arming new ones,
+so the stale timer simply dies out; if the leader later disappears, the
+existing `leaseTick` re-scan reclaims the lease and reschedules.
+`npm run build` rerun since a `.jsx` changed.
+
+**The test** (`scripts/test_mission_fire_checks_lease_before_running.py`)
+lifts the REAL `useMissionRunner` out of `missions.jsx` by brace-balanced
+extraction (the `test_workspace_terminal_key.py` technique), isolates the
+`fire` callback the same way, strips comments, and pins the invariant
+from both sides: `fire` must contain the consumed guard
+`if (!_haveMissionLease()) return`, must contain NO bare
+result-discarded `_haveMissionLease();` statement (the regressed form),
+and the scheduling loop — checked with `fire`'s span excised — must
+still carry its own arm-time `continue` gate, so the fix can never pass
+as a relocation of the existing guard.
+
+Fire-tested: reverted the gated block back to the bare
+`_haveMissionLease();` call via a scripted edit (safety copy in the
+scratchpad first, never `git checkout --`). Exactly the two fire-side
+checks failed, by name, while both extraction checks and the arm-time
+gate check stayed green. Restored the fixed file and confirmed it
+byte-identical via `cmp`, re-ran the test green, and rebuilt the bundle.
+
+**Suite: 381/382** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` implicit-`transient`
+toolchain mismatch recorded in `#188`, `#193`, and elsewhere — a foreign
+session's in-progress Motoko actor migration on a file this change never
+touches. `git status --porcelain` for this change covers only
+`missions.jsx`, the new test file above, and this ledger;
+`src/cafresohq_state/main.mo` was never read, staged, or edited.
