@@ -23916,3 +23916,89 @@ live add) and has been restored to `[]`; the per-tick backup glob should reach
 `hq-state/memory/` from here on.
 
 **Suite: 352/352, zero failures.**
+
+## 165. The gazette leads with the newest run
+
+**The reading.** Live office, `hq-state/mission-runs.json` seeded with 8
+finished night-shift runs, oldest to newest: `run-01` through `run-08`, ten
+minutes apart, exactly as `_night_log_run` would have appended them. Away
+long enough to trigger the Gazette, the "🌙 NIGHT SHIFT — THE LEAD STORY"
+panel opens on `MorningReportModal` and says:
+
+```
+Your agents worked while you were gone: 8 runs, 0 notes written to the vault.
+✓ run-01 · 3 iter · 0 notes
+✓ run-02 · 3 iter · 0 notes
+✓ run-03 · 3 iter · 0 notes
+✓ run-04 · 3 iter · 0 notes
+✓ run-05 · 3 iter · 0 notes
+```
+
+The stat line counts all 8 correctly. The five rows under it are the five
+*oldest* — the ones a boss already knew about, if they knew about any of
+them — while `run-06` through `run-08`, the work that happened right before
+they sat down, never appears.
+
+**The mechanism.** `mission-runs.json` is written in append order: oldest run
+first, newest last — `_night_log_run` in `serve.py` always `.append()`s and
+never reorders. `app.jsx`'s Gazette effect keeps that order through its
+filter and then caps it with `nightRuns.slice(-10)`, which correctly keeps
+the newest ten but does **not** flip them — the *oldest* of the kept ten
+stays at index 0. `MorningReportModal` (`features.jsx`) then reads
+`report.nightRuns.slice(0, 5)`, written the way every other "top of the
+list" read in this codebase is written: assuming index 0 is the most recent.
+
+Two hundred lines away, in the same file, `NightShiftSection`'s own "RECENT
+NIGHT RUNS" panel reads the identical endpoint and gets it right —
+`setRuns((r.runs || []).slice(-5).reverse())` — because it reverses before
+handing the array to its renderer. The Gazette's `nightRuns.slice(-10)` skips
+that last step, so the same underlying run log tells two different stories
+depending which panel you're looking at: one newest-first, one oldest-first,
+both reading straight off the top of their own array.
+
+**The fix.** One line, `app.jsx`'s Gazette effect:
+
+```js
+nightRuns: nightRuns.slice(-10).reverse(),
+```
+
+matching `NightShiftSection`'s own convention for the same data, so
+`report.nightRuns[0]` means the same thing everywhere it's read.
+
+**The test** (`test_the_gazette_shows_the_newest_night_runs.py`, 9 checks)
+locates the Gazette effect by its section comment (`Morning Report ("HQ
+GAZETTE")`) plus the next `useEffectA` block, brace-balanced to its end, and
+pulls the real filter statement and the real `nightRuns:` cap expression out
+of it; it locates `MorningReportModal` by name, brace-balanced to its end,
+and pulls the real `report.nightRuns.slice(...)` call plus any chained
+`.reverse()/.sort()/.filter()/.slice()`. Both run under Node against a
+pinned 12-run-plus-one-still-running fixture and a 3-run fixture — never
+`Date.now()`. Checks cover: an unfinished run (`finishedAt: 0`) never leaks
+into the report; the filter's chronological order survives untouched; the
+cap keeps exactly ten; the cap's first element is the single most recent
+run; the cap drops what falls outside the kept window; the modal shows
+exactly five; the five are the five most recent by id; they arrive strictly
+newest-first; and a small (3-run) log passes through whole, still
+newest-first.
+
+Three fire-tests: dropping the `.reverse()` (reproducing the original bug
+exactly — four checks fail by name, all downstream of ordering), shrinking
+the cap silently (the length check alone catches it), and removing the
+filter statement entirely (a loud `AssertionError` from the locator itself,
+since the statement it's anchored on is gone — the intended failure mode for
+a rename or removal, not a silent pass). All three caught, `app.jsx`
+restored byte-identical and reconfirmed.
+
+**Provenance.** Found and verified independently by one of five agents
+dispatched in parallel this tick to hunt for beta-blocking bugs across
+distinct areas of the app (Calendar/Missions was this one's). Its worktree
+branched from a commit that predates this ledger and the later `app/`+
+`views/` module split, so `app.jsx`/`features.jsx` there are still the
+pre-split monolith. Re-verified here directly against the current
+`chore/oss-reduction` tree before integrating: the same Gazette effect, same
+`nightRuns.slice(-10)` without a reverse, same `MorningReportModal` reading
+`slice(0, 5)` assuming newest-first — confirmed still present and unchanged
+at these exact lines, so the fix transplants identically rather than by
+analogy.
+
+**Suite: 352/352, zero failures.**

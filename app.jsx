@@ -4134,7 +4134,16 @@ ${d.text}` : d.text,
           receipts: recs.slice(0, 30),
           tips: acts.filter(a => a.action === 'tip'),
           paydays: acts.filter(a => a.action === 'payday'),
-          nightRuns: nightRuns.slice(-10),
+          /* `.slice(-10)` alone keeps the newest 10 in FILE order (oldest
+             first) — MorningReportModal reads `nightRuns.slice(0, 5)`
+             assuming index 0 is the most recent, the same convention
+             NightShiftSection already uses correctly via `.slice(-5)
+             .reverse()` 200 lines below. Without the reverse, a boss
+             returning to more than 5 qualifying runs saw the gazette's
+             lead story open on the 5 OLDEST of the kept window — the most
+             recent work silently missing from the one panel meant to lead
+             with it. */
+          nightRuns: nightRuns.slice(-10).reverse(),
         });
         try {
           const chain = CafresoHQChain;
