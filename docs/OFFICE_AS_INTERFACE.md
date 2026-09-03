@@ -25447,3 +25447,111 @@ scan, and the same-field-as-CLI-sync check), `app.jsx` restored
 same pre-existing `moc`/M0219 `main.mo` toolchain mismatch recorded
 throughout this session, on a file this fix's diff never touches
 (`app.jsx` and the one new test file above).
+
+---
+
+## 180. An export's delivery receipt could name a file that was never written
+
+**A worktree note.** This session's worktree started 745 commits behind
+`chore/oss-reduction`. `git status` was clean, so `git merge --ff-only
+chore/oss-reduction` landed before any of the work below started.
+
+**The reading.** Assigned area: PDF/export/document-generation flows —
+DeliverySheet, ReceiptsModal, MorningReportModal's export path, vault note
+export, task/receipt export. Read `exporters.py`'s three binary renderers
+(`_export_pptx`/`_export_docx`/`_export_pdf`, all bound onto `serve.py`'s
+HTTP handler via explicit `_name = exporters._name` assignments, not real
+inheritance) and `hq-runtime.jsx`'s matching `export_pptx`/`export_docx`/
+`export_pdf` TOOLS entries, which parse `[EXPORT_PDF: <path>]\n<markdown>\n
+[/EXPORT_PDF]` markers out of a coworker's own output and call those
+renderers over HTTP.
+
+All three renderers share `_vault_binary_path(rel, allowed_ext)`, which
+silently appends the format's own extension when the marker's path has none
+— the same intentional convenience `_vault_resolve` already gives plain
+vault notes (`scripts/test_vault_resolve.py`: "no extension -> .md
+appended"). `[EXPORT_PDF: Docs/report]` really saves to `Docs/report.pdf`,
+not `Docs/report`, and every renderer correctly reports the corrected name
+back in its own return value (`rel_out = str(out_path.relative_to(...))`).
+
+Reproduced live: built the UI (`npm run build`), ran `serve.py`, and drove
+`[EXPORT_PDF: Library/Docs/smoke-test]` (no extension) through the tool
+path. The server wrote `Library/Docs/smoke-test.pdf` — confirmed on disk —
+and the export tool's own result text correctly named that same corrected
+file. But the 'done' event both tool-execution loops (`ceoStream`, line
+4007, and `agentStream`, line 4174 — near-identical twins; `agentStream`'s
+carries a `cwd`, `ceoStream`'s runs with none) emit for every completed
+tool call still reported `arg: call.arg` — the coworker's original,
+pre-correction marker text — regardless of what the server actually did.
+
+That `arg` is not decoration. `app/artifacts.jsx`'s `agentFiledPath` reads
+it straight off the `toolVisits` list these events build in `app.jsx` to
+decide "did the coworker file this deliverable themselves" — the newest
+cabinet write wins, and its answer becomes `task.artifactPath`. That field
+feeds the out-tray's "open latest", the first-delivery sheet's "Open it →"
+button, and (via `app.jsx`'s `recordToolReceipt`/`anchorWorkReceipt`) the
+Receipts tray's own title AND the content hash it anchors on-chain — the
+one piece of this that can't be corrected after the fact. Every one of
+those silently pointed at `Docs/report`, a vault path nothing was ever
+written to, on exactly the runs where a coworker (or its model) left the
+extension off an export marker.
+
+**The mechanism.** Each export tool's `run()` already had the real,
+corrected path in hand — `r.path`, straight off the server's own JSON
+response — and used it only to build its own result string, then discarded
+it. Nothing carried it back out to the 'done' emission, which only ever
+saw the tool call's original, unmodified argument.
+
+**The fix.** `hq-runtime.jsx`: `export_pptx`/`export_docx`/`export_pdf`'s
+`run()` functions each now also set `_ctx.meta.filedAs = r.path` — the same
+out-of-band `_ctx.meta` channel `meta.failed` already rides through the
+same call. Both 'done' emissions (`ceoStream`'s, with no `cwd`, and
+`agentStream`'s, which carries one) now report `arg: (meta.filedAs ||
+call.arg)` in place of `arg: call.arg` alone. Every tool that never sets
+`meta.filedAs` — everything except these three — is unaffected: the
+fallback preserves `call.arg` exactly as before.
+
+**The test**
+(`scripts/test_export_visit_reports_the_saved_path.py`) proves the bug
+across three real, unmodified layers. It imports the actual `exporters`
+module and calls its real `_vault_binary_path` directly to confirm the
+extension-append behavior the whole bug turns on actually happens. It
+extracts the real `export_pdf` tool object out of `hq-runtime.jsx` by
+brace-matching (the same technique `test_artifacts.py` established) and
+runs it under Node against a stub client mirroring that same server
+behavior, confirming `run()`'s result names the corrected file and stashes
+it on `ctx.meta.filedAs`. It extracts both real 'done'-emission expressions
+— `ceoStream`'s and `agentStream`'s — the same way, anchored directly on
+the fix text itself (`meta.filedAs || call.arg`), and confirms each now
+reports the corrected path, with a same-shape check proving a tool that
+never sets `meta.filedAs` (e.g. `VAULT_NEW`/`VAULT_APPEND`) sees no change.
+Finally it runs the real `agentFiledPath` out of `app/artifacts.jsx`
+against both emission shapes, confirming it now resolves to the file
+`exporters.py` actually saved under — not the pre-fix `Docs/report`, a path
+nothing was ever written to.
+
+Fire-tested by reverting `ceoStream`'s emission alone back to `arg:
+call.arg`: caught immediately by name ("ceoStream's 'done' emission still
+prefers meta.filedAs over call.arg" — FAIL, with the extraction itself
+failing since the fix's own anchor text was gone). Restored, confirmed
+`cmp`- and MD5-identical to the pre-revert file. Repeated on
+`agentStream`'s sibling emission alone: caught by its own named check,
+restored, confirmed identical again.
+
+**A closed lead, recorded not chased.** `serve.py`'s `/vault/note` PUT
+handler has the same species of bug on the plain-note path: its local-fs
+branch computes `target = _vault_resolve(rel)` (which appends `.md` when
+missing, exactly like `_vault_binary_path`) but responds with `{'path':
+rel, ...}` — the original, unnormalized `rel` — instead of the corrected
+name, unlike every exporter's own correct `rel_out =
+str(out_path.relative_to(...))`. Root cause lives in a different file
+(`serve.py`, not `hq-runtime.jsx`) than this fix touches, so it's flagged
+as a separate follow-up rather than folded in here to keep this diff
+scoped to the bug actually reproduced above.
+
+**Suite: 366/367.** The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`) is
+the same pre-existing `moc`/M0219 `main.mo` toolchain mismatch recorded
+throughout this ledger, on a file this session's diff never touches
+(`git status --porcelain` covers only `hq-runtime.jsx` and the new test
+file above).

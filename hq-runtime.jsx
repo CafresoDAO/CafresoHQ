@@ -2020,7 +2020,26 @@ const TOOL_REGISTRY = {
   /* EXPORT_PPTX / EXPORT_DOCX / EXPORT_PDF — render real binary deliverables
      into the vault. The body is markdown; the server renders to the actual
      binary format using python-pptx / python-docx / weasyprint(or reportlab).
-     Used by Sloan / Quill for actual file outputs the boss can download. */
+     Used by Sloan / Quill for actual file outputs the boss can download.
+
+     `r.path` is not always `path.trim()`. exporters.py's `_vault_binary_path`
+     silently appends the format's own extension when the marker's path has
+     none ("if no extension was given, append the first allowed one") — a
+     coworker who writes [EXPORT_PDF: Docs/report] gets a file saved as
+     `Docs/report.pdf`, on disk, under a name it never typed.
+
+     The 'done' event two functions down still reported `call.arg` — the
+     PRE-correction text — as the tool's `arg`, and that field is not
+     decoration: app/artifacts.jsx's `agentFiledPath` reads it straight off
+     the visit list to set `task.artifactPath`, which is what the out-tray's
+     "open latest", the first-delivery sheet's "Open it →", and the
+     Receipts tray's title (and its on-chain content hash, in app.jsx's
+     anchorWorkReceipt) all point at. Every one of them silently pointed at
+     a vault path nothing was ever written to, on exactly the runs where a
+     coworker left the extension off. `_ctx.meta.filedAs` carries the real
+     saved path back out, the same out-of-band channel `meta.failed`
+     already rides — the two 'done' emissions read it in preference to
+     `call.arg` when it's set. */
   export_pptx: {
     name: 'EXPORT_PPTX',
     re: /\[\s*EXPORT_PPTX\s*:\s*([^\]\n]+)\]\s*\n([\s\S]*?)\n?\[\s*\/\s*EXPORT_PPTX\s*\]/i,
@@ -2032,6 +2051,7 @@ const TOOL_REGISTRY = {
     docShort: 'Render markdown into a real .pptx PowerPoint deck and file it in the Library.',
     run: async (path, _ctx, body) => {
       const r = await CafresoHQClient.exportPptx(path.trim(), body || '');
+      if (_ctx && _ctx.meta) _ctx.meta.filedAs = r.path;
       return `Saved PowerPoint (${r.slides || '?'} slide${r.slides === 1 ? '' : 's'}) → ${r.path}`;
     },
   },
@@ -2045,6 +2065,7 @@ const TOOL_REGISTRY = {
     docShort: 'Render markdown into a real .docx Word document and file it in the Library.',
     run: async (path, _ctx, body) => {
       const r = await CafresoHQClient.exportDocx(path.trim(), body || '');
+      if (_ctx && _ctx.meta) _ctx.meta.filedAs = r.path;
       return `Saved Word doc → ${r.path}`;
     },
   },
@@ -2058,6 +2079,7 @@ const TOOL_REGISTRY = {
     docShort: 'Render markdown into a real .pdf and file it in the Library.',
     run: async (path, _ctx, body) => {
       const r = await CafresoHQClient.exportPdf(path.trim(), body || '');
+      if (_ctx && _ctx.meta) _ctx.meta.filedAs = r.path;
       return `Saved PDF (${r.renderer || '?'}) → ${r.path}`;
     },
   },
@@ -4128,7 +4150,13 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
        `echo` stays on the event: histories written before this change still
        carry the banner inline, and filing removes it by exact match. */
     if (onTool) {
-      onTool({ phase: 'done', name: call.tool.name, arg: call.arg, result,
+      /* `meta.filedAs || call.arg`, not `call.arg` alone — see the long
+         comment above export_pptx/docx/pdf in TOOLS. Those three set
+         `meta.filedAs` to the path the server actually wrote to, which can
+         differ from `call.arg` (the marker's own text) when the model left
+         the extension off and the server appended it. Every other tool
+         leaves `meta.filedAs` unset, so this is a no-op for them. */
+      onTool({ phase: 'done', name: call.tool.name, arg: (meta.filedAs || call.arg), result,
                failed: !!meta.failed,
                echo: `\n\n${toolEchoHead(call.tool.name, call.arg)}\n${result}\n\n` });
     }
@@ -4504,7 +4532,9 @@ FILE-DELIVERY RULE: There is no Library wired up this session, so there is nowhe
        `echo` stays on the event: histories written before this change still
        carry the banner inline, and filing removes it by exact match. */
     if (onTool) {
-      onTool({ phase: 'done', name: call.tool.name, arg: call.arg, result,
+      /* `meta.filedAs || call.arg` — see the note on the sibling emission
+         above (and the comment above export_pptx/docx/pdf in TOOLS). */
+      onTool({ phase: 'done', name: call.tool.name, arg: (meta.filedAs || call.arg), result,
                failed: !!meta.failed, cwd,
                echo: `\n\n${toolEchoHead(call.tool.name, call.arg)}\n${result}\n\n` });
     }
