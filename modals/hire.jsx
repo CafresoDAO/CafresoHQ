@@ -703,9 +703,19 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
             </div>
             <div className="form-row full">
               <label>ALLOWED TOOLS</label>
+              {/* Same hole `cardActivate` closed on the board above, one
+                  layer deeper: these ticks were an onClick-only div with no
+                  role and no place in the tab order, so Tab from CREATIVITY
+                  landed on PRIVILEGES and a keyboard-only boss could not
+                  grant or deny a single tool. Reusing `cardActivate` (not a
+                  second copy of Enter/Space handling) keeps this from
+                  drifting from the board fix the next time either is
+                  touched; role/aria-checked are overridden after the spread
+                  since these are toggles, not plain buttons like the board. */}
               <div className="tool-grid">
                 {visibleToolsCatalog().map(t => (
-                  <div key={t.id} className={`tool-chk ${tools.includes(t.id)?'on':''}`} onClick={()=>toggleTool(t.id)}>
+                  <div key={t.id} className={`tool-chk ${tools.includes(t.id)?'on':''}`}
+                       {...cardActivate(()=>toggleTool(t.id))} role="checkbox" aria-checked={tools.includes(t.id)}>
                     <div className="box" />
                     <span>{t.label}</span>
                   </div>
@@ -716,7 +726,8 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
               <label>AVATAR</label>
               <div className="avatar-picker">
                 {HQ.AGENT_COLORS.map(c => (
-                  <div key={c} className={`slot ${avatar===c?'selected':''}`} onClick={()=>setAvatar(c)}>
+                  <div key={c} className={`slot ${avatar===c?'selected':''}`}
+                       {...cardActivate(()=>setAvatar(c))} role="radio" aria-checked={avatar===c}>
                     <Sprite data={c} scale={2}/>
                   </div>
                 ))}

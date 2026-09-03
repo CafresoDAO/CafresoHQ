@@ -24071,3 +24071,98 @@ worktree's own toolchain state, not this tree; noted rather than chased
 further.
 
 **Suite: 353/353, zero failures.**
+
+## 167. The hire board learned the keyboard; the form behind it didn't
+
+**The reading.** Live office (127.0.0.1:8905, fresh state). Hire → + NEW opens
+"NEW HIRE · CHARACTER CREATION" — the form a boss actually fills in after the
+job-postings board (#28/Tick 28) taught its cards to answer Tab. Click the
+CREATIVITY slider to focus it, press Tab once:
+
+```
+before   focus jumps from CREATIVITY straight to the PRIVILEGES checkbox
+after    focus lands on the first ALLOWED TOOLS tick ("Web Search")
+```
+
+`read_page` on the dialog before the fix showed the gap precisely: ALLOWED
+TOOLS rendered as three `generic` nodes (no role, no state) and AVATAR
+rendered as *nothing at all* — five sprites with no accessible presence
+whatsoever. A keyboard-only boss, or anyone on a screen reader, could hire
+someone but could not choose a single tool or a face for them. Mouse clicks
+worked the entire time — `onClick` was never missing on `modals/hire.jsx:708`
+and `:719`, only `tabIndex`/`role`/`onKeyDown` were, confirmed by toggling
+"Web Search" with a real click before touching anything.
+
+**The mechanism.** Tick 28 built exactly the right fix — `cardActivate(fn)`,
+returning `role="button"`, `tabIndex={0}`, `onClick`, and an Enter/Space
+`onKeyDown` from one call — and wired it through every tile on the
+job-postings board. It never reached the form *behind* the board, one screen
+deeper in the same hire flow, because the board and the form are different
+JSX in the same file and nothing forced the second half to inherit the first
+half's fix. Same defect shape as #155/#157/#159/#161: fixing a surface does
+not fix the surface standing right behind it.
+
+**The fix.** Both blocks now spread `cardActivate(...)` instead of a bare
+`onClick`, with `role`/`aria-checked` layered on after the spread since these
+are toggle/select controls, not the board's plain buttons: `role="checkbox"`
+on each ALLOWED TOOLS tick, `role="radio"` on each AVATAR slot, and
+`aria-checked` bound to the *exact same expression* that already drives the
+visible `on`/`selected` class (`tools.includes(t.id)`, `avatar===c`) so the
+accessible state and the pixel-art state cannot drift apart. Reusing the
+helper rather than hand-rolling a second Enter/Space handler means a future
+regression in `cardActivate` breaks both surfaces the same way instead of one
+silently diverging from the other.
+
+**Verified live in both directions, on both groups.** Mouse: clicking "Image
+Gen" and the third avatar sprite ticks and selects them (screenshot).
+Keyboard: focus the slider, Tab once → lands on "Web Search" as a real
+`checkbox` (`read_page` showed `generic` before, `checkbox`/`radio` after);
+dispatching a genuine `Enter`/`Space` `KeyboardEvent` — the browser-pane's own
+synthetic key injection reports an empty `e.key` for Space/Return in this
+harness, a tooling gap distinct from the app bug, so a hand-built
+`KeyboardEvent({key:' '})`/`{key:'Enter'}` was used instead — toggled "Web
+Search" off and moved the AVATAR selection from slot 1 to slot 2, each
+confirmed by `defaultPrevented === true` and the resulting `aria-checked`/
+class state.
+
+**The test.** `scripts/test_the_hire_forms_tools_and_avatar_answer_the_keyboard.py`,
+17 checks. Re-lifts and re-executes the real `cardActivate` under Node (role,
+tabIndex, onClick, Enter, Space, other-key-ignored) — cheap insurance since
+both new call sites depend on it — then checks the ALLOWED TOOLS and AVATAR
+source blocks (isolated by their own `<label>` markers, not line numbers):
+each spreads `cardActivate`, carries no competing bare `onClick=`, carries the
+right ARIA role, and — the check this bug specifically needed — `aria-checked`
+reads the identical expression as the row's own class string, not a
+independently-typed copy that could quietly disagree with what's on screen.
+Eight fire-tests (role swapped, the `cardActivate` call renamed so the spread
+check itself would miss a bare-onClick regression, a competing `onClick=`
+added back in, and `aria-checked` detached from the class — each done once
+per group), all failing by exactly the expected check name, file restored
+byte-identical between each and confirmed with `cmp`.
+
+**A comment collision worth recording, in the family Tick 28 named
+"comment-contamination."** Adding this fix's own explanatory comment — quoting
+the literal phrase `<div onClick>` the way Tick 28's comment does — turned
+`test_the_hire_board_can_be_worked_without_a_mouse.py`'s decoy check red, with
+no code-behavior change at all. Cause: that test's `strip_comments` tracks
+quote state with one variable across the *entire file*, and the file already
+carries a genuine, pre-existing quote/backtick imbalance in an unrelated
+comment (confirmed on the untouched `chore/oss-reduction` copy — the same
+scanner ends the whole file with an unclosed `"`). It happens to land
+harmlessly today because nothing sits in the poisoned span; adding any text
+anywhere in the file can move that span and swallow it instead. Fixed on my
+side by not repeating the literal decoy phrase in the new comment — the
+underlying imbalance is pre-existing, shared across at least two test files,
+and out of scope for a keyboard-accessibility fix. Left for whoever next
+touches either `strip_comments` copy: a real tokenizer, or at minimum
+resetting `quote` at each line boundary, would stop the file-wide poisoning.
+
+**Provenance.** Found and fixed by one of five agents dispatched in parallel
+this tick to hunt for beta-blocking bugs across distinct areas of the app.
+Its worktree hit the same `moc`/`M0219` compile mismatch two other agents
+independently hit this tick, and correctly judged it pre-existing and out of
+scope; re-run during integration, `test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+passes clean on this tree — the mismatch was specific to that worktree's own
+toolchain state.
+
+**Suite: 354/354, zero failures.**
