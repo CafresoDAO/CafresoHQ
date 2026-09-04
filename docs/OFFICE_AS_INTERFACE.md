@@ -31421,3 +31421,93 @@ the harness, not a claim about this change, which touches nothing that suite
 reads. This change covers only `hq-runtime.jsx`, the one new test file, and
 this entry; `src/cafresohq_state/main.mo` was never staged or edited, and no
 dfx/IC action of any kind was run.
+
+---
+
+## 258. A dot in the title was read as a file type
+
+**The wreck.** `PUT /vault/note?path=Research/Meeting 2026.08.30` answers
+`200 {"path": "...", "size": 61}`. The note is on disk. And the Library
+cannot open it, and search cannot find a word of it.
+
+`_vault_resolve` supplies the `.md` default only when the path has no
+suffix — the arm that keeps `Sites/<slug>.html` from landing as
+`Sites/<slug>.html.md` (#3.6's one deliverable format). But
+`PurePosixPath.suffix` is not "the file's type"; it is "everything after the
+last dot in the final segment", and a note TITLE is full of dots that were
+never extensions:
+
+| title the coworker wrote | `.suffix` | filed on disk as |
+|---|---|---|
+| `Research/Meeting 2026.08.30` | `.30` | `Meeting 2026.08.30` |
+| `Plans/Q3 v1.2 plan` | `.2 plan` | `Q3 v1.2 plan` |
+| `Roadmap v2.1` | `.1` | `Roadmap v2.1` |
+
+Every one of those is extensionless as far as the office is concerned, and
+`_VAULT_TEXT_EXT` is the ONE set that three doors read. So:
+
+* `/vault/list` returns the row with `isBinary: true` — `_vault_entry`
+  decides that flag from exactly this set — and `views/vault.jsx` sends an
+  `isBinary` row to the DOWNLOAD door. The editor that wrote the note two
+  seconds ago will not reopen it.
+* `/vault/search` takes the name-only arm, the one written for decks and
+  PDFs: *"A deck's bytes can't be read, but its NAME can be."* The note's
+  body is never read, so "warehouse lease" does not find the note that says
+  `renegotiate the warehouse lease before October`. `VAULT_SEARCH` cannot
+  find what `VAULT_NEW` just wrote.
+
+The write door said 200 through all of it. This is the path a coworker's
+`VAULT_NEW`/`VAULT_APPEND` and the whole night shift take — `night_runner`
+hands the model's own chosen title straight to this door — and dated or
+versioned titles are most of what a research mission writes. The UI's own
+`newNote` was never exposed: it appends `.md` itself before the buffer opens
+(`path.endsWith('.md') ? path : path + '.md'`), which is exactly why this
+sat unseen — the one caller a human drives is the one caller that guards it.
+
+**The fix.** A suffix counts as a file type only when it is SHAPED like one:
+`\.(?=[^.]*[A-Za-z])[A-Za-z0-9]{1,8}` — one to eight alphanumerics carrying
+at least one letter. The pattern is inline rather than a module constant on
+purpose: `scripts/test_a_folder_moves_as_one_drawer.py` lifts
+`_vault_resolve` out of this file by name with `ast` and `exec`s it against a
+namespace it builds itself, so a global this function reaches for is a
+`NameError` there, not a compile error here. Every real extension passes
+unchanged — `.md`, `.html`, `.pptx`, `.7z`, `.markdown`, `.PDF`. A version
+number (`.2`), a date fragment (`.30`, `.2026`) and anything holding a space
+(`.2 plan`) do not, and take the `.md` default like any other bare slug.
+
+The second arm is for notes ALREADY filed the old way. Their real on-disk
+path is what `/vault/list` shows the boss, so appending `.md` to it now would
+404 a file sitting in plain sight — the fix would have broken the exact notes
+the bug created. `and not (root / rel).is_file()`: what already exists is
+read and written at the name it actually has; only a name that is not on
+disk gets the default.
+
+**The proof.**
+`scripts/test_a_dot_in_the_title_is_not_a_file_type.py` boots a real
+`serve.py` over a temp Library and drives the doors end to end: the dated
+title must land as `Meeting 2026.08.30.md`, come back from `/vault/list` with
+`isBinary: false`, reopen through `/vault/note`, and be found by
+`/vault/search` **by its body**, not its name. The spaced version fragment
+gets the same treatment. Then the other direction: `.html` must not become
+`.html.md`, `.md` stays `.md`, a bare slug still gets the default, and a note
+pre-seeded on disk as `Legacy/Report v3.1` must both appear in the list and
+open at that exact path.
+
+Fire-tested: copied the fixed `serve.py` to `/tmp`, reverted the two-arm
+condition in place with the editor (never `git checkout -- <file>`) back to
+`if not pathlib.PurePosixPath(rel).suffix:` — 4 checks failed, exit 1,
+including the list row coming back `None` for the `.md` path and search
+returning `[]`. Restored from the `/tmp` copy, confirmed byte-identical by
+`md5` (`a7057fef729480a80b8a4b885287f4d8`), reran — all 11 checks passed,
+exit 0.
+
+`npm run build` run once up front so `dist-ui/manifest.json` exists in a
+fresh worktree; no `.jsx`/`.js` file was changed by this entry.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the `moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on
+a file a foreign session owns and this change never touches). This change
+covers only `serve.py`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, and no dfx/IC
+action of any kind was run.

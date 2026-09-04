@@ -1232,7 +1232,33 @@ def _vault_resolve(rel: str) -> pathlib.Path:
     # else, and the server's own /vault/search (`root.rglob('*.md')`) could
     # never find it either. `.suffix` only sees the FINAL path segment, so a
     # dotted folder name earlier in the path (`v1.2/notes`) is untouched.
-    if not pathlib.PurePosixPath(rel).suffix:
+    #
+    # But `.suffix` is not "the file's type" — it is "everything after the
+    # last dot", and a note TITLE carries dots that were never an extension.
+    # `Q3 v1.2 plan` has suffix '.2 plan'; `Meeting 2026.08.30` has '.30'.
+    # Both were read as real extensions, so both were filed with NO '.md' at
+    # all — and an extensionless file is not in _VAULT_TEXT_EXT, which is the
+    # one set /vault/list, /vault/search and /vault/file all read. The note
+    # came back from /vault/list flagged `isBinary: true` (the Library sends
+    # it to the download door instead of the editor that just wrote it), and
+    # /vault/search skipped its BODY entirely — name-only scoring, the arm
+    # meant for decks and PDFs. A coworker's VAULT_NEW on a dated or
+    # versioned title, which is most of them, filed a note the office could
+    # neither open nor search. So a suffix only counts as a file type when it
+    # is SHAPED like one: 1-8 alphanumerics with at least one letter. Every
+    # real extension qualifies ('.md', '.html', '.pptx', '.7z'); a version
+    # number, a date fragment and anything carrying a space do not. (The
+    # pattern is inline, not a module constant, because the drawer-move suite
+    # lifts this function out of the file by name with `ast` and executes it
+    # against a namespace of its own — a global it can't see is a NameError.)
+    #
+    # The `is_file()` arm is for notes ALREADY filed the old way: their real
+    # on-disk path is what /vault/list shows the boss, and appending '.md' to
+    # it now would 404 a file plainly sitting in the list. What exists is
+    # read and written as-is; only a name that isn't on disk gets the default.
+    if not re.fullmatch(r'\.(?=[^.]*[A-Za-z])[A-Za-z0-9]{1,8}',
+                        pathlib.PurePosixPath(rel).suffix) \
+            and not (root / rel).is_file():
         rel += '.md'
     candidate = (root / rel).resolve()
     # Reject anything outside the vault directory.
