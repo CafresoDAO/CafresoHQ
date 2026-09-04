@@ -1042,7 +1042,25 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
     setPhase('summarizing');
     let buf = '';
     const transcript = finished.map(f => `${f.name} (${f.role}):\n${f.text}`).join('\n\n');
-    const sumTimeout = setTimeout(() => controller.abort(), STANDUP_TIMEOUT_MS);
+    /* The per-agent loop above keeps the boss's STOP and the watchdog on
+       SEPARATE controllers precisely so it can tell "…(stopped)" from
+       "…(timed out)". The closing summary hung its watchdog on the SAME
+       controller the STOP button aborts, so `controller.signal.aborted` in
+       the catch below could no longer say which of the two happened — and
+       it answered "stopped" for both. A local model that took over 90s to
+       synthesise was recorded, on screen and in the filed record, as the
+       boss having stopped their own stand-up: the subtitle read "reports in
+       — no closing summary", the hint read "you stopped this before the
+       summary", `fullText()` wrote the heading "## Synthesis — stopped
+       part-way" over "You stopped the stand-up before CafresoHQ finished
+       the closing summary", and `archive()` filed a DONE task whose card
+       face said "you stopped it before the summary." — a task board
+       claiming an act the boss never performed, read back days later with
+       no way to check. This flag is the same distinction the loop above
+       already draws, and the timeout gets its own honest clause instead of
+       borrowing the boss's. */
+    let sumTimedOut = false;
+    const sumTimeout = setTimeout(() => { sumTimedOut = true; controller.abort(); }, STANDUP_TIMEOUT_MS);
     try {
       await HQ.ceoStream(
         `End-of-day stand-up reports:\n\n${transcript}\n\nSynthesize this in 2 sentences and call out the single most important next action for the boss.`,
@@ -1054,9 +1072,13 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
       const cleanedSummary = HQ.cleanHarmony(HQ.visibleReply(buf, 'CafresoHQ'));
       if (cleanedSummary && cleanedSummary !== buf) setSummary(cleanedSummary);
     } catch (err) {
-      const stopped = controller.signal.aborted;
+      const stopped = controller.signal.aborted && !sumTimedOut;
       // Same raw-dump bug as the per-agent reports above, one function down.
-      const snag = snagSentence(err && err.message || String(err));
+      // A watchdog abort is not an exception worth quoting either — the
+      // thrown AbortError says nothing about the 90s that actually elapsed.
+      const snag = sumTimedOut
+        ? `CafresoHQ ran out of time — the closing summary took longer than ${(STANDUP_TIMEOUT_MS/1000)|0}s`
+        : snagSentence(err && err.message || String(err));
       setSummary(stopped ? (buf + ' …(stopped)') : `⚠ ${snag}`);
       /* The screen shows the ⚠ and the boss sees it; the ARCHIVE does not
          get to forget it. Everything downstream of here — the heading in

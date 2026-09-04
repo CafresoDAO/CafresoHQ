@@ -31511,3 +31511,99 @@ a file a foreign session owns and this change never touches). This change
 covers only `serve.py`, the one new test file, and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, and no dfx/IC
 action of any kind was run.
+
+## 259. A stand-up that timed out was filed as "you stopped it"
+
+**The wreck.** Run the end-of-day stand-up with a coworker on a local brain.
+Every report comes in. Then CafresoHQ's closing synthesis takes longer than
+ninety seconds, the watchdog fires, and the office writes this down:
+
+* the modal's subtitle — `reports in — no closing summary`
+* the footer hint — `you stopped this before the summary — RE-RUN for a
+  full one, or ARCHIVE the reports as they are`
+* `fullText()` — the heading `## Synthesis — stopped part-way` over
+  *"You stopped the stand-up before CafresoHQ finished the closing
+  summary."*
+* `archive()` — a DONE task on the board whose card face reads
+  `End-of-day team stand-up — 3 of 3 reported; you stopped it before the
+  summary.`
+
+The boss did not touch ■ STOP. The last two of those outlive the modal: the
+office filed a permanent record asserting an act its owner never performed,
+indistinguishable a week later from a run they really did stop — while the
+one fact that would have changed what they do next (the brain never answered
+in time, so RE-RUN will probably hang the same way) appears nowhere on it.
+
+`StandupModal`'s per-agent loop, forty lines up in the same function, gets
+this exactly right and says so out loud:
+
+```js
+const userStopped = controller.signal.aborted;
+const timedOut = !userStopped && perAgent.signal.aborted;
+```
+
+It can tell them apart because each turn's watchdog owns a SEPARATE
+`perAgent` controller. The closing-summary pass below it hung its watchdog on
+the same `controller` the STOP button aborts —
+
+```js
+const sumTimeout = setTimeout(() => controller.abort(), STANDUP_TIMEOUT_MS);
+...
+catch (err) { const stopped = controller.signal.aborted;
+```
+
+— so after the abort there was no longer anything on the wire that said which
+of the two had happened, and `stopped` answered *"the boss"* for both. Four
+surfaces then read that single flag, and the two that persist are the two
+that speak with the most authority. Recurring shape (2) in this ledger: the
+right rule written once, and the sibling path fifty lines away that never
+inherited it.
+
+**The fix.** A `sumTimedOut` flag the watchdog sets before it aborts, which
+is the same distinction the per-agent loop already draws, done with a boolean
+instead of a second controller because the summary pass has exactly one call
+to protect:
+
+```js
+let sumTimedOut = false;
+const sumTimeout = setTimeout(() => { sumTimedOut = true; controller.abort(); }, STANDUP_TIMEOUT_MS);
+...
+const stopped = controller.signal.aborted && !sumTimedOut;
+```
+
+The timeout also stops borrowing the boss's sentence. `snagSentence()` of the
+thrown `AbortError` says nothing about the ninety seconds that actually
+elapsed, so the clause is written where the failure happens — *"CafresoHQ ran
+out of time — the closing summary took longer than 90s"* — and rides
+`summaryFail` into `fullText()`'s existing `## Synthesis — not written`
+branch, which already knows how to punctuate a clause and say what the record
+IS. Nothing downstream changed: the heading, the card face and the hint all
+still key off `summaryFail === 'stopped'`, and that value now means only what
+it says.
+
+**The proof.**
+`scripts/test_standup_summary_timeout_is_not_blamed_on_the_boss.py` reads the
+closing-summary pass out of `features.jsx` and holds it to the rule its own
+sibling loop follows: the watchdog must record that it fired, `stopped` must
+exclude that case, and a timed-out summary must carry its own reason. It also
+pins the three surfaces downstream to `summaryFail === 'stopped'`, so the fix
+cannot be faked by rewording the record instead of fixing the flag, and
+checks the per-agent loop it borrows from is still intact.
+
+Fire-tested: copied the fixed `features.jsx` to `/tmp`, reverted both hunks in
+place with the editor (never `git checkout -- <file>`) — 3 checks failed, exit
+1, reporting `watchdog body: () => controller.abort()` and `stopped =
+controller.signal.aborted`. Restored from the `/tmp` copy, confirmed
+byte-identical by `md5` (`27c3cf090f9f02da28a62ccbbe101b3a`), reran — all 10
+checks passed, exit 0.
+
+`npm run build` run once up front so `dist-ui/manifest.json` exists in a fresh
+worktree, and again after the `.jsx` edit.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file
+a foreign session owns and this change never touches). This change covers only
+`features.jsx`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, and no dfx/IC action
+of any kind was run.
