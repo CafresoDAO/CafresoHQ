@@ -31944,3 +31944,80 @@ covers only `claude-client.jsx`, the one new test file, and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any
 kind was run.
+
+## 264. The one door that read `cwd` still measured from the server's desk
+
+**The wreck.** A coworker is working in the `docs` project. It emits
+`[FILE_WRITE: marker.txt]` with the project's `cwd`, gets a 200, and the file
+is not in `docs`. It is in the workspace root. The next `[FILE_READ:
+marker.txt]` in that same project reads a *different* file, and a
+`[DIR_LIST]` of the project answers with the workspace's top level —
+confidently, no error, no warning, no hint in the result text that anything
+was substituted.
+
+`_workspace_path` exists in `serve.py` for exactly one reason, spelled out in
+its own docstring: a **relative** path must anchor to the workspace
+root (`CAFRESOHQ_ALLOWED_DIRS[0]`), never to wherever `serve.py` happens to
+have been started. One string, one directory. Every `/fs` route goes through
+it. `_tool_exec`'s `_resolve_arg` goes through it, via `_validate_path`.
+
+The `cwd` that `_resolve_arg` anchors *to* did not:
+
+```python
+cwd_p = pathlib.Path(_client_path(req_cwd)).resolve()
+```
+
+That is the server process's cwd — the repo. So `cwd='docs'` resolved to
+`<repo>/docs`. `is_dir()` said yes (the repo really does have a `docs/`), and
+then the allowlist loop below it tried `cwd_p.relative_to(<workspace>)`,
+got `ValueError` on every entry, matched nothing, and **fell out of the loop
+leaving `tool_cwd` at its default** — the workspace root. The request then
+proceeded as though a cwd had never been sent. The whitelist did its job:
+nothing escaped the workspace. What it did not do was say anything. A caller
+that named a folder got a 200 for work done somewhere else.
+
+The two ways it lands are the same silence:
+
+| `cwd` sent | resolves to | in allowlist? | where the write went |
+|---|---|---|---|
+| `docs` (exists in the repo) | `<repo>/docs` | no → loop matches nothing | `<workspace>/marker.txt` |
+| `proj` (exists only in the workspace) | `<repo>/proj` | `is_dir()` false | `<workspace>/marker.txt` |
+
+**The fix.** One expression — `_workspace_path(req_cwd).resolve()`. It
+already applies `_client_path`, and it already skips anchoring in local mode
+with no explicit `CAFRESOHQ_ALLOWED_DIRS`, so development on `~` keeps the
+server-cwd behaviour it has always had. Absolute cwds are untouched: pathlib
+discards the anchor when the right side is absolute. And this only *anchors*
+— the allowlist loop underneath is unchanged, so an out-of-allowlist cwd is
+still refused exactly as before.
+
+**The proof.**
+`scripts/test_tool_exec_relative_cwd_anchors_to_the_workspace.py` boots the
+real `serve.py` from the repo root with `CAFRESOHQ_ALLOWED_DIRS` pointed at a
+temp workspace, and uses `docs` as the relative cwd deliberately — a name
+that exists in *both* trees, so the old resolve found a real directory and
+still threw the request at the wrong one. 9 checks: the write lands in
+`<workspace>/docs/`, nothing appears at the workspace root, the server's own
+repo is untouched, a `FILE_READ` of the same relative pair reads that same
+file back, `DIR_LIST` lists the project rather than the root — plus the two
+regressions, an absolute in-allowlist cwd still working and an
+out-of-allowlist absolute cwd still refused the anchor.
+
+Fire-tested: copied the fixed `serve.py` to `/tmp`, reverted the expression
+in place with the editor (never `git checkout -- <file>`) — 4 of 9 checks
+failed, exit 1, with the result line reading `Wrote 22 chars →
+<workspace>/marker.txt` and the `DIR_LIST` answering `docs/ proj/
+marker.txt`. Restored from the `/tmp` copy, confirmed byte-identical by `md5`
+(`5ad16e0f476488611df7777451fa9190`), reran — 9 of 9 passed, exit 0.
+
+`npm run build` was run once up front so `dist-ui/manifest.json` exists in a
+fresh worktree.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the `moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on
+a file a foreign session owns and this change never touches). This change
+covers only `serve.py`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any
+kind was run.

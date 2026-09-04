@@ -2870,7 +2870,25 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         tool_cwd = _cafresohq_allowed_dirs[0] if _cafresohq_allowed_dirs else os.getcwd()
         if req_cwd:
             try:
-                cwd_p = pathlib.Path(_client_path(req_cwd)).resolve()
+                # _workspace_path, not a bare Path: a RELATIVE cwd must anchor
+                # to the workspace root, the same anchor _resolve_arg and every
+                # /fs route already use. Resolving it against the server
+                # process's own cwd made one string mean two directories again
+                # — the exact split _workspace_path was written to close, in
+                # the one door that reads `cwd`. Measured with
+                # CAFRESOHQ_ALLOWED_DIRS=<workspace> and serve.py started from
+                # the repo: FILE_WRITE arg='marker.txt' cwd='docs' resolved
+                # 'docs' to <repo>/docs, which is outside the allowlist, so the
+                # loop below matched nothing, tool_cwd silently stayed at the
+                # workspace ROOT, and the file landed in <workspace>/marker.txt
+                # — not in the project folder the caller named, with a 200 and
+                # a result line pointing somewhere nobody asked for. Same for
+                # DIR_LIST/FILE_READ: they read the wrong directory and answer
+                # confidently. Absolute cwds are unaffected (pathlib discards
+                # the anchor), and local mode with no explicit allowlist keeps
+                # its old server-cwd behaviour because _workspace_path skips
+                # anchoring there.
+                cwd_p = _workspace_path(req_cwd).resolve()
                 if cwd_p.is_dir():
                     if not _ALLOWED_DIRS_EXPLICIT and _RUNTIME_ENV == 'local':
                         tool_cwd = str(cwd_p)  # local default: trust any existing dir
