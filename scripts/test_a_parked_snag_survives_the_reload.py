@@ -37,6 +37,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 APP = ROOT / 'app.jsx'
+WORKLOG = ROOT / 'app' / 'worklog.jsx'
 FAILS = []
 
 STAMP = 'the run stopped when the page reloaded — start it again when you want it'
@@ -74,7 +75,16 @@ def main():
         print('a parked snag: 1 FAILED — the reload scrub is still one statement')
         return 1
 
+    # #229 routed the scrub through applyStatus (it clears startedAt on the
+    # way out of doing, same as every other exit) — so applyStatus has to
+    # exist for the real statement to run at all now. Lift the real
+    # app/worklog.jsx body alongside it rather than stubbing the call away.
+    wl = WORKLOG.read_text(encoding='utf-8')
+    wl_body = '\n'.join(ln for ln in wl.split('\n')
+                        if not ln.startswith('import ') and not ln.startswith('export '))
+
     R = run("""
+%s
 const React = { useCallback: (f) => f };
 %s
 const R = {};
@@ -87,7 +97,7 @@ R.done    = tasksOnLoad([{ id:'t5', status:'done' }])[0];
 R.nulls   = tasksOnLoad([null, { id:'t6', status:'doing' }]);
 R.notArr  = tasksOnLoad('not an array');
 console.log(JSON.stringify(R));
-""" % scrub.group(0))
+""" % (wl_body, scrub.group(0)))
 
     check('a run the reload really killed still goes back to the inbox',
           R['midRun'].get('status') == 'inbox'

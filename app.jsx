@@ -910,10 +910,20 @@ function App() {
      settle's own "nothing came back from this run" — two contradictory
      stories about a single run, on the surface that exists to say what
      actually happened. Falsy check on purpose: the field is cleared to ''
-     rather than deleted, the same convention worklogLine relies on. */
+     rather than deleted, the same convention worklogLine relies on.
+
+     Routed through `applyStatus` rather than a raw `{ ...t, status:
+     'inbox' }` — every other place that leaves `doing` does, and this is
+     the one that didn't, so `startedAt` rode along uncleared. Restart the
+     same task later (any of the many `applyStatus(t, 'doing')` sites) and
+     `if (!next.startedAt)` sees the stale stamp from the run the reload
+     killed and refuses to set a fresh one, so a coworker who picked the
+     card up ten seconds ago reads "on it" for however long it had been
+     sitting before the reload — the exact stale-age worklogLine's own
+     comment says a re-open must not inherit. */
   const tasksOnLoad = React.useCallback((xs) => (Array.isArray(xs) ? xs : [])
     .map(t => t && t.status === 'doing' && !t.blockedReason
-      ? { ...t, status: 'inbox', stalledNote: 'the run stopped when the page reloaded — start it again when you want it' }
+      ? { ...applyStatus(t, 'inbox'), stalledNote: 'the run stopped when the page reloaded — start it again when you want it' }
       : t), []);
   const [tasks, setTasks] = useFileStored(k('tasks'), 'state', 'tasks', SEED_TASKS, tasksOnLoad);
   /* Experience ledger (OFFICE_AS_INTERFACE §5) — append-only job history,

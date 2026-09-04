@@ -29397,3 +29397,63 @@ touches). This change covers only the one guarded branch in
 `useFileStored()` in `app/storage.jsx`, the one new test file, and this
 entry; `src/cafresohq_state/main.mo` was never staged or edited, and no
 dfx/IC action of any kind was run.
+
+---
+
+## 233. A reloaded run haunted the one that replaced it
+
+**The reading.** Assigned area: `app/worklog.jsx` — the task-card worklog
+helpers (`applyStatus`, `worklogLine`, `isStalled`, `sittingFor`, `isParked`,
+`cardNote`, `finishedLabel`). The file's own comment names the invariant it
+exists to enforce: "there are seven sites that write a task status, and an
+invariant enforced at six of them is not one." `applyStatus` had already been
+taught (by an earlier fix) to own `startedAt`/`completedAt`/`completedBy`
+centrally rather than at each call site — stamp on the way in, only when
+absent; clear on the way out, unconditionally — so every caller that routes
+a status change through it gets the invariant for free.
+
+**The bug.** `app.jsx`'s `tasksOnLoad` — the load-time scrub that sends any
+task still `doing` at page-refresh back to `inbox` (a run that died with the
+last tab, nothing streaming for it) — was the seventh site, and it never
+called `applyStatus`. It wrote `{ ...t, status: 'inbox', stalledNote: '…' }`
+directly, so `startedAt` rode along on the trip back to `inbox` untouched.
+Reproduced: start a task at T0, reload three hours later while it's still
+`doing` (a dead run) — the scrub sends it to `inbox`, `startedAt` still reads
+T0. Pick the same task back up a minute later through any of the many real
+`applyStatus(t, 'doing')` sites in `app.jsx` — `applyStatus` only stamps
+`startedAt` "when absent" (the whole point: a mid-run reassignment must not
+restart the clock), and here it is very much present, just wrong. A coworker
+who picked the card up ten seconds ago read `worklogLine` as `on it · 3h 2m`
+— the exact "stale age from a previous life" the invariant's own comment says
+a re-open must never carry, on the one surface built to answer "is anyone
+actually on this."
+
+**The fix.** `tasksOnLoad` now writes `{ ...applyStatus(t, 'inbox'), … }`
+instead of the raw spread — the same one-line pattern every other exit from
+`doing` already uses, no new logic invented.
+
+**The proof.**
+`scripts/test_reload_scrub_clears_started_at.py` paren-matches the real
+arrow function passed to `React.useCallback` out of `app.jsx` (rather than
+pattern-matching it from a distance) and runs it, concatenated with the real
+`app/worklog.jsx` body, in a node harness. It scrubs a three-hour-old
+`doing` task, asserts `startedAt` is gone after the scrub, restarts it a
+minute later through the real `applyStatus`, and asserts the new stamp is
+the restart time — not T0 — and that `worklogLine` reads `on it · 1m`, not
+`on it · 3h 2m`.
+
+Fire-tested: copied the fixed `app.jsx` to `/tmp`, reverted the one line in
+place back to the raw spread (never `git checkout -- <file>`) — three of the
+four checks failed, reporting `on it · 3h 2m` for a card started a minute
+earlier, exit 1. Restored from the `/tmp` copy, confirmed byte-identical by
+`md5`, reran — all four checks passed, exit 0.
+
+`npm run build` run after the `app.jsx` change — 8 assets built clean.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the same `moc`/M0219 `main.mo` toolchain mismatch tracked in `#188` through
+`#228`, on a file a foreign session owns and this change never touches).
+This change covers only the `tasksOnLoad` scrub in `app.jsx`, the one new
+test file, and this entry; `src/cafresohq_state/main.mo` was never staged or
+edited, and no dfx/IC action of any kind was run.
