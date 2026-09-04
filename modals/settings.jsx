@@ -808,6 +808,23 @@ function IcpServicesPanel({ agents }) {
     if (!ok) return;
     if (available) {
       try { await chain().wallet.pauseAll(true); setPausedAll(true); } catch (_e) { /* best-effort */ }
+      /* `wallet.pauseAll` is NOT enough to make the third bullet true.
+         It sets `allSpendPaused`, which only `recordSpend` reads — the
+         gate on AGENT-INITIATED sends. The payroll timer in
+         cafresohq_state (`scanPayroll` / `processDue` / `runPayrollNow`)
+         checks `isPayrollPaused` and nothing else, and its own setter is
+         commented "independent of setAllSpendPaused". So a boss who
+         turned Money off kept a scheduled salary moving real ICP out of
+         their signed allowance on every period — with the whole money UI
+         hidden, the payout log unreachable, and ⏸ PAUSE PAYROLL (the one
+         control that does stop it) rendered only when money is back ON.
+         The dialog promised it had stopped. Stop it. */
+      try { await chain().payroll.pause(true); }
+      catch (e) {
+        setErr('the scheduled payroll timer is still running on-chain — turn '
+          + 'Money back on and press ⏸ PAUSE PAYROLL — '
+          + cleanCause(e && e.message ? e.message : e));
+      }
     }
     CafresoHQClient.setSettings({ moneyEnabled: false });
     setMoneyOn(false);

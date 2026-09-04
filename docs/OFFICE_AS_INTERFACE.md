@@ -29832,3 +29832,72 @@ This change covers only `handleGenerateChild`/`pathTaken` in
 `agent_runner.jsx`, the one new test file, and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, and no dfx/IC
 action of any kind was run.
+
+---
+
+## 240. Turning Money off promised payroll had stopped; the timer kept paying
+
+**The reading.** Assigned area: `modals/settings.jsx` — Settings → MODULES →
+💰 **Money & Payments**, the master switch (`IcpServicesPanel.toggleMoney`).
+Switching it off pops a confirm dialog that makes three promises in the
+boss's own words: all agent spending is paused immediately, balances are not
+deleted, and **"Scheduled payroll stops running."** What the off-path
+actually did on the chain was one call — `chain().wallet.pauseAll(true)`,
+best-effort, errors swallowed. That lands on `setAllSpendPaused` in
+`src/cafresohq_state/main.mo`, a flag read in exactly one place:
+`recordSpend`, the rolling-cap gate the browser calls before signing an
+*agent-initiated* transfer. It has nothing to do with payroll, and the
+canister says so itself, in the comment directly above the other setter —
+`/// Per-user payroll kill switch (independent of setAllSpendPaused).` The
+timer path proves it three times over: `scanPayroll` skips a user only
+`if (not isPayrollPaused(user))`, `processDue` re-validates on
+`isPayrollPaused` alone (twice, once again after the balance await), and
+`runPayrollNow` returns `"paused"` only for `isPayrollPaused`. None of them
+ever consults `isAllPaused`/`allSpendPaused`.
+
+So the third bullet was false, and false in the direction that costs money.
+A boss with a standing salary who turned Money off kept an on-chain timer
+transferring real ICP into agent subaccounts out of the allowance they had
+personally signed, once per period, indefinitely — and could neither see it
+nor stop it, because `moneyOn` gates the entire 💰 AGENT WALLETS panel: the
+payout log, the allowance readout, and ⏸ PAUSE PAYROLL — the only control
+that sets the flag the timer actually reads — all render only while money is
+ON. The switch that was supposed to stop payroll was also the switch that
+hid the button that stops payroll.
+
+**The fix.** The off-path now also calls `chain().payroll.pause(true)`.
+Unlike the spend pause beside it, a failure here is *surfaced* rather than
+swallowed — through the panel's existing `err` line, which renders on
+MODULES, a panel that stays visible with money off — and the message names
+⏸ PAUSE PAYROLL and says to turn Money back on to reach it. Nothing else in
+the app blocks this one, so silence here would leave real money moving. Off
+→ on deliberately does not un-pause payroll: that is fail-closed, visible
+(the button reads ▶ RESUME PAYROLL), and reversible in one click.
+
+**The proof.**
+`scripts/test_turning_money_off_actually_stops_payroll.py` reads both halves
+of the contract out of the real sources. It brace-balance-extracts
+`toggleMoney` from `modals/settings.jsx`, splits out the turn-OFF branch, and
+pins that the dialog still makes the payroll promise; then it
+brace-balance-extracts `scanPayroll`, `processDue` and `runPayrollNow` from
+`src/cafresohq_state/main.mo` and asserts each gates on `isPayrollPaused` and
+never on `isAllPaused`/`allSpendPaused` — i.e. that `wallet.pauseAll` alone
+*cannot* keep the promise. Finally it asserts the off-path calls both
+`wallet.pauseAll(true)` and `payroll.pause(true)`, and that a failed payroll
+pause reaches `setErr` naming PAUSE PAYROLL instead of vanishing.
+
+Fire-tested: copied the fixed `modals/settings.jsx` to `/tmp`, reverted the
+`payroll.pause(true)` call in place with the editor (never
+`git checkout -- <file>`) — 2 checks failed, exit 1. Restored from the `/tmp`
+copy, confirmed byte-identical by `md5` (`fa408187869b196fe39a4dc698de4071`),
+reran — all 18 checks passed, exit 0.
+
+`npm run build` run after the change.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the same `moc`/M0219 `main.mo` toolchain mismatch tracked in `#188` through
+`#238`, on a file a foreign session owns and this change never touches).
+This change covers only `toggleMoney` in `modals/settings.jsx`, the one new
+test file, and this entry; `src/cafresohq_state/main.mo` was read but never
+edited or staged, and no dfx/IC action of any kind was run.
