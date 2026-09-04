@@ -89,9 +89,37 @@ function ApiTab() {
       .then(r => { if (r && r.configured && HBACKENDS[r.provider]) setHBackend(r.provider); })
       .catch(() => {});
   }, []);
-  const changeBackend = (prov) => {
-    if (!HBACKENDS[prov]) return;
+  /* Picking a backend has to APPLY it. This used to write the local
+     preference and stop, so the only thing that ever reached the gateway was
+     the key field's onBlur — and `saveKey` returns early when the pasted
+     value equals the saved one, which is exactly the case for a backend whose
+     key is already on file. Switching OpenRouter → Gemini therefore looked
+     applied (the select moved, the note under it changed to Gemini's quota,
+     no error anywhere) while the office kept running OpenRouter — kept
+     burning the 50/day cap the boss picked Gemini to escape.
+     `hermesEnsureProvider` cannot converge it either: it only re-pushes when
+     the container reports NO key at all, and this container has one. On the
+     next reload `hermesGetProvider` snaps the select back to openrouter and
+     the switch is simply gone, with nothing having ever said so. Local
+     backends already had this — saveLocalBackend pushes on the URL blur; this
+     is the cloud half of the same act. */
+  const changeBackend = async (prov) => {
+    const meta = HBACKENDS[prov];
+    if (!meta || prov === hBackend) return;
     setHBackend(prov); update({ hermesBackend: prov });
+    if (meta.local || !C || !C.hermesSetProvider) return;
+    const key = (s[meta.field] || '').trim();
+    /* No key on file: the key field below is the only door, and it is about
+       to render empty with this provider's placeholder. Saying nothing here
+       is honest — pasting a key is what applies the switch. */
+    if (!key) { setProbeResult(null); return; }
+    setKeyBusy(true); setProbeResult(null);
+    try {
+      const r = await C.hermesSetProvider(prov, key, '');
+      if (r && r.serverStored) setProbeResult({ ok: true, detail: `${meta.label} applied · gateway reloading (~15s)` });
+      else setProbeResult({ ok: false, detail: (r && r.detail) || 'switched here only — your office is still on the old brain' });
+    } catch (e) { setProbeResult({ ok: false, detail: e.message }); }
+    finally { setKeyBusy(false); }
   };
   const saveKey = async (prov, val) => {
     const meta = HBACKENDS[prov]; if (!meta) return;

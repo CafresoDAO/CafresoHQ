@@ -32127,3 +32127,98 @@ covers only `app/commands.jsx`, the one prop hand-off in `app.jsx`, the new
 test file, and this entry; `src/cafresohq_state/main.mo` was never staged or
 edited, no II or `derivationOrigin` value was read or written, and no dfx/IC
 action of any kind was run.
+
+---
+
+## 267. Picking a new brain for the office only moved the dropdown
+
+Settings → Connections has a select labelled **Hermes brain (runs in your
+office)** — OpenRouter, Google Gemini, Groq, LM Studio, Ollama. It is the
+control that decides which LLM runs every agent, every night shift and the
+search worker. Its whole handler, in `modals/providers.jsx`, was:
+
+```js
+const changeBackend = (prov) => {
+  if (!HBACKENDS[prov]) return;
+  setHBackend(prov); update({ hermesBackend: prov });
+};
+```
+
+A browser preference, and nothing else. The only code in this file that ever
+told the container to switch was the API-key field's `onBlur` → `saveKey`,
+which opens with
+
+```js
+if (val === (s[meta.field] || '')) return;
+```
+
+and that guard is the trap. The key field renders the saved key as its
+`defaultValue`, so for a backend whose key is already on file there is no
+value the boss can leave in that box that `saveKey` will act on. The two
+paths that could apply the switch each declined: one because it was never
+written to, one because it was told nothing had changed.
+
+**What that looks like from the boss's chair.** They are on OpenRouter,
+hitting the `:free` tier's 50 requests/day. They have a Gemini key saved from
+earlier. They open Connections and pick **Google Gemini (most reliable free)**
+— exactly the move the option's own note (`~15/min · 1500/day`) invites. The
+select moves. The sub-line under it changes to Gemini's quota. No error
+appears. Neither does the `gateway reloading (~15s)` line that a real apply
+prints, but its absence is not a message. The office goes on running
+OpenRouter and goes on hitting the cap they switched to escape.
+
+`hermesEnsureProvider` is not a safety net here: it re-pushes only when
+`hermesGetProvider` answers `configured: false`, and this container is
+configured — with the old provider. And the mount effect that reads the same
+endpoint (`if (r.configured && HBACKENDS[r.provider]) setHBackend(r.provider)`)
+snaps the select back to OpenRouter on the next reload, so the switch
+disappears as quietly as it failed. §7: the office said yes and did nothing.
+
+The local half of this same select never had the defect — LM Studio and
+Ollama go through `saveLocalBackend`, which pushes on the URL blur. This is
+the cloud half of the act that was already being performed for local
+hardware.
+
+**The fix.** `changeBackend` applies a cloud backend that has a key on file,
+and reports it with the same "applied · gateway reloading (~15s)" line the key
+path prints. When the container refuses or is unreachable it says the office
+is still on the old brain rather than falling silent. A backend with **no**
+saved key pushes nothing — the server rejects an empty key by regex
+(`invalid Groq key`), and the field that is about to render empty below is the
+only door that can help; it clears any stale success line instead of leaving
+one standing over a switch that has not happened. Local backends still belong
+to `saveLocalBackend`, and re-picking the backend already selected is a no-op
+rather than a gratuitous 15-second gateway restart.
+
+**The proof.**
+`scripts/test_picking_a_hermes_brain_actually_moves_the_office.py` lifts the
+real `HBACKENDS` table and the real `changeBackend` / `saveKey` bodies out of
+`modals/providers.jsx` by brace-balanced extraction, stubs the React setters
+and a `CafresoHQClient` whose `hermesSetProvider` records every call, and
+drives the select in `node`. 19 checks: the saved-key switch must reach the
+gateway with the *new* provider and *that provider's* key and must say so;
+the key field's `onBlur` re-submitting the unchanged saved key must still bail
+(which is why `changeBackend` has to do the work); a keyless backend must push
+nothing and clear the stale line; a local backend must not be pushed from the
+select; an unreachable container must not read as applied; an unknown provider
+and a re-pick of the current one must both be no-ops; and the busy latch must
+be released either way.
+
+Fire-tested: copied the fixed `modals/providers.jsx` to `/tmp`, reverted
+`changeBackend` to its three-line body in place with the editor (never
+`git checkout -- <file>`) — 5 of 19 checks failed, exit 1, with the Gemini
+switch resolving as `calls=[]`. Restored from the `/tmp` copy, confirmed
+byte-identical by `md5` (`5fb5b7f130d55eaac0307be947fe167a`), reran — 19 of 19
+passed, exit 0.
+
+`npm run build` was run once up front so `dist-ui/manifest.json` exists in a
+fresh worktree, and again after the `.jsx` edit.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file
+a foreign session owns and this change never touches). This change covers only
+`modals/providers.jsx`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any kind
+was run.
