@@ -29258,3 +29258,66 @@ on a file a foreign session owns and this change never touches). This
 change covers only the one regex in `OFFICE_CAUSES` in `app/floor.jsx`,
 the new test file, and this entry; `src/cafresohq_state/main.mo` was never
 staged or edited, and no dfx/IC action of any kind was run.
+
+---
+
+## 231. The Gemini CLI's Payroll stat quoted a per-word rate it doesn't have
+
+**The bug.** `payrollLabel()` in `app/cast.jsx` (§6: "Payroll shows real
+numbers") answers one of exactly three honest things for a coworker's
+Payroll stat — `in-house` (free local hardware), `on your plan` (a flat
+subscription, no per-job component), or `—` with a tooltip admitting no
+per-word rate is configured. It keys the middle answer, `PAYROLL_PLAN`,
+off the model's routing prefix: `claudecode`, `codex`, `cafresohq`,
+`hermes`. `gemini` was missing.
+
+`modals/hire.jsx`'s `FRONT_DESK.gemini` entry is the Gemini CLI — a
+coding-agent driver hired off a Google sign-in ("We found your Google
+sign-in on this machine."), pinned to model `gemini:gemini-2.5-pro`.
+That is the same billing shape as its three subscription siblings: a
+flat plan, not a per-token meter. But because `gemini` wasn't in
+`PAYROLL_PLAN`'s alternation, that model id fell through to the last
+branch, and the Gemini CLI hire's Payroll stat read
+
+    —   Billed per word by the provider. No rate is configured here,
+        and a made-up one would be worse than none — see the
+        work-done count beside this.
+
+on a coworker who is never billed per word at all — the exact
+invented-uncertainty this function was built to stop (the doc comment
+above it records the earlier version of this bug: five surfaces
+multiplying token count by one hardcoded rate, producing a dollar
+figure for a subscription hire with no per-word component). This is
+the one coding-agent driver on the front desk whose billing tooltip was
+lying about the shape of its own bill.
+
+**The fix.** Added `gemini` to `PAYROLL_PLAN`:
+`/^(claudecode|codex|cafresohq|hermes|gemini):/i`. The colon anchor
+keeps this from also matching `gemini-api:` — the actual metered Gemini
+API key (`FRONT_DESK['gemini-api']`, billed per token, no rate table
+carried here) — which correctly stays in the no-rate-table bucket
+below. One-line regex change, no other logic touched.
+
+**The proof.**
+`scripts/test_gemini_cli_payroll_not_metered.py` runs `app/cast.jsx`
+verbatim under node (the same harness `test_cast.py` uses) and checks
+`payrollLabel({ model: 'gemini:gemini-2.5-pro' })` reads `on your plan`
+with no "Billed per word" in its tooltip, that the three existing
+subscription siblings (`claudecode`, `codex`, `hermes`) are unaffected,
+and that `gemini-api:gemini-2.5-flash` still reads `—`.
+
+Fire-tested: copied the fixed `app/cast.jsx` to `/tmp`, reverted the
+`PAYROLL_PLAN` regex in place (never `git checkout -- <file>`) — the
+test's Gemini CLI checks failed, reporting the invented per-word
+tooltip, exit 1. Restored from the `/tmp` copy, confirmed byte-identical
+by `md5`, reran — all four checks passed, exit 0.
+
+`npm run build` was run after the `.jsx` edit.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the same `moc`/M0219 `main.mo` toolchain mismatch tracked in `#188`
+through `#228`, on a file a foreign session owns and this change never
+touches). This change covers only `PAYROLL_PLAN` in `app/cast.jsx`, the
+one new test file, and this entry; `src/cafresohq_state/main.mo` was
+never staged or edited, and no dfx/IC action of any kind was run.

@@ -415,7 +415,16 @@ function memoryLabel(agent, paths) {
    Deliberately keyed on the ROUTING PREFIX, which is how the agent's brain
    is actually dispatched, not on the display name. */
 const PAYROLL_LOCAL = /^(ollama|lmstudio):/i;
-const PAYROLL_PLAN  = /^(claudecode|codex|cafresohq|hermes):/i;
+/* `gemini` (no suffix) is the Gemini CLI — the coding-agent driver hired off
+   a Google sign-in (modals/hire.jsx FRONT_DESK.gemini, "We found your Google
+   sign-in on this machine"), a flat-plan subscription exactly like
+   claudecode/codex/hermes. It was missing from this list, so a Gemini CLI
+   hire's Payroll read "—  Billed per word by the provider. No rate is
+   configured here" — the exact lie this function exists to stop, on the one
+   coding-agent driver whose billing is not per-word at all. The colon anchor
+   keeps this from also matching `gemini-api:` (the actual metered Gemini API
+   key), which correctly stays in the no-rate-table bucket below. */
+const PAYROLL_PLAN  = /^(claudecode|codex|cafresohq|hermes|gemini):/i;
 
 function payrollLabel(agent) {
   const model = String((agent && agent.model) || '');
