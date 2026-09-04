@@ -124,7 +124,7 @@ def main():
             'sessionId': session_id,
             'summary': summary,
         })
-    except (urllib.error.URLError, OSError) as e:
+    except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
         if FAIL_OPEN:
             _emit('allow', f'approval-hook: HQ unreachable ({e}) — fail-open')
         _emit('deny', f'approval-hook: HQ unreachable ({e}) — fail-closed')
@@ -139,7 +139,7 @@ def main():
         try:
             res = _get(f'/approvals/external/wait?id={aid}&timeout={POLL_S}',
                        timeout=POLL_S + 10)
-        except (urllib.error.URLError, OSError) as e:
+        except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
             if FAIL_OPEN:
                 _emit('allow', f'approval-hook: lost HQ during wait ({e})')
             _emit('deny', f'approval-hook: lost HQ during wait ({e})')

@@ -29641,3 +29641,66 @@ on a file this change never touches. This change covers only the
 `content.parts` read inside `streamGoogle` in `claude-client.jsx`, the one
 new test file, and this entry; `src/cafresohq_state/main.mo` was never
 staged or edited, and no dfx/IC action of any kind was run.
+
+---
+
+## 237. A malformed reply from the approval server could wave a tool call through
+
+`claude_approval_hook.py` is the PreToolUse gate between Claude Code and the
+HQ ApprovalTray: it POSTs every tool call to `/approvals/external`,
+long-polls `/approvals/external/wait` for the boss's click, and prints the
+resulting `allow`/`deny` as hook output. Its own docstring is explicit about
+the failure policy: `CAFRESOHQ_HQ_FAILOPEN` "(default deny — fail closed)"
+— any trouble reaching HQ is supposed to deny the tool call, not wave it
+through.
+
+Checked that promise against Claude Code's actual hook contract
+(code.claude.com/docs/hooks.md, "Exit Codes & Output"): only exit code 2
+hard-blocks a PreToolUse call. Every other nonzero exit is documented as
+"non-blocking error by default — action proceeds." This hook never uses
+exit code 2 — it signals its decision entirely through
+`hookSpecificOutput.permissionDecision` on stdout with exit 0. Which means
+the fail-closed promise depends entirely on this script never crashing
+before it prints that JSON: an uncaught exception here doesn't deny the
+tool call, it silently lets it run.
+
+`_post()` and `_get()` both call `json.loads(r.read()...)` on the HTTP
+response from `CAFRESOHQ_HQ_URL`, but the `except` clauses wrapping both
+call sites only caught `(urllib.error.URLError, OSError)`.
+`json.JSONDecodeError` is a `ValueError`, not an `OSError` — a 200 response
+whose body isn't valid JSON fell straight through both `try` blocks and
+crashed the process with an uncaught traceback. Per the hook contract
+above, that crash is a bypass, not a block. It's not a hypothetical
+mismatch either: `CAFRESOHQ_HQ_URL` defaults to `127.0.0.1:8787`, the same
+port the separate `cafresohq` search-worker container binds on this
+machine — whatever answers a request there when the real HQ server isn't
+the one listening is not guaranteed to reply with JSON at all.
+
+**The fix.** Both `except` tuples now also catch `json.JSONDecodeError`, so
+a malformed HQ response is handled exactly like an unreachable one — deny
+by default, allow only under `CAFRESOHQ_HQ_FAILOPEN=1` — always via a
+proper `hookSpecificOutput` JSON on stdout with exit 0, never a crash.
+
+**The proof.** `scripts/test_approval_hook_denies_on_malformed_hq_response.py`
+imports the real module, patches `urllib.request.urlopen` to hand back a
+non-JSON 200 body at both the initial-submit call site and the long-poll
+`wait` call site, feeds a real `Bash` tool-call payload on stdin, and
+asserts `main()` exits cleanly with `permissionDecision: deny` in both
+cases instead of raising.
+
+Fire-tested: copied the fixed `claude_approval_hook.py` to `/tmp`, reverted
+both `except` tuples back to `(urllib.error.URLError, OSError)` in place
+(never `git checkout -- <file>`) — both checks failed with an uncaught
+`JSONDecodeError`, exit 1. Restored from the `/tmp` copy, confirmed
+byte-identical by `md5`, reran — all checks passed, exit 0.
+
+Pure `.py` change — no `npm run build` needed.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the same `moc`/M0219 `main.mo` toolchain mismatch tracked in `#188` through
+`#228`, on a file a foreign session owns and this change never touches).
+This change covers only the two `except` clauses in
+`claude_approval_hook.py`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, and no dfx/IC
+action of any kind was run.
