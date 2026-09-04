@@ -27386,3 +27386,86 @@ session's in-progress Motoko migration on a file this change never
 touches. This change covers only `hq-runtime.jsx`, the one new test file
 above, and this entry; `src/cafresohq_state/main.mo` was never staged or
 edited, and no dfx/IC action of any kind was run.
+
+---
+
+## 203. A flush that failed still let the editor walk away from the typing
+
+**The reading.** Assigned area: the vault — `views/vault.jsx` (note
+editor, list, search, folder tree, uploads, decrypt-state UI) and the
+`/vault/*` routes in `serve.py`. The search staleness paths
+(`_refreshHits` after drag/delete), the rename door's link-follow, the
+upload collision-stepping, the OCI delete honesty (`#185`'s
+paste-upload neighbor) all checked out as already hardened. The live
+find was in the one comment that promised the opposite of what the
+code did: "Flush any dirty buffer before swapping files — no silent
+edit loss."
+
+**The mechanism.** `saveNote` catches its own errors — a failed save
+only sets the `'⚠ Retry save'` chip via `setSaveState('error: …')`,
+it never throws, and `dirty` is cleared ONLY on success. Every path
+that leaves an open note awaited the quiet flush and then moved on
+without looking at the verdict:
+
+- `openByPath` (both the binary branch and the text branch) awaited
+  `saveNoteRef.current({ quiet: true })`, then called
+  `setOpenNote({...})` — replacing the dirty buffer, the only copy of
+  the boss's typing — and its own `setSaveState('')` wiped the Retry
+  chip that knew better.
+- `closeNote` didn't even await: fire-and-forget flush, then
+  `setOpenNote(null)`. A close during an outage dropped the buffer
+  while the save was still failing in flight.
+- `newNote` and `openWikilink`'s dead-link create seeded a fresh dirty
+  buffer straight over the open one with NO flush at all — even a
+  healthy server lost whatever was typed since the last autosave
+  (task checkboxes toggled in the preview go through the same dirty
+  buffer, so a preview click-path could hit this too).
+
+Traced in source: kill the server, type into a note, click another
+note in the tree. The flush fails silently, `openByPath` replaces the
+buffer, the chip is wiped — typed text gone, with a green-looking
+room. The 2.5s autosave narrows the window but does not close it:
+a failed autosave leaves `dirty: true`, which is exactly the state the
+leave paths then discarded.
+
+**The fix.** `flushBeforeLeave()` in `VaultView` — flush, then read
+the verdict. Since `dirty` survives a failed save, "still dirty
+afterwards" IS the verdict: `true` → move on; `false` → stay on the
+note, toast the refusal ("staying on this note so nothing is lost"),
+and leave the Retry chip standing. All five leave paths route through
+it: `openByPath` × 2, `closeNote` (now async, returns whether it
+really closed — the mobile ✕ only switches back to the tree on
+`true`), `newNote`, and the dead-wikilink create. Renames/moves keep
+their existing flush unchanged — a failed flush there never drops the
+buffer (the editor keeps it, dirty, and retries under the followed
+path), so no gate is needed.
+
+**The test**
+(`scripts/test_a_failed_flush_never_drops_the_boss_typing.py`) lifts
+the REAL `flushBeforeLeave` out of `views/vault.jsx` (brace-balanced
+extraction, the `test_workspace_terminal_key.py` technique) and
+genuinely executes it via Node against stub refs: a save that fails →
+verdict `false`, error toast, buffer still dirty; a save that succeeds
+→ `true`, no toast; a clean buffer and a null buffer → `true` with
+zero saves. Structural checks pin every leave path to the gate, the
+mobile ✕ to closeNote's answer, and openByPath to never calling the
+raw quiet save again. One sibling suite
+(`test_the_library_never_files_what_it_cannot_show.py`) lifts the real
+`newNote` and now lifts `flushBeforeLeave` alongside it, since the
+real body calls it.
+
+Fire-tested: reverted `views/vault.jsx` to its pre-fix content in
+place — the suite failed at extraction (`flushBeforeLeave extracted
+from views/vault.jsx`), exit 1. Restored from the /tmp safety copy
+(`cmp`-verified byte-identical, never `git checkout`), test green,
+`npm run build` re-run (the dev server never rebuilds `dist-ui/`).
+
+**Suite: 385/386** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` implicit-`transient`
+toolchain mismatch recorded in `#188` and `#193` — a different
+session's in-progress Motoko migration on a file this change never
+touches. This change covers only `views/vault.jsx`, the one new test
+file, the one-lift harness update above, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, and no
+dfx/IC action of any kind was run.

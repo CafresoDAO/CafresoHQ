@@ -715,6 +715,33 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     </div>
   );
 
+  /* A dirty buffer flushes before the editor moves off a note — and a
+     flush that FAILS has to stop the move. Every leave path awaited the
+     quiet save but never looked at the answer: saveNote catches its own
+     errors (it only sets the '⚠ Retry save' chip), so a failed flush
+     resolved exactly like a clean one and the caller went on to replace —
+     or drop — the buffer holding the only copy of the boss's typing,
+     right after the office failed to file it. Driven in source: kill the
+     server, type into a note, click another note — openByPath awaited the
+     flush, saveNote swallowed the NetworkError, and setOpenNote replaced
+     the dirty buffer; the '⚠ Retry save' chip that knew better was wiped
+     by openByPath's own setSaveState(''). Dirty survives a failed save
+     (saveNote only clears it on success, and only if nothing was typed
+     meanwhile), so "still dirty afterwards" IS the verdict: true means
+     moved on, false means stay put — out loud, with the Retry chip still
+     standing. */
+  const flushBeforeLeave = async () => {
+    const n = openNoteRef.current;
+    if (!n || !n.dirty) return true;
+    await saveNoteRef.current({ quiet: true });
+    const still = openNoteRef.current;
+    if (still && still.dirty) {
+      say("Couldn't file your unsaved changes — staying on this note so nothing is lost. Retry the save, then switch.", 'error');
+      return false;
+    }
+    return true;
+  };
+
   const openByPath = async (path) => {
     if (!path) return;
     // Files the text editor can't open — decks, PDFs, images, archives.
@@ -733,19 +760,16 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
         say(`"${fileMeta.title}" is an image or media file — open it from the Library at ai.cafreso.com to view it.`, 'info');
         return;
       }
-      if (openNoteRef.current && openNoteRef.current.dirty) {
-        await saveNoteRef.current({ quiet: true });
-      }
+      if (!(await flushBeforeLeave())) return;
       setErr(null); setSaveState('');
       setOpenNote({ path, id: null, content: '', dirty: false,
                     binary: true, size: fileMeta.size || 0 });
       if (_isMobileV) setVaultTab('editor');
       return;
     }
-    // Flush any dirty buffer before swapping files — no silent edit loss.
-    if (openNoteRef.current && openNoteRef.current.dirty) {
-      await saveNoteRef.current({ quiet: true });
-    }
+    // Flush any dirty buffer before swapping files — no silent edit loss,
+    // and a flush that FAILED keeps us here (see flushBeforeLeave).
+    if (!(await flushBeforeLeave())) return;
     setBusy(true); setErr(null); setSaveState('');
     try {
       let text;
@@ -852,12 +876,15 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     if (n && n.dirty) saveNoteRef.current({ quiet: true });
   }, []);
 
-  // Closing or switching notes flushes the dirty buffer first.
-  const closeNote = () => {
-    const n = openNoteRef.current;
-    if (n && n.dirty) saveNoteRef.current({ quiet: true });
+  // Closing or switching notes flushes the dirty buffer first — and a
+  // close whose flush failed keeps the note open: the buffer is the only
+  // copy of the typing. Answers whether it really closed, for callers
+  // (the mobile ✕) that switch panes on top of the close.
+  const closeNote = async () => {
+    if (!(await flushBeforeLeave())) return false;
     setSaveState('');
     setOpenNote(null);
+    return true;
   };
 
   /* File management — upload / rename / delete. Server-vault backends only
@@ -1176,6 +1203,10 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       ? openNoteRef.current.path.replace(/\/[^/]*$/, '/') : '';
     const rel = target.includes('/') ? target : here + target;
     const norm = rel.endsWith('.md') ? rel : rel + '.md';
+    // The seed below REPLACES the buffer this link was clicked in — a
+    // preview note can be dirty (task checkboxes toggle in place), so it
+    // flushes first like every other leave, and a failed flush stays.
+    if (!(await flushBeforeLeave())) return;
     setOpenNote({ path: norm, id: null, content: '', dirty: true });
     if (_isMobileV) setVaultTab('editor');
   };
@@ -1300,6 +1331,9 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       await openByPath(existing.path);
       return;
     }
+    // Same leave rule as openByPath: the fresh buffer replaces whatever
+    // note is open now, so a dirty one flushes first — or holds the door.
+    if (!(await flushBeforeLeave())) return;
     // id is null for new notes — saveNote() will call bridge.create()
     setOpenNote({ path: norm, id: null, content: '', dirty: true });
     // Same rule as openByPath: a note the office just asked you to name is
@@ -1590,7 +1624,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
                     {saveState.startsWith('error') ? '⚠ Retry save' : busy ? 'Saving…' : openNote.dirty ? 'Save' : 'Saved'}
                   </button>
                 )}
-                <button className="px-btn ghost" onClick={() => { closeNote(); setVaultTab('tree'); }} title="Close" style={{fontSize:11}}>{'✕'}</button>
+                <button className="px-btn ghost" onClick={async () => { if (await closeNote()) setVaultTab('tree'); }} title="Close" style={{fontSize:11}}>{'✕'}</button>
               </div>
               {backlinksRow}
               {openNote.binary ? (

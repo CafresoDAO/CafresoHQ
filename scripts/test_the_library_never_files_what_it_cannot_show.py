@@ -147,6 +147,11 @@ def client_checks():
         return
     new_note = brace_lift(VAULT_RAW, 'const newNote = async () => {')
     ren_note = brace_lift(VAULT_RAW, 'const renameNote = async () => {')
+    # #199: newNote flushes a dirty buffer through the real
+    # flushBeforeLeave before seeding a fresh one — lift it too (its own
+    # behavior has its own suite: test_a_failed_flush_never_drops_the_
+    # boss_typing.py; here it only needs to exist for newNote to run).
+    flush = brace_lift(VAULT_RAW, 'const flushBeforeLeave = async () => {')
 
     def drive(fn, call, answer, note=None):
         js = (STUBS
@@ -154,7 +159,7 @@ def client_checks():
               % (json.dumps(note) if note else 'null')
               + f'window.hqPrompt = async () => {json.dumps(answer)};\n'
               + helpers + '\n' + msg.group(0)
-              + fn + '\n' + f'await {call};\n'
+              + flush + '\n' + fn + '\n' + f'await {call};\n'
               + 'console.log(JSON.stringify({ says, opened, renames }));')
         return run_js(js)
 
