@@ -646,12 +646,29 @@ def _hq_state_sig_update(h) -> None:
     lives, it's tasks/projects/missions/agents — so every backend's cache
     signature needs this same contribution. Factored out so 'oci' didn't
     grow its own hand-copied loop next to fs's, which is exactly the kind
-    of copy that drifts (see the OCI-delete ticket two entries up)."""
+    of copy that drifts (see the OCI-delete ticket two entries up).
+
+    `agents` is included here in name only: agents.json is written to
+    `memory_dir` (hq-state/memory/), a SUBDIRECTORY this glob() never
+    descends into (glob, not rglob). So we fold memory_dir's *.json files
+    in too — otherwise hiring/renaming/recoloring an agent never changes
+    the signature, and the cached graph (fs or OCI) keeps serving stale
+    agent nodes until an unrelated tasks/missions/receipts/messages file
+    happens to change and forces a rebuild."""
     try:
         for jp in sorted(_cfg['state_dir']().glob('*.json')):
             try:
                 st = jp.stat()
                 h.update(('S:%s|%d|%d\n' % (jp.name, int(st.st_mtime), st.st_size)).encode('utf-8'))
+            except OSError:
+                pass
+    except OSError:
+        pass
+    try:
+        for jp in sorted(_cfg['memory_dir']().glob('*.json')):
+            try:
+                st = jp.stat()
+                h.update(('M:%s|%d|%d\n' % (jp.name, int(st.st_mtime), st.st_size)).encode('utf-8'))
             except OSError:
                 pass
     except OSError:

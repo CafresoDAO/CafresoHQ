@@ -29062,3 +29062,70 @@ on a file this change never touches. This change covers only
 `app/approvals.jsx`'s value-flattening step, the one new test file, and
 this entry; `src/cafresohq_state/main.mo` was never staged or edited, and
 no dfx/IC action of any kind was run.
+
+---
+
+## 228. Renaming a coworker never reached the graph
+
+**The reading.** Assigned area: `kg_builder.py` — the fs/OCI/HQ-state
+graph builders and the mtime-signature cache in front of the fs build.
+Node/edge construction, the wikilink resolver, the typed-edge
+classifier, and the tag/embed extraction all checked out. #206 had
+already cleared this file of the specific leak it was accused of (a
+hidden node still riding the share snapshot — that one lived one seam
+downstream, in `graph-engine.js`'s `exportSnapshot()`). The live find
+here is upstream and distinct: the cache that decides whether
+`/vault/graph` even bothers to rebuild.
+
+**The bug.** `_hq_state_sig_update()` folds the hq-state JSON files'
+`(name, mtime, size)` into the cache signature so an edited
+task/mission/receipt/message file forces a rebuild — its own docstring
+names `tasks/projects/missions/agents` as the things it covers. But it
+only globs `state_dir().glob('*.json')`, a non-recursive listing of
+`state_dir`'s direct children. `agents.json` — where the frontend
+persists hired agents via `useFileStored(k('agents'), 'memory',
+'agents', ...)` (`app.jsx`) — is written to `memory_dir`
+(`hq-state/memory/`), a SUBDIRECTORY `glob('*.json')` never descends
+into. So `agents.json` was never part of the signature at all: hire an
+agent, rename one, change their color or role, and `_build_graph_fs_cached()`
+(and its OCI twin, which shares this helper) kept returning the OLD
+cached graph — same title, same color, same "agent" node — until some
+unrelated tasks/missions/receipts/messages file happened to change and
+forced a rebuild for an unrelated reason. The boss's own coworker roster,
+rendered on the map they use to understand their business, could sit
+stale indefinitely.
+
+**The fix.** `_hq_state_sig_update()` now also globs
+`memory_dir().glob('*.json')` and folds each file's `(name, mtime,
+size)` into the same hash (prefixed `M:` instead of `S:` so a same-named
+file in each dir can't collide into one entry), mirroring the existing
+state_dir loop exactly. Both `_vault_graph_signature()` (fs) and
+`_oci_vault_graph_signature()` (OCI) call this one helper, so the fix
+covers both backends' caches at once — no hand-copied second loop to
+drift out of sync, matching the file's own stated reason for factoring
+this out in the first place.
+
+**The proof.**
+`scripts/test_agent_rename_invalidates_graph_cache.py` points
+`kg_builder.init()` at a throwaway temp vault + hq-state tree, builds
+the cached fs graph with one agent ("Selvin") in `hq-state/memory/agents.json`,
+rewrites just that file to rename the agent to "Selvin-Renamed" (no
+`state_dir` file touched), and rebuilds. It asserts the agent node's
+title reflects the rename.
+
+Fire-tested: copied the fixed `kg_builder.py` to `/tmp`, removed the
+`memory_dir` loop in place (never `git checkout -- <file>`) — the test's
+final assertion failed, reporting the stale `'Selvin · Code Gremlin'`
+title, exit 1. Restored from the `/tmp` copy, confirmed byte-identical
+by `md5`, reran — all three checks passed, exit 0.
+
+Pure `.py` change; no `npm run build` needed.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the same `moc`/M0219 `main.mo` toolchain mismatch tracked in `#188`
+through `#223`, on a file a foreign session owns and this change never
+touches). This change covers only `_hq_state_sig_update()` in
+`kg_builder.py`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, and no
+dfx/IC action of any kind was run.
