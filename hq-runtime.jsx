@@ -4121,6 +4121,21 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
       return;
     }
 
+    /* Refuse a template before it becomes a visit — same guard agentStream
+       runs below (see placeholderRefusal and its comment). The CEO reads
+       its own tool docs same as any specialist, and a doc string is full of
+       `<query>`/`<path>` examples: writing one back verbatim used to run
+       for real here — a live VAULT_READ against the literal text "<path>"
+       — while the exact same reply from a specialist agent was caught and
+       corrected without spending a hop. No start/done events, so the floor
+       never plays a trip that didn't happen. */
+    const ceoRefusal = placeholderRefusal(call.tool.name, call.arg);
+    if (ceoRefusal) {
+      messages.push({ role: 'assistant', content: upToToolCall(buf, call.raw) });
+      messages.push({ role: 'user', content: ceoRefusal });
+      continue;
+    }
+
     if (onTool) onTool({ phase: 'start', name: call.tool.name, arg: call.arg });
     let result;
     /* Did it actually work? Not the same question as "did it return". A

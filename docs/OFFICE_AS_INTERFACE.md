@@ -29502,3 +29502,69 @@ failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
 This change covers only the header subtitle in `views/misc.jsx`, the one new
 test file, and this entry; `src/cafresohq_state/main.mo` was never staged or
 edited, and no dfx/IC action of any kind was run.
+
+---
+
+## 235. The CEO ran a template it copied out of its own tool docs
+
+**The reading.** Assigned area: `hq-runtime.jsx`'s tool-execution engine,
+away from `generate_image`/`generate_video`'s already-fixed `#202`
+(`_ctx.meta.filedAs` receipt stashing). `agentStream` — the per-coworker
+chat path — and `ceoStream` — the CEO/"CafresoHQ" chat path, a few hundred
+lines above it in the same file — run the same detect-a-marker,
+run-the-tool, feed-the-result-back loop, and the file's own comments
+already document three other places this exact pair drifted (`toolsExecuted`
+tracking, `#`-less in this entry but see `#`-adjacent history above; the
+`reachedFor` accumulation; the hop-budget hint). `placeholderRefusal` is the
+guard `detectToolCall`'s own neighbouring comment describes: "a coworker
+emitted `[BROWSER_FETCH: <url>]` — copying the shape straight out of its own
+tool docs — and the office dutifully executed it, spent one of the four
+tool hops," so the fix taught `agentStream` to check `placeholderRefusal`
+before running any detected call and refuse with a correction instead —
+no start/done visit, no spent hop, no phantom `Browser fetch error:` line
+in the transcript.
+
+**The bug.** That guard was written into `agentStream` only. `ceoStream`
+builds its own system prompt out of the very same `TOOL_REGISTRY` doc
+strings (`toolsPromptSnippet`/`toolsPromptSnippetJson`, fed by
+`ceoToolSnippet`), which teach `VAULT_READ`, `VAULT_APPEND`, `VAULT_NEW` and
+`SEARCH` with the identical `<query>`/`<path>` example syntax. A CEO that
+wrote `[VAULT_READ: <path>]` back verbatim — the same mistake the comment
+above `placeholderRefusal` already caught once, on a different tool, on the
+other path — ran it for real: a live vault read against the literal text
+`<path>`, a `start`/`done` visit pair painted on the floor for a call that
+was never a genuine attempt, and one of the CEO's four tool hops spent on
+it. The exact same reply from a specialist agent was caught and corrected
+for free, with the hop left for real work.
+
+**The fix.** `ceoStream` now runs the identical check — `placeholderRefusal
+(call.tool.name, call.arg)` — immediately after `detectToolCall` resolves a
+call and before the `'start'` visit event fires. A refusal pushes the
+model's own text up to the marker as its turn, the correction as the next
+user turn, and `continue`s the hop loop, exactly the shape `agentStream`
+already uses — no new vocabulary invented, one guard shared by both.
+
+**The proof.** `scripts/test_the_ceo_that_copied_the_template.py` reads the
+real `ceoStream` function body out of `hq-runtime.jsx` (bounded by the next
+function, `agentStream`) and asserts: the guard is called on the detected
+call; it runs before both the `'start'` event and the tool actually
+executing; a refusal pushes the assistant/user turn pair and `continue`s
+rather than returning or running the tool anyway; and `agentStream`'s own,
+pre-existing call to the same guard is untouched (the guard now appears
+exactly twice in the file, not duplicated a third time).
+
+Fire-tested: copied the fixed `hq-runtime.jsx` to `/tmp`, reverted the new
+block in place (never `git checkout -- <file>`) — five of six checks
+failed, exit 1. Restored from the `/tmp` copy, confirmed byte-identical by
+`md5`, reran — all six checks passed, exit 0.
+
+`npm run build` run after the `hq-runtime.jsx` change — 8 assets built
+clean.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the same `moc`/M0219 `main.mo` toolchain mismatch tracked through `#233`,
+on a file a foreign session owns and this change never touches). This
+change covers only the new guard in `ceoStream`, the one new test file, and
+this entry; `src/cafresohq_state/main.mo` was never staged or edited, and no
+dfx/IC action of any kind was run.
