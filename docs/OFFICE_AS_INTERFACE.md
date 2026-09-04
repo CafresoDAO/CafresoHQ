@@ -28670,3 +28670,70 @@ session's in-progress Motoko migration on a file this change never
 touches. This change covers only the shortcut handler in `app.jsx`,
 the one new test file and this entry; `src/cafresohq_state/main.mo`
 was never staged or edited, and no dfx/IC action of any kind was run.
+
+---
+
+## 222. A note the vault never heard about was counted as filed
+
+**The reading.** Assigned area: `night_runner.py`, the overnight
+pipeline, minus the reasoning-mask ordering already fixed in #205. The
+retry ladder in `llm_call`, the deadline and abort handling in
+`run_mission`, the error-chain ordering in `run_iteration`, and the
+door-check in `vault_can_take_a_note` all checked out. The live find was
+in the seam the refused-write entry ("The vault turned the note
+away, and the office called it a lie") thought it had sealed: what
+`run_tool` hands back when a vault write never gets an answer at all.
+
+**The bug.** The write ledger's honesty rests on one string:
+`run_tool`'s vault-write branch returns "Vault write failed (NNN): …"
+when the PUT comes back non-200, `vault_write_status` reads the status
+back out, and `run_iteration` only appends to `writes` when that reader
+returns None. But `_self_call` converts only `HTTPError` into a
+`(status, body)` tuple — a `URLError` (serve.py restarting under the
+runner, connection refused, a socket timeout at 3am) propagates, falls
+to `run_tool`'s generic "tools never kill an iteration" handler, and
+comes back as "Tool VAULT_NEW failed: <urlopen error …>". No status in
+that shape, so `vault_write_status` returns None — the SUCCESS branch.
+Reproduced with a canned brain and a PUT that refuses the connection:
+`writes: [{'name': 'VAULT_NEW', 'path': 'Research/night/x.md', …}]`,
+`error: None`. A morning report asserting a note the vault never saw —
+the exact fabricated success this ledger built the
+claim checks to catch, minted this time by the office's own
+bookkeeping. And because the phantom success also ran `refused = None`,
+a genuine 502 the vault DID answer on an earlier hop of the same
+iteration was erased by a later write that also failed.
+
+**The fix.** The vault-write branch in `run_tool` guards its own
+self-call: an exception there returns `_VAULT_FAIL_PREFIX` with 503 —
+already the "vault is not reachable — check Connections" door, the same
+status `vault_can_take_a_note` speaks for the same fact — so the boss
+reads one sentence whether the vault refused or never picked up. One
+writer, one spelling, the existing reader untouched; the generic
+handler still catches everything else, so no tool failure can reach
+`run_iteration`'s outer except and be misclassified as a brain failure.
+
+**The test**
+(`scripts/test_a_write_the_vault_never_heard_is_not_a_note.py`) drives
+the real `run_iteration` with a stub brain and a stub serve.py whose
+PUT can answer a status or never answer at all: a connection-refused
+write must stay out of the ledger and report the Connections door, a
+quiet coworker gets the same honesty, a dead PUT must not erase an
+answered 502 from an earlier hop, a socket timeout walks the same path,
+the sentence fits `NIGHT_ERROR_MAX`, and a healthy vault — and an
+answered refusal — behave exactly as before. A raising `VAULT_READ`
+still comes back as a string and is not mistaken for a refused write.
+
+Fire-tested: reverted the guard in place (never `git checkout`), the
+connection-refused run put the phantom note back in the ledger with
+`error: None` and the test exited 1 on five checks; restored from the
+/tmp safety copy (md5-verified byte-identical), all green.
+
+**Suite: 405/406** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` implicit-`transient`
+toolchain mismatch recorded in `#188` through `#218` — a different
+session's in-progress Motoko migration on a file this change never
+touches. This change covers only the vault-write branch of `run_tool`
+in `night_runner.py`, the one new test file and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, and no
+dfx/IC action of any kind was run.

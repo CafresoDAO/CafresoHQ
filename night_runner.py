@@ -637,9 +637,24 @@ def run_tool(ctx, name, arg, body):
             return text[:4000] + '\n\n…(truncated)' if len(text) > 4000 else text
         if name in ('VAULT_APPEND', 'VAULT_NEW'):
             mode = 'append' if name == 'VAULT_APPEND' else 'write'
-            s, raw = _self_call(ctx, 'PUT', '/vault/note?path=%s&mode=%s' % (
-                urllib.parse.quote(arg), mode), body=(body or ''),
-                headers={'Content-Type': 'text/markdown'})
+            try:
+                s, raw = _self_call(ctx, 'PUT', '/vault/note?path=%s&mode=%s' % (
+                    urllib.parse.quote(arg), mode), body=(body or ''),
+                    headers={'Content-Type': 'text/markdown'})
+            except Exception as e:
+                # A PUT that never got an answer (serve.py gone, socket
+                # timeout — _self_call only converts HTTPError; a URLError
+                # propagates) used to fall to the generic handler below and come
+                # back as 'Tool VAULT_NEW failed: …'. vault_write_status has
+                # no status to read out of that shape, returns None, and
+                # run_iteration counted the write as a LANDED NOTE — writes:
+                # [path], error: None, a morning report asserting a note the
+                # vault never saw (and the phantom even cleared an earlier
+                # genuine `refused`). Same wire, same words: 503 is already
+                # the "vault is not reachable" door (see vault_can_take_a_note),
+                # so the boss reads one sentence whether the vault refused or
+                # never picked up.
+                return '%s (503): %s' % (_VAULT_FAIL_PREFIX, e)
             if s != 200:
                 return '%s (%d): %s' % (_VAULT_FAIL_PREFIX, s,
                                         raw[:200].decode('utf-8', 'replace'))
