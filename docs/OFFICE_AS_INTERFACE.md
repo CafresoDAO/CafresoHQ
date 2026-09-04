@@ -27909,3 +27909,72 @@ change never touches. This change covers only
 `search_worker_service/worker.py`, the one new test file and this
 entry; `src/cafresohq_state/main.mo` was never staged or edited, and
 no dfx/IC action of any kind was run.
+
+---
+
+## 210. Every Anthropic turn was billed to the boss at exactly double, and a Gemini turn at roughly the chunk count
+
+**The reading.** Assigned area: the provider client — the 12-provider
+`stream()` dispatch in `claude-client.jsx`, per-provider SSE parsing,
+abort handling and the settings store. The retry path (`fetchStreamHead`
+returns before any body byte, so a retry can never double-deliver
+tokens), `parseSSE`'s chunk-boundary buffering, the abort-during-backoff
+cancellation shape (`#199`'s neighborhood) and `readCliDelta`'s error
+channel all checked out. The live find was the usage report itself.
+
+**The mechanism.** The stream contract everywhere else — 
+`streamOpenAICompat`, `readCliDelta`, `streamAgentContract` — is that
+`onUsage` fires ONCE per stream with the turn's totals, and the meter
+that matters relies on it: `app.jsx`'s
+`onCeoUsage = (u) => setCeoTokens(t => t + (u.total || 0))` ADDS every
+report it receives (and `ceoTokens` feeds the effort HUD and payroll
+surfaces the `#176` census made honest). Two providers broke the
+contract:
+
+- `streamAnthropic` fired `onUsage` at the `message_stop` SSE event AND
+  again after `parseSSE` returned, with identical totals — every
+  Anthropic CEO turn was recorded at exactly 2×;
+- `streamGoogle` fired `onUsage` on EVERY streamed chunk carrying
+  `usageMetadata` — and Gemini stamps chunks with CUMULATIVE counts —
+  then once more at the end, so a turn's recorded spend grew with how
+  many chunks the answer happened to arrive in. Replayed with three
+  cumulative chunks (real total 19 tokens), the meter billed 65.
+
+The per-turn consumers (`missions.jsx`, `app.jsx`'s
+`usedTokens = u.total` sites) overwrite instead of adding, which is why
+this drift only showed where the office keeps a running sum — the exact
+"streamed usage/cost accounting drift" this hunt was pointed at.
+
+**The fix.** Both providers now record usage as it streams and report it
+once, after the stream ends: `streamAnthropic` drops the `message_stop`
+emission (the existing post-`parseSSE` report already carries the same
+totals and also covers a stream that dies before `message_stop`), and
+`streamGoogle`'s per-chunk handler records the cumulative counts without
+reporting, leaving the single existing final report. No consumer wanted
+the per-chunk feed: accumulators were being poisoned by it and
+overwriters end up with the same final value.
+
+**The test** (`scripts/test_a_turn_is_billed_once_not_twice.py`) lifts
+the REAL `streamAnthropic` and `streamGoogle` out of `claude-client.jsx`
+(brace-balanced extraction that first steps over the destructured
+parameter list), stubs `fetchStreamHead`/`parseSSE` to replay recorded
+event sequences, and bills an accumulating meter the way `onCeoUsage`
+does: each provider must fire `onUsage` exactly once, the meter must
+read the true total (15 for Anthropic, 19 for Gemini), and the final
+report must carry the turn's totals.
+
+Fire-tested: restored both old emissions in place — Anthropic fired
+twice and billed 30 for a 15-token turn, Google fired 4 times and
+billed 65 for 19, exit 1. Restored from the /tmp safety copy
+(cmp-verified byte-identical, never `git checkout`), test green,
+`npm run build` clean.
+
+**Suite: 395/396** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` implicit-`transient`
+toolchain mismatch recorded in `#188`, `#193`, `#203` and `#208` — a
+different session's in-progress Motoko migration on a file this change
+never touches. This change covers only the two usage reports in
+`claude-client.jsx`, the rebuilt `dist-ui/`, the one new test file and
+this entry; `src/cafresohq_state/main.mo` was never staged or edited,
+and no dfx/IC action of any kind was run.

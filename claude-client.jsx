@@ -588,9 +588,12 @@ async function streamAnthropic({ system, messages, model, temperature, maxTokens
         inputTokens = j.message.usage.input_tokens || 0;
       } else if (event === 'message_delta' && j.usage) {
         outputTokens = j.usage.output_tokens || outputTokens;
-      } else if (event === 'message_stop' && onUsage) {
-        onUsage({ input: inputTokens, output: outputTokens, total: inputTokens + outputTokens });
       }
+      /* No onUsage at message_stop: the single report below fires after the
+         stream ends. Emitting here AND below delivered the same totals twice,
+         and the ceoTokens meter ADDS every report (app.jsx onCeoUsage), so
+         each Anthropic turn was billed to the boss at exactly double. Every
+         other provider reports usage once per stream; this one now matches. */
     } catch (_e) {}
   });
   if (onUsage && (inputTokens || outputTokens)) {
@@ -1283,12 +1286,13 @@ async function streamGoogle({ system, messages, model, temperature, maxTokens, o
       if (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) {
         onToken(j.candidates[0].content.parts[0].text);
       }
+      /* Record only — report once, below. Gemini stamps usageMetadata on
+         streamed chunks with CUMULATIVE counts, and the ceoTokens meter ADDS
+         every onUsage report (app.jsx onCeoUsage), so per-chunk reporting
+         multiplied a turn's real spend by roughly the chunk count. */
       if (j.usageMetadata) {
         inputTokens = j.usageMetadata.promptTokenCount || inputTokens;
         outputTokens = j.usageMetadata.candidatesTokenCount || outputTokens;
-        if (onUsage) {
-          onUsage({ input: inputTokens, output: outputTokens, total: inputTokens + outputTokens });
-        }
       }
     } catch (_e) {}
   });
