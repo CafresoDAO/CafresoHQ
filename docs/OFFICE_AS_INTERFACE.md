@@ -28125,3 +28125,71 @@ never touches. This change covers only `_static_path_allowed` in
 `serve.py`, the one new test file and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, and no
 dfx/IC action of any kind was run.
+
+---
+
+## 213. A closed tab left the elevated agent still working, alone
+
+**The reading.** Assigned area: the driver layer — `drivers/`
+(claude_code, codex, gemini_cli, local_http, hermes against
+`DRIVER_CONTRACT.md`) plus the `/agent/stream` and `/hermes/*` surface
+in `serve.py`. The contract-native `POST /agent/stream` loop, the
+drivers' cancel/reap paths (`TaskHandle.cancelled` + `proc.kill` +
+`proc.wait` in every `events()` finally), the hermes proxy's header
+scrubbing (Authorization/cookie/origin dropped, Bearer injected
+server-side) and the `.env`/config plumbing all checked out. The live
+find was one function over: `_agent_stream_legacy`, the shared
+translator behind `/claudecode/stream`, `/cafresohq/stream` and
+`/codex/stream`.
+
+**The mechanism.** The only way a server learns an SSE client is gone
+is a failed write — `write_sse` catches
+`BrokenPipeError`/`ConnectionResetError` and returns False for exactly
+this purpose. But only the `token` branch listened to it. The
+`tool_call`, `tool_result`, `error`, `usage` and `done` branches all
+discarded the return value, so once the tab closed (or Stop aborted
+the fetch) mid-run, the loop kept pulling events from the driver until
+the stream ended on its own — and `drv.cancel(handle)`, the line that
+kills the subprocess, sits in the `finally` that only runs when the
+loop ends. On `/codex/stream` this is the common case, not a corner:
+`render_tools=True` means tool activity IS the frame traffic between
+tokens, and an elevated codex run in a tool-heavy phase kept executing
+— editing files in the workspace, spending tokens — for a boss who had
+already left the room. The route whose safety story is "the boss
+watches the agent work" was the one route that kept working unwatched.
+The contract-native `_agent_stream` twenty lines up breaks on ANY
+failed frame; the legacy translator regressed exactly that property.
+
+**The fix.** `write_sse` latches the dead socket in a `dead['pipe']`
+flag (and short-circuits every later write), and the event loop checks
+the flag at its head — so the first failed write of any frame type
+ends the loop within one event, and the existing `finally` reaps the
+subprocess. No frame layout changed; the wire shape the three legacy
+clients parse is untouched.
+
+**The test**
+(`scripts/test_a_closed_tab_takes_the_agents_hands_off_the_keyboard.py`)
+imports the real `serve.py`, registers a scripted driver (one token,
+then 40 tool_call/tool_result pairs, then done — the shape of an
+elevated run doing real work between narrations) and drives the REAL
+`_agent_stream_legacy` against a wfile that dies right after its first
+write. A healthy client must still receive every frame plus the
+`[DONE]` trailer; a departed one must stop the loop within a couple of
+events, attempt nothing further on the dead socket, and still hit
+`drv.cancel`. No network, no subprocess.
+
+Fire-tested: reverted the block to the plain `write_sse` + unchecked
+loop head in place — the departed-client scenario consumed all 82
+scripted events and wrote 83 frames into the broken pipe, exit 1.
+Restored from the /tmp safety copy (md5-verified byte-identical, never
+`git checkout`), test green.
+
+**Suite: 395/396** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` implicit-`transient`
+toolchain mismatch recorded in `#188`, `#193`, `#203` and `#208` — a
+different session's in-progress Motoko migration on a file this change
+never touches. This change covers only `_agent_stream_legacy` in
+`serve.py`, the one new test file and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, and no
+dfx/IC action of any kind was run.

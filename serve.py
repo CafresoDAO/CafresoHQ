@@ -2507,16 +2507,32 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header('cache-control', 'no-store')
         self.end_headers()
 
+        # A failed write means the client is GONE (tab closed, Stop pressed).
+        # write_sse latches that here so the loop head below can break on the
+        # very next event no matter which frame type saw the dead socket.
+        # Only the token branch used to honor the False return — tool_call/
+        # tool_result/error/usage/done all ignored it, so an elevated run in a
+        # tool-heavy phase (/codex/stream renders those as frames between
+        # tokens) kept pulling driver events after the disconnect and the
+        # subprocess kept editing files with nobody watching; cancel() only
+        # ran when the task finished on its own.
+        dead = {'pipe': False}
+
         def write_sse(obj):
+            if dead['pipe']:
+                return False
             try:
                 self.wfile.write(b'data: ' + json.dumps(obj).encode('utf-8') + b'\n\n')
                 self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError):
+                dead['pipe'] = True
                 return False
             return True
 
         try:
             for ev in drv.events(handle):
+                if dead['pipe']:
+                    break
                 et = ev['event']
                 if et == 'token':
                     if not write_sse({'choices': [{'index': 0,
