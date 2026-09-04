@@ -226,6 +226,13 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
            silently, with no error anywhere. */
         let untouched = false;
         try { untouched = JSON.stringify(valRef.current) === seedRef.current; } catch (_e) {}
+        /* We are about to keep theirs, not adopt the fetch — but any edit
+           that landed in the pre-hydration window had persist() bail on the
+           file PUT (hydratedRef.current was still false at write time), so
+           the file never got it. hydratedRef is true now: flush that held
+           write, or the edit lives in localStorage forever and the next
+           session on a different browser/device never sees it. */
+        if (dirtyRef.current && !untouched && !mergeOnDirty) persist(valRef.current);
         if (dirtyRef.current && !untouched && !mergeOnDirty) return;   // a real edit, no safe merge — keep theirs
         const merged = transform ? transform(data) : data;
         valRef.current = merged;

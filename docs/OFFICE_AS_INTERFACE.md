@@ -29321,3 +29321,79 @@ through `#228`, on a file a foreign session owns and this change never
 touches). This change covers only `PAYROLL_PLAN` in `app/cast.jsx`, the
 one new test file, and this entry; `src/cafresohq_state/main.mo` was
 never staged or edited, and no dfx/IC action of any kind was run.
+
+---
+
+## 232. A pre-hydration edit could survive in the browser but never reach the file
+
+`useFileStored()` (`app/storage.jsx`) backs nearly every durable entity in
+the app — agents, tasks, messages, activity, memory/context, receipts,
+pins, windows, missions, workflows, meetings, projects. On mount it seeds
+state from localStorage, then fetches the on-disk file async; that fetch
+typically settles 100-300ms after first render. `hydratedRef` exists to
+hold the file PUT until that fetch has settled, because writing before
+then risks putting a boot-time seed over a real file (#211's `agents.json`
+incident, recorded in this same file's comments). `dirtyRef` exists so a
+genuine edit that lands in that same window wins over the arriving fetch
+instead of being clobbered by it — app.jsx's own `memory` comment gives
+the concrete example: "a REMEMBER click that lands before the fetch
+settles."
+
+**The bug.** The two guards didn't compose. Trace the sequence: an edit
+fires `setter()` in the pre-hydration window → `dirtyRef.current = true`,
+and `persist(next)` runs — it writes localStorage immediately (the UI
+looks fine) but skips the file PUT outright, since `hydratedRef.current`
+is still false at that instant. The mount fetch then resolves: `hydratedRef`
+flips true, the code checks `dirtyRef.current && !untouched && !mergeOnDirty`,
+finds a real edit worth keeping, and `return`s — correctly leaving the
+local edit as authoritative in memory and localStorage, but never calling
+`persist()` again. The write that was *held* at step one is never
+*replayed*. If nothing else touches that store for the rest of the
+session, the edit lives in localStorage only; the on-disk file — read by
+every other browser, device, or fresh container mount — never receives
+it, and nothing anywhere logs or surfaces the gap.
+
+**The fix.** One line added immediately before the existing dirty-guard
+return in the mount-fetch effect in `app/storage.jsx`:
+`if (dirtyRef.current && !untouched && !mergeOnDirty) persist(valRef.current);`
+— same condition as the pre-existing `... return;` line right after it,
+which is left byte-for-byte as it was (two other suites — #177's
+messages and activity coverage — string-match that exact line, and both
+failed until this was written as an addition rather than a rewrite).
+`hydratedRef.current` is already true by this point, so this call
+actually reaches the debounced disk PUT this time instead of bailing
+again like the first call did. The dirty-guard's decision logic (which
+edits count as "real," which stores get to merge instead of just
+keep-theirs) is otherwise untouched.
+
+**The proof.** `scripts/test_pre_hydration_edit_reaches_the_file.py`
+extracts the real `_shapeMatches` and `useFileStored` functions
+(brace-balanced, correctly skipping past `useFileStored`'s destructured-
+object default parameter to find the function body) and runs them under
+Node with a minimal hooks shim (`useState`/`useRef`/`useEffect`/
+`useCallback`), fake timers that only fire on demand, a fake
+`localStorage`, and a controllable fake `fetch` — the mount GET stays
+open until the test resolves it, and PUT calls are recorded. It fires a
+`setter()` edit before resolving the GET with different server data, then
+asserts: the edit lands in localStorage immediately; no PUT fires before
+hydration (the original #211 guard still holds); exactly one PUT fires
+once hydration settles, carrying the edited value; and a control run with
+no pre-hydration edit still adopts the fetched file with no spurious PUT.
+
+Fire-tested: copied the fixed `app/storage.jsx` to `/tmp`, reverted the
+one-line flush in place (never `git checkout -- <file>`) — the test's
+"reaches the file exactly once" and "carries the edited value" checks
+failed, exit 1. Restored from the `/tmp` copy, confirmed byte-identical
+by `md5`, reran — all ten checks passed, exit 0.
+
+`npm run build` ran clean after the `.jsx` change (`[ui] built 8 assets ->
+dist-ui/`).
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the same `moc`/M0219 `main.mo` toolchain mismatch tracked in `#188`
+through `#228`, on a file a foreign session owns and this change never
+touches). This change covers only the one guarded branch in
+`useFileStored()` in `app/storage.jsx`, the one new test file, and this
+entry; `src/cafresohq_state/main.mo` was never staged or edited, and no
+dfx/IC action of any kind was run.
