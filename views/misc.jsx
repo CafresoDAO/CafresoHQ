@@ -30,7 +30,11 @@ function TerminalView() {
           ☼ TERMINAL
         </span>
         <span style={{ fontSize: 10, color: 'rgba(212,216,232,0.45)', fontFamily: "'JetBrains Mono', monospace" }}>
-          Hermes · Claude Code · Codex · Gemini
+          {/* Must list every session type the "+" menu in ProjectTerminal
+              actually offers (terminal.jsx's addSession menu) — this was
+              missing hqsh (the HQ chain shell) since the day this view was
+              split out, understating what a new tab here can be. */}
+          Hermes · Claude Code · Codex · Gemini · hqsh
         </span>
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 9, color: 'rgba(212,216,232,0.3)', fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.04em' }}>

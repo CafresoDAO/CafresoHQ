@@ -29457,3 +29457,48 @@ failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
 This change covers only the `tasksOnLoad` scrub in `app.jsx`, the one new
 test file, and this entry; `src/cafresohq_state/main.mo` was never staged or
 edited, and no dfx/IC action of any kind was run.
+
+---
+
+## 234. The Terminal tab's header undersold its own "+" menu
+
+`views/misc.jsx`'s `TerminalView` — the standalone, full-page HQ Terminal
+tab — renders a header subtitle meant to tell a boss what a new session in
+this tab can be: `Hermes · Claude Code · Codex · Gemini`. The "+" button
+right next to it, backed by `ProjectTerminal`'s `addSession` menu in
+`views/terminal.jsx`, has always offered a fifth option alongside those
+four: `hqsh — HQ chain shell`, a browser-side REPL (not a PTY at all) for
+`hq wallets` / `hq send` / `hq payroll` / `hq status` and friends — the only
+place in the app those canister-shell commands live.
+
+Traced the history: `hqsh` was already present in `views/terminal.jsx` in
+`df10d31`, the very refactor that split `views/misc.jsx` out of the old
+monolithic `views.jsx` — so the header text has been wrong since day one of
+this file's existence, not from later drift. A boss reading the header has
+no reason to suspect a fifth kind of session exists, let alone that it's the
+one that talks to the chain.
+
+**The fix.** Append `· hqsh` to the header subtitle in `views/misc.jsx` —
+text only, no behavior change; the menu already offered the option.
+
+**The proof.** `scripts/test_terminal_header_lists_every_cli.py` parses the
+real `addSession` menu's literal `['id', icon, 'Label', bool]` list straight
+out of `views/terminal.jsx` (the ground truth for what "+" offers, not a
+hand-copied guess) and asserts every one of those CLI ids is mentioned in
+`views/misc.jsx`'s header subtitle, by id or by label. It fails against the
+unfixed header (missing `hqsh`) and passes once the subtitle lists it.
+
+Fire-tested: copied the fixed `views/misc.jsx` to `/tmp`, reverted the one
+line in place back to the four-CLI subtitle (never `git checkout -- <file>`)
+— the test failed, reporting the header doesn't mention `hqsh`. Restored
+from the `/tmp` copy, confirmed byte-identical by `md5`, reran — passed.
+
+`npm run build` run after the `misc.jsx` change — 8 assets built clean.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the same `moc`/M0219 `main.mo` toolchain mismatch tracked in `#188` through
+`#233`, on a file a foreign session owns and this change never touches).
+This change covers only the header subtitle in `views/misc.jsx`, the one new
+test file, and this entry; `src/cafresohq_state/main.mo` was never staged or
+edited, and no dfx/IC action of any kind was run.
