@@ -31323,3 +31323,101 @@ its own twelve behavioral checks are untouched and still pass.
 This change covers only `app.jsx`, the one new test file, that one stub line,
 and this entry; `src/cafresohq_state/main.mo` was never staged or edited, and
 no dfx/IC action of any kind was run.
+
+---
+
+## 257. The office ran the marker its registry listed first, not the one the coworker wrote first
+
+**The reading.** Assigned area: `hq-runtime.jsx`, the tool-dispatch and
+marker-parsing path. `detectToolCall` is the single authority both stream
+loops consult for "did the coworker call a tool, and which one". Its bracket
+pass — the one every local brain actually goes through, since only Anthropic,
+Google and a short list of capable locals get the JSON format — read:
+
+    for (const t of tools) {
+      const m = String(scan).match(t.re);
+      if (m) return { tool: t, arg: m[1], body: m[2] || '', raw: m[0] };
+    }
+
+It returns on the first tool whose regex matches **anywhere** in the reply. So
+the winner is a property of the order `toolsForAgent` pushes tools in, and
+that order is fixed: SEARCH first, then the whole vault group
+(VAULT_SEARCH/READ/APPEND/NEW, the three exporters), then files/shell, then
+browser, then the private-memory pair.
+
+A coworker holding `web` + `vault` — the two cheapest, most-hired boxes on
+the form — files what it found and then asks one more question, which is
+exactly the shape the tool docs teach:
+
+    [VAULT_NEW: Research/findings.md]
+    …everything it had just worked out…
+    [/VAULT_NEW]
+    [SEARCH: one more thing]
+
+The SEARCH ran. The write never happened.
+
+**Why nothing caught it.** The skip is invisible from every direction at
+once:
+
+- `upToToolCall(buf, call.raw)` keeps the buffer up to and **including** the
+  marker that ran. The VAULT_NEW block sits before it, so opener, body and
+  closer all go back into the transcript as something the coworker *said* —
+  with `[TOOL_RESULT: SEARCH]` underneath and "Do NOT repeat the tool call"
+  beside it. Every signal the model has says the note is filed. It says so to
+  the boss.
+- `openedMarkers` / `reachedFor` only speak up about markers the coworker was
+  **not** granted. VAULT_NEW was granted. Silence.
+- The delivery sheet's unfiled-path note reads the CLEANED body, and the
+  strippers have already removed the block by then.
+
+So the boss is told the findings are in the Library, in the office's own
+voice, and the Library is empty. That is §4's line crossed with the one
+failure mode this file keeps returning to: not "nothing happened" but "the
+office vouched for something that did not happen". And the lost thing is a
+whole authored body, not a retryable lookup — the coworker's only copy of its
+own work, thrown away between two hops.
+
+**The fix.** One comparison. Among the tools whose regex matches, take the
+one whose match starts **earliest in the reply**; ties keep registry order
+(`<`, not `<=`), so nothing changes where two markers genuinely begin at the
+same offset. The model emits calls in the order it means them to run, and hop
+2 picks up whatever it wrote after the one that did.
+
+**The proof.**
+`scripts/test_the_first_marker_in_the_reply_runs_first.py` lifts the real
+`detectToolCall` — with `maskReasoning`, the JSON and harmony detectors,
+`extractAllDMs` and `upToToolCall` — out of `hq-runtime.jsx` by name and runs
+them under Node against a tool array in the order `toolsForAgent` really
+pushes them. It drives the measured shape and its neighbours (a filing then a
+question, the same with prose around it, a shell call ahead of a read), and
+holds the cases that already worked: a reply whose SEARCH really was first
+still runs the SEARCH, a lone marker is untouched. Two further checks make
+the win worth having rather than merely earliest — the block that runs must
+carry its **own** body, and `upToToolCall` on the returned `raw` must cut the
+transcript at `[/VAULT_NEW]`, not past it. Then the mechanism itself is
+pinned (every outcome case would pass again if someone just reordered
+`TOOL_REGISTRY`), and the four faked regexes are matched byte-for-byte
+against `TOOL_REGISTRY`, so a pattern change there reaches this suite instead
+of leaving it testing a fiction.
+
+Fire-tested: copied the fixed `hq-runtime.jsx` to `/tmp`, reverted the
+earliest-match loop in place with the editor (never `git checkout -- <file>`)
+back to the early-return form — 7 checks failed, including
+`got SEARCH('one more thing'), wanted VAULT_NEW('Research/findings.md')`,
+exit 1. Restored from the `/tmp` copy, confirmed byte-identical by `md5`
+(`b44e995f2c42a5d00b69fae1dc3c2370`), reran — all 13 checks passed, exit 0.
+
+`npm run build` run after the change.
+
+**Suite:** `python3 scripts/run_tests.py` — 439/441, with the expected
+pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+same `moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on
+a file a foreign session owns and this change never touches). The second,
+`scripts/test_the_night_shift_carries_the_bosss_memory.py`, died on a
+`FileNotFoundError` for its own scratch `hq/memory/context.json` under the
+parallel runner and passes every check standalone — a temp-directory race in
+the harness, not a claim about this change, which touches nothing that suite
+reads. This change covers only `hq-runtime.jsx`, the one new test file, and
+this entry; `src/cafresohq_state/main.mo` was never staged or edited, and no
+dfx/IC action of any kind was run.

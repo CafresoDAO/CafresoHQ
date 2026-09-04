@@ -3371,10 +3371,39 @@ function detectToolCall(text, tools) {
   const scan = maskReasoning(text);
   const jsonCall = detectJsonToolCall(scan, tools);
   if (jsonCall) return jsonCall;
+  /* FIRST in the REPLY, not first in the registry.
+     This loop used to return on the first tool whose regex matched
+     anywhere, which made the winner a property of the ORDER toolsForAgent
+     happens to push tools in — and that order puts SEARCH ahead of the
+     whole vault group. So a coworker with 'web' + 'vault' who wrote its
+     note and then asked one more question:
+
+       [VAULT_NEW: Research/findings.md]
+       …everything it had just worked out…
+       [/VAULT_NEW]
+       [SEARCH: one more thing]
+
+     ran the SEARCH. The write never happened. And because `upToToolCall`
+     keeps everything up to and including the marker that ran, the whole
+     VAULT_NEW block — opener, body, closer — went back into the transcript
+     as something the coworker had SAID, with a [TOOL_RESULT: SEARCH] under
+     it and "Do NOT repeat the tool call" beside it. Every signal the model
+     has says the file is filed. It says so to the boss, the boss opens the
+     Library, and there is nothing there. Silent data loss, and the office
+     vouches for it.
+     Nothing downstream can recover this: the skipped marker is granted, so
+     `reachedFor`/`openedMarkers` says nothing, and the sheet's own
+     unfiledPath note reads the CLEANED body, where the block is gone.
+     Earliest match wins, ties keep registry order (`<`, not `<=`) so the
+     old behaviour survives wherever two markers genuinely start together.
+     The model emits calls in the order it means them to run, and hop 2
+     picks up whatever it wrote after the one that did. */
+  let best = null;
   for (const t of tools) {
     const m = String(scan).match(t.re);
-    if (m) return { tool: t, arg: m[1], body: m[2] || '', raw: m[0] };
+    if (m && (!best || m.index < best.m.index)) best = { t, m };
   }
+  if (best) return { tool: best.t, arg: best.m[1], body: best.m[2] || '', raw: best.m[0] };
   /* A [DM_TO: name] opener whose [/DM_TO] simply never got emitted.
      Observed twice, both documented in this file: an 8B Claude-family
      local model (the orphan-tag note above), and -- found by capturing
