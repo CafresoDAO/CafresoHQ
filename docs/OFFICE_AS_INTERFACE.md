@@ -30952,3 +30952,106 @@ onward, on a file a foreign session owns and this change never touches).
 This change covers only `app/experience.jsx`, the one new test file, and this
 entry; `src/cafresohq_state/main.mo` was never staged or edited, and no
 dfx/IC action of any kind was run.
+
+---
+
+## 253. A workflow could be built around a step that was no longer there
+
+**The reading.** Assigned area: `modals/collab.jsx` — the NEW WORKFLOW panel.
+Tools → ⛓ Workflows: pick tasks off "AVAILABLE TASKS", order them, name the
+pipeline, press CREATE WORKFLOW.
+
+Which tasks may become a step is decided by one line, and it is a careful
+one — `#`-numbered fixes are stacked on top of it:
+
+    const inboxTasks = tasks.filter(t =>
+      t.status === 'inbox' && !t.workflowId && !steps.includes(t.id));
+
+Its own comment argues, in full, why `status === 'inbox'` and not the weaker
+`!== 'done'`: chain an already-`doing` task in as step 2 and CREATE wires it
+with `dependsOn: [step1.id]` as if it were queued, but nothing ever gated its
+start — "if it finishes before step 1, app.jsx's chain-advance fires step 3
+immediately with step 1 still unfinished; if step 1 finishes first, the
+hand-off silently no-ops … with no error and no sign to the boss that the
+chain never actually took."
+
+That rule ran **once per task, at the click that added it**, and nothing ever
+re-ran it. The panel then stays open for as long as it takes to type a name
+and a description, while the office behind it keeps moving. `steps` is a list
+of ids, and ids do not notice.
+
+    steps = ['a', 'b', 'c']          // picked, in order, all inbox
+    …boss types a name; meanwhile Rocky picks 'b' up, or the boss
+      deletes 'b' from the board…
+    submit() → taskPatches for a, b, c — unchanged
+
+`onSave` in `app.jsx` maps patches onto the board by id, so the patch for a
+task that is *gone* silently no-ops. Its neighbours keep the pointers to it:
+
+    a.chainTo   = 'b'      // a task that is not on the board
+    c.dependsOn = ['b']    // …waiting on it
+
+`app.jsx` already knows exactly how bad that is, and says so where it deletes
+a task — it scrubs both pointers off every other card, because a
+predecessor's chain-advance "would silently find nothing and skip the whole
+chain-advance block with no stalledNote and no activity row", and a
+successor's `dependsOn` "would carry a dangling id forever … holding it in
+the inbox with no way to ever become unblocked." That scrub runs at **delete**
+time. Building the workflow afterwards re-mints the pointer that was just
+removed, and there is no second scrub. This panel was the one place in the
+office that could manufacture the state the rest of it works to prevent.
+
+The `doing` variant is the twin the `inboxTasks` comment already describes —
+same two endings, reached from the other side.
+
+Neither wreck announces itself. `workflowStatusBits`, three panels up, reads
+the deleted case as `0/3 done · 1 removed` and the started case as
+`0/3 done · 1 in progress`, and the boss waits.
+
+The STEPS list was already half-aware: `const t = tasks.find(x => x.id ===
+id); if (!t) return null;` hides the vanished row while the heading above it
+still says `STEPS (3)` and the footer still says `3 steps ready.`
+
+**The fix.** The add-time rule is pulled out as `chainableSteps(steps,
+tasks)` — exists, `inbox`, unclaimed — and re-run in two places. An effect
+prunes `steps` against the live board, so the list, its count, the footer and
+`submit` cannot disagree about what is going to be chained; a line names what
+was taken out and why, because a three-step pipeline quietly becoming a
+two-step one is the same lie one level up. And `submit` re-runs it itself,
+because the click is what mints the pointers and a check from a render ago is
+not the board at click time. The 2-step minimum is measured on the checked
+list, so one survivor of three files no workflow at all rather than a
+one-step "chain".
+
+**The proof.**
+`scripts/test_a_workflow_never_chains_a_task_that_left_the_inbox.py` lifts
+the real `chainableSteps` **and the real `submit` body** out of
+`modals/collab.jsx` by name (brace-balanced, hard-stopping if either
+signature is gone, so a locator that no longer matches can never hand back an
+empty string that satisfies every negative check) and runs them under Node.
+It drives the deleted-mid and started-mid cases end to end and audits every
+pointer the workflow files — each `chainTo` and each `dependsOn` id must land
+on a task that is both on the board and part of this workflow — then asserts
+the survivors are re-chained head-to-tail rather than left with a hole where
+step 2 was. An untouched three-step pipeline must still file all three in the
+boss's order; a step that finished, or that another workflow claimed in the
+meantime, is dropped the same way; a missing `tasks` list is survivable
+rather than a crash on the CREATE click.
+
+Fire-tested: copied the fixed `modals/collab.jsx` to `/tmp`, reverted the
+helper, the effect, the dropped-steps note and the `submit` guard in place
+with the editor (never `git checkout -- <file>`) back to a byte-identical
+copy of `HEAD` — 10 checks failed, including the audits catching
+`a.chainTo -> ghost b` and `c.dependsOn -> ghost b`, exit 1. Restored from
+the `/tmp` copy, confirmed byte-identical by `md5`
+(`d56b1cdf42a96728afcd24079a09f88b`), reran — all checks passed, exit 0.
+
+`npm run build` run after the change.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the same `moc`/M0219 `main.mo` toolchain mismatch tracked from `#188`
+onward, on a file a foreign session owns and this change never touches).
+This change covers only `modals/collab.jsx`, the one new test file, and this
+entry; `src/cafresohq_state/main.mo` was never staged or edited, and no
+dfx/IC action of any kind was run.

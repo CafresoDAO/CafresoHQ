@@ -44,17 +44,70 @@ function workflowStatusBits(wf, tasks, experience) {
   return bits.join(' · ');
 }
 
+/* Which of the steps the boss has picked can STILL be chained, read against
+   the board as it is right now.
+
+   The three exclusions below are the same ones `inboxTasks` applies when a
+   task is offered — but that check ran once, at the moment of the click, and
+   nothing re-ran it afterwards. This modal stays open while the office keeps
+   moving: a coworker picks the next inbox card up, or the boss deletes one
+   from the board behind it. `steps` held the id either way, and `submit`
+   shipped it.
+
+   Both endings are the ones app.jsx already spells out in its own comments:
+
+   - Deleted step. The delete handler scrubs every `chainTo`/`dependsOn`
+     pointing at the id it is removing, and says why — a predecessor's
+     chain-advance "would silently find nothing and skip the whole
+     chain-advance block with no stalledNote and no activity row", and a
+     successor's `dependsOn` "would carry a dangling id forever … holding it
+     in the inbox with no way to ever become unblocked". That scrub runs at
+     delete time. Creating the workflow AFTERWARDS mints the exact pointer it
+     just removed, and there is no second scrub — this modal was the one
+     place in the office that could manufacture that corrupt state.
+
+   - Started step. The comment on `inboxTasks` already argues this case in
+     full: a `doing` step wired up with `dependsOn` was never gated by its
+     predecessor, so it either fires the step after it early or the hand-off
+     silently no-ops (`nextTask.status === 'inbox'` is false).
+
+   Pulled out as a plain function so this component and its test run the same
+   rule rather than two descriptions of it. */
+function chainableSteps(steps, tasks) {
+  return steps.filter(id => {
+    const t = (tasks || []).find(x => x.id === id);
+    return !!t && t.status === 'inbox' && !t.workflowId;
+  });
+}
+
 function WorkflowModal({ open, onClose, tasks, workflows, onSave, onOpenBoard, experience = [] }) {
   const [name, setName] = useStateM('');
   const [desc, setDesc] = useStateM('');
   const [steps, setSteps] = useStateM([]); // array of task ids in order
   const [autoDispatch, setAutoDispatch] = useStateM(false);
+  /* Titles of steps that stopped being chainable while this panel was open.
+     Dropping them silently would be the same lie one level up: the boss
+     built a three-step pipeline and would get a two-step one without a word. */
+  const [droppedSteps, setDroppedSteps] = useStateM([]);
 
   /* Reset on (re)open so a previous workflow draft doesn't persist. */
   useEffectM(() => {
     if (!open) return;
-    setName(''); setDesc(''); setSteps([]); setAutoDispatch(false);
+    setName(''); setDesc(''); setSteps([]); setAutoDispatch(false); setDroppedSteps([]);
   }, [open]);
+
+  /* Re-run the add-time rule against the live board, so the STEPS list, the
+     count in its heading, the footer and `submit` cannot disagree about what
+     is actually going to be chained. See `chainableSteps` above. */
+  useEffectM(() => {
+    if (!open || !steps.length) return;
+    const live = chainableSteps(steps, tasks);
+    if (live.length === steps.length) return;
+    const gone = steps.filter(id => !live.includes(id))
+      .map(id => { const t = (tasks || []).find(x => x.id === id); return t ? t.title : 'a deleted task'; });
+    setSteps(live);
+    setDroppedSteps(d => [...d, ...gone]);
+  }, [open, steps, tasks]);
 
   if (!open) return null;
 
@@ -116,17 +169,22 @@ function WorkflowModal({ open, onClose, tasks, workflows, onSave, onOpenBoard, e
   const moveUp = (i) => { if (i === 0) return; const s = [...steps]; [s[i-1], s[i]] = [s[i], s[i-1]]; setSteps(s); };
 
   const submit = () => {
-    if (!name.trim() || steps.length < 2) return;
+    /* The effect above normally has `steps` pruned before a click can land,
+       but the click is what MINTS the pointers, so the rule is re-run here
+       rather than trusted from a render ago — a step that started between
+       the last paint and this click must not be chained in. */
+    const live = chainableSteps(steps, tasks);
+    if (!name.trim() || live.length < 2) return;
     const wfId = HQ.uid('wf');
     // Link tasks: set chainTo for each step pointing to the next
     onSave({
-      workflow: { id: wfId, name: name.trim(), description: desc.trim(), steps, createdAt: Date.now() },
-      taskPatches: steps.map((id, i) => ({
+      workflow: { id: wfId, name: name.trim(), description: desc.trim(), steps: live, createdAt: Date.now() },
+      taskPatches: live.map((id, i) => ({
         id,
         workflowId: wfId,
-        chainTo: steps[i + 1] || null,
+        chainTo: live[i + 1] || null,
         autoDispatch,
-        dependsOn: i > 0 ? [steps[i - 1]] : null,
+        dependsOn: i > 0 ? [live[i - 1]] : null,
       })),
     });
     onClose();
@@ -206,6 +264,14 @@ function WorkflowModal({ open, onClose, tasks, workflows, onSave, onOpenBoard, e
             </div>
             <div className="cb-panel">
               <h4>STEPS ({steps.length})</h4>
+              {droppedSteps.length > 0 && (
+                <div className="muted" style={{fontSize:9,marginBottom:6,fontStyle:'italic'}}>
+                  ⚠ {droppedSteps.length === 1 ? 'One step was' : `${droppedSteps.length} steps were`} taken
+                  out while you were here — {droppedSteps.map(t => `"${cardNote(t, 30)}"`).join(', ')}
+                  {' '}started or was deleted on the board, and a workflow can only chain a task that
+                  has not started. Add {droppedSteps.length === 1 ? 'another' : 'others'} below.
+                </div>
+              )}
               <div className="stack" style={{marginBottom:10}}>
                 {steps.length === 0 && <div className="muted">Add tasks from the list below →</div>}
                 {steps.map((id, i) => {
