@@ -28551,3 +28551,64 @@ in-progress Motoko migration on a file this change never touches. This
 change covers only `onKey` in `ui/feedback.jsx`, the one new test file
 and this entry; `src/cafresohq_state/main.mo` was never staged or
 edited, and no dfx/IC action of any kind was run.
+
+---
+
+## 220. The doorman checked the spelling, the vault checked the sound
+
+**The reading.** Assigned area: serve.py's auth/session/API-route
+remainder — the key gate, the CORS seams, the static fallthrough, the
+proxy and tool-execution dispatch. The `_api_key_ok` loopback floor,
+the `_app_origins` rebinding defence, the `/agent/` prefix precision
+(#217's neighbour) and the approvals GC all checked out. The live find
+was in `_static_path_allowed` — the same doorman #212 taught about
+hidden dot-segments, fooled again by a different disguise.
+
+**The bug.** The gate's rules (b) and (c) are string comparisons on the
+path AS THE CALLER SPELLED IT: `endswith('.py')` refuses source,
+`startswith(state_root)` refuses hq-state/. But the filesystem the
+fallthrough then opens from — macOS/APFS by default, Windows always —
+resolves names case-insensitively. The gate judged the spelling; the
+open() went by the sound. Measured live against the real server, no API
+key supplied, canonical-case paths all 404ing:
+
+    GET /serve.PY              → 200  (the server's own source)
+    GET /Serve.pY              → 200
+    GET /HQ-STATE/tls/key.pem  → 200  (the TLS private key)
+
+And key.pem's neighbours are the point: hq-state/ holds the vault, the
+memory dir and every state JSON — the BYOK-adjacent secrets this gate
+exists to keep off the wire — all one case-swapped sibling request away,
+on the deliberately key-exempt route, from any peer who can reach the
+port.
+
+**The fix.** Casefold before comparing, rules (b) and (c) only. This is
+the conservative direction: on a case-sensitive filesystem a folded
+match can only refuse MORE (a file differing from serve.py or hq-state
+solely in case — none ships), never serve more. Rule (a)'s containment
+and rule (d)'s dot check were already case-proof — a realpath'd escape
+needs `..` and a dot is a dot in any case.
+
+**The test** (`scripts/test_a_case_swapped_path_is_the_same_file.py`)
+probes both halves. The gate function itself, imported from the real
+serve.py, must refuse `/serve.PY`, `/Serve.pY` and a case-swapped
+spelling of a planted state dir — deterministic on any filesystem. Then
+the real server, booted on a free port with a TLS key planted in an
+isolated state dir, is asked over actual HTTP the way an attacker would
+ask: every case-swapped path 404s, the canonical refusals still hold,
+and `/styles.css` still serves — a gate that refuses everything would
+pass the rest and take the UI shell down with it.
+
+Fire-tested: reverted the casefold in place (never `git checkout`), the
+gate waved `/serve.PY` through and the live server handed over both the
+source and the planted key (6 FAILs, exit 1); restored from the /tmp
+safety copy (md5-verified byte-identical), all ten checks green.
+
+**Suite: 405/406** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` toolchain mismatch
+recorded since `#188` — a different session's in-progress Motoko
+migration on a file this change never touches. This change covers only
+`_static_path_allowed` in serve.py, the one new test file and this
+entry; `src/cafresohq_state/main.mo` was never staged or edited, and no
+dfx/IC action of any kind was run.

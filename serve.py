@@ -1983,11 +1983,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if resolved != root and not resolved.startswith(root + os.sep):
                 return False
             # (b) never serve Python source
-            if resolved.endswith('.py'):
+            # (b)+(c) compare case-insensitively: the string checks below see
+            # the path AS REQUESTED, but macOS/APFS (and Windows) open files
+            # case-insensitively — measured live, '/serve.PY' answered 200
+            # with this file's source and '/HQ-STATE/tls/key.pem' answered 200
+            # with the TLS private key while the canonical-case paths 404'd.
+            # Casefolding is the conservative direction: on a case-SENSITIVE
+            # fs it can only block more (a distinct file differing solely in
+            # case — none ships), never expose more.
+            folded = resolved.casefold()
+            if folded.endswith('.py'):
                 return False
             # (c) never serve the state dir (tls/, vault/, memory/, *.json)
             state_root = os.path.realpath(str(_hq_state_dir))
-            if resolved == state_root or resolved.startswith(state_root + os.sep):
+            state_folded = state_root.casefold()
+            if folded == state_folded or folded.startswith(state_folded + os.sep):
                 return False
             # (d) never serve a hidden file or anything under a hidden
             # directory. `.env` holds the keys its own header says to fill in,
