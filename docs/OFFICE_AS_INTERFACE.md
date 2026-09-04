@@ -28320,3 +28320,56 @@ this change never touches. This change covers only `_vault_binary_path`
 in `exporters.py`, the one new test file and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, and no
 dfx/IC action of any kind was run.
+
+---
+
+## 216. Speaking in the quiet room erased what arrived while you drew breath
+
+**The bug.** The 1:1 focus room (`FocusMode` in `features.jsx`) landed
+the boss's message with `setChat(pending)` — a whole-array replace built
+from the render-time `chat` snapshot. `chat` is the single app-wide,
+cross-thread array: delegated runs, DM relays and other threads' streams
+keep appending to it through functional updates while the boss sits in
+the quiet room, at 30–100 writes a second when anything is streaming.
+React applies queued updates in order, but a value write is a replace —
+whatever a background coworker appended between FocusMode's last render
+and the SEND click was evaluated first and then thrown away wholesale.
+The message was gone from state, and the office persists `chat`, so it
+was gone from the saved office too. Silent, permanent state loss, in
+the room whose banner says "no distractions" — the distraction was
+deleted instead of deferred.
+
+**Why it survived.** ui/chat.jsx's send() had this exact bug and carries
+the fix with its own comment ("An append cannot do that, whatever it is
+holding"). FocusMode's send() was written separately, and two comments
+already inside it record two OTHER fixes from that sibling arriving
+late — the rAF-flush cancel and the visibleReply cleanup. This was the
+third member of the same family, one line above them.
+
+**The fix.** One line: `setChat(p => [...p, userMsg])`. `pending` stays
+exactly as built — it is only the context snapshot handed to
+`HQ.ceoStream`, the same state-write/context-build split ui/chat.jsx
+makes.
+
+**The test**
+(`scripts/test_focus_mode_send_appends_instead_of_replacing_chat.py`)
+reads the real source, extracts the actual `pending` build and the
+actual state write, and re-enacts React's queue in Node: live state
+already holds a background DM the render never saw; the extracted write
+runs; Vera's message must survive and the boss's must land after it. It
+also pins that the model-context snapshot still ends with the new user
+message, so the fix cannot drift into changing what the CEO is sent.
+
+Fire-tested: reverted the write to `setChat(pending)` in place — the
+background DM came back `['m1', 'u2']`, Vera erased, exit 1. Restored
+from the /tmp safety copy (md5-verified byte-identical, never
+`git checkout`), test green. `npm run build` re-bundled dist-ui.
+
+**Suite: 400/401** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc` toolchain mismatch recorded in `#188`
+through `#213` — a different session's in-progress Motoko migration on
+a file this change never touches. This change covers one line in
+`features.jsx`, the one new test file and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, and no dfx/IC
+action of any kind was run.

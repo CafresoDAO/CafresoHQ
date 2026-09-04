@@ -775,7 +775,18 @@ function FocusMode({ active, onClose, chat, setChat }) {
     setInput('');
     const userMsg = { id: 'm_'+Math.random().toString(36).slice(2,7), from:'user', name:'You', text };
     const pending = [...chat, userMsg];
-    setChat(pending);
+    /* APPEND, never replace. `chat` here is the render-time snapshot of the
+       single app-wide, cross-thread array — background coworkers (delegated
+       runs, DM relays, another thread's stream) keep appending to it through
+       functional updates while the boss sits in this quiet room. Writing
+       `setChat(pending)` replaced the whole array with that snapshot, so
+       anything that landed after the last render was erased from state (and
+       from the persisted office with it). ui/chat.jsx's send carries this
+       exact fix — "An append cannot do that, whatever it is holding" — and
+       FocusMode's send() was written separately and never inherited it,
+       same as the two fixes already noted further down this function.
+       `pending` stays as built: it is only the model's context snapshot. */
+    setChat(p => [...p, userMsg]);
     setStreaming(true);
     const ceoId = 'm_'+Math.random().toString(36).slice(2,7);
     setChat(p => [...p, { id: ceoId, from:'ceo', name:'CafresoHQ', text:'', streaming:true }]);
