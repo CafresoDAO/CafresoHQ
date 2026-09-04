@@ -237,7 +237,15 @@ function DialogHost() {
   const okValue = () => req.kind === 'prompt' ? draft : true;
   const onKey = (e) => {
     if (e.key === 'Escape') { e.stopPropagation(); done(cancelValue); }
-    if (e.key === 'Enter' && (req.kind === 'prompt' || e.target === okRef.current || req.kind === 'confirm')) {
+    if (e.key === 'Enter') {
+      /* Enter must NOT resolve OK when focus sits on a different button —
+         the old `req.kind === 'confirm'` arm made this branch fire for ANY
+         Enter in a confirm dialog, so Tab→Cancel→Enter resolved TRUE (the
+         keydown bubbles here and settles the promise before the Cancel
+         button's own native click can resolve false): the keyboard path to
+         declining a danger dialog performed the deletion instead. Let a
+         non-OK button's native Enter activation (its onClick) do its job. */
+      if (e.target instanceof HTMLButtonElement && e.target !== okRef.current) return;
       e.stopPropagation(); done(okValue());
     }
   };

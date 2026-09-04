@@ -28497,3 +28497,57 @@ this change never touches. This change covers only `useStoredV` in
 `views/core.jsx`, the one new test file and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, and no
 dfx/IC action of any kind was run.
+
+---
+
+## 219. Enter on the Cancel button did the very thing being declined
+
+**The reading.** Assigned area: `ui/feedback.jsx`, `ui/office.jsx`,
+`ui/panels.jsx`, `ui/primitives.jsx` (chat.jsx's stop button and
+pending-bridge buffer, and onboarding.jsx's typing guard, already fixed
+in #199/#217/#196). The toast queue's re-entry guard (#toast fix), the
+palette's once-per-keystroke handler, and the pause/resume timer
+bookkeeping all traced clean. The live find was in `DialogHost` — the
+in-app replacement for `window.confirm`, the surface that exists
+precisely so danger dialogs behave.
+
+**The bug.** `DialogHost.onKey` handled Enter with the condition
+`(req.kind === 'prompt' || e.target === okRef.current || req.kind ===
+'confirm')`. That last arm made the branch fire for ANY Enter anywhere
+inside a confirm dialog — the Cancel button included. Keyboard route:
+the dialog focuses OK on open, the boss Tabs to Cancel and presses
+Enter. The keydown bubbles from the focused button up to the dialog
+div's `onKeyDown` BEFORE the browser performs the button's default
+Enter activation (its click), so `done(okValue())` settled the promise
+with `true` first; Cancel's own `done(false)` then arrived at an
+already-resolved promise and was silently swallowed. On a
+`{ danger: true }` dialog — the "Delete "x"?" kind — the keyboard path
+to declining performed the deletion instead. The one dialog whose whole
+job is offering a safe way out had no working keyboard exit but Escape.
+
+**The fix.** One guard in `onKey` (ui/feedback.jsx): when the Enter
+keydown's target is a button other than the OK button, step aside and
+let that button's native activation resolve the dialog. Enter in a
+prompt's text input, and Enter on the OK button itself, behave exactly
+as before.
+
+**The test** (`scripts/test_enter_on_cancel_does_not_confirm.py`) lifts
+the REAL `onKey` out of ui/feedback.jsx (brace-balanced) and executes
+it under Node with a once-only promise-resolve stand-in, replaying the
+true event order — bubbled keydown first, then the button's
+default-action click. Enter-on-Cancel must resolve false; it also pins
+Enter-on-OK resolving true and Enter-in-prompt resolving the draft.
+
+Fire-tested: reverted the guard in place (never `git checkout`), the
+test showed `enterOnCancel: true` — the deletion firing — and exited 1;
+restored from the /tmp safety copy (md5-verified byte-identical), all
+green. `npm run build` rebuilt dist-ui clean.
+
+**Suite: 405/406** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` implicit-`transient`
+toolchain mismatch recorded since `#188` — a different session's
+in-progress Motoko migration on a file this change never touches. This
+change covers only `onKey` in `ui/feedback.jsx`, the one new test file
+and this entry; `src/cafresohq_state/main.mo` was never staged or
+edited, and no dfx/IC action of any kind was run.
