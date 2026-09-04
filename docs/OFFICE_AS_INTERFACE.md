@@ -31055,3 +31055,100 @@ onward, on a file a foreign session owns and this change never touches).
 This change covers only `modals/collab.jsx`, the one new test file, and this
 entry; `src/cafresohq_state/main.mo` was never staged or edited, and no
 dfx/IC action of any kind was run.
+
+---
+
+## 254. An .svg in the workspace could run its own code in the office
+
+**The reading.** Assigned area: `views/terminal.jsx` and `views/ide.jsx`.
+The stronger finding was in `ide.jsx` — `FilePreview`, the "universal
+artifact preview" whose own banner comment says its whole point is that
+users can *SEE* what an agent built, "right beside the editor". One click
+on a file row in `LocalTree` opens it.
+
+`previewKind()` sorts a path into seven kinds, and each kind gets an arm.
+Two of them render markup that came off disk, and they did not agree with
+each other about what that markup is allowed to do:
+
+    if (kind === 'html')  → <iframe sandbox="allow-scripts allow-popups
+                              allow-forms allow-modals" srcDoc={…} />
+    if (kind === 'svg')   → <div style={pad}
+                              dangerouslySetInnerHTML={{ __html: file.content }} />
+
+The HTML arm is careful, and the Library's `HtmlFramePreview` in
+`vault.jsx` spells out the reasoning the two share: "No `allow-same-origin`
+— page markup can come from any hired coworker, and a sandboxed opaque
+origin means a live script in there still cannot reach this app's own
+storage, cookies, or DOM."
+
+The svg arm is the same untrusted bytes with none of that. `file.content`
+is whatever `FILE_READ` returned for the path the boss clicked, injected
+into **this** document.
+
+**The bug.** An `.svg` is markup, not a picture. `innerHTML` declines to
+execute a bare `<script>`, and that is the whole of the protection the arm
+had — everything else in an SVG's attack surface survives the insert:
+
+    <svg><animate onbegin="…" attributeName="x" dur="1s"/></svg>
+    <svg><img src=x onerror="…"></svg>   ← `img` is an HTML-integration
+                                            breakout: the parser leaves
+                                            foreign content and builds a
+                                            real <img>, so onerror fires
+    <svg><a href="javascript:…"><rect …/></a></svg>
+    <svg><style>…position:fixed;inset:0…</style></svg>
+
+So any `.svg` anywhere in the workspace — a cloned repo's asset, a file an
+agent downloaded, a deliverable a coworker wrote — got arbitrary JS in the
+origin that holds the Internet Identity session, the stored BYOK API keys
+(`anthropic` / `openai` / `google`, the ones `terminal.jsx` hands to a PTY
+on every connect), and every `cafresohq_*` key in `localStorage`. The
+office has one door for looking at a file it did not write, and that door
+was the unlocked one. The `<style>` variant does not even need script: it
+can paint the whole app over, which is a phishing surface on a screen the
+boss trusts by construction.
+
+Nothing about the click warns of any of this. The tree row for an `.svg`
+looks exactly like the tree row for a `.png`, and the preview is captioned
+by the same banner that promises a view of the work.
+
+**The fix.** The svg arm becomes an iframe on an opaque origin, like its
+neighbours — `sandbox=""`, granting nothing at all, because unlike a page
+preview a picture needs no script to be a picture. `srcDoc={file.content
+|| ''}` so the boss still sees the file they clicked; the `frame` style is
+the one the HTML and PDF arms already use, so it fills the pane the same
+way.
+
+**The proof.**
+`scripts/test_an_svg_preview_is_a_picture_not_a_program.py` slices the
+`kind === 'svg'` arm out of the real `FilePreview` in `views/ide.jsx` and
+pins both halves: the sink is gone (no `dangerouslySetInnerHTML` in that
+arm) *and* what replaced it is actually walled off — an iframe, with a
+`sandbox` attribute that exists, that is empty, and that in particular
+never grants `allow-same-origin`, while still carrying `file.content`. It
+then holds the neighbours to the same line — both HTML arms keep their
+sandboxes and neither becomes same-origin — and sweeps the whole file for
+any *other* `dangerouslySetInnerHTML` fed straight from file bytes, so the
+next preview kind cannot quietly reopen the hole under a different
+extension. (`renderMarkdown` is the one allowed source: it entity-escapes
+before it looks for syntax.)
+
+Fire-tested: copied the fixed `views/ide.jsx` to `/tmp`, reverted the arm
+in place with the editor (never `git checkout -- <file>`) back to the
+`<div … dangerouslySetInnerHTML>` — 7 checks failed, including the
+file-wide sweep reporting `['file.content']`, exit 1. Restored from the
+`/tmp` copy, confirmed byte-identical by `md5`
+(`1497281988cd90b590815e5694ca992a`), reran — all 9 checks passed, exit 0.
+
+`npm run build` run after the change.
+
+**Suite:** `python3 scripts/run_tests.py` — 439/441 suites passed. Two
+pre-existing failures, neither reachable from this change:
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+same `moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on
+a file a foreign session owns and this change never touches) and
+`scripts/test_the_night_shift_carries_the_bosss_memory.py`, one check — "no
+store file → empty summary (200+null path)" — which reads only
+`hq-runtime.jsx`, `views/core.jsx` and `night_runner.py`. This change covers
+only `views/ide.jsx`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, and no dfx/IC
+action of any kind was run.

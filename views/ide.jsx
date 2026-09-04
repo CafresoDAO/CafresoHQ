@@ -660,7 +660,19 @@ function FilePreview({ file, nonce }) {
   if (kind === 'markdown')
     return <div className="vault-preview" style={{flex:1, overflow:'auto', padding:'16px 22px', background:'var(--paper,#fff)'}} dangerouslySetInnerHTML={{ __html: renderMarkdown(file.content || '') }} />;
   if (kind === 'svg')
-    return <div style={pad} dangerouslySetInnerHTML={{ __html: file.content }} />;
+    /* An .svg is markup, not a picture — it carries <script>, event
+       handlers (<animate onbegin>, an <img onerror> that breaks the parser
+       straight back out of foreign content), <a href="javascript:">, and a
+       <style> block that can paint over the whole app. Injected inline it
+       ran in THIS origin: the office's own DOM, its localStorage, the
+       Internet Identity session and the stored BYOK keys — for any .svg
+       anywhere in the workspace, a cloned repo's or a coworker's, opened
+       with one click in the tree. Every other untrusted-markup preview in
+       the app (the HTML arms above, the Library's HtmlFramePreview) is
+       already an iframe on an opaque origin for exactly this reason; the
+       svg arm was the one that wasn't. sandbox="" — no allow-scripts,
+       because a picture needs none. */
+    return <iframe title="SVG preview" style={frame} sandbox="" srcDoc={file.content || ''} />;
   if (kind === 'csv')
     return <CsvPreview text={file.content} sep={String(file.path).toLowerCase().endsWith('.tsv') ? '\t' : ','} />;
   if (kind === 'image')
