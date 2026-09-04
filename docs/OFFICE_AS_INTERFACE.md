@@ -28433,3 +28433,67 @@ is the same pre-existing `moc` toolchain mismatch recorded since
 `#188` — a different session's in-progress Motoko migration on
 `src/cafresohq_state/main.mo`, a file this change never touches or
 stages. No dfx/IC action of any kind was run.
+
+---
+
+## 218. Switching projects threw away the conversation it promised to keep
+
+**The reading.** Assigned area: `views/core.jsx` minus the AgentInbox
+approval rendering (#200). The Tasks board's filter escape hatches, the
+Memory shelf's follow-the-filter composer, the inbox's scoped counts and
+retry gating, the Calendar's officeDate grouping and night-shift
+normalization, and the FolderTree's move-vs-upload drag types all
+checked out. The live find was in the first thirty lines: `useStoredV`,
+the hook the whole terminal's persistence stands on.
+
+**The bug.** `useStoredV` debounces its localStorage write by 250ms, and
+its effect cleanup cancels the pending timer. Between renders that IS
+the debounce. On unmount, it was also the last word: cancel, and the
+write never happens. The hook's own header comment states its purpose —
+"Used by TerminalSession to keep msgs/model/authMethod alive across
+project switches and reloads" — and TerminalSession's says "Survives
+project switches ... so users can resume a CLI conversation without
+losing context." But ProjectTerminal is mounted with
+`key={project.id || project.path}` (views/projects.jsx, deliberately —
+that key is load-bearing against cross-project storage corruption), so
+switching projects unmounts every TerminalSession. And a streaming chat
+calls `setMsgs` on every chunk; chunks land well under 250ms apart, so
+the timer reset continuously and never fired for the whole length of a
+reply. The result: switch projects mid-stream or within a beat of the
+reply finishing, and the entire turn — the boss's own message included —
+was silently gone from the very storage whose one job was surviving
+that gesture. Come back, and the office claims the exchange never
+happened.
+
+**The fix.** Three lines of mechanism in `useStoredV` (views/core.jsx):
+a ref mirrors the latest `{key, v, persistTransform}` each render, and a
+mount-only effect's cleanup flushes that value to localStorage on
+unmount. It runs after the debounce effect's own cleanup has cancelled
+the timer, so it writes exactly what the timer would have written —
+same key, same transform (the msgs slice cap included), and a null key
+still writes nothing, because in-memory-only is a contract too. The
+debounce between renders is untouched.
+
+**The test** (`scripts/test_an_unmount_flushes_the_debounced_write.py`)
+lifts the REAL `useStoredV` out of views/core.jsx (brace-balanced) and
+executes it under Node with a minimal hooks shim, fake timers that never
+fire on their own, and a fake localStorage. It streams two quick sets
+and unmounts before any timer fires — the latest msgs must be on disk —
+then checks the persistTransform applies to that flush, that a null key
+stays purely in-memory, and that the ordinary debounced write still
+lands when the timer does fire.
+
+Fire-tested: reverted the ref + unmount effect in place (never `git
+checkout`), the unmount scenario left localStorage empty and the suite
+exited 1; restored from the /tmp safety copy (md5-verified
+byte-identical), all green. `npm run build` rebuilt dist-ui clean.
+
+**Suite: 400/401** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` implicit-`transient`
+toolchain mismatch recorded in `#188`, `#193`, `#203`, `#208` and
+`#213` — a different session's in-progress Motoko migration on a file
+this change never touches. This change covers only `useStoredV` in
+`views/core.jsx`, the one new test file and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, and no
+dfx/IC action of any kind was run.

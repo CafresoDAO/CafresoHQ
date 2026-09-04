@@ -38,6 +38,17 @@ function useStoredV(key, initial, persistTransform) {
     } catch (_e) { return fallback(); }
   });
   const timer = React.useRef(null);
+  /* The cleanup below cancels the pending debounce on EVERY re-run, which is
+     what a debounce is — but on unmount that cancel used to be the last word,
+     and the write it cancelled never happened. ProjectTerminal remounts on
+     key={project.id} when the boss switches projects, and a streaming chat
+     resets this timer on every chunk (they land well under 250ms apart), so
+     the timer never fired during a whole reply: switch projects mid-stream or
+     right after it and the entire turn — the boss's message included — was
+     gone from the very storage whose job is surviving project switches.
+     A ref mirrors the latest value so an unmount flushes instead of drops. */
+  const latest = React.useRef(null);
+  latest.current = { key, v, persistTransform };
   React.useEffect(() => {
     if (!key) return;
     if (timer.current) clearTimeout(timer.current);
@@ -47,6 +58,14 @@ function useStoredV(key, initial, persistTransform) {
     }, 250);
     return () => { if (timer.current) clearTimeout(timer.current); };
   }, [key, v]);
+  React.useEffect(() => () => {
+    /* Unmount only. Runs after the debounce effect's own cleanup, so the
+       timer is already cancelled — this writes what it would have written. */
+    const s = latest.current;
+    if (!s || !s.key) return;
+    try { localStorage.setItem(s.key, JSON.stringify(s.persistTransform ? s.persistTransform(s.v) : s.v)); }
+    catch (_e) { /* quota exceeded, etc */ }
+  }, []);
   return [v, set];
 }
 
