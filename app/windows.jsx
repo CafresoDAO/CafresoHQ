@@ -104,6 +104,34 @@ function _chatClamp(g, VW, VH, rail) {
   };
 }
 
+/* `_frameClamp` — WindowFrame's on-screen clamp, lifted out of the render
+   for the same reason `_chatClamp` exists: the gesture that MOVES a window
+   has to start from the geometry the boss is looking at, and the only way
+   to guarantee that is for both to call one function.
+
+   Persisted geometry and rendered geometry are not the same number.
+   `openWindows` is file-backed (app.jsx) and rides along in saved
+   workspaces, so a window laid out on a 2560px monitor and restored on a
+   1440px laptop arrives with x/w the viewport cannot hold; the render has
+   always clamped it. What the gesture recorded as its origin was the RAW
+   stored value, so the first pixel of a drag rewrote `left`/`top` from a
+   position the window was never actually drawn at — the window jumped
+   hundreds of px away from the cursor on mousedown, and mouseup committed
+   the jump. Same shape in ChatWindow, whose stored geometry only has to
+   clear `_chatGeometryStale` (w > VW-12 / h > VH-12 / x < rail) to survive,
+   while `_chatClamp` caps width at the space beside the rail and y at
+   VH-h-8 — a perfectly "fresh" geometry can still render far from where it
+   is stored. */
+function _frameClamp(g, VW, VH) {
+  const w = Math.max(280, Math.min(g.w, VW - 16));
+  const h = Math.max(200, Math.min(g.h, VH - 16));
+  return {
+    x: Math.max(8, Math.min(g.x, VW - w - 8)),
+    y: Math.max(8, Math.min(g.y, VH - h - 8)),
+    w, h,
+  };
+}
+
 /* ─────────────────────────────────────────────────────────────────────
    WindowFrame — generic draggable + resizable window (the desktop "app
    window"). Same drag/resize engine as ChatWindow, generalized so any HQ
@@ -153,12 +181,20 @@ function WindowFrame({
     'resize-nw': 'nwse-resize', 'resize-se': 'nwse-resize',
     'resize-ne': 'nesw-resize', 'resize-sw': 'nesw-resize',
   };
+  /* Clamp the (possibly stale/oversized) saved geometry to the viewport so
+     a window can never exceed the screen or get lost off-screen. Computed
+     HERE, above `startGesture`, so the gesture can take its origin from the
+     same numbers the render below draws with — see `_frameClamp`. */
+  const VW = typeof window !== 'undefined' ? window.innerWidth  : 1280;
+  const VH = typeof window !== 'undefined' ? window.innerHeight : 720;
+  const _shown = _frameClamp(geometry || { x: 80, y: 80, w: 480, h: 420 }, VW, VH);
+
   const startGesture = (e, mode) => {
     if (e.button !== 0) return;
     if (maximized) return; // no drag/resize while maximized — use restore first
     e.preventDefault();
     const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
-    const g = geometry || { x: 80, y: 80, w: 480, h: 420 };
+    const g = _shown;
     dragRef.current = { mode, startX: e.clientX, startY: e.clientY, origX: g.x, origY: g.y, origW: g.w, origH: g.h, lastX: e.clientX, lastY: e.clientY };
     document.body.style.userSelect = 'none';
     document.body.style.cursor     = _CURSORS[mode] || 'default';
@@ -216,15 +252,7 @@ function WindowFrame({
     window.addEventListener('mouseup', onUp);
   };
 
-  /* Clamp the (possibly stale/oversized) saved geometry to the viewport so
-     a window can never exceed the screen or get lost off-screen. */
-  const VW = typeof window !== 'undefined' ? window.innerWidth  : 1280;
-  const VH = typeof window !== 'undefined' ? window.innerHeight : 720;
-  const g = geometry || { x: 80, y: 80, w: 480, h: 420 };
-  let w = Math.max(280, Math.min(g.w, VW - 16));
-  let h = Math.max(200, Math.min(g.h, VH - 16));
-  let x = Math.max(8, Math.min(g.x, VW - w - 8));
-  let y = Math.max(8, Math.min(g.y, VH - h - 8));
+  let { x, y, w, h } = _shown;
   if (maximized) { const wa = _workArea(); x = wa.x; y = wa.y; w = wa.w; h = wa.h; }
 
   return (
@@ -457,7 +485,15 @@ function ChatWindow({ open, setOpen, geometry, setGeometry, messageCount, chatPa
   const startGesture = (e, mode) => {
     if (e.button !== 0) return;
     e.preventDefault();
-    const g = geometry;
+    /* The origin is where the window IS, which is the clamped geometry the
+       render below drew — not the raw stored value. `_chatGeometryStale`
+       lets through geometries that `_chatClamp` still moves (a window wider
+       than the space beside the rail, or one whose y sits below VH-h-8), so
+       reading `geometry` here made the first pixel of a drag teleport the
+       window to a position it was never drawn at. */
+    const VW = typeof window !== 'undefined' ? window.innerWidth  : 1280;
+    const VH = typeof window !== 'undefined' ? window.innerHeight : 720;
+    const g = _chatClamp(geometry, VW, VH, _railRight());
     dragRef.current = {
       mode,
       startX: e.clientX, startY: e.clientY,

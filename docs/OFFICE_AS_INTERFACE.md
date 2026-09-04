@@ -31152,3 +31152,86 @@ store file → empty summary (200+null path)" — which reads only
 only `views/ide.jsx`, the one new test file, and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, and no dfx/IC
 action of any kind was run.
+
+---
+
+## 255. Grabbing a window teleported it across the screen
+
+**The reading.** Assigned area: `app/windows.jsx` — the two draggable-window
+implementations, `WindowFrame` (the desktop app windows over the office
+floor) and `ChatWindow` (the chief-of-staff popover).
+
+Both render from a geometry they have **clamped**, and both started their
+drag gesture from the geometry they had **stored**. Those are two different
+numbers, and the gap between them is exactly how far the window jumped the
+instant the boss pressed the title bar.
+
+`WindowFrame`'s render has always clamped:
+
+    let w = Math.max(280, Math.min(g.w, VW - 16));
+    let x = Math.max(8, Math.min(g.x, VW - w - 8));   // …and y likewise
+
+`startGesture`, defined sixty lines above it, recorded:
+
+    const g = geometry || { x: 80, y: 80, w: 480, h: 420 };
+    dragRef.current = { …, origX: g.x, origY: g.y, origW: g.w, origH: g.h };
+
+`onMove` then writes `el.style.left = clamp(ds.origX + dx, …)`. With `origX`
+taken from the store rather than the screen, the very first mousemove
+rewrites `left` from a position the window was never drawn at, and `onUp`
+persists it. The window does not drift — it leaves the cursor.
+
+This is not a corner case, because `openWindows` is file-backed
+(`app.jsx`: `useFileStored(k('openWindows'), 'state', 'windows', [])`) and is
+carried in saved workspaces. A window laid out at `x=1600 y=1000 w=900 h=700`
+on a 2560×1440 monitor is restored on a 1440×900 laptop drawn at `x=532
+y=192` — every reopened workspace on a smaller screen is one title-bar press
+away from a 1068px right / 808px down leap. Same for the window whose stored
+size simply exceeds the new viewport: the resize handles snapped it back to
+the stored size before the drag even began.
+
+`ChatWindow` has the same shape through a narrower door, which is why it is
+worth stating separately. Its stored geometry only has to clear
+`_chatGeometryStale` — `w > VW-12`, `h > VH-12`, `x < rail` — to be left
+alone on purpose (`#148`: "a position the boss chose anywhere else is left
+exactly where they put it"). But `_chatClamp` enforces two bounds the stale
+check does not: width capped at the space **beside the rail**, and `y` capped
+at `VH - h - 8`. So `{x:900, y:700, w:400, h:460}` at 1280×800 with a 232px
+rail is emphatically not stale, is deliberately never repaired, and still
+renders at `y=332`. Grabbing it dropped the chat 368px.
+
+**The fix.** One clamp, two callers — the same shape `#148` gave the chat
+window's other three decisions. `_frameClamp(g, VW, VH)` comes out of
+`WindowFrame`'s render as a pure top-level function; the component computes
+it once, above `startGesture`, and both the render (`let { x, y, w, h } =
+_shown;`) and the gesture origin read that one value. `ChatWindow`'s
+`startGesture` calls the `_chatClamp` its own render already used. No new
+arithmetic, no new position — the gesture just starts where the window is.
+
+**The proof.**
+`scripts/test_a_window_does_not_jump_when_you_grab_it.py` lifts the **shipped
+`startGesture`** out of each component by brace-matching (paren-aware, so the
+destructured props list is not mistaken for the body) and calls it under Node
+with stubs, rather than re-implementing the origin logic — a copy would agree
+with itself while the app did something else, which is the whole bug. It
+pins each fixture as one the clamp genuinely moves, asserts the ChatWindow
+fixture is *not* stale so the repair effect cannot be what saves it, then
+checks the recorded origin equals the drawn geometry in both position and
+size, and that neither gesture re-reads the raw store.
+
+Fire-tested: copied the fixed `app/windows.jsx` to `/tmp`, reverted both
+origin lines in place with the editor (never `git checkout -- <file>`) — 4
+checks failed, the two behavioural ones reporting the measured 1068×808 and
+368px jumps, exit 1. Restored from the `/tmp` copy, confirmed byte-identical
+by `md5` (`c6c5d9e7331c06e32ef4b48628f22d25`), reran — all checks passed,
+exit 0.
+
+`npm run build` run after the change.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the same `moc`/M0219 `main.mo` toolchain mismatch tracked from `#188`
+onward, on a file a foreign session owns and this change never touches).
+This change covers only `app/windows.jsx`, the one new test file, and this
+entry; `src/cafresohq_state/main.mo` was never staged or edited, and no
+dfx/IC action of any kind was run.
