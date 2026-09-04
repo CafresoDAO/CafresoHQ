@@ -333,11 +333,16 @@ def _sw_brave(q, deadline=None, kind='human', vertical='web', extras=None):
 
     vertical='news' hits Brave's news endpoint instead — fresh, dated,
     publisher-attributed results for time-sensitive questions. Same key, same
-    monthly cap, so it spends the same lane as a web query."""
+    monthly cap, so it spends the same lane as a web query.
+
+    kind=None means PREPAID: the query was already reserved and counted at
+    submit time (the gap/news crons keep their reservation for every question
+    they actually submit — see _gap_run/_news_run), so metering it again here
+    would double-bill the month. Skip the ledger entirely for those."""
     key = os.environ.get('BRAVE_API_KEY', '').strip()
     if not key:
         return None
-    if not _brave_spend(kind):
+    if kind is not None and not _brave_spend(kind):
         print('[brave] %s query refused — month at %d/%d (reserve for higher '
               'priority callers)' % (kind, _brave_usage().get('used', 0), _BRAVE_CAP))
         return None
@@ -1329,13 +1334,31 @@ def _sw_process(job, deadline=None):
                 return
             print('[deep] %s: degrading to single-shot' % jid)
         print('[search-worker] claimed %s: %s%s' % (jid, q[:80], ' [news]' if mode == 'news' else ''))
+        # Which lane pays for this job's Brave query? A question OUR cron
+        # submitted was already reserved AND counted at submit time (_gap_run/
+        # _news_run keep the reservation for every question they submit), so
+        # spending it again here as the default 'human' double-billed the
+        # month AND rode the un-floored human lane — the crons' actual spend
+        # bypassed their own 35%/40% reserves, and /gap/status byKind billed
+        # machine questions as people. Prepaid (kind=None) skips the meter:
+        # net `used` stays what the submit charged, in the lane it charged.
+        # (Another operator's worker claiming our cron question still spends
+        # its own 'human' lane — only the submitting node has the asked
+        # ledgers; same known limit as askedBy provenance below.)
+        is_gap = q in set(_gap_asked())
+        is_news_cron = (not is_gap) and q in set(_news_asked())
+        prepaid = is_gap or is_news_cron
         extras = {}
-        results = _sw_brave(q, deadline, vertical='news' if mode == 'news' else 'web',
-                            extras=extras)
+        results = _sw_brave(q, deadline, kind=(None if prepaid else 'human'),
+                            vertical='news' if mode == 'news' else 'web', extras=extras)
         if mode == 'news' and not results:
             # News vertical came up dry (niche query, no coverage) — a web
-            # answer beats a fail; the engine chip below still says how we got it.
-            results = _sw_brave(q, deadline, extras=extras)
+            # answer beats a fail; the engine chip below still says how we got
+            # it. This retry is a SECOND real query beyond any prefund, so it
+            # meters normally — in the cron's own lane when the cron asked.
+            results = _sw_brave(q, deadline,
+                                kind=('news' if is_news_cron else 'gap' if is_gap else 'human'),
+                                extras=extras)
         if not results:
             # Three different failures used to share one message. They need
             # different operator responses — top up the plan, set the key, or
@@ -1369,9 +1392,8 @@ def _sw_process(job, deadline=None):
         #
         # Known limit: only the node that SUBMITTED the question knows it was a
         # gap question, so if another operator's worker claims it the entry
-        # reads plain 'brave' / "human".
-        is_gap = q in set(_gap_asked())
-        is_news_cron = (not is_gap) and q in set(_news_asked())
+        # reads plain 'brave' / "human". (is_gap/is_news_cron were computed
+        # above, before the Brave call, where they also pick the budget lane.)
         engine = ('brave · ai-gap' if is_gap
                   else 'brave · ai-news' if is_news_cron
                   else 'brave · news' if mode == 'news' else 'brave')

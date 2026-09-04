@@ -27837,3 +27837,75 @@ session's in-progress Motoko migration on a file this change never
 touches. This change covers only the PUT block in `serve.py`, the one
 new test file and this entry; `src/cafresohq_state/main.mo` was never
 staged or edited, and no dfx/IC action of any kind was run.
+
+---
+
+## 209. The gap cron paid for its question twice, and the second bill was charged to the humans
+
+**The reading.** Assigned area: the standalone search worker
+(`search_worker_service/worker.py`) — query serving, the gap/news/
+topics crons and the Brave quota ledger, plus any `serve.py` glue
+(none remains: `_sw_*`/`_brave_*` live only in the service now). The
+claim loop's dry-month guard, the deep-research checkpointing, the
+salvage parser and the refund discipline in `_gap_run`/`_news_run` all
+checked out. The live find was the seam BETWEEN two pieces that are
+each individually correct: the cron's submit-time prefund, and the
+claim path's spend.
+
+**The mechanism.** `_gap_run` reserves one Brave query per proposed
+question up front — "Reserving up front is what stops the cron from
+quietly handing the network a bill it can't pay" — and refunds only
+the unsubmitted remainder, so every SUBMITTED question keeps +1 in
+the `gap` lane. That reservation IS the payment. But when the same
+node (the standard single-instance deployment — crons on exactly one
+box) later claimed its own question, `_sw_process` fetched sources
+through `_sw_brave(q, deadline, …)` with the default `kind='human'`.
+Three distortions from one missing argument:
+
+- one real Brave query counted TWICE against the month — once as
+  `gap` at submit, once as `human` at claim — silently halving the
+  cap for cron work;
+- `/gap/status` `byKind` billed machine-invented questions as people,
+  the exact ledger the operator reads to judge who spends the month;
+- the claim-time spend rode the human lane, whose reserve floor is 0
+  — so the crons' actual spending bypassed their own 35%/40% yield
+  floors and could eat into the human-only headroom the whole
+  priority-budget design exists to protect. The same held for the
+  news cron via its `news` lane.
+
+**The fix.** `_sw_brave` learns `kind=None` — PREPAID: skip the meter
+entirely, because the submit already counted this query in the right
+lane. `_sw_process` computes `is_gap`/`is_news_cron` BEFORE the Brave
+call (they were previously computed after, only for the engine chip,
+which now reuses them) and passes `kind=None` for its own cron's
+questions, `'human'` otherwise. The news-vertical dry fallback is a
+genuine second query beyond the prefund, so it meters normally — in
+the cron's own lane when the cron asked. A prefunded job also can no
+longer be starved by a lane floor that tightened after it was paid
+for. Another operator's worker claiming our cron question still
+spends its own `human` lane — only the submitter holds the asked
+ledgers, the same known limit `askedBy` provenance already documents.
+
+**The test**
+(`scripts/test_a_gap_question_claimed_at_home_is_not_billed_twice.py`)
+runs the REAL `_sw_process` against a fake Brave HTTP layer, a
+captured `_sw_call` and ledger files on a temp dir: a gap-asked
+question fulfills with `used` unchanged and nothing in the human
+lane (engine chip still `ai-gap`), the news cron gets the same
+prepaid treatment, a real human question still meters exactly one
+`human` query, and a prefunded job still fulfills at `used=700` —
+past the gap floor that would refuse a new spend.
+
+Fire-tested: reverted the claim-path call to `kind='human'` in place
+— 5 checks failed, exit 1. Restored from the /tmp safety copy
+(md5-verified byte-identical, never `git checkout`), test green.
+
+**Suite: 395/396** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` implicit-`transient`
+toolchain mismatch recorded in `#188`, `#193`, `#203` and `#208` — a
+different session's in-progress Motoko migration on a file this
+change never touches. This change covers only
+`search_worker_service/worker.py`, the one new test file and this
+entry; `src/cafresohq_state/main.mo` was never staged or edited, and
+no dfx/IC action of any kind was run.
