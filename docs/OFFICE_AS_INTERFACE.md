@@ -32021,3 +32021,32 @@ covers only `serve.py`, the one new test file, and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any
 kind was run.
+
+---
+
+## 265. Every agent task ran in the workspace root, whatever project you picked
+
+`_agent_task_cwd` is the single place every agent stream route decides where a
+coworker's task actually runs. It read the requested `cwd` with
+`pathlib.Path(_client_path(req_cwd)).resolve()` — resolved against whatever
+directory serve.py happened to be started from, not the workspace. That is the
+exact trap `_workspace_path` was written for, and the one #264 had just closed
+one function away, on `/tools/exec`.
+
+With an explicit allowlist, a relative `proj` resolved against the repo either
+lands outside every allowed dir or fails `is_dir()`. Either way the whitelist
+loop below falls through without assigning, and `cwd` keeps its default — the
+FIRST allowed dir. The stream then opened, the coworker worked, and everything
+it did landed in the workspace root instead of the project the boss chose. No
+error and no warning: the request was honoured, just somewhere else.
+
+The quiet case is worse than the loud one. When the repo happens to hold a
+directory of the same name — `docs`, say — the wrong answer is a real, existing
+directory, so nothing downstream has any way to notice it is not the one that
+was asked for.
+
+Now it anchors through `_workspace_path`, so one relative string means one
+directory across `/fs`, `/tools/exec` and the agent routes alike. The allowlist
+loop is untouched: an absolute path outside it still falls back, exactly as
+before — only the meaning of a *relative* path is repaired.
+

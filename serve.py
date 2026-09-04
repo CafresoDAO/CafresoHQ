@@ -2426,7 +2426,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         req_cwd = (body.get('cwd') or '').strip()
         if req_cwd:
             try:
-                cwd_p = pathlib.Path(_client_path(req_cwd)).resolve()
+                # Anchor a RELATIVE cwd to the workspace, not to wherever
+                # serve.py was started (`_workspace_path`, and the same trap
+                # #264 closed on /tools/exec). Resolved against the repo, a
+                # relative `proj` either misses the allowlist or fails
+                # is_dir(), and the loop below falls through leaving `cwd` at
+                # the first allowed dir — so the whole task quietly ran in the
+                # workspace root instead of the project the boss named.
+                cwd_p = _workspace_path(req_cwd).resolve()
                 for d in _cafresohq_allowed_dirs:
                     try:
                         cwd_p.relative_to(pathlib.Path(d).resolve())
