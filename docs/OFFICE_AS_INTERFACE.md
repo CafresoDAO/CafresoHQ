@@ -32050,3 +32050,80 @@ directory across `/fs`, `/tools/exec` and the agent routes alike. The allowlist
 loop is untouched: an absolute path outside it still falls back, exactly as
 before — only the meaning of a *relative* path is repaired.
 
+---
+
+## 266. The palette offered to close a chat window a phone never had
+
+The Command Palette carries one chat entry, `tog.chat` in
+`app/commands.jsx`, shown on Projects and Library:
+
+```js
+label: chatWinOpen ? 'Close chat window' : 'Open chat window',
+run:   () => setChatWinOpen(v => !v),
+```
+
+`chatWinOpen` only means anything where the floating `<ChatWindow>` is
+mounted, and `app.jsx` mounts it behind a viewport gate:
+
+```jsx
+{(desktopMode || activeView !== 'chat') && !isNarrowViewport && (
+  <ChatWindow open={chatWinOpen} setOpen={setChatWinOpen} … />
+)}
+```
+
+At or below 768px there is no window. The setter still flips the flag, the
+flag still persists, and nothing appears — a silent no-op, and precisely the
+trap the **rail** was already moved off this same setter to avoid. `app.jsx`
+says so in as many words beside `onOpenChat`: *"navTo, not setChatWinOpen —
+it already routes chat correctly in BOTH modes (desktop opens the floating
+panel, narrow switches the view), so the rail can't drift from the rest of
+the app."* Every surface had been walked onto the one navigation verb except
+this one, which is the same shape as the fix at the top of this very file,
+where all eight Navigation entries were moved off `setActiveView`.
+
+**The worse half is the label.** `chatWinOpen` is
+`useStored(k('chatWinOpen'), true)` — persisted, default **true**. So a boss
+on a phone, sitting on Projects, opened the palette and read **"Close chat
+window"** for a window that was not on screen, ran it, watched nothing
+happen, and was never offered an *open* verb at all. The one entry in the
+palette that mentions chat described a state the device could not be in.
+
+**The fix.** The entry now takes `chatWindowMounted` — `app.jsx` passes
+`!isNarrowViewport`, the same gate the window itself is mounted behind, and
+it is listed in the `useCommands` deps so rotating a tablet across 768px
+re-registers the entry rather than leaving a stale label. It offers *Close
+chat window* only where that window exists; otherwise it offers *Open chat*
+and routes through `navigate` — `navTo`, which opens the floating panel on a
+desktop and switches to the chat view on a phone. Closing is now an explicit
+`setChatWinOpen(false)` rather than a blind toggle, so the verb the boss read
+is the verb that runs.
+
+**The proof.**
+`scripts/test_palette_chat_toggle_is_not_a_phone_no_op.py` lifts the real
+`tog.chat` object literal verbatim out of `app/commands.jsx` by brace
+balancing and runs it under `node` in three combinations — phone with the
+persisted `chatWinOpen: true`, desktop with the window open, desktop with it
+closed — asserting on the rendered label and on which of `navigate` /
+`setChatWinOpen` each `run()` actually calls. It also quotes `app.jsx`'s
+mount gate, so the day a phone *does* get a floating chat window this test
+fails and says why.
+
+Fire-tested: copied the fixed `app/commands.jsx` to `/tmp`, reverted the
+label and `run` in place with the editor (never `git checkout -- <file>`) —
+6 of 14 checks failed, exit 1, the phone case reporting
+`label was 'Close chat window' with chatWinOpen persisted true` and
+`{'navigate': [], 'setChatWinOpen': ['updater']}`. Restored from the `/tmp`
+copy, confirmed byte-identical by `md5`
+(`92ed576b265ece186d1afbee9da1ab29`), reran — 14 of 14 passed, exit 0.
+
+`npm run build` was run once up front so `dist-ui/manifest.json` exists in a
+fresh worktree, and again after the `.jsx` edits.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the `moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on
+a file a foreign session owns and this change never touches). This change
+covers only `app/commands.jsx`, the one prop hand-off in `app.jsx`, the new
+test file, and this entry; `src/cafresohq_state/main.mo` was never staged or
+edited, no II or `derivationOrigin` value was read or written, and no dfx/IC
+action of any kind was run.

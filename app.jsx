@@ -6891,6 +6891,9 @@ ${d.text}` : d.text,
       night={night} setNight={setNight}
       railCollapsed={railCollapsed} setRailCollapsed={setRailCollapsed}
       chatWinOpen={chatWinOpen} setChatWinOpen={setChatWinOpen}
+      /* Same gate the <ChatWindow> below is actually mounted behind. Without
+         it the palette's chat entry describes a window that isn't there. */
+      chatWindowMounted={!isNarrowViewport}
       density={density} setDensity={setDensity}
       theme={theme} setTheme={setTheme}
       windowsEnabled={windowsEnabled} setWindowsEnabled={setWindowsEnabled} onOpenWindow={openOrRaise}

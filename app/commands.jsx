@@ -14,6 +14,11 @@ function AppGlobalCommands({
   night, setNight,
   railCollapsed, setRailCollapsed,
   chatWinOpen, setChatWinOpen,
+  /* Is the floating chat window actually MOUNTED? app.jsx gates it behind
+     `!isNarrowViewport`, so on a phone `chatWinOpen` is a flag nothing
+     renders. Defaults true so an omitted prop can't hide the close verb on
+     a desktop. */
+  chatWindowMounted = true,
   density, setDensity,
   theme, setTheme,
   windowsEnabled, setWindowsEnabled, onOpenWindow,
@@ -74,10 +79,23 @@ function AppGlobalCommands({
       id: 'win.open.' + v, label: 'Open in window: ' + lbl, section: 'Windows', icon: '🪟',
       run: () => onOpenWindow(v),
     })) : []),
+    /* `navigate('chat')` to OPEN — not the raw setter. The floating chat
+       window is mounted only on wide viewports (app.jsx gates it behind
+       `!isNarrowViewport`), so on a phone `setChatWinOpen(v => !v)` flips a
+       flag nothing renders: the exact silent no-op the RAIL was moved off
+       this same setter to avoid ("navTo, not setChatWinOpen — it already
+       routes chat correctly in BOTH modes").
+
+       And `chatWinOpen` is persisted and defaults to TRUE, so on a phone
+       this entry usually read "Close chat window" — over a chat that was
+       not on screen, offering the boss no way to open one. Closing still
+       uses the setter, but only where the window it closes exists. */
     { id: 'tog.chat',
-      label: chatWinOpen ? 'Close chat window' : 'Open chat window',
+      label: (chatWindowMounted && chatWinOpen) ? 'Close chat window' : 'Open chat',
       section: 'Toggles', icon: '💬',
-      run: () => setChatWinOpen(v => !v),
+      run: () => ((chatWindowMounted && chatWinOpen)
+        ? setChatWinOpen(false)
+        : navigate('chat')),
       when: activeView === 'projects' || activeView === 'vault',
     },
 
@@ -240,7 +258,7 @@ function AppGlobalCommands({
   ];
 
   useCommands(cmds, [
-    activeView, night, railCollapsed, chatWinOpen, anyBusy, density, theme,
+    activeView, night, railCollapsed, chatWinOpen, chatWindowMounted, anyBusy, density, theme,
     navigate, setNight, setRailCollapsed, setChatWinOpen, setDensity, setTheme,
     windowsEnabled, setWindowsEnabled, onOpenWindow,
     workspaces, activeWorkspace,
