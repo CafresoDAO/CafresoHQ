@@ -27540,3 +27540,73 @@ different session's in-progress Motoko migration on a file this
 change never touches. This change covers only `views/projects.jsx`,
 the one new test file, and this entry; `src/cafresohq_state/main.mo`
 was never staged or edited, and no dfx/IC action of any kind was run.
+
+---
+
+## 205. The night shift prosecuted a status line its coworker only thought
+
+**The reading.** Assigned area: the night shift — `night_runner.py`
+(tool grammar, hop loop, outcome persistence) and the `/missions/*` +
+wake paths in `serve.py`. The seam held everywhere it was pushed: no
+route from a night reply to an excluded tool (bracket names are
+pinned to `TOOL_RES`, harmony names are normalized and re-checked,
+`/tools/exec` is only ever sent `FILE_READ`/`DIR_LIST`); outcome
+writes are lock-guarded upserts by run id; a crashed iteration lands
+in `errors`, never as a clean night; the daily-recurrence DST fix and
+the vault-refusal honesty chain (`#195`'s server-side neighbors) all
+checked out. The live find was an asymmetry inside `run_iteration`
+itself: both tool detectors read a reply through `mask_reasoning`
+("weighing a tool is not reaching for one"), but the two HONESTY
+checks — `_CLAIMS_A_WRITE_RE` and `_CLAIMS_A_PUBLISH_RE` — read the
+raw text, reasoning and all.
+
+**The mechanism.** The night shift's default brains are exactly the
+local think-models that inline their chain of thought as
+`<think>…</think>` in `content` — the file's own REASONING_TAGS block
+names this failure class: "an accusation, in the morning report, for
+something that never happened." A coworker that drafted its mandatory
+status line inside its reasoning — `<think>The prompt wants "Wrote 1.
+Next iteration…" but I found nothing worth saving, so I must NOT say
+I wrote a note</think>` — and then finished honestly (no claim, no
+write) was flagged `said it saved a note, nothing reached the vault`.
+Same on the publish side over the joined replies: `<think>I can't say
+"I published the site" — that needs the boss awake</think>` became
+`said it published, but nothing went live`. Demonstrated against the
+real regexes: both trip on the raw fixtures, neither on the masked
+ones. And because each false accusation counts as an iteration error,
+three honest iterations in a row tripped `ERROR_STREAK_AUTO_PAUSE`
+and ended the night — over sentences nobody said.
+
+**The fix.** Two lines in `run_iteration`, in the shape the file
+already owns: `all_replies` is now joined through `mask_reasoning`
+(the reach scan already masked internally, so it reads identically),
+and the write-claim check reads a masked `last_reply` instead of the
+raw final reply. `summary` was already cleaned via
+`strip_unsupported_markers` → `strip_reasoning`, and the refused-write
+branch rests on an HTTP status, not prose — both untouched. No
+grammar change, so `NIGHT_GRAMMAR_VERSION` stays at 1 and the
+browser registry needs no sync.
+
+**The test**
+(`scripts/test_a_claim_made_only_in_thought_is_not_a_lie.py`) runs
+the REAL `run_iteration` with the network unplugged (canned llm
+replies, stubbed notes index — the `test_a_publish_claimed_at_night.py`
+harness): a write claim drafted only in `<think>` → no error; a
+publish claim talked-out-of in `<think>` → no error; an unclosed
+opener (streaming truncation) → no error. No amnesty: the same
+sentences SAID still trip both checks. Source pins hold the masked
+seam in place.
+
+Fire-tested: reverted the two lines in `night_runner.py` in place —
+5 of 7 checks failed (both accusations returned, both source pins),
+exit 1. Restored from the scratchpad safety copy (`cmp`-verified
+byte-identical, never `git checkout`), test green. Pure Python, no
+`npm run build` needed.
+
+**Suite: 390/391** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc` toolchain mismatch recorded in `#188`,
+`#193` and `#203` — foreign-owned, untouched here. This change covers
+only `night_runner.py`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, and no
+dfx/IC action of any kind was run.

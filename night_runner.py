@@ -970,7 +970,17 @@ def run_iteration(ctx, sched, iteration, total_iters):
         return {'writes': writes, 'tokens': tokens_used, 'summary': '', 'error': brain_cause(e)}
     summary = strip_unsupported_markers(reply)[-300:]
     error = None
-    all_replies = '\n'.join(replies)
+    # Masked BEFORE the claim checks, for the same reason find_first_tool
+    # and find_unsupported_tool mask before theirs: thinking is not saying.
+    # A think-model drafting its status line inside <think> ("I must not
+    # say 'Wrote 1' without the tool call") had the drafted sentence read
+    # as a CLAIM by the unmasked regexes below — 'said it saved a note' /
+    # 'said it published' about text nobody said, and three such honest
+    # iterations tripped ERROR_STREAK_AUTO_PAUSE and ended the night. The
+    # exact accusation shape the REASONING_TAGS block above condemns, on
+    # the two readers that never got the mask.
+    all_replies = mask_reasoning('\n'.join(replies))
+    last_reply = mask_reasoning(reply or '')
     reached = find_unsupported_tool(all_replies)
     if refused is not None:
         # First, and ahead of the reach check that used to hold this spot,
@@ -998,7 +1008,7 @@ def run_iteration(ctx, sched, iteration, total_iters):
         # above reads them all: a hop that lied and a hop that reached are
         # equally absent from a final status line.
         error = 'said it published, but nothing went live'
-    elif not writes and _CLAIMS_A_WRITE_RE.search(reply or ''):
+    elif not writes and _CLAIMS_A_WRITE_RE.search(last_reply):
         # The prompt's own closing rule demands a status line like "Wrote
         # X." -- and a model that skips the actual VAULT_NEW/VAULT_APPEND
         # call but still produces that sentence has written a LIE, not a
