@@ -28253,3 +28253,70 @@ this change never touches. This change covers only the four-line kill
 in `pty_server.py`, the one new test file and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, and no
 dfx/IC action of any kind was run.
+
+---
+
+## 215. A second export buried the first deliverable under its own name
+
+**The reading.** Assigned area: `exporters.py` and the export/library
+filing path it serves — how the five binary doors (EXPORT_PPTX /
+EXPORT_DOCX / EXPORT_PDF, GENERATE_IMAGE, GENERATE_VIDEO) write, name,
+escape and receipt what they file. The recent fixes held up: the
+hidden-part refusal (#140/#141) runs before mkdir and before the
+extension append, `..` still falls to the resolve/relative_to escape
+check, the reportlab path escapes its XML markup, and the receipt path
+is derived from the file actually written and carried out on
+`_ctx.meta.filedAs` (#180, #202). The live find was one question these
+doors had never been asked.
+
+**The mechanism.** `_vault_binary_path` — the one resolver all five
+doors share — handed back whatever path resolved, taken or not, and
+every caller then wrote straight through it: `prs.save`, `doc.save`,
+`write_pdf`, `doc.build`, `out_path.write_bytes`. An export to a name
+already filed replaced the file that lived there and answered 200 with
+the same path as last time — a receipt indistinguishable from the
+first one, over the first deliverable's grave. This is not a corner:
+Sloan's own instructions say `Slides/<topic>.pptx` and Quill's say
+`Docs/<topic>.docx`, so two runs on the same topic — or a boss asking
+for "another take" — converge on the same conventional name by design.
+The office already ruled on exactly this at the upload doors:
+`fs_routes.free_name`, written after "upload deck.pptx twice and the
+first one is gone, silently", says a name already filed steps aside —
+never silently replaced. The export doors ride a different resolver
+and never heard the rule.
+
+**The fix.** One block in `_vault_binary_path`: if the resolved
+candidate exists, side-step it through the same `fs_routes.free_name`
+the upload doors use (`report.pptx` → `report (2).pptx`, in the same
+folder, counting up past earlier sidesteps). Nothing downstream
+changes hands blind: the receipt already derives its `path` from the
+resolved target, and the export tools already stash that real path on
+`_ctx.meta.filedAs` (#180/#202), so the sidestep arrives in the same
+sentence a corrected extension already does.
+
+**The test**
+(`scripts/test_an_export_never_replaces_the_deliverable_already_filed.py`)
+imports the real `exporters.py` against a temp vault twice over: the
+resolver directly (fresh name unchanged; taken name steps to
+`q3 (2).pptx` in place; a third export counts to `(3)`; the
+appended-extension spelling collides with the same names), and the
+whole EXPORT_DOCX door end to end with only the python-docx boundary
+stubbed — two exports to `Docs/report.docx`, after which the first
+file must still hold its own content and the second receipt must name
+a file that really exists and holds the second export.
+
+Fire-tested: reverted the sidestep block in place (never
+`git checkout`) — the resolver handed the taken name straight back and
+the second export ate the first (`Docs/report.docx` held "the second
+report"), 6 checks failed, exit 1. Restored from the /tmp safety copy
+(md5-verified byte-identical), all 12 checks green.
+
+**Suite: 400/401** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` implicit-`transient`
+toolchain mismatch recorded in `#188`, `#193`, `#203`, `#208` and
+`#213` — a different session's in-progress Motoko migration on a file
+this change never touches. This change covers only `_vault_binary_path`
+in `exporters.py`, the one new test file and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, and no
+dfx/IC action of any kind was run.
