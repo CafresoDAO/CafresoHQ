@@ -58,8 +58,24 @@ function applyStatus(task, status, now) {
   } else if (next.startedAt) {
     delete next.startedAt;
   }
+  /* ENTERING done, not merely being done. "Only when absent" was the wrong
+     half of the invariant on this side: three call sites hand this function
+     the status the task ALREADY has — `applyStatus(t, t.status)` when a
+     coworker is dismissed (app.jsx, every card they held), when a late
+     [TASK_PROGRESS] lands, and when chat re-infers an assignee — so a card
+     that finished last week and carries no stamp (the office's own reader,
+     `finishedLabel` below, exists precisely because such records are real)
+     was handed `Date.now()` by an action that had nothing to do with
+     finishing it. Measured: dismiss a coworker, and every unstamped card
+     they ever finished flips to "✓ finished · just now", written to disk,
+     with the true finish time gone for good.
+     The reader refuses to guess a missing finish time; the writer must not
+     invent one either. A real doing→done move still stamps, which is the
+     dragged-card case this branch was added for. */
   if (status === 'done') {
-    if (!next.completedAt) next.completedAt = (now || Date.now());
+    if (!next.completedAt && !(task && task.status === 'done')) {
+      next.completedAt = (now || Date.now());
+    }
   } else {
     if (next.completedAt) delete next.completedAt;
     if (next.completedBy) delete next.completedBy;

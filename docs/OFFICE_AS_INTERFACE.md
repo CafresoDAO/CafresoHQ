@@ -30297,3 +30297,96 @@ This change covers only the two commit steps in `views/projects.jsx`, the one
 new test file, and this entry; `src/cafresohq_state/main.mo` was never staged
 or edited, no II or `derivationOrigin` value was touched, and no dfx/IC action
 of any kind was run.
+
+---
+
+## 246. Firing a coworker restamped everything they had ever finished
+
+**The reading.** Assigned area: `app/worklog.jsx` — the helpers behind the
+card's own account of itself. Two of them are a matched pair, and they were
+answering the same question differently.
+
+The reader refuses to guess:
+
+    function finishedLabel(task, now) {
+      if (!task || !task.completedAt) return null;
+
+with the rule spelled out above it — *"tasks that predate `completedAt` must
+say nothing, for the same reason `sittingFor` refuses to fall back to
+`createdAt`"*. Those records are real. The read side of this feature was
+built long after the write side, so a live office carries DONE cards that
+finished before anything stamped them, and the board's job is to be silent
+about those rather than make a time up.
+
+The writer made one up. Its done branch asked the wrong question:
+
+    if (status === 'done') {
+      if (!next.completedAt) next.completedAt = (now || Date.now());
+
+*Is the stamp absent* — when what the branch exists for is *is this card
+entering `done`*. The two only agree when the status is actually changing,
+and three call sites hand `applyStatus` the status the task already has:
+
+  · **Dismissing a coworker** (`app.jsx`) —
+    `applyStatus(t, t.status === 'doing' ? 'inbox' : t.status)`, mapped over
+    **every card that coworker held**, finished ones included.
+  · **A late `[TASK_PROGRESS]`** — `applyStatus(t, t.status === 'inbox' ?
+    'doing' : t.status)`, same shape.
+  · **Chat re-inferring an assignee** — same shape again.
+
+So the boss lets someone go, and every unstamped card that person ever
+finished comes back from `applyStatus` claiming `completedAt = Date.now()`.
+The DONE column fills with **"✓ finished · just now"** over work from last
+week, and `setTasks` persists it: this is not a display glitch that a reload
+clears, it is a write. The true finish time was not merely unknown after
+that — it was overwritten with a fabricated one, by an action that had
+nothing to do with finishing anything. Measured under node on the real
+helper: a legacy card `{ status: 'done' }` reads `finishedLabel → null`
+before, and `'just now'` after a single pass-through.
+
+**The fix.** Stamp on the transition, not on the hole:
+
+    if (!next.completedAt && !(task && task.status === 'done')) {
+      next.completedAt = (now || Date.now());
+    }
+
+The dragged-card case this branch was added for (a parked `doing` card
+dropped on the DONE column, `scripts/test_a_dragged_done_card_says_when.py`)
+is a genuine transition and still stamps, as does `inbox → done`. An
+existing stamp is still never refreshed, reopening still clears both stamps,
+and a call site's explicit `completedAt` still wins by spread order. What
+changes is only the case that was never a finish: a card that was already
+done stays exactly as honest as it was — silent.
+
+**The proof.**
+`scripts/test_a_done_card_does_not_invent_a_finish_time.py` lifts the real
+module (import-free, run verbatim under node minus its export line) and
+walks a legacy DONE card through each of the three pass-through shapes taken
+literally from `app.jsx`, asserting no `completedAt` key appears and
+`finishedLabel` stays `null`; then asserts the whole set of behaviours that
+must survive — the parked drag still stamping and rendering a real time
+without inventing a `completedBy`, `inbox → done`, the un-refreshed existing
+stamp, the reopen clearing both, the explicit call-site stamp winning,
+purity, and a `null` task not throwing. Two source checks keep the premise
+honest: `app.jsx` must still carry the dismissal's
+`applyStatus(t, t.status === 'doing' ? 'inbox' : t.status)` and at least two
+of the `'inbox' ? 'doing' : t.status` shape, so the day those call sites stop
+passing a task its own status, this test says so instead of quietly passing.
+
+Fire-tested: copied the fixed `app/worklog.jsx` to `/tmp`, reverted the
+condition in place with the editor (never `git checkout -- <file>`) — four
+checks failed (the dismissal fabricating `1000000`, the card then reading
+`'just now'`, the late progress note doing the same, and a re-drop on DONE
+inventing a stamp), exit 1. Restored from the `/tmp` copy, confirmed
+byte-identical by `md5` (`8ec9e8fa20e1c96fa54b45401c8e7b57`), reran — all
+checks passed, exit 0.
+
+`npm run build` run after the change.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the same `moc`/M0219 `main.mo` toolchain mismatch tracked from `#188`
+onward, on a file a foreign session owns and this change never touches).
+This change covers only `applyStatus` in `app/worklog.jsx`, the one new test
+file, and this entry; `src/cafresohq_state/main.mo` was never staged or
+edited, and no dfx/IC action of any kind was run.
