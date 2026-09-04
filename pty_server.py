@@ -604,6 +604,15 @@ def _terminal_pty_ws(self):
     t_in = threading.Thread(target=ws_to_pty, daemon=True)
     t_in.start()
     t_in.join()   # block until this WS connection closes
+    if not session_id and not sess['stop'].is_set():
+        # No session_id → this session was never put in _PTY_SESSIONS, so
+        # the reaper can't see it, /terminal/kill can't address it, and no
+        # client can ever reconnect to it. The soft-detach above would
+        # leave the spawned CLI process running forever — kill it now.
+        sess['stop'].set()
+        for k in ('pty_proc', 'proc'):
+            try: sess.get(k) and sess[k].terminate()
+            except Exception: pass
     sys.stderr.write(f'[pty-ws] WS detached: {session_id[:8] if session_id else "?"} {cli} @ {cwd_path}\n')
 
 def _terminal_status(self):

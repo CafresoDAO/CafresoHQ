@@ -28193,3 +28193,63 @@ never touches. This change covers only `_agent_stream_legacy` in
 `serve.py`, the one new test file and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, and no
 dfx/IC action of any kind was run.
+
+---
+
+## 214. A terminal with no name tag left its shell running forever
+
+**The hunt.** #198 fixed the client half of the terminal's reconnect
+story (the double-socket race in `views/terminal.jsx`); this hunt
+swept the server half — `pty_server.py`'s session lifecycle, the
+nonce gate, the reaper, resize, and the buffer/backpressure paths.
+The nonce and Origin gates held up (256-bit `secrets.compare_digest`,
+allowlisted origins, same-origin-only nonce fetch). The live find was
+in the one lifecycle case every cleanup mechanism assumes never
+happens: a PTY session that was never registered.
+
+**The mechanism.** `_terminal_pty_ws` only puts a session into
+`_PTY_SESSIONS` when the client supplied a `session_id` query param —
+and the frontend genuinely omits it for some tabs
+(`...(sessionId ? { session_id: sessionId } : {})`). The spawn and
+bridge work identically either way, but when the WebSocket drops,
+`ws_to_pty` takes the same soft-detach path as a resumable session:
+socket nulled, `expires` stamped, PTY left running so a reconnect can
+pick it up. Except nothing can ever pick this one up. The reaper only
+iterates `_PTY_SESSIONS`; `/terminal/kill` (#the "End session" route)
+looks sessions up by id; and the client has no id to resume with. So
+every session-id-less connection that closed left a real CLI process —
+a shell-grade process spawned by this server — running forever, plus
+its reader thread and master fd, invisible to every janitor in the
+building. The 300-second grace period the registry promises became
+"until reboot" for the unregistered.
+
+**The fix.** Four lines after `t_in.join()` — the point where this
+WebSocket is gone for good: if `session_id` is empty and the PTY
+hasn't already exited on its own, set the session's stop event and
+terminate the process, the same `pty_proc`/`proc` pattern
+`_terminal_kill` and the reaper already use. Registered sessions are
+untouched — the reconnect grace period still applies wherever a
+reconnect is actually possible.
+
+**The test**
+(`scripts/test_pty_without_session_id_is_not_orphaned.py`) is
+dynamic: it imports the real `pty_server`, points the CLI resolver at
+a long-sleeping stub script, and drives the REAL `_terminal_pty_ws`
+over a `socketpair` — real 101 handshake bytes back, a real WS close
+frame in, no `session_id` in the URL. Then it asserts the spawned
+child is actually dead once the handler returns, and that the kill is
+scoped so registered sessions keep their grace period.
+
+Fire-tested: reverted the four lines in place (never `git checkout`)
+— the stub process survived its WebSocket (still running, orphaned,
+pid observed live), exit 1. Restored from the /tmp safety copy
+(md5-verified byte-identical), test green.
+
+**Suite: 400/401** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc` toolchain mismatch recorded since
+`#188` — a different session's in-progress Motoko migration on a file
+this change never touches. This change covers only the four-line kill
+in `pty_server.py`, the one new test file and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, and no
+dfx/IC action of any kind was run.
