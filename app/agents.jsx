@@ -9,8 +9,15 @@ function downgradeElevatedModel(model, settings) {
     swap = 'claudecode:' + tail;
     why = 'CafresoHQ elevated provider is elevation-only';
   } else if (proto === 'codex') {
-    const ocaTail = tail.startsWith('oca/') ? tail : 'oca/' + tail;
-    swap = 'oca:' + ocaTail;
+    /* There is no 'oca:' provider — parseModelId()'s prefix table and
+       stream()'s dispatch in claude-client.jsx both stop at 'codex:' and
+       neither one recognizes 'oca'. Naming it here used to send a
+       downgraded helper's model straight through as a bare, unroutable
+       string ("oca:oca/gpt-5.5"), silently falling back to whatever
+       provider Settings had picked with a model id that provider had never
+       heard of. Leaving `swap` unset here routes through the settings
+       fallback below instead, which only ever names providers `stream()`
+       actually dispatches. */
     why = 'Codex CLI is elevation-only';
   }
   if (!swap) {

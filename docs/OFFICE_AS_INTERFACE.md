@@ -28865,3 +28865,74 @@ is untouched — this change covers only the Shift-Tab branch of
 `IDEEditor.onKey` in `views/ide.jsx`, the one new test file and this
 entry; `src/cafresohq_state/main.mo` was never staged or edited, and no
 dfx/IC action of any kind was run.
+
+---
+
+## 225. The elevated-model downgrade routed a downgraded helper nowhere real
+
+**The reading.** Assigned area: `app/agents.jsx` — the agent roster's
+hiring/firing, status and delegation-target surface. The file turned out
+to hold no roster state at all: `whoCan`, `whoCanLine` and
+`agentCapabilities` (the `/who-can` skill-lookup trio, hardened by #`Make
+/who-can say who actually can` with a 21-check suite and 17/17
+fire-tested arms) checked out clean end to end. The one function in the
+file with zero test coverage was `downgradeElevatedModel` — the thing
+that picks a delegated helper's actual brain, which is as close to
+"delegation targeting the wrong agent" as this file gets.
+
+**The bug.** Sub-agents spawned mid-conversation and assistants hired
+onto a senior are deliberately non-elevated, but they inherit their
+spawner's model. When that model lives under an elevation-only provider
+(`cafresohq:` or `codex:`), `downgradeElevatedModel` is supposed to swap
+in a safe non-elevated equivalent. For `cafresohq:<tail>` it correctly
+built `claudecode:<tail>` — `CAFRESOHQ_MODELS` and `CLAUDECODE_MODELS` in
+`claude-client.jsx` are the literal same array, so that swap is always
+valid. For `codex:<tail>` it built `oca:oca/<tail>` instead — and `oca`
+is not a provider anywhere in the product. `claude-client.jsx`'s
+`parseModelId()` prefix table lists `hermes, anthropic, lmstudio, ollama,
+claudecode, cafresohq, codex, google, openrouter, groq, gemini-api,
+gemini` — no `oca`. A model id starting `oca:` matches none of them, so
+`parseModelId` hands back the whole string, unparsed, as the model, and
+`stream()` falls back to `_settings.provider` — whatever the boss picked
+globally — carrying the literal garbage id `"oca:oca/<tail>"`. The system
+chat note that announces the swap (`app.jsx`, both the sub-agent spawn
+path and the hire-assistant path) calls `brainName({model: downgrade.model})`,
+which only strips prefixes and title-cases what is left — it never
+validates the provider exists — so the toast read as a perfectly
+ordinary, successful swap ("That helper is on Gpt 4.1 rather than...")
+while the request underneath it was quietly rerouted to a provider the
+boss never chose, carrying a model id that provider had never heard of.
+A helper delegated a task this way either errors out or runs on a
+random substituted brain, with nothing in the UI saying so.
+
+**The fix.** The `codex` branch no longer invents `oca:`. It leaves
+`swap` unset (keeping the `why` string), which falls through to the
+settings-based fallback that already existed a few lines below and was
+otherwise unreachable dead code — the one that only ever names
+`anthropic:`, `claudecode:`, or bare `haiku`, all three of which
+`stream()` actually dispatches. The `cafresohq` branch is untouched.
+
+**The proof.**
+`scripts/test_downgrade_elevated_model_never_names_the_unregistered_oca_provider.py`
+lifts the real `downgradeElevatedModel` out of `app/agents.jsx` by source
+slice and `claude-client.jsx`'s real `parseModelId` prefix table by
+regex, runs the lifted function under node against `codex:`/`cafresohq:`
+inputs across three settings shapes (anthropic key present, only a
+claudecode default, neither), and asserts every resulting model id
+actually parses to a provider `stream()` dispatches — plus a sanity check
+that `claude-client.jsx` truly has no `oca` entry, so the test cannot
+pass by coincidence if that table ever grows one.
+
+Fire-tested: reverted the fix in place (never `git checkout`), 6 of 14
+checks failed with the old `oca:oca/gpt-4.1` output at every settings
+shape; restored from the `/tmp` safety copy (md5-verified byte-identical),
+all 14 green. `npm run build` rebuilt dist-ui clean.
+
+**Suite: 402/403** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` toolchain mismatch recorded
+in `#188` through `#218` — a different session's in-progress Motoko
+migration on a file this change never touches. This change covers only
+the `codex` branch of `downgradeElevatedModel` in `app/agents.jsx`, the
+one new test file and this entry; `src/cafresohq_state/main.mo` was never
+staged or edited, and no dfx/IC action of any kind was run.
