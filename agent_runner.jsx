@@ -102,6 +102,16 @@ let CafresoHQAgentRunner;
       .slice(0, 80);
   }
 
+  /* Is something already filed at this path? A generated note may never
+     replace a note the boss (or another agent) already wrote, so the answer
+     has to be conservative: only a genuine "there is nothing here" clears
+     the way. Any other failure — offline, 502, a bridge refusal — leaves
+     the answer unknown, and unknown is not permission to overwrite. */
+  async function pathTaken(path) {
+    try { await CafresoHQClient.vaultRead(path); return true; }
+    catch (e) { return !/not found|404/i.test((e && e.message) || ''); }
+  }
+
   /* ----- Action handlers ------------------------------------------------ */
 
   async function handleSummarize({ nodeId, includeNeighbors, agent, responseMode }) {
@@ -222,13 +232,27 @@ let CafresoHQAgentRunner;
     const title = (m && m[1].trim()) || `${nodeId.split('/').pop().replace(/\.md$/,'')} - child`;
     const body  = (m && m[2].trim()) || raw;
     const folder = nodeId.split('/').slice(0, -1).join('/') || 'Inbox';
-    const path = `${folder}/${slug(title)}.md`;
+    const base = slug(title);
+    /* The title is the model's, the folder is the parent's — so a child
+       titled like an existing sibling (or like the parent itself, which is
+       exactly what a model that echoes the parent's name produces) used to
+       resolve onto a note that was already there, and vaultWrite REPLACES.
+       The boss's note was gone, silently, with a green write in its place.
+       Step to a free filename instead; if there isn't one, refuse and let
+       the runner's error path say so rather than overwrite. */
+    let path = '';
+    for (let n = 1; n <= 20; n++) {
+      const candidate = `${folder}/${base}${n === 1 ? '' : `-${n}`}.md`;
+      if (!(await pathTaken(candidate))) { path = candidate; break; }
+    }
+    if (!path) throw new Error(`no free filename for "${title}" in ${folder} — the child note was not written (nothing was overwritten)`);
     emitActivity(path, agent, 'write');
     await CafresoHQClient.vaultWrite(path, `# ${title}\n\nParent: [[${nodeId}]]\n\n${body}\n`, 'write');
-    // Also link from the parent.
+    // Also link from the parent — to the file that was actually written,
+    // which is not `title` once the name had to be stepped.
     try {
       const parentBody = await CafresoHQClient.vaultRead(nodeId);
-      const linkText = `[[${title}]]`;
+      const linkText = `[[${path.split('/').pop().replace(/\.md$/, '')}]]`;
       if (!parentBody.includes(linkText)) {
         await CafresoHQClient.vaultWrite(nodeId, parentBody.replace(/\s*$/, '\n\n') + linkText + '\n', 'write');
       }

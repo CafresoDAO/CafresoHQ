@@ -29765,3 +29765,70 @@ failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
 This change covers only `_focusId()` in `graph-engine.js`, the one new test
 file, and this entry; `src/cafresohq_state/main.mo` was never staged or
 edited, and no dfx/IC action of any kind was run.
+
+## 239. A generated child note was filed on top of whatever was already there
+
+**The reading.** Assigned area: `agent_runner.jsx` — the shim that turns
+right-click graph actions into real LLM work. `handleGenerateChild` asks the
+model for a sub-topic, parses the `TITLE:` line out of the answer, slugs it
+into a filename, and files it in the *parent's own folder*:
+
+    const folder = nodeId.split('/').slice(0, -1).join('/') || 'Inbox';
+    const path = `${folder}/${slug(title)}.md`;
+    await CafresoHQClient.vaultWrite(path, ..., 'write');
+
+Nothing between those lines asked whether a note was already filed at that
+path, and `mode: 'write'` on `PUT /vault/note` is a replace on every backend
+the Library has (`serve.py`: `target.write_text(body)`; REST: `PUT`; OCI:
+`put_object`). So the model's choice of title was, in effect, the choice of
+which of the boss's notes to destroy. The likeliest collision is the worst
+one: the parent's title is the only title in the model's prompt, so a model
+that echoes it — "Project Helios" for a parent at `Notes/Project Helios.md`
+— resolved straight back onto the parent, which was overwritten by its own
+child. The "also link from the parent" step that runs next then read the
+*child* back and appended a link to itself, the only trace left. A model
+that instead picked a real sibling ("API Design", next door in the same
+folder) replaced that note the same way: no error, no prompt, no undo, and
+the graph refresh immediately after made it look like an ordinary success.
+The rest of the office already refuses exactly this — the Library's upload
+door collision-steps a filename, `vaultRename` answers 409 — and the one
+writer whose filenames come from a language model was the one that replaced.
+
+**The fix.** A `pathTaken()` probe, and a step loop: the handler now walks
+`<base>.md`, `<base>-2.md`, ... up to twenty candidates and writes to the
+first free one; if there is no free one it throws, and the dispatcher's
+existing catch turns that into the `cafresohq:agentRunnerError` the UI
+already shows. `pathTaken` is deliberately conservative — only a genuine
+`not found`/404 from `vaultRead` clears a path; an offline Library, a 502 or
+a bridge refusal leaves the answer unknown, and unknown is not permission to
+overwrite. The parent's back-link now names the file that was actually
+written rather than the un-stepped title, so a stepped name can't dangle.
+
+**The proof.**
+`scripts/test_a_generated_child_never_lands_on_an_existing_note.py` lifts the
+real `slug`, `pathTaken` and `handleGenerateChild` out of `agent_runner.jsx`
+by source-anchored brace balancing (regex-literal and destructured-parameter
+aware, so the extraction is the shipped code and not a line range) and runs
+them under Node against an in-memory Library that 404s on a missing note and
+replaces on write. Four scenarios: the model echoing the parent's title, the
+model naming an existing sibling, an ordinary uncontested title (which must
+still file at `<folder>/<title>.md` with no gratuitous suffix), and a Library
+that answers 502 (which must refuse rather than write).
+
+Fire-tested: copied the fixed `agent_runner.jsx` to `/tmp`, reverted the step
+loop back to the single `const path = ...` line in place (never
+`git checkout -- <file>`) — ten checks failed, including the parent note
+coming back holding the generated child's body instead of the boss's own
+text, exit 1. Restored from the `/tmp` copy, confirmed byte-identical by
+`md5`, reran — all eighteen checks passed, exit 0.
+
+`npm run build` run after the change.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the same `moc`/M0219 `main.mo` toolchain mismatch tracked in `#188` through
+`#238`, on a file a foreign session owns and this change never touches).
+This change covers only `handleGenerateChild`/`pathTaken` in
+`agent_runner.jsx`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, and no dfx/IC
+action of any kind was run.
