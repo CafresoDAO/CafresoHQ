@@ -30135,3 +30135,82 @@ onward, on a file a foreign session owns and this change never touches).
 This change covers only the mobile branch of `views/vault.jsx`, the one new
 test file, and this entry; `src/cafresohq_state/main.mo` was never staged or
 edited, and no dfx/IC action of any kind was run.
+
+## 244. Renaming a shortcut moved the real folder it pointed at
+
+**The report.** A boss keeps a shortcut in a project's working tree — a
+symlink named `shortcut` in `scratch/`, pointing at the real
+`keep/important_data/` a few folders over. They rename the shortcut in the
+file manager. The rename reports success. The shortcut is gone, a new name
+sits in its place — and `keep/important_data/` is gone too. Not copied, not
+linked: *moved*. The real folder was torn out of its own home and re-filed
+under the name the boss had picked for a shortcut, and everything that
+addressed it by its real path now points at nothing.
+
+**The cause.** `_fs_rename` in `fs_routes.py` gets its source path from
+`self._validate_path(src)`, and `_validate_path` (serve.py) ends in
+`.resolve()` — pathlib's own symlink dereferencing. So `sp` is never the
+symlink; it is already the link's REAL destination. The route then did the
+one thing that makes that fatal:
+
+    os.replace(str(sp), str(dp))
+
+`sp` is the target, so `os.replace` moves the target. The link the boss
+actually asked about was never touched, and was left dangling at its old
+name.
+
+This is the same trap `#226` found in `_fs_delete`, two functions further
+down — where a resolved `target.is_symlink()` could never be True, so a
+symlinked directory took the `rmtree` branch on the real destination.
+`#226` fixed the delete door and left a comment on it explaining exactly
+this dereference. The rename door, in the same file, still had it. A fix
+that names its cause in a comment and stops at the one function it was
+reported against is a fix that lets the sibling keep the bug.
+
+**The fix.** Read link-ness off the UNRESOLVED, anchored path — the same
+`_workspace_path` anchoring the read routes use, minus the `resolve()` that
+would erase the very thing being asked about — and `os.replace` *that* path
+when it is a link, so only the link moves. Three consequences follow and are
+all deliberate:
+
+- **A link's location is checked separately from where it points.** `sp`
+  proves only the destination is inside the sandbox. A symlink that *lives*
+  outside `CAFRESOHQ_ALLOWED_DIRS` but points inside must not become movable
+  on that evidence, so the link's own parent is whitelist-checked before it
+  is used as the move source.
+- **A dangling link is renamable.** `sp.exists()` is False for a broken
+  symlink, which used to 404 a file the boss can plainly see. It exists as a
+  link; the 404 now requires that it be neither.
+- **The workspace-root guard reads the real thing being moved.** Refusing to
+  move a root is about roots, not about links that happen to point at one.
+- `dp.is_symlink()` joins `dp.exists()` in the collision check, so a dangling
+  link at the destination is a collision rather than something to overwrite.
+- The `from` in the response is the path that actually moved.
+
+**The proof.**
+`scripts/test_fs_rename_symlink_moves_the_link_not_its_target.py` calls the
+real `fs_routes._fs_rename` — not a reimplementation — against real temp
+directories, wiring a `_validate_path` that mirrors serve.py's own (anchor,
+`.resolve()`, whitelist-check) so the dereference the bug depends on is the
+genuine one. It asserts the real directory has *not* moved and the file
+inside it survives in place, that the link now lives under the new name and
+still points at the real directory, that the old name is gone, that a plain
+file is still really renamed (no regression to ordinary rename), and that a
+symlink living outside the sandbox is still refused with nothing moved.
+
+Fire-tested: copied the fixed `fs_routes.py` to `/tmp`, reverted the fix in
+place with the editor (never `git checkout -- <file>`) — 7 of 9 checks
+failed, exit 1, including the outside-the-sandbox link returning 200 and
+carrying off the file it pointed at. Restored from the `/tmp` copy, confirmed
+byte-identical by `md5` (`d4e172f73608b79e2a5257e34c023c3c`), reran — all
+checks passed, exit 0.
+
+No `.jsx`/`.js` file changed, so no `npm run build` was needed.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the same `moc`/M0219 `main.mo` toolchain mismatch tracked from `#188`
+onward, on a file a foreign session owns and this change never touches).
+This change covers only `_fs_rename` in `fs_routes.py`, the one new test
+file, and this entry; `src/cafresohq_state/main.mo` was never staged or
+edited, and no dfx/IC action of any kind was run.

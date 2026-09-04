@@ -604,23 +604,44 @@ def _fs_rename(self):
         return self._send_json(403, {'error': str(e)})
     except Exception as e:
         return self._send_json(400, {'error': f'invalid path: {e}'})
-    if not sp.exists():
+    # Same dereference trap _fs_delete carries a comment about: _validate_path
+    # resolves through symlinks, so `sp` is already the link's REAL
+    # destination. Renaming a symlink therefore used to os.replace() the file
+    # or directory it POINTS AT — moving the boss's real folder out of its
+    # home and leaving the shortcut they actually renamed dangling. Read
+    # link-ness off the unresolved, anchored path (no resolve(), so the thing
+    # being asked about isn't erased) and move THAT. The link's own location
+    # is whitelist-checked separately: `sp` proves only where it points, and
+    # a link living OUTSIDE the sandbox must not become movable just because
+    # its target happens to sit inside.
+    link_src = _workspace_path(src)
+    src_is_link = link_src.is_symlink()
+    if src_is_link:
+        try:
+            self._validate_path(str(link_src.parent))
+        except PermissionError as e:
+            return self._send_json(403, {'error': str(e)})
+        except Exception as e:
+            return self._send_json(400, {'error': f'invalid path: {e}'})
+    move_src = link_src if src_is_link else sp
+    # A dangling symlink still exists as a link and is still renamable.
+    if not sp.exists() and not src_is_link:
         return self._send_json(404, {'error': 'source not found'})
     # Never move a workspace root itself (parallels _fs_delete; matters when
     # more than one allowed dir is configured).
     roots = {str(pathlib.Path(d).resolve()) for d in _cafresohq_allowed_dirs}
-    if str(sp) in roots:
+    if not src_is_link and str(sp) in roots:
         return self._send_json(403, {'error': 'refusing to move a workspace root'})
-    if dp.exists():
+    if dp.exists() or dp.is_symlink():
         return self._send_json(409, {'error': 'target already exists'})
     try:
         dp.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(str(sp), str(dp))
+        os.replace(str(move_src), str(dp))
     except (NotADirectoryError, FileExistsError) as e:
         return self._send_json(409, {'error': f'cannot move there: {e}'})
     except Exception as e:
         return self._send_json(500, {'error': str(e)})
-    return self._send_json(200, {'ok': True, 'from': str(sp), 'to': str(dp)})
+    return self._send_json(200, {'ok': True, 'from': str(move_src), 'to': str(dp)})
 
 def _fs_delete(self):
     """POST /fs/delete  {path}  — delete a file or directory (recursive)."""
