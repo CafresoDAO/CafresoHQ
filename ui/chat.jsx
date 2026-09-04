@@ -870,6 +870,25 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
         setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
           text: `↪ Handed off to ${target.name}. Talk to them directly — say "back to CafresoHQ" to return.`,
           thread: activeThread }]);
+        /* Still the boss's turn. Every sibling await in send() runs inside
+           setStreaming(true) … finally setStreaming(false) — the room
+           fan-out, /brainstorm, the @mention fan-out, a handoff-mode send,
+           and the DM fan-out branch below — so the composer shows ■ Stop
+           while a reply is being written. This branch didn't, and it is
+           the dispatch that follows "Talk to them directly": the
+           specialist's OPENING reply, carrying the whole brief and
+           usually the longest turn of the exchange, streamed with the
+           composer offering Send ↵. The stop plumbing was already live
+           for exactly this phase — abortRef is deliberately not cleared
+           (see the note above finalText) and onStopTurn scopes to this
+           turn — but the only button that reaches it renders off
+           `streaming`, so there was nothing on screen to click. And an
+           enabled Send during that window starts a SECOND dispatch onto
+           the specialist's still-busy desk — the busy-desk wait in
+           app.jsx assumes "the boss's own sends can't arrive here busy
+           (the composer serializes them)", and this was the one gap in
+           that serialization. */
+        setStreaming(true);
         try {
           await onDispatchToAgent(target, ceoHandoff.body || text, {
             suppressUserEcho: true,
@@ -893,6 +912,8 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
               `(${target.name} couldn't take the handoff — ${snagCause(err && err.message || String(err))})`,
               agents.filter(a => a.id !== target.id), CafresoHQClient),
             thread: activeThread }]);
+        } finally {
+          setStreaming(false);
         }
       } else {
         /* Nobody was excluded here: the named teammate was never hired, so

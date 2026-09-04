@@ -27089,3 +27089,79 @@ session's in-progress Motoko migration on a file this change never
 touches. This change covers only `views/terminal.jsx`, the new test
 file, and this entry; `src/cafresohq_state/main.mo` was never staged or
 edited, and no dfx/IC action of any kind was run.
+
+---
+
+## 199. The one dispatch that follows "Talk to them directly" ran with no Stop button and an open Send
+
+**The reading.** Assigned area: the chat panel — `ui/chat.jsx` (thread
+model, message rendering, composer, swipe-to-reply, attachments,
+streaming display) and the dispatch paths in `app.jsx` it feeds
+(`dispatchToAgent`, `onDelegate`, the DM fan-out and report-back
+relay). The scroll-follow MutationObserver, the search→reply thread
+snapping, the RETRY affordance, the thread-count tooltip, the stray-name
+notice and the meeting turn-taking all checked out as already hardened
+by earlier entries (`#189`, `#190`, `#193` left alone). The live find
+was in `send()`'s CEO turn, in the `HANDOFF_TO` branch.
+
+**The mechanism.** Every await on a coworker dispatch in `send()` runs
+inside `setStreaming(true) … finally setStreaming(false)`: the room
+fan-out, `/brainstorm`, the @mention fan-out, a handoff-mode send, and
+the CEO's DM fan-out branch — which even re-raises the flag after the
+CEO turn's own `setStreaming(false)`, precisely so the composer keeps
+its ■ Stop through the phases that run longest. The `ceoHandoff` branch
+did neither. After the CEO emitted `[HANDOFF_TO: name]`, the office
+printed "↪ Handed off to X. Talk to them directly", switched the
+responder — and then awaited `onDispatchToAgent(target, …)` with
+`streaming` false for the whole dispatch. The composer's action row
+renders `streaming ? ■ Stop : Send ↵`, so the specialist's OPENING
+reply — the one carrying the whole brief, usually the longest turn of
+the exchange — streamed with no Stop on screen. The cruel part: the
+stop plumbing was already alive for exactly this phase. `abortRef` is
+deliberately not cleared until end-of-turn (its comment names "the
+phases that run longest" as the reason), and `onStopTurn` scopes to
+this turn — the only button that reaches either simply was not
+rendered. And the enabled Send is not just cosmetic: a second send
+during that window starts a NEW dispatch onto the specialist's
+still-busy desk, where `dispatchToAgent`'s busy-desk wait loop assumes
+"the boss's own sends can't arrive here busy (the composer serializes
+them)" — this branch was the one gap in that serialization, and the
+waiting note it produces even misattributes the boss's message as
+"the office's note for X".
+
+**The fix.** Two lines plus a comment, in the shape the sibling branch
+already has: `setStreaming(true)` before the handoff's await, and a
+`finally { setStreaming(false) }` on its existing try/catch so a failed
+handoff can never leave the composer stuck on ■ Stop. No other
+behavior changes — the failure copy, `withHandoff` hint filtering,
+`parentMessageId` chaining and `dispatchAs` all ride through untouched.
+
+**The test**
+(`scripts/test_ceo_handoff_dispatch_keeps_stop_button_live.py`) lifts
+the REAL `ChatPanel` out of `ui/chat.jsx` (brace-balanced extraction,
+the `test_workspace_terminal_key.py` technique — the `(...)` skip
+matters here, since ChatPanel destructures its props), isolates the
+`if (ceoHandoff && onDispatchToAgent)` block brace-balanced, strips
+comments so prose about `setStreaming` can't satisfy the checks, and
+pins the invariant: the branch still awaits `onDispatchToAgent`,
+`setStreaming(true)` is present and precedes that await, and a
+`finally { setStreaming(false) }` exists. A decoy guard verifies the
+sibling DM fan-out branch keeps its own pair, so a "fix" that hoisted
+one wrapper around both branches could not pass while silently
+changing the sibling.
+
+Fire-tested: reverted the fix in place (removed the raise and the
+finally by editing, not by git) — 3 of 10 checks failed, by name,
+starting with `setStreaming(true) present in the handoff branch`.
+Restored `ui/chat.jsx` from the /tmp safety copy (md5-verified
+byte-identical, `62472739…`), test green again, `npm run build` re-run
+(the dev server never rebuilds `dist-ui/`).
+
+**Suite: 385/386** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` implicit-`transient`
+toolchain mismatch recorded in `#188`, `#193` and `#198` — a different
+session's in-progress Motoko migration on a file this change never
+touches. This change covers only `ui/chat.jsx`, the new test file, and
+this entry; `src/cafresohq_state/main.mo` was never staged or edited,
+and no dfx/IC action of any kind was run.
