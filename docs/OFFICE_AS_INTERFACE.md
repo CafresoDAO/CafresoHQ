@@ -28796,3 +28796,72 @@ Motoko migration on a file this change never touches. This change covers
 only the Escape branch of `Modal`'s key handler in `modals/base.jsx`, the
 one new test file and this entry; `src/cafresohq_state/main.mo` was never
 staged or edited, and no dfx/IC action of any kind was run.
+
+---
+
+## 224. Shift-Tab in the code editor left the cursor behind
+
+**The reading.** Assigned area: `views/ide.jsx`, the in-app code editor
+(`IDEEditor`). The scroll-sync between textarea, gutter, syntax overlay
+and minimap checked out, `ideTintCode`'s comment/string/number/keyword
+regex checked out (string alternatives always win the earliest starting
+position, so a `"//not-a-comment"` never gets mis-tinted), and
+`renderMarkdown`/`FilePreview`/`LocalTree` are unrelated to editing.
+The live find was in `onKey`, the Tab/Shift-Tab handler.
+
+**The bug.** Tab (indent) inserts two spaces and then explicitly puts the
+caret back where the boss's typing should land:
+
+    onChange(next);
+    requestAnimationFrame(() => {
+      if (taRef.current) {
+        taRef.current.selectionStart = taRef.current.selectionEnd = start + 2;
+      }
+    });
+
+Shift-Tab (dedent) strips up to two leading spaces from every selected
+line and then just calls `onChange(...)` — no selection reposition at
+all. `IDEEditor`'s textarea is a controlled component: when React pushes
+the shorter post-dedent string into `.value`, it leaves the DOM node's
+raw `selectionStart`/`selectionEnd` numeric offsets untouched (only
+clamping them if they now exceed the new length). Those offsets were
+counted against the OLD, longer text. Once characters are removed ahead
+of the caret, the same numbers point further into the now-shorter text
+than they should — the caret visibly jumps to the right by however many
+spaces were stripped. Keep typing and the character lands mid-word,
+several columns off from where the boss was looking; a second Shift-Tab
+or Tab reads the wrong line as "current". At the end of a two-line block
+the caret could land past the end of the text entirely, silently pinned
+to the closest valid offset instead of the line it was actually on. No
+disk content is corrupted — the buffer the boss saves is still what they
+meant to write — but the selection they're looking at while they write
+it is not the selection the code actually has.
+
+**The fix.** Compute how many characters the dedent actually removed
+ahead of `start` and ahead of `end` (the current line's leading-space
+prefix up to each), and reposition the selection by that amount in the
+same `requestAnimationFrame` pattern the indent branch already uses. No
+change to what gets dedented — only to where the caret ends up afterward.
+
+**The proof.**
+`scripts/test_ide_shift_tab_dedent_leaves_cursor_behind.py` brace-matches
+the real `onKey` arrow out of `views/ide.jsx`, runs it in node against a
+fake textarea/`requestAnimationFrame` harness with two indented lines and
+the caret at end-of-text, and checks both that the dedent still strips
+the right spaces and that `selectionStart`/`selectionEnd` land at the new
+(shorter) text's end rather than the stale pre-dedent offset.
+
+Fire-tested: copied the fixed file to `/tmp`, reverted the reposition
+block in place (never `git checkout`) — the selection checks failed while
+the dedent-content check still passed, confirming the fix is isolated to
+cursor placement; restored from the `/tmp` copy (md5-verified
+byte-identical), all green again. `npm run build` rebuilt `dist-ui/`
+clean.
+
+**Suite.** `python3 scripts/run_tests.py`. The one pre-existing failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`,
+the same `moc`/M0219 `main.mo` toolchain mismatch tracked since `#188`)
+is untouched — this change covers only the Shift-Tab branch of
+`IDEEditor.onKey` in `views/ide.jsx`, the one new test file and this
+entry; `src/cafresohq_state/main.mo` was never staged or edited, and no
+dfx/IC action of any kind was run.

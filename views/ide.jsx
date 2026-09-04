@@ -471,7 +471,26 @@ function IDEEditor({ value, onChange, path }) {
         const middle = value.slice(lineStart, end);
         const dedented = middle.replace(/^( {1,2})/gm, '');
         const tail = value.slice(end);
+        /* Dedent removes characters before `start`/`end`, so the raw DOM
+           selection offsets (which the browser leaves numerically
+           unchanged across a controlled-value update) now point past
+           where they should — the cursor drifts right by however many
+           leading spaces were stripped. Recompute both offsets from how
+           much was actually removed ahead of each, mirroring the indent
+           branch's explicit reposition below. */
+        const beforeStart = value.slice(lineStart, start);
+        const beforeStartDedented = beforeStart.replace(/^( {1,2})/, '');
+        const removedBeforeStart = beforeStart.length - beforeStartDedented.length;
+        const removedTotal = middle.length - dedented.length;
+        const newStart = start - removedBeforeStart;
+        const newEnd = end - removedTotal;
         onChange(head + dedented + tail);
+        requestAnimationFrame(() => {
+          if (taRef.current) {
+            taRef.current.selectionStart = newStart;
+            taRef.current.selectionEnd = newEnd;
+          }
+        });
       } else {
         const next = value.slice(0, start) + '  ' + value.slice(end);
         onChange(next);
