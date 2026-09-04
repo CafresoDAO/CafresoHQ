@@ -30214,3 +30214,86 @@ onward, on a file a foreign session owns and this change never touches).
 This change covers only `_fs_rename` in `fs_routes.py`, the one new test
 file, and this entry; `src/cafresohq_state/main.mo` was never staged or
 edited, and no dfx/IC action of any kind was run.
+
+---
+
+## 245. A refused Add Project had already made the folder it then turned down
+
+**The reading.** Assigned area: `views/projects.jsx` — Add Project, which is
+step 5 of the office's own getting-started checklist. Both commit steps in
+this file (WorkspaceView's and ProjectsView's) do two things before filing
+the project, and until now they did them in this order:
+
+    const madeAt = await _addProjectMkdir(C, path, source);
+    if (await _addRefusedOutsideSandbox(path, toast)) return;
+
+Each half is there for a reason already written up in this ledger. The mkdir
+is `#149`: a first-run boss types a path that does not exist yet, and without
+a best-effort create the FILES pane's very first render reads *"Not a
+directory: …"*. The browse probe is
+`test_the_add_project_door_checks_the_reading_door.py`: the office's reading
+doors are keyless and therefore sandboxed in **every** mode, so a project at
+an outside path would be accepted and then half-work forever.
+
+The two doors disagree by construction, and that is the whole bug.
+`/fs/mkdir` resolves through `_validate_path`, which takes the local-mode
+skip — on an unrestricted local run (`_RUNTIME_ENV == 'local'` and no
+explicit `CAFRESOHQ_ALLOWED_DIRS`, i.e. the ordinary self-hosted install)
+nothing is refused, and it creates with `parents=True`. `/fs/browse` is
+sandboxed unconditionally, and `fs_routes._fs_browse` runs that 403 *before*
+`is_dir()` — deliberately, so the refusal is not itself an answer about what
+exists. A path outside the sandbox therefore **succeeds at mkdir and 403s at
+browse**.
+
+So: type an absolute path outside the sandbox — `/tmp/site`, or a typo whose
+whole chain gets created because `parents=True` — and the office made that
+directory on the boss's disk, then refused the add. The project was never
+filed, so `_addedProjectSay`'s *"there was no folder at X, so the office made
+one"* sentence never ran. What the boss saw was one error toast about Browse.
+What they had was a directory nobody mentioned, at a path the office had just
+declared it could not show them. That is precisely the silent-write failure
+`#149` exists to prevent, reintroduced on the refusal path — and the comment
+above `_addProjectMkdir` still promises *"nothing here claims a folder was
+made unless the server said it made one"*, which stayed true only because on
+this path nothing claimed anything at all.
+
+**The fix.** Ask first, then make. Two lines swapped, in both commit steps:
+
+    if (await _addRefusedOutsideSandbox(path, toast)) return;
+    const madeAt = await _addProjectMkdir(C, path, source);
+
+Nothing else moves. The probe's own contract already makes this safe in the
+other direction: only a 403 refuses, an unreachable server is not a verdict
+about the path, and browse 403s an outside path whether or not it exists —
+so a legitimate not-yet-created folder inside the sandbox still reaches the
+mkdir and still gets its `#149` receipt naming the path.
+
+**The proof.**
+`scripts/test_a_refused_add_project_leaves_no_folder_behind.py` lifts the
+three module helpers and *both* `commitProject` bodies straight out of
+`views/projects.jsx` (balanced-brace extraction, no hand-copied duplicate)
+and runs each in node against a stub whose `fsMkdir` records its calls —
+recording the call *is* the observation, because on the install this is about
+the real one would have created the directory. With browse answering 403 it
+asserts mkdir is never reached, no project is filed, and the single toast is
+the Browse refusal with nothing claiming a folder was made; with browse
+answering 200 it asserts the folder is still created, the project still
+filed, and the boss still told *"the office made one"* with the path in it.
+Every check runs twice, once per view.
+
+Fire-tested: copied the fixed `views/projects.jsx` to `/tmp`, reverted both
+swaps in place with the editor (never `git checkout -- <file>`) — the two
+`a refused path never reaches mkdir` checks failed, naming the created path,
+exit 1. Restored from the `/tmp` copy, confirmed byte-identical by `md5`
+(`4975876305f4dc7cc21608c486a93426`), reran — all 16 checks passed, exit 0.
+
+`npm run build` run after the change.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the same `moc`/M0219 `main.mo` toolchain mismatch tracked from `#188`
+onward, on a file a foreign session owns and this change never touches).
+This change covers only the two commit steps in `views/projects.jsx`, the one
+new test file, and this entry; `src/cafresohq_state/main.mo` was never staged
+or edited, no II or `derivationOrigin` value was touched, and no dfx/IC action
+of any kind was run.

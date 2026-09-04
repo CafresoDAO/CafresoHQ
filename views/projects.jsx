@@ -110,10 +110,21 @@ function WorkspaceView({ projects, setProjects, agents = [], onSwitchView }) {
   /* Same commit step as ProjectsView's — the best-effort mkdir carries the
      same reasoning as there: the first-time boss typing a fresh path has no
      existing folder, and without this the FILES pane's first render is
-     "Not a directory: …". An existing path just returns `existed: true`. */
+     "Not a directory: …". An existing path just returns `existed: true`.
+
+     Order is load-bearing: ASK FIRST, THEN MAKE. The mkdir used to run
+     before the door check, and the two doors disagree by design — /fs/mkdir
+     goes through `_safe_path`, which skips the whitelist on an unrestricted
+     local run, while /fs/browse is sandboxed in EVERY mode. So a path
+     outside the sandbox was created on the boss's disk (parents=True, so a
+     typo makes the whole chain) and THEN refused: the project was never
+     filed, `_addedProjectSay`'s "the office made one" sentence never ran,
+     and the boss was left with an unrequested directory nobody mentioned —
+     the exact silent-write failure #149 exists to prevent, reintroduced on
+     the refusal path. A refused add must leave the disk untouched. */
   const commitProject = async ({ name, path, source }) => {
-    const madeAt = await _addProjectMkdir(C, path, source);
     if (await _addRefusedOutsideSandbox(path, toast)) return;
+    const madeAt = await _addProjectMkdir(C, path, source);
     const id = 'p_' + Math.random().toString(36).slice(2, 8);
     setProjects && setProjects(prev => [...(prev || []), { id, name, path, source }]);
     // This changes selectedId the same way switchProject() does (see its
@@ -934,10 +945,14 @@ function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
      effort create it here too — same call "+ Folder" already makes, so
      an existing path (the "point at my existing repo" case this tab's
      own copy also describes) just gets `existed: true` back and nothing
-     changes for it. */
+     changes for it.
+
+     Ask the reading door BEFORE making anything — see the matching comment
+     on WorkspaceView's commitProject for why the two doors disagree and
+     what the old order left behind on the boss's disk. */
   const commitProject = async ({ name, path, source }) => {
-    const madeAt = await _addProjectMkdir(CafresoHQClient, path, source);
     if (await _addRefusedOutsideSandbox(path, toast)) return;
+    const madeAt = await _addProjectMkdir(CafresoHQClient, path, source);
     const id = 'p_' + Math.random().toString(36).slice(2, 8);
     setProjects && setProjects(prev => [...(prev || []), { id, name, path, source }]);
     // Same setSelected+setOpenFile pairing every other selection change in
