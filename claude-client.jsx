@@ -552,6 +552,24 @@ async function fetchStreamHead(url, init = {}, headMs = 20000) {
   throw lastErr || new Error('request failed after retries');
 }
 
+/* A stream can fail AFTER the 200. Anthropic sends `event: error` with
+   {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}};
+   OpenAI-compatible backends (OpenAI, vLLM, llama.cpp, LM Studio, and the
+   Hermes gateway relaying any of them) put {"error":{"message":…}} — or, for
+   Ollama, a bare {"error":"…"} — into a data frame and then hang up. Neither
+   reader looked at those frames: JSON.parse succeeded, no branch matched, the
+   frame was dropped, and the stream simply ended. parseSSE saw data, so it
+   raised nothing either — an upstream failure arrived as a SUCCESSFUL turn
+   with a short answer, or with no answer at all. Same shape readCliDelta and
+   streamAgentContract were already written against: a failure that reads as
+   work is worse than a failure.
+
+   The three-line read below is INLINE in both readers rather than factored
+   into a shared helper, for the reason #258 records: several tests lift
+   these functions out of this file by name and run them in a bare scope, so
+   a module-level callee would be a ReferenceError there — and one swallowed
+   by the very `catch (_e) {}` this fix exists to see past. */
+
 async function streamAnthropic({ system, messages, model, temperature, maxTokens, onToken, onUsage, signal }) {
   const s = _settings;
   if (!s.anthropicKey) throw new Error('No Anthropic API key — open Settings → Connections');
@@ -579,10 +597,17 @@ async function streamAnthropic({ system, messages, model, temperature, maxTokens
   }
   let inputTokens = 0;
   let outputTokens = 0;
+  let sawText = false;
+  let streamError = '';
   await parseSSE(res, (event, data) => {
     try {
       const j = JSON.parse(data);
+      if (!streamError) {                                   // first error names the cause
+        const e = (j && j.error !== undefined) ? j.error : (j && j.type === 'error' ? j : null);
+        if (e) streamError = String(typeof e === 'string' ? e : (e.message || e.type || '')).trim();
+      }
       if (event === 'content_block_delta' && j.delta && j.delta.type === 'text_delta' && j.delta.text) {
+        sawText = true;
         onToken(j.delta.text);
       } else if (event === 'message_start' && j.message && j.message.usage) {
         inputTokens = j.message.usage.input_tokens || 0;
@@ -598,6 +623,13 @@ async function streamAnthropic({ system, messages, model, temperature, maxTokens
   });
   if (onUsage && (inputTokens || outputTokens)) {
     onUsage({ input: inputTokens, output: outputTokens, total: inputTokens + outputTokens });
+  }
+  /* Nothing arrived: this turn failed, and the caller has to hear it as a
+     failure. Text already arrived: the boss keeps what was said AND is told
+     it stops there, rather than reading a sentence that ends mid-thought. */
+  if (streamError) {
+    if (sawText) onToken(`\n⚠ Anthropic: ${streamError}`);
+    else throw new Error(`Anthropic: ${streamError}`);
   }
 }
 
@@ -658,10 +690,15 @@ async function streamOpenAICompat({ base, label, system, messages, model, temper
      front is not. */
   let inReasoning = false;
   let sawContent = false, sawReasoning = false;
+  let streamError = '';
   await parseSSE(res, (_event, data) => {
     if (!data || data === '[DONE]') return;
     try {
       const j = JSON.parse(data);
+      if (!streamError) {                                   // first error names the cause
+        const e = (j && j.error !== undefined) ? j.error : (j && j.type === 'error' ? j : null);
+        if (e) streamError = String(typeof e === 'string' ? e : (e.message || e.type || '')).trim();
+      }
       const delta = j.choices && j.choices[0] && j.choices[0].delta;
       if (delta) {
         if (delta.reasoning_content) sawReasoning = true;
@@ -691,6 +728,12 @@ async function streamOpenAICompat({ base, label, system, messages, model, temper
      EMPTY bubble -- swapping a bad reply for no reply, which is the worse
      of the two and the exact silent-drop visibleReply() was written against.
      Say what happened instead. */
+  /* Checked before the monologue case below: a backend that died mid-think
+     has a real cause to report, and "ran out of room" would be a guess. */
+  if (streamError) {
+    if (sawContent) onToken(`\n⚠ ${label}: ${streamError}`);
+    else throw new Error(`${label}: ${streamError}`);
+  }
   if (!sawContent && sawReasoning) {
     onToken('(thought it through but ran out of room before answering — ask again, or give them a shorter question)');
   }

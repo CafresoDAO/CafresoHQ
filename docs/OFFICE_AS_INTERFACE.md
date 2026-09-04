@@ -31849,3 +31849,98 @@ a file a foreign session owns and this change never touches). This change
 covers only `fs_routes.py`, `serve.py`, the one new test file, and this
 entry; `src/cafresohq_state/main.mo` was never staged or edited, and no
 dfx/IC action of any kind was run.
+
+---
+
+## 263. A stream that died after the 200 was filed as a finished turn
+
+**The wreck.** The boss types a question, three dots animate, the bubble
+closes empty, and the turn goes into the ledger as done. Nothing anywhere on
+screen says the model never answered — because as far as the office could
+tell, it did.
+
+Every LLM stream here opens with a 200 and then reports failure *in band*, in
+the body, which is what SSE is for. The two readers a boss's own key goes
+through — `streamAnthropic` and `streamOpenAICompat` (LM Studio, Ollama,
+Hermes, and anything OpenAI-shaped behind the gateway) — both read only the
+frames they expected and dropped the rest:
+
+| what the backend sends when it fails mid-stream | the reader's chain |
+|---|---|
+| `event: error` + `{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}` | `content_block_delta` / `message_start` / `message_delta` |
+| `{"error":{"message":"upstream connect error…","type":"server_error"}}` | `j.choices[0].delta` / `j.usage` |
+| `{"error":{"message":"Failed to load model","code":"model_not_found"}}` | same |
+| `{"error":"model requires more system memory (5.6 GiB) than is available"}` | same |
+
+`JSON.parse` succeeded on all four. No branch matched. The `try` fell
+through with an empty `catch (_e) {}` under it, and the frame was gone.
+
+And `parseSSE` could not rescue it: its guard fires when a stream sends *no
+data at all*, and an error frame IS data. So `sawData` was true, `parseSSE`
+returned normally, the caller's `await` resolved, and an upstream failure
+came back indistinguishable from a completed answer — an empty bubble when
+the error arrived before the first token (the common case, since an overload
+or a model-load failure happens at pickup), a sentence stopping mid-thought
+when it arrived later.
+
+This is the same shape the CLI drivers were fixed for at #80 — `readCliDelta`
+carries `delta.type === 'error'` back, and `streamAgentContract` writes
+`⚠ ${label}` into the reply. The two readers a paying boss's own API key runs
+through were the ones still missing it. §5's rule that the office does not
+certify work it did not see cannot hold when the failure notice is thrown
+away before anyone can read it.
+
+**The fix.** Three lines at the top of each reader's frame handler cover all
+four spellings — `j.error` when it is there (object or bare string), else the
+frame itself when `j.type === 'error'` — and cost a normal delta one property
+read. Inline in both readers rather than factored into a shared helper, for
+the reason #258 records: several tests lift these functions out of this file
+by name and run them in a bare scope, where a module-level callee is a
+`ReferenceError` — and one swallowed by the very `catch (_e) {}` this fix
+exists to see past. (Measured: factoring it out turned
+`test_a_turn_is_billed_once_not_twice.py` red, with every Anthropic usage
+report silently dropped.) Both streams keep the first error
+(`if (!streamError)`; a dying backend repeats itself, and the first line
+names the cause) and act after the stream closes:
+
+* **nothing arrived** → `throw new Error(`${label}: ${msg}`)`. The turn
+  failed, and the caller has to hear it as a failure, with the provider named
+  and the upstream words intact.
+* **text arrived first** → `onToken('\n⚠ …')`. The boss keeps every word that
+  did land AND is told it stops there. Throwing would discard the partial
+  answer; staying silent would present a truncated sentence as a whole one.
+
+In `streamOpenAICompat` the check sits **in front of** the all-monologue
+fallback: a backend that died mid-think has a real cause to report, and
+"ran out of room before answering" would be a guess.
+
+**The proof.**
+`scripts/test_a_stream_that_dies_after_the_200_is_not_an_answer.py` lifts
+`parseSSE`, `streamAnthropic` and `streamOpenAICompat` verbatim out of
+`claude-client.jsx` by their real signatures and drives them
+in `node` against a stubbed `fetchStreamHead` serving each wire above as a
+literal byte stream. 22 checks: the error-only streams must throw, name the
+provider, and carry the upstream message without passing it off as reply
+text; the truncated ones must keep their words, mark the stop, and not throw;
+and the regressions — a clean Anthropic stream, a clean OpenAI stream with
+`[DONE]` and a `usage` frame, exactly one usage report each, and the
+reasoning-only fallback — must all be untouched.
+
+Fire-tested: copied the fixed `claude-client.jsx` to `/tmp`, reverted the
+error read in place with the editor (never `git checkout -- <file>`) — 10 of
+22 checks failed, exit 1, with the Anthropic overload resolving as
+`{'text': '', 'threw': None}`. Restored from the `/tmp` copy, confirmed
+byte-identical by `md5` (`aa42083e1b5b5d4bbaf9fafe8e2f0383`), reran — 22 of
+22 passed, exit 0.
+
+`npm run build` was run once up front so `dist-ui/manifest.json` exists in a
+fresh worktree, and again after the `.jsx` edit.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the `moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on
+a file a foreign session owns and this change never touches). This change
+covers only `claude-client.jsx`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any
+kind was run.
