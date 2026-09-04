@@ -27238,3 +27238,77 @@ session's in-progress Motoko migration on a file this change never
 touches. This change covers only `views/core.jsx`, the new test file,
 and this entry; `src/cafresohq_state/main.mo` was never staged or
 edited, and no dfx/IC action of any kind was run.
+
+---
+
+## 201. Stamping a stale workflow-step approval re-ran a step that had already run
+
+**The reading.** Assigned area: meetings and multi-agent collaboration —
+`modals/collab.jsx` (meeting setup, workflow builder), the meeting-room
+runtime in `features.jsx` (turn-taking, transcript, seats), and the
+DM_TO/HANDOFF_TO/PEER_JOURNAL orchestration in `hq-runtime.jsx`. The
+meeting round loop (`moderate`), the chat-thread meeting's turn-taking
+(`heardSoFar`), the stand-up's abort sweep, `extractAllDMs`'s trailing
+recovery, the `peer_journal` rebinding (journal is prepend-ordered, so
+`slice(0, 5)` really is the last 5), and the DM fan-out's wait-closer
+all checked out as already hardened by earlier entries. The live find
+was at the workflow chain's other end: the approve stamp.
+
+**The mechanism.** A step-approve workflow (autoDispatch off) advances
+by raising a `workflow-step` approval card when a step completes —
+"Workflow: run <next step>?". The chain-advance that RAISES the card
+gates on `nextTask.status === 'inbox'` (app.jsx, the check
+`modals/collab.jsx`'s own availableTasks comment documents as the house
+rule for chain hand-offs). The approve handler for that same card did
+not: `if (nextTask) triggerChainStep(...)`, on whatever state the task
+was in by stamp time. And `onTaskDropOnAgent` — where triggerChainStep
+lands — has no status guard of its own either: it reads the task,
+flips it to `doing`, and dispatches, whatever it was.
+
+The card sits in the tray indefinitely, and the board offers ▶ START on
+the very step the card asks about, so the stale-card path is one
+ordinary click away: step 1 completes → the card lands → the boss
+starts step 2 by hand off the board → it runs to DONE → the boss later
+clears the tray by stamping the card → the finished step flips back to
+`doing` and runs a SECOND time, overwriting its result with a second
+one; a step that was merely `doing` gets a second, competing run
+dropped on a desk (and `beginAgentRun` evicts, so the in-flight run is
+killed by a stamp that claimed to be mere assent). The workflow panel
+then reports a done step as in progress again with nothing anywhere
+saying why.
+
+**The fix.** The approve branch now uses the exact gate the card-raiser
+uses — `nextTask && nextTask.status === 'inbox'` — before
+triggerChainStep. A stamp on a step that already ran is not a silent
+no-op (the 2026-08-07 audit's rule: an approval the boss can stamp that
+quietly does nothing is the worst dead end in the app): it posts the
+office-voice chat line saying the step is already finished / already
+underway and that nothing was re-run. Reject path untouched — it
+already leaves its note (`test_workflow_step_rejection_leaves_a_note`).
+
+**The test**
+(`scripts/test_a_stamped_workflow_step_only_runs_from_the_inbox.py`)
+lifts the real `if (ap.kind === 'workflow-step') {` block out of
+app.jsx (brace-balanced extraction, the `test_workspace_terminal_key.py`
+technique) and pins the structure: triggerChainStep is unreachable
+outside the inbox-status guard, the regression's exact ungated
+`if (nextTask) triggerChainStep(...)` shape can never come back, the
+non-inbox branch still speaks (setChat) and distinguishes done from
+underway, and the chain-advance's own inbox gate is still present so
+the two ends of the hand-off are pinned to the same sentence.
+
+Fire-tested: reverted the branch in place to the old ungated line — 4
+of 7 checks failed, by name, starting with `triggerChainStep only runs
+when nextTask.status === 'inbox'`. Restored app.jsx from the /tmp
+safety copy (md5-verified byte-identical, `9de63c8e…`), test green
+again, `npm run build` re-run (the dev server never rebuilds
+`dist-ui/`).
+
+**Suite: 385/386** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` toolchain mismatch
+recorded in `#188`/`#193`/`#198` — a different session's in-progress
+Motoko migration on a file this change never touches. This change
+covers only `app.jsx`, the new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, and no
+dfx/IC action of any kind was run.

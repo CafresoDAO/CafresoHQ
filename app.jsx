@@ -6128,7 +6128,23 @@ ${d.text}` : d.text,
       if (ap.kind === 'workflow-step') {
         const nextTask = tasks.find(t => t.id === ap.taskId);
         const fromAgent = agents.find(a => a.id === ap.fromAgent);
-        if (nextTask) triggerChainStep(nextTask, ap.priorResult || '', fromAgent || null);
+        /* Only a step still waiting in the inbox. The chain-advance that
+           RAISED this card checks `nextTask.status === 'inbox'` before doing
+           anything; this stamp — the other end of the same hand-off — didn't,
+           so a card left sitting in the tray outlived its own truth. Measured
+           shape: step 1 completes, the "run step 2?" card lands, the boss
+           starts step 2 by hand off the board (▶ START is right there), it
+           runs to DONE — and stamping the stale card then re-dispatched a
+           finished step: back to `doing`, a second run, a second result over
+           the first. A stamp must never re-run work the boss can see is
+           already done or underway. The stamp still does something visible
+           (§ "every stamp does something"): it says why nothing was started. */
+        if (nextTask && nextTask.status === 'inbox') {
+          triggerChainStep(nextTask, ap.priorResult || '', fromAgent || null);
+        } else if (nextTask) {
+          setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
+            text: `("${String(nextTask.title).slice(0, 48)}" ${nextTask.status === 'done' ? 'is already finished' : 'is already underway'} — this step was started without the stamp, so nothing was re-run.)` }]);
+        }
         return;
       }
       if (ap.external && ap.externalId) {
