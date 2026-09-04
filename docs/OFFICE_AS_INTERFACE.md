@@ -29901,3 +29901,78 @@ failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
 This change covers only `toggleMoney` in `modals/settings.jsx`, the one new
 test file, and this entry; `src/cafresohq_state/main.mo` was read but never
 edited or staged, and no dfx/IC action of any kind was run.
+
+---
+
+## 241. ■ Stop took the question back and delegated it anyway
+
+**The reading.** Assigned area: `ui/chat.jsx` — the chat panel, and inside it
+the CEO turn in `send()`: the `HQ.ceoStream` call, its catch, and the two
+dispatch branches that run after it (`ceoHandoff`, then `ceoDms`). The
+routing markers are collected *during* the stream, not after it: `onTool`
+pushes every `[DM_TO: name]…[/DM_TO]` into `ceoDms` and records a
+`[HANDOFF_TO: name]` into `ceoHandoff` as the tokens arrive. So by the time a
+boss watching a long reply presses ■ Stop, those markers are already in hand.
+The catch does its half of the job — `flush.cancel()`, the bubble rewritten
+to `…(stopped)`, `error` left off because a stop is not a failure — and then
+execution walks straight on, past the approval extraction and the honesty
+guards, into `if (ceoHandoff && onDispatchToAgent)` / `else if
+(ceoDms.length && onDispatchToAgent)`.
+
+Nothing there asked whether the turn was still wanted. The panel's own
+`controller` is aborted, but its signal is passed to `HQ.ceoStream` and to
+nothing else: `onDispatchToAgent` mints a *fresh* per-agent controller in
+`app.jsx`, which the aborted signal has never seen. And `turnEpochRef` — the
+counter that both `abortTurnAgentRuns` (the composer's ■ Stop) and
+`abortAllAgentRuns` (STOP ALL) bump precisely because "aborting a stream does
+nothing to a loop that is about to DISPATCH the next one" — was read nowhere
+on this path. The chat meeting loop, one branch up in the same function,
+already documents this exact hazard and guards against it at the top of every
+attendee's turn. The CEO path had the identical leak and no guard at all.
+
+What the boss saw: press ■ Stop mid-reply, the bubble stops and says
+`…(stopped)` — and then two coworkers start typing. Fresh runs, full token
+spend, answering a question that was just taken back, with the composer
+showing ■ Stop again for streams the first ■ Stop was supposed to have ended.
+The `HANDOFF_TO` case is worse than tokens: `setHandoffFor` re-points the
+whole composer at a specialist ("Talk to them directly — say 'back to
+CafresoHQ' to return"), so the *next* thing the boss types goes to somebody
+they never chose, because of a turn they cancelled.
+
+**The fix.** `ceoTurnEpoch` is read at the top of the CEO turn, next to
+`setStreaming(true)`, the same way the meeting loop reads it. After the
+stream settles and before either dispatch branch, `turnStopped()` checks
+both stop surfaces — `controller.signal.aborted` (the panel's own ■) and a
+moved `turnEpochRef.current` (■ Stop's sweep, and STOP ALL). A stopped turn
+with markers pending takes a new first branch that dispatches nobody and
+says who never got the message, rather than dropping the fan-out silently;
+the two live branches are untouched below it as `else if`s.
+
+**The proof.**
+`scripts/test_a_stopped_turn_stops_delegating.py` lifts the REAL post-stream
+region of `send()` out of `ui/chat.jsx` (anchored between the CEO
+honesty-guard block and the settle-the-record comment — both anchors exist
+with and without the fix) into a node harness with stubbed
+`setChat`/`onDispatchToAgent`/`setHandoffFor`/`HQ`, and drives four
+scenarios: a live fan-out (both coworkers dispatched), a live handoff
+(dispatched and the composer re-pointed), an aborted controller with two
+`DM_TO` markers pending, and a bumped turn epoch with a `HANDOFF_TO`
+pending. The last two assert zero dispatches, no `setHandoffFor`, and a
+thread line naming how many coworkers never got the message.
+
+Fire-tested: copied the fixed `ui/chat.jsx` to `/tmp`, reverted the guard in
+place with the editor (never `git checkout -- <file>`) — five checks failed
+(`dispatched ['Vera', 'Kip']` after the abort, `['Vera']` after the sweep,
+the composer re-pointed, no note), exit 1. Restored from the `/tmp` copy,
+confirmed byte-identical by `md5` (`12d541cac4bcf8fb8dbf0389399b1479`),
+reran — all twelve checks passed, exit 0.
+
+`npm run build` run after the change.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the same `moc`/M0219 `main.mo` toolchain mismatch tracked in `#188` through
+`#238`, on a file a foreign session owns and this change never touches).
+This change covers only the CEO turn in `ui/chat.jsx`, the one new test
+file, and this entry; `src/cafresohq_state/main.mo` was never staged or
+edited, and no dfx/IC action of any kind was run.

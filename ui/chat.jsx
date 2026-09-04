@@ -732,6 +732,10 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
        settle this record as if nothing had gone wrong. */
     let askErr = null;
     setStreaming(true);
+    /* Read at the top of the turn for the same reason the meeting loop
+       reads it at the top of every turn: ■ Stop bumps it (so does the
+       office sweep), and an aborted stream is not an aborted TURN. */
+    const ceoTurnEpoch = turnEpochRef ? turnEpochRef.current : null;
     const ceoId = HQ.uid('m');
     setChat(prev => [...prev, { id: ceoId, from: 'ceo', name: 'CafresoHQ', text: '', streaming: true, thread: activeThread }]);
     const controller = new AbortController();
@@ -899,9 +903,30 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
       })) flush.note(n);
     }
 
+    /* The turn-taking leak, one floor up from the meeting loop that already
+       documents it: "aborting attendee two's stream does nothing to stop the
+       loop from DISPATCHING attendee three — a brand-new run, launched after
+       the boss said stop." Everything below this line is exactly that. The
+       CEO writes [DM_TO: …] / [HANDOFF_TO: …] markers WHILE it streams, so
+       by the time the boss presses ■ Stop mid-reply the markers are already
+       in `ceoDms` / `ceoHandoff`. The catch above rewrote the bubble to
+       "…(stopped)" and then execution walked straight on into the fan-out
+       and dispatched two specialists — fresh runs, on fresh per-agent
+       controllers the panel's aborted signal never touches — so the office
+       carried on delegating a question the boss had just taken back, and a
+       HANDOFF_TO even re-pointed the composer at a specialist afterwards.
+       Both stop surfaces are checked: our own controller (the panel's ■) and
+       the turn epoch (■ Stop's sweep, and STOP ALL). */
+    const turnStopped = () => controller.signal.aborted
+      || (turnEpochRef && turnEpochRef.current !== ceoTurnEpoch);
+    if (turnStopped() && (ceoHandoff || ceoDms.length)) {
+      const pending = ceoHandoff ? 1 : ceoDms.length;
+      setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
+        text: `(you stopped this turn — ${pending} coworker${pending === 1 ? '' : 's'} CafresoHQ was about to pull in never got the message.)`,
+        thread: activeThread }]);
     /* HANDOFF_TO — switch the active responder to the specialist and have
        them open the conversation with the boss directly. */
-    if (ceoHandoff && onDispatchToAgent) {
+    } else if (ceoHandoff && onDispatchToAgent) {
       const target = agents.find(a => a.name.toLowerCase() === ceoHandoff.to.toLowerCase());
       if (target) {
         setHandoffFor(activeThread, target.name);
