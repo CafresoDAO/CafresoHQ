@@ -27469,3 +27469,74 @@ touches. This change covers only `views/vault.jsx`, the one new test
 file, the one-lift harness update above, and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, and no
 dfx/IC action of any kind was run.
+
+---
+
+## 204. Typing through a save came out stamped clean
+
+**The reading.** Assigned area: the IDE — `views/ide.jsx` (editor,
+tabs, previews, tree) and the `/fs/*` read/write doors in
+`fs_routes.py`. The endpoints checked out: `/fs/file` and `/fs/stat`
+hand back the matching mtime/hash pair the editor's conflict check is
+built on, rename remaps the open buffer's path in both views, uploads
+step aside on collision. The live find was in the two save paths in
+`views/projects.jsx` that consume those headers — WorkspaceView's
+`save()` and ProjectsView's `saveFile()` — at the one line that runs
+after the write lands.
+
+**The mechanism.** Both saves capture the open file at click time
+(`f` / `openFile`), then run three awaited round trips: the fsStat
+conflict check, the FILE_WRITE, and the fsStat re-stamp. The textarea
+is never disabled through any of them — `busy` only greys the Save
+button — so keystrokes land in state mid-save via `onEdit` (content +
+`dirty: true`). The completion updater then spread the CURRENT state
+and stamped it clean unconditionally:
+
+    setOpenFile(o => (o && o.path === f.path)
+      ? { ...o, hash: nh, mtime: nm, dirty: false } : o);
+
+The disk holds the click-time content; the buffer holds the newer
+typing; the buffer reads clean. From there every protection keyed on
+`cur.dirty` waves the loss through: `openPath`, `switchProject`, and
+`flipMode` all skip their "Discard unsaved changes?" confirm; the
+Save button (rendered only when dirty) and the tab's dot vanish, so
+there is nothing to click even on purpose; and the agent bus's
+clean-buffer branch (`cur.dirty ? setConflict(true) :
+reloadOpen(arg)`) silently reloads a coworker's write straight over
+the typing — the exact clobber the conflict banner exists to prevent.
+The freshly re-stamped hash matches the disk, so nothing ever
+disagrees again: the keystrokes are simply gone, inside a green
+"Saved" toast.
+
+**The fix.** One expression, in both twins: only what was actually
+written may be stamped clean — `dirty: o.content !== f.content`
+(`openFile.content` in the classic twin). The hash/mtime re-stamp
+stays unconditional: they describe the disk, which now holds the
+captured content, so the next save's conflict check keeps the right
+baseline whether or not the boss kept typing.
+
+**The test**
+(`scripts/test_ide_save_does_not_stamp_midsave_typing_clean.py`)
+lifts both REAL functions out of `views/projects.jsx` (brace-balanced
+extraction, the `test_workspace_terminal_key.py` technique), pulls
+each post-write `setOpenFile` updater by paren-balancing the call
+that carries the re-stamped `nh`, and genuinely executes the lifted
+arrows in Node: a buffer that typed through the save must stay dirty
+with its typing intact, an untouched buffer must come back clean, the
+hash must advance either way, and a different open file must pass
+through unmodified.
+
+Fire-tested: reverted both expressions to `dirty: false` in place —
+the suite failed on exactly the two "buffer typed-during-save stays
+DIRTY" checks, exit 1. Restored from the /tmp safety copy
+(`cmp`-verified byte-identical, never `git checkout`), test green,
+`npm run build` re-run (the dev server never rebuilds `dist-ui/`).
+
+**Suite: 390/391** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` implicit-`transient`
+toolchain mismatch recorded in `#188`, `#193` and `#203` — a
+different session's in-progress Motoko migration on a file this
+change never touches. This change covers only `views/projects.jsx`,
+the one new test file, and this entry; `src/cafresohq_state/main.mo`
+was never staged or edited, and no dfx/IC action of any kind was run.

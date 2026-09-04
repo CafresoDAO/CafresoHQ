@@ -222,7 +222,15 @@ function WorkspaceView({ projects, setProjects, agents = [], onSwitchView }) {
       await C.toolExec('FILE_WRITE', f.path, { body: f.content });
       let nh = f.hash, nm = f.mtime;
       try { const st2 = await C.fsStat(f.path); if (st2 && st2.ok) { nh = st2.hash; nm = st2.mtime; } } catch (_e) {}
-      setOpenFile(o => (o && o.path === f.path) ? { ...o, hash: nh, mtime: nm, dirty: false } : o);
+      /* The textarea stays live through this save's three round trips, so
+         keystrokes can land AFTER `f` was captured. What went to disk is
+         f.content; blanket dirty:false stamped those newer keystrokes clean
+         — the dot vanished, file/project/mode switches skipped their
+         discard confirm, and a coworker's write silently reloaded over the
+         typing (the clean-buffer branch of the agent bus). Clean only what
+         was actually written; hash/mtime still advance — they describe the
+         disk, which now holds f.content. */
+      setOpenFile(o => (o && o.path === f.path) ? { ...o, hash: nh, mtime: nm, dirty: o.content !== f.content } : o);
       setConflict(false); setTreeNonce(n => n + 1);
       toast('success', 'Saved ' + baseName(f.path));
     } catch (e) { setErr(e.message || String(e)); snag("Couldn't save that file", e); }
@@ -998,7 +1006,11 @@ function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
       await CafresoHQClient.toolExec('FILE_WRITE', openFile.path, { body: openFile.content });
       let nh = openFile.hash, nm = openFile.mtime;
       try { const st2 = await CafresoHQClient.fsStat(openFile.path); if (st2 && st2.ok) { nh = st2.hash; nm = st2.mtime; } } catch (_e) {}
-      setOpenFile(o => (o && o.path === openFile.path) ? { ...o, hash: nh, mtime: nm, dirty: false } : o);
+      /* Same typed-during-save guard as WorkspaceView's save(): only the
+         content that was actually written (openFile.content, captured at
+         click time) may be stamped clean — keystrokes that landed during
+         the round trips keep their dirty dot. */
+      setOpenFile(o => (o && o.path === openFile.path) ? { ...o, hash: nh, mtime: nm, dirty: o.content !== openFile.content } : o);
       setConflict(false);
     } catch (e) { setErr(e.message || String(e)); }
     setBusy(false);
