@@ -493,10 +493,22 @@ function App() {
   const [windowsEnabled, setWindowsEnabled] = useStored(k('windowsEnabled'), false);
   const [openWindows, setOpenWindows] = useFileStored(k('openWindows'), 'state', 'windows', []);
   const winZRef = useRefA(1);
+  /* `[openWindows]`, not `[]`. openWindows is file-backed, so on a fresh
+     browser context it seeds [] and the real list only arrives when the
+     mount fetch settles — AFTER a once-only effect has already run against
+     the empty seed. The counter then sat at 1 below windows persisted at
+     z=5,6,7…, and every hand-out of `winZRef.current + 1` was a z UNDER the
+     whole stack: clicking a window to raise it sent it to the BACK, a
+     freshly launched app opened behind the pile, and `focused` (Esc, the
+     highlight) stayed on a window the boss wasn't looking at — one click
+     per unit of deficit until the counter ground past the file's max.
+     applyWorkspace replaces the list wholesale too, so a restored
+     workspace hit the same hole. Re-syncing whenever the LIST is replaced
+     keeps the counter ahead of any z it could ever have persisted. */
   React.useEffect(() => {
     const maxZ = (openWindows || []).reduce((m, w) => Math.max(m, w.z || 0), 0);
     if (maxZ > winZRef.current) winZRef.current = maxZ;
-  }, []);
+  }, [openWindows]);
   // Rail (left sidebar) collapse — narrow icons-only mode.
   const [railCollapsed, setRailCollapsed] = useStored(k('railCollapsed'), false);
   // Density: 'comfortable' (default), 'compact', 'spacious'. Applied as a

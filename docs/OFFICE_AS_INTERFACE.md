@@ -27687,3 +27687,82 @@ session's in-progress Motoko migration on a file this change never
 touches. This change covers only `graph-engine.js`, the one new test
 file, and this entry; `src/cafresohq_state/main.mo` was never staged
 or edited, and no dfx/IC action of any kind was run.
+
+---
+
+## 207. A click meant "bring this forward" and the office sent the window to the back
+
+**The reading.** Assigned area: the office floor and window system —
+`ui/office.jsx`, `app/floor.jsx`, `app/windows.jsx`, `ui/panels.jsx`
+and the window-manager state in `app.jsx`. The chat window's rail
+arithmetic (`_chatAnchor`/`_chatClamp`), the desk drag/drop path, the
+prop-visit and screen caches, and InspectPanel's per-agent draft state
+all checked out as already hardened by `#148`/`#173`/`#192`-era work.
+The live find was in the one number every window gesture spends:
+`winZRef`, the monotonic z counter.
+
+**The mechanism.** Desktop mode persists `openWindows` (view,
+geometry, **z**) through `useFileStored`, and hands out stacking order
+as `winZRef.current + 1` in both `openOrRaise` and `focusWindow`. The
+counter was synced to the persisted stack's max z in a ONCE-ONLY
+effect (`}, [])` — but `useFileStored` seeds from the localStorage
+mirror and only adopts the real file when the mount fetch settles,
+~100–300ms after that effect has already run. In any context where
+the mirror is empty or stale — a second browser, a second device,
+cleared site data, exactly the audience `app/storage.jsx`'s own #186
+note names — the effect ran against `[]`, the counter sat at 1, and
+the file then arrived carrying windows at z=5,6,7. Every gesture
+after that handed out a z UNDER the whole pile:
+
+- clicking a window to bring it forward assigned z=2 — it dropped to
+  the BACK of the stack instead, one click per unit of deficit until
+  the counter ground past the file's max;
+- launching a new app from the rail or dock opened it BEHIND every
+  existing window — the rail marked it running, and nothing came
+  forward;
+- `focused` (the Esc target, the shadow, the highlight) stayed on a
+  window the boss wasn't looking at, so Esc closed the wrong one.
+
+`applyWorkspace` replaces the list wholesale too
+(`setOpenWindows(s.openWindows)`), so restoring a saved workspace
+walked into the same hole with no fresh-browser required.
+
+**The fix.** One deps array: the sync effect re-runs whenever the
+LIST is replaced (`[openWindows]` instead of `[]`), so the counter is
+caught up before the boss can click anything. The effect body was
+always right — `if (maxZ > winZRef.current)` — it just stopped being
+consulted after the first render; re-running it on every list identity
+change costs a reduce over at most eight windows.
+
+**The test**
+(`scripts/test_a_click_on_a_window_never_sends_it_to_the_back.py`)
+lifts the REAL `winZRef` declaration + sync effect (paren-balanced,
+deps array included) and the REAL `focusWindow` callback out of
+`app.jsx` and executes them under node inside a mini hook runtime
+that honours React's deps semantics — a `[]`-deps effect runs once, a
+deps'd effect re-runs when a dep changes identity. It replays the
+exact sequence: render with the empty seed, hydrate the persisted
+three-window stack, click the bottom window — and asserts the counter
+caught up (≥ 7) and the clicked window landed on TOP. The shipped
+arithmetic and the shipped deps array decide the outcome, not a
+paraphrase of them.
+
+Fire-tested twice: (1) reverted the deps to `[]` in place — the suite
+failed on both behavioral checks (counter=2, tasks buried at z=2),
+exit 1; restored from the /tmp safety copy (md5-verified
+byte-identical, never `git checkout`), test green. (2) `git stash`
+incidentally re-ran the whole suite against the un-fixed tree and the
+new test was the one failure there too. `npm run build` re-run after
+restore (the dev server never rebuilds `dist-ui/`).
+
+**Suite: 390/391** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` implicit-`transient`
+toolchain mismatch recorded in `#188`, `#193` and `#203` — a foreign
+session's in-progress Motoko migration on a file this change never
+touches. (`test_the_night_shift_carries_the_bosss_memory.py` flaked
+once under the parallel runner and passes standalone and on re-run.)
+This change covers only the one deps array + comment in `app.jsx`,
+the rebuilt `dist-ui/`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, and no
+dfx/IC action of any kind was run.
