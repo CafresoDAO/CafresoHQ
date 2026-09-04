@@ -32222,3 +32222,97 @@ a foreign session owns and this change never touches). This change covers only
 `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any kind
 was run.
+
+---
+
+## 268. Two horizontal rules and the concept map forgot the alpacas
+
+**The wreck.** The graph's "🧠 Concepts" source reads the boss's notes and
+draws the map of what the office is actually thinking about. On a note that
+uses `---` to rule off its sections, whole sections never made it into that
+map. Not dimmed, not down-weighted — absent. And the analytics panel went on
+saying "Co-occurrence over 87 notes", counting the note as read, because it
+*was* read; it just wasn't all counted.
+
+`cooccur.jsx`'s `clean()` strips markdown scaffolding before a single token
+is counted, and its first stripper was aimed at YAML frontmatter:
+
+```js
+.replace(/^---[\s\S]*?---/m, ' ')          // YAML frontmatter
+```
+
+The `m` flag is the whole bug. With `m`, `^` matches at **every line start**,
+not the start of the text. So in a note with no frontmatter at all, the first
+two `---` **horizontal rules** were read as a frontmatter block, and
+everything between them was deleted before tokenizing. Non-greedy `*?` means
+it takes the *nearest* pair — so the earlier in the note the first rule sits,
+the more of the note goes.
+
+Driven in `node` against the real builder, this note:
+
+```
+# Solar plan
+
+Inverters and batteries for the finca.
+
+---
+
+The alpaca herd needs shearing before the rains.
+Alpaca fiber pricing rises.
+
+---
+
+Closing notes about inverters.
+```
+
+tokenized to `solar plan inverter battery finca closing note inverter`.
+`alpaca`, `herd`, `shearing`, `fiber`, `pricing` — the section the note is
+*about* — were gone, and `alpaca` was not a node in the built map. A boss
+looking at that map would conclude the office had nothing to say about the
+herd.
+
+**The office rule.** A surface that says it read the note has to have read
+the note. Silently dropping the middle of a document is worse than failing to
+open it: a failure gets looked at, a quiet omission gets believed.
+
+**The fix.** One replacement, in `cooccur.jsx`. The Python side already gets
+this right — `kg_builder.py`'s `_FRONTMATTER_RE` is
+`\A---\s*\n(.*?\n)---\s*\n`: `\A` is start-of-*text*, and both fences must be
+whole lines. Give the JS the same shape — drop the `m` flag so `^` means the
+start of the text, and require both `---` fences to be complete lines:
+
+```js
+.replace(/^---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(\r?\n|$)/, ' ')
+```
+
+Real frontmatter is still stripped; a rule in the body is now just a rule,
+and `[#>*_~`>-]+` further down erases it as the punctuation it is.
+
+**The proof.**
+`scripts/test_concept_map_keeps_text_between_horizontal_rules.py` loads
+`cooccur.jsx` into `node` through its own `window.CafresoCooccur` export and
+runs the ruled note above through both `tokenize()` and `build()`. 16 checks:
+the stripper must not be `m`-anchored; `alpaca`, `herd`, `shearing`, `fiber`
+and `pricing` must survive tokenizing and `alpaca` must be a node in the
+built map; the sections either side of the rules must still be there; and the
+regression that matters most — a note with *real* frontmatter must still lose
+`title`, `tags` and `energy` while keeping its body.
+
+Fire-tested: copied the fixed `cooccur.jsx` to `/tmp`, reverted the
+replacement in place with the editor (never `git checkout -- <file>`) — 7 of
+16 checks failed, exit 1, the lemma stream coming back as
+`['solar','plan','inverter','battery','finca','closing','note','inverter']`.
+Restored from the `/tmp` copy, confirmed byte-identical by `md5`
+(`589b7d755e716befb11e69384db05fc0`), reran — 16 of 16 passed, exit 0.
+
+`npm run build` was run once up front so `dist-ui/manifest.json` exists in a
+fresh worktree, and again after the `.jsx` edit.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the `moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on
+a file a foreign session owns and this change never touches). This change
+covers only `cooccur.jsx`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any
+kind was run.
