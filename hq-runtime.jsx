@@ -2097,6 +2097,9 @@ const TOOL_REGISTRY = {
     docShort: 'Generate a real image using the configured provider and file it in the Library.',
     run: async (path, _ctx, body) => {
       const r = await CafresoHQClient.generateImage(path.trim(), (body || '').trim());
+      /* r.path can differ from the marker text (extension appended
+         server-side) — carry it out on meta.filedAs, same as #180. */
+      if (_ctx && _ctx.meta) _ctx.meta.filedAs = r.path;
       return `Generated image (${r.provider}) → ${r.path}`;
     },
   },
@@ -2110,6 +2113,8 @@ const TOOL_REGISTRY = {
     docShort: 'Generate a real video using the configured provider and file it in the Library.',
     run: async (path, _ctx, body) => {
       const r = await CafresoHQClient.generateVideo(path.trim(), (body || '').trim());
+      /* Same filedAs carry-out as generate_image above — see #180. */
+      if (_ctx && _ctx.meta) _ctx.meta.filedAs = r.path;
       return `Generated video (${r.provider}) → ${r.path}`;
     },
   },

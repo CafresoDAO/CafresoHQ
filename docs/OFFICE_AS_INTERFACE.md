@@ -27312,3 +27312,77 @@ Motoko migration on a file this change never touches. This change
 covers only `app.jsx`, the new test file, and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, and no
 dfx/IC action of any kind was run.
+
+---
+
+## 202. A generated image's delivery receipt could name a file that was never written
+
+**The reading.** Assigned area: exports and deliverables — `exporters.py`,
+the `/export/*` endpoints in `serve.py`, `modals/delivery.jsx`, and the
+`EXPORT_*`/`GENERATE_*` tool handlers in `hq-runtime.jsx`. Cross-checked
+against `#174`–`#198` before touching anything; `#180` is the load-bearing
+prior here, and this is the half of it that never landed.
+
+**The bug.** `#180` established the whole chain: `exporters.py`'s
+`_vault_binary_path` silently appends the format's own extension when a
+marker's path has none, every endpoint reports the corrected name back in
+its JSON `path`, and the tool-loop's 'done' events (both `ceoStream`'s and
+`agentStream`'s) report `arg: (meta.filedAs || call.arg)` — so any tool
+that stashes the server's real path on `_ctx.meta.filedAs` gets a truthful
+receipt, and any tool that doesn't gets the coworker's pre-correction
+marker text. `#180` added the stash to `export_pptx`/`export_docx`/
+`export_pdf` and stopped there.
+
+But `app/artifacts.jsx`'s `CABINET_WRITE` counts five tools as cabinet
+writes: those three AND `GENERATE_IMAGE`/`GENERATE_VIDEO`. Both media
+tools ride the same `_vault_binary_path` (`('.png', …)` / `('.mp4', …)` —
+`[GENERATE_IMAGE: Images/logo]` really saves `Images/logo.png`), both get
+the corrected `r.path` back, both used it only for their own result string
+and never set `meta.filedAs`. So on exactly the runs where a coworker left
+the extension off a media marker — and `GENERATE_IMAGE`'s own doc line
+merely *suggests* "e.g. Images/concept.png" — `agentFiledPath` read the
+stale `arg` off the visit list, `task.artifactPath` pointed at
+`Images/logo`, and the out-tray's "open latest", the first-delivery
+sheet's "Open it →" (`modals/delivery.jsx`), and the Receipts tray's title
+and on-chain content hash all named a vault path nothing was ever written
+to, while the actual deliverable sat one extension away.
+
+**The fix.** `hq-runtime.jsx`: `generate_image` and `generate_video`'s
+`run()` each now set `_ctx.meta.filedAs = r.path`, exactly the `#180`
+pattern — the emission side needs no change, it has preferred
+`meta.filedAs` since `#180`. Comments kept deliberately short: the
+sibling suite `test_a_path_names_a_file_not_whose.py` reads each tool
+block back through a 900-char window to verify the "writes to the
+cabinet" grouping, and a longer comment pushed `generate_image`'s block
+out of it (caught live in this session's first full-suite run, fixed by
+trimming the comment, not the foreign test).
+
+**The test**
+(`scripts/test_generated_media_receipt_names_the_saved_file.py`) proves
+the premise against the real, unmodified layers: imports the actual
+`exporters` module and calls `_vault_binary_path` to confirm the
+`.png`/`.mp4` append; scans the real `CABINET_WRITE` regex out of
+`app/artifacts.jsx` to confirm the media tools are counted as cabinet
+writes at all; brace-extracts the real `generate_image`/`generate_video`
+tool objects out of `hq-runtime.jsx` (the `#180` test's technique) and
+runs them under Node against a stub client mirroring the proven server
+behavior, confirming each stashes the corrected path on
+`ctx.meta.filedAs` and names it in its result text; then runs the real
+`agentFiledPath` against the post-fix visit shape and confirms it
+resolves to the file actually written.
+
+Fire-tested twice (once mid-session, once against the final file):
+reverted both `filedAs` lines in place — 4 checks failed by name,
+starting with "…and ctx.meta.filedAs carries that corrected path back
+out" — restored from the /tmp safety copy (`cmp`-verified
+byte-identical), test green, `npm run build` re-run each time (the dev
+server never rebuilds `dist-ui/`).
+
+**Suite: 385/386** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` implicit-`transient`
+toolchain mismatch recorded in `#188`/`#193`/`#198` — a different
+session's in-progress Motoko migration on a file this change never
+touches. This change covers only `hq-runtime.jsx`, the one new test file
+above, and this entry; `src/cafresohq_state/main.mo` was never staged or
+edited, and no dfx/IC action of any kind was run.
