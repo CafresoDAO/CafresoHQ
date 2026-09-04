@@ -157,12 +157,17 @@ def main():
     check("app.jsx wires { mergeOnDirty: true } into activity's useFileStored call",
           wiring_m is not None)
 
-    # messages must NOT have picked up mergeOnDirty as a side effect of this
-    # fix — it stays scoped to activity alone (messages' own race, if any,
-    # is a separate, already-claimed area).
-    messages_call_m = re.search(r"useFileStored\(k\('messages'\)[^;]*mergeMessages\(messagesRef\.current,\s*fetched\)\);", app_src)
-    check("messages' useFileStored call is untouched by this fix (no mergeOnDirty)",
-          messages_call_m is not None and 'mergeOnDirty' not in messages_call_m.group(0))
+    # messages did not pick up mergeOnDirty as a side effect of THIS fix — it
+    # got its own, deliberate one later (#209, the gap this entry's ledger
+    # note explicitly left open: "the same latent gap likely still exists
+    # there too"). The scoping claim this check used to make ("no
+    # mergeOnDirty on messages") is therefore retired; what still matters
+    # here is that the call exists in the expected log-shaped form. Its own
+    # test (test_a_message_created_before_hydration_did_not_wipe_the_registry
+    # .py) owns asserting the flag is present.
+    messages_call_m = re.search(r"useFileStored\(k\('messages'\)[^;]*mergeMessages\(messagesRef\.current,\s*fetched\)[^;]*\);", app_src)
+    check("messages' useFileStored call still uses the log-shaped mergeMessages transform",
+          messages_call_m is not None)
 
     has_node = bool(shutil.which('node'))
     check('node is on PATH (needed to genuinely execute the extracted hook logic)',

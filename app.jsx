@@ -201,9 +201,21 @@ function App() {
   // in memory instead of letting a stale file clobber it — see mergeMessages
   // in app/storage.jsx. `activity` sits on this exact same useFileStored race
   // and was given the equivalent (mergeByIdCap) above.
+  //
+  // `mergeOnDirty: true` for the same reason activity carries it (#177's fix
+  // named this exact gap and left it open: "the same latent gap likely still
+  // exists there too"): without it, a message created in the first ~300ms —
+  // before the mount fetch resolves — flips dirtyRef, the hydration guard
+  // returns before mergeMessages ever runs, the fetched registry is discarded
+  // outright, and the next debounced PUT overwrites hq-state/messages.json
+  // with only the session's own entries. The system-of-record for every
+  // handoff, wiped silently. Safe here because the registry only appends and
+  // transitions (grep: every setMessages call is [...prev, msg] or a .map) —
+  // nothing deletes a message in-session, so a union can never resurrect
+  // anything a user removed.
   const messagesRef = useRefA([]);
   const [messages, setMessages] = useFileStored(k('messages'), 'state', 'messages', [],
-    (fetched) => mergeMessages(messagesRef.current, fetched));
+    (fetched) => mergeMessages(messagesRef.current, fetched), { mergeOnDirty: true });
 
   // Stable ref so the dispatcher closure (created early in the render) can
   // always read the latest list — without this, fast back-to-back DMs would

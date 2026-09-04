@@ -27978,3 +27978,83 @@ never touches. This change covers only the two usage reports in
 `claude-client.jsx`, the rebuilt `dist-ui/`, the one new test file and
 this entry; `src/cafresohq_state/main.mo` was never staged or edited,
 and no dfx/IC action of any kind was run.
+
+---
+
+## 211. A message sent in the office's first breath erased the handoff record
+
+**The bug.** `messages` — the durable registry behind the Coworker Inbox,
+the system-of-record the boss reads to answer "what happened to the task I
+sent Selvin?" — sits on `useFileStored`, whose mount fetch hydrates it
+from `hq-state/messages.json` ~100-300ms after first render. The hook's
+"local edits win" hydration guard reads:
+
+    if (dirtyRef.current && !untouched && !mergeOnDirty) return;
+
+`#177` added the `mergeOnDirty` escape hatch after measuring this exact
+race erase the activity log, wired it onto `activity`, and recorded the
+open half in its own ledger entry: `messages` "sat on the identical hook…
+the same latent gap likely still exists there too, but it's a distinct
+area's fix to make". This is that area's fix. `messages` had the
+log-shaped `mergeMessages` transform (it reads the CURRENT in-memory
+value via `messagesRef` and unions it with the fetch — built, per its own
+comment in `app/storage.jsx`, so "createMessage() could append a message…
+and then lose it outright to a same-tab reload") but never the option
+that lets the guard hand that transform anything on a dirty mount. So:
+
+  1. A message is created inside the fetch window — a dispatch fired by a
+     boot-resumed run, or a DM sent the instant the office paints. It
+     flips `dirtyRef` with a value that no longer matches the seed.
+  2. The mount fetch resolves carrying the real registry. The guard
+     `return`s before `mergeMessages` is ever called — the entire durable
+     history is discarded by the hook, not reconciled by the merge.
+  3. The next registry write's debounced 1.5s PUT overwrites
+     `hq-state/messages.json` with only the session's own entries. Every
+     prior handoff record — completed, failed, still in flight — gone
+     from disk, silently, with no error anywhere.
+
+**The fix.** One option at the call site, exactly the treatment
+`activity` already carries: `app.jsx`'s messages `useFileStored` call now
+passes `{ mergeOnDirty: true }`. Safe for this consumer specifically
+because the registry only appends and transitions — every `setMessages`
+call in `app.jsx` is `[...prev, msg]` or a `.map` (grep-verified; the
+comment above the call now records it) — so the union can never resurrect
+something a user deleted. The merged result still flows through
+`persistableMessages`, so the cap and history pruning apply unchanged.
+`receipts` sits on a similar inline union transform but was left alone on
+purpose: `onClearReceipts = () => setReceipts([])` is a real in-session
+deletion, and a blind merge-on-dirty there could resurrect receipts the
+boss just cleared — that one needs its own reasoned fix, not this flag.
+
+**The test**
+(`scripts/test_a_message_created_before_hydration_did_not_wipe_the_registry.py`,
+14 checks) lifts the REAL mount-fetch `.then(data => {...})` body plus the
+REAL `mergeMessages`/`persistableMessages`/`trimHistory`/caps out of
+`app/storage.jsx` by brace-balanced, source-anchored extraction, parses
+the REAL `mergeOnDirty` wiring off the messages call in `app.jsx` (not a
+hardcoded `true`), and executes it all under Node. Scenarios: the bug
+reproduced with the flag off (`setVal` never called, three durable
+handoffs dropped); the fix as wired (all four records survive, including
+an open `in_progress` handoff); an id-conflict where an early state
+transition beats the file's stale copy; and a clean mount adopting the
+file whole, unchanged. `#177`'s own test carried a scoping check
+asserting messages had NO `mergeOnDirty` ("not a side effect of this
+fix"); now that the flag is deliberate, that check is retired in place —
+it asserts the log-shaped transform still exists and defers the flag
+assertion to this test.
+
+Fire-tested: reverted the one-line option off the `app.jsx` call — 5 of
+14 checks failed (the static wiring check and every behavioral "as
+wired" check), exit 1. Restored from the /tmp safety copy (md5-verified
+byte-identical `df3ca2333ae2b08dcc03831ef1b98c26`, never `git
+checkout`), test green, `npm run build` clean.
+
+**Suite: 395/396** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` toolchain mismatch
+recorded in `#188`, `#193`, `#203` and `#208` — a different session's
+in-progress Motoko migration on a file this change never touches. This
+change covers one option + comment in `app.jsx`, one retired check in
+`#177`'s test, the new test file and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, and no dfx/IC
+action of any kind was run.
