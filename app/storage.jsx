@@ -238,6 +238,32 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
         valRef.current = merged;
         setVal(merged);
         try { localStorage.setItem(lsKey, JSON.stringify(merged)); } catch (_e) {}
+        /* The held-write flush, for the OTHER half of the same edit.
+           #232 taught the keep-theirs branch above to replay a pre-hydration
+           edit — persist() had bailed on the PUT while hydratedRef was still
+           false, so without a replay the edit lived in localStorage forever.
+           That fix was written with `!mergeOnDirty` on it, which is exactly
+           backwards for the stores that carry the flag: `messages` and
+           `activity` do NOT return there, they fall through to here, and
+           nothing on this path ever calls persist() either. Same held write,
+           same never released, on the two collections the office calls its
+           system-of-record.
+
+           Trace it on `activity`, whose early write is not a rare race — the
+           agent_runner shim dispatches `cafresohq:agentActivity` on every
+           vault write, routinely inside the ~300ms before the mount fetch
+           resolves. That setter flips dirtyRef and its PUT is skipped. The
+           fetch lands, mergeByIdCap unions the file with the new entry, state
+           and localStorage both get the union — and hq-state/activity.json
+           keeps only what it already had. Close the tab there and the entry
+           is gone from disk; open the office on a second browser or device
+           and the row the boss watched appear was never there.
+
+           Only reachable when mergeOnDirty is set: every other store took
+           the return above, so this cannot turn a plain adoption into a
+           write. `merged`, not valRef.current — the union is what state and
+           localStorage now hold, so it is what disk should hold too. */
+        if (dirtyRef.current && !untouched) persist(merged);
         /* A file written by a session that died mid-grace (or by a build
            before the write filter existed) can hold what persist would now
            never write — a transient helper listed as staff. Adopting it

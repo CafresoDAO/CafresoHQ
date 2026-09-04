@@ -31692,3 +31692,87 @@ covers only `app/cast.jsx`, the one new test file, and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any
 kind was run.
+
+---
+
+## 261. the held write was only released for half the stores
+
+`#232` found that `useFileStored()` holds every file `PUT` until the mount
+fetch settles — `hydratedRef` exists so a fresh browser's empty boot seed can
+never be written over a real file before the office has read it — and then
+never released the hold. An edit landing in that ~300ms window reached
+`localStorage` and nothing else, so a second device read the stale file
+forever. The fix replays the held write:
+
+```js
+if (dirtyRef.current && !untouched && !mergeOnDirty) persist(valRef.current);
+if (dirtyRef.current && !untouched && !mergeOnDirty) return;
+```
+
+Read the guard rather than the intent. `!mergeOnDirty` sits on **both** lines,
+so the flush only ever fires on the branch that returns — the plain-snapshot
+stores (`agents`, `tasks`, `memory`, `pins`, `windows`…). The stores that
+carry `mergeOnDirty: true` do not return there. They fall through, union the
+fetch with what is already in memory, write state and `localStorage`, and
+reach the end of the handler without `persist()` being called once. Same held
+write. Still held.
+
+The two stores with the flag are `activity` and `messages` — the office's
+activity log, and the registry `app.jsx` calls "the system-of-record for every
+handoff". The flag was given to them precisely because they are the ones an
+early write lands on.
+
+**And on `activity` the window is not a race.** `app.jsx`'s own comment says
+the `agent_runner` shim dispatches `cafresohq:agentActivity` on *every* vault
+write, so a fresh office that starts working immediately routinely logs its
+first entry before the mount fetch resolves. `logActivity` fires, `dirtyRef`
+flips, the `PUT` is skipped because `hydratedRef` is still false. The fetch
+lands moments later, `mergeByIdCap` unions the file's history with the new
+entry, state and `localStorage` both take the union — and
+`hq-state/activity.json` keeps only what it already had. Close the tab there
+and the row the boss watched arrive is gone from disk. Open the office on a
+second browser and it was never there. No error, no toast, nothing in the
+console.
+
+The fix is the other half of `#232`, one line, on the path that adopts:
+
+```js
+if (dirtyRef.current && !untouched) persist(merged);
+```
+
+`merged`, not `valRef.current`: the union is what state and `localStorage` now
+hold, so it is what disk should hold. Unguarded by `mergeOnDirty` because it
+does not need to be — every other store took the `return` above, so this can
+never turn a plain adoption into a write.
+
+**The proof.**
+`scripts/test_an_early_log_entry_reaches_the_file_too.py` extracts the real
+`_shapeMatches`, `mergeByIdCap` and `useFileStored` from `app/storage.jsx` and
+runs them under Node against a hooks shim, fake timers that fire only on
+demand, a fake `localStorage`, and a `fetch` whose mount `GET` is held open
+while `PUT`s are recorded. It wires `activity` exactly as `app.jsx` wires it —
+`mergeOnDirty: true`, the real `mergeByIdCap` closing over a memory ref —
+edits at the pre-hydration instant, then resolves the `GET` with a file the
+session has never seen. Four controls hold the surrounding behaviour: the
+union must still reach `localStorage`, an *untouched* `mergeOnDirty` mount
+must adopt the fetch with **zero** `PUT`s, and `#232`'s own plain-snapshot
+case must still flush exactly one `PUT` carrying the local edit rather than
+the server copy.
+
+Fire-tested: copied the fixed `app/storage.jsx` to `/tmp`, deleted the
+`persist(merged)` line in place with the editor (never
+`git checkout -- <file>`) — 5 checks failed, exit 1, with `activityPuts` and
+`messagePuts` both `0`: the merged log reached the browser and never the file.
+Restored from the `/tmp` copy, confirmed byte-identical by `md5`
+(`7b7603d3deda37245bf64747ea29ce14`), reran — all 16 checks passed, exit 0.
+
+`npm run build` run once up front so `dist-ui/manifest.json` exists in a fresh
+worktree, and again after the `.jsx` edit.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file
+a foreign session owns and this change never touches). This change covers only
+`app/storage.jsx`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, and no dfx/IC action
+of any kind was run.
