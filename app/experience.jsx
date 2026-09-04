@@ -64,14 +64,42 @@ function taskKind(task) {
 }
 
 /* Append one entry. Returns the ledger unchanged when the entry is
-   malformed, or when this job already has a 'done' — a job completes once,
-   which makes every double-fire path safe (an agent re-emitting
-   [TASK_DONE:…], a mission's self-complete racing its deadline sweep). */
+   malformed, or when this job's completion is still STANDING — a job
+   completes once, which makes every double-fire path safe (an agent
+   re-emitting [TASK_DONE:…], a mission's self-complete racing its deadline
+   sweep).
+
+   "Standing" is the whole of it, and it used to say "ever". A task that is
+   completed, re-opened (the board lets a done card go back to a column —
+   see `applyStatus`'s own note about a re-opened task's stale age) and then
+   snagged could never be completed AGAIN: the retry's 'done' matched a
+   completion from days earlier and went on the floor. Two things then stuck
+   forever, both of them wrong and both of them read as current:
+
+     • the retry's coworker got no credit — no job, no streak, nothing on
+       the résumé ledger for work they actually delivered; and
+     • `xpLastAttempt` reads this job's NEWEST entry, so with the success
+       dropped the newest one stayed the snag. The inbox card kept warning
+       "Mira hit a snag on this" and the workflow panel kept counting the
+       step as "1 failed — needs you" on a step that had since succeeded —
+       against modals/collab.jsx's promise, in that file's own words, that
+       it "clears itself the moment a retry succeeds".
+
+   So: scan back to this job's newest entry only. A 'done' standing there is
+   a double-fire and is dropped exactly as before; a 'snag' there means the
+   job really was re-attempted, and a re-attempt that succeeded is a
+   completion the log has never recorded. */
 function xpRecord(ledger, { agentId, kind, outcome, taskId, title, at } = {}) {
   const prev = Array.isArray(ledger) ? ledger : [];
   if (!agentId || (outcome !== 'done' && outcome !== 'snag')) return prev;
-  if (outcome === 'done' && taskId &&
-      prev.some(e => e && e.taskId === taskId && e.outcome === 'done')) return prev;
+  if (outcome === 'done' && taskId) {
+    for (let i = prev.length - 1; i >= 0; i--) {
+      const e = prev[i];
+      if (!e || e.taskId !== taskId) continue;
+      if (e.outcome === 'done') return prev;   // completion still stands
+      break;                                   // snagged since — this one is real
+    }
+  }
   const entry = { at: at || Date.now(), agentId, kind: String(kind || 'task'), outcome };
   if (taskId) entry.taskId = taskId;
   if (title) entry.title = String(title).slice(0, 80);

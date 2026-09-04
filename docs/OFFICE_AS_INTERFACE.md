@@ -30848,3 +30848,107 @@ a file a foreign session owns and this change never touches). This change
 covers only `exporters.py`, the one new test file, and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, and no dfx/IC
 action of any kind was run.
+
+---
+
+## 252. A job you finished twice only counted once — and stayed "failed" forever
+
+**The reading.** Assigned area: `app/experience.jsx` — the §5 experience
+ledger, the append-only log that is Phase B's attachment ("Mira's done all my
+briefs") and Phase C's on-chain résumé. Its central promise is written at the
+top of `xpRecord`: *a job completes once*, so that every double-fire path is
+safe — an agent re-emitting `[TASK_DONE:…]`, a mission's self-complete racing
+its own deadline sweep. That promise was enforced like this:
+
+    if (outcome === 'done' && taskId &&
+        prev.some(e => e && e.taskId === taskId && e.outcome === 'done')) return prev;
+
+`prev.some` scans the **whole log**, so the rule it actually implemented was
+"has this job ever completed" — while the thing that makes a double-fire a
+double-fire is that the completion is still **standing**. The two readings
+agree right up until a finished task stops being finished, and a task can
+absolutely stop being finished: the board moves cards between columns, and
+`applyStatus` in `app.jsx` carries its own note about clearing the age stamp
+"on the way out of `doing` so a re-opened task doesn't inherit a stale age".
+
+So this sequence, which is ordinary office work:
+
+    done  — Kenji delivers it                     → recorded
+    snag  — re-opened, the next run comes back empty → recorded
+    done  — Mira picks it up and delivers          → SILENTLY DROPPED
+
+Run against the real source, the third call returns `prev` unchanged. Two
+things then stuck, permanently, and both of them read as current.
+
+**What the boss saw.** Mira got *nothing*. `xpStats(experience, 'mira')`
+returned `jobs: 0, streak: 0` for a delivery that really happened — the
+résumé ledger losing work, on a log that is append-only by design, so nothing
+later repairs it. That alone is #246's lesson again from the other side: the
+record has to survive being *right*, not just being written.
+
+The second is worse, because it kept talking. `xpLastAttempt` reports a job's
+**newest** entry; with the success on the floor, the newest entry stayed the
+snag. The inbox card in `features.jsx` and the out-tray card in
+`ui/office.jsx` both render `xpLastAttemptText(xpLastAttempt(experience,
+t.id, agents))`, so both kept printing
+
+    ⚠ Kenji hit a snag on this
+
+on a task Mira had since finished — the exact opposite of the fact that line
+exists to carry (#…: "so the obvious next move isn't handing it straight back
+to the coworker it just defeated"). And `workflowStatusBits` in
+`modals/collab.jsx` kept counting the step as `1 failed — needs you`, in the
+one place a boss checks how their pipeline is doing, against that file's own
+comment promising it "clears itself the moment a retry succeeds
+(`xpLastAttempt` reads the ledger's newest entry for the id)". The office had
+a written promise and shipped its negation.
+
+**The fix.** One clause, same shape, narrower window: scan back to this job's
+newest entry and stop there.
+
+    if (outcome === 'done' && taskId) {
+      for (let i = prev.length - 1; i >= 0; i--) {
+        const e = prev[i];
+        if (!e || e.taskId !== taskId) continue;
+        if (e.outcome === 'done') return prev;   // completion still stands
+        break;                                   // snagged since — this one is real
+      }
+    }
+
+A standing `done` is still a double-fire and is still dropped — identically,
+for the same agent and for any other. A `snag` since the last completion
+means the job really was re-attempted, and a re-attempt that succeeded is a
+completion the log has never held. Nothing is rewritten or decremented; the
+log stays append-only and stays the truth.
+
+**The proof.** `scripts/test_a_retried_job_can_be_finished_twice.py` runs the
+**real** `app/experience.jsx` under node with its import/export lines
+stripped (the `scripts/test_experience.py` harness pattern), plays the
+done → snag → done story through `xpRecord`, and asserts the delivery reaches
+the ledger, that Mira is credited with the job *and* the streak, that the
+card's warning goes to `''`, that the newest entry is now the success, and
+that `workflowStatusBits`' own expression stops counting the step as failed.
+It then pins everything the change must not weaken: the double-fire drop for
+the same agent and for any agent; that a *different* job's snag sitting after
+this one's completion does not unlock the double-fire; that a `done` with no
+`taskId` still appends; snag-after-done and snag-then-done; that no input
+array is mutated; and a second full re-open/retry cycle, so the guard reads
+as a standing-completion rule rather than a one-shot exemption.
+
+Fire-tested: copied the fixed `app/experience.jsx` to `/tmp`, reverted the
+guard in place with the editor back to the `prev.some(…)` one-liner (never
+`git checkout -- <file>`) — eight checks failed, the ledger coming back with
+2 entries instead of 3, Mira on `0` jobs, and the card still reading
+`'Kenji hit a snag on this'`; exit 1. Restored from the `/tmp` copy,
+confirmed byte-identical by `md5`
+(`ce0123e76350e18b5ee21b40360b3cb3`), reran — all checks passed, exit 0.
+
+`npm run build` run after the change.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the same `moc`/M0219 `main.mo` toolchain mismatch tracked from `#188`
+onward, on a file a foreign session owns and this change never touches).
+This change covers only `app/experience.jsx`, the one new test file, and this
+entry; `src/cafresohq_state/main.mo` was never staged or edited, and no
+dfx/IC action of any kind was run.
