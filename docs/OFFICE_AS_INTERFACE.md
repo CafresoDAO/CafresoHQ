@@ -28612,3 +28612,61 @@ migration on a file this change never touches. This change covers only
 `_static_path_allowed` in serve.py, the one new test file and this
 entry; `src/cafresohq_state/main.mo` was never staged or edited, and no
 dfx/IC action of any kind was run.
+
+---
+
+## 221. A browser habit rearranged the office
+
+**The reading.** Assigned area: `app.jsx`, the main orchestrator, minus
+the three fixes already landed there (#201 workflow-step inbox gate,
+#207 winZRef sync deps, #211 mergeOnDirty on the messages store).
+Traced the delegation paths (onDelegate, dispatchToAgent,
+onTaskDropOnAgent) end to end — the busy-desk waits, epoch guards, DM
+fanout and honesty-note plumbing all checked out — along with the
+dismissal cascade, the money watcher's listener cleanup on the
+moneyModuleOn flip, the settle timers and the approval fork. The live
+find was in the global keyboard listener.
+
+**The bug.** The App-level `window` keydown handler maps bare letters
+to office actions — `h` hires, `s` opens Settings, `d` flips night
+mode, `n` mints a sticky, `f` toggles focus, `m` jumps to memory, `u`
+opens the stand-up — and only the digit branch ever asked whether a
+modifier was held (`!e.metaKey && !e.ctrlKey && !e.altKey`, written
+there precisely so ⌘1..⌘9 tab-switching wouldn't also change views).
+The letter branches never got the same question, so every browser
+combo that shares a letter also drove the office: ⌘F (find in page)
+flipped the whole UI into focus mode, ⌘S/Ctrl+S (the save-page reflex)
+opened the Settings modal underneath the browser's own dialog, ⌘D
+(bookmark) toggled night mode, Ctrl+H (history) opened the hire modal,
+Ctrl+N minted a sticky note. The keystroke belonged to the browser;
+the office answered it anyway — and because the browser's dialog takes
+the foreground, the boss often didn't see what the office did until
+they came back to a dark floor or a Settings modal they never opened.
+
+**The fix.** One guard in the handler, placed after the ⌘K/Ctrl+K
+chord (the one chord the office owns on purpose): a held
+meta/ctrl/alt returns before any letter branch can fire. Plain
+letters, `/`, and the digit jumps behave exactly as before.
+
+**The test**
+(`scripts/test_a_browser_chord_never_drives_the_office.py`) lifts the
+REAL `onKey` handler out of app.jsx (brace-balanced extraction) and
+drives it under Node with recording shims for every setter it can
+reach. Plain `h`/`f`/`d`/`3` must still fire their actions and
+⌘K/Ctrl+K must still toggle the shortcuts HUD; then ⌘F, ⌘S, Ctrl+S,
+⌘D, Ctrl+H, Ctrl+N, Alt+M, ⌘U and ⌘3 must each leave the office
+untouched.
+
+Fire-tested: reverted the guard in place (never `git checkout`), eight
+chords drove the office and the test exited 1; restored from the /tmp
+safety copy (md5-verified byte-identical), all 17 checks green.
+`npm run build` rebuilt dist-ui clean.
+
+**Suite: 405/406** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` implicit-`transient`
+toolchain mismatch recorded in `#188` through `#218` — a different
+session's in-progress Motoko migration on a file this change never
+touches. This change covers only the shortcut handler in `app.jsx`,
+the one new test file and this entry; `src/cafresohq_state/main.mo`
+was never staged or edited, and no dfx/IC action of any kind was run.

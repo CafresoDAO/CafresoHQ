@@ -6368,6 +6368,17 @@ ${d.text}` : d.text,
     const onKey = (e) => {
       if (e.target.matches('input, textarea, select')) return;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setShortcutsOpen(v => !v); return; }
+      /* A held modifier means the keystroke belongs to the BROWSER, not the
+         office. The digit branch below has known this since it was written
+         (`!e.metaKey && !e.ctrlKey && !e.altKey`); the letter shortcuts never
+         did, so every browser combo that shares a letter also drove the
+         office: ⌘F (find in page) flipped focus mode, ⌘S/Ctrl+S (save)
+         opened Settings under the save dialog, ⌘D (bookmark) toggled night,
+         Ctrl+H (history) opened the hire modal, Ctrl+N minted a sticky note.
+         The boss reached for a browser habit and the office rearranged
+         itself underneath it. One guard here, after ⌘K (the one chord the
+         office owns on purpose), covers every branch below. */
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === 'h') setHireOpen(true);
       else if (e.key === 's') setSettingsOpen(true);
       else if (e.key === 'd') setNight(v => !v);
