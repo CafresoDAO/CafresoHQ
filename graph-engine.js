@@ -245,7 +245,16 @@ class GraphEngine {
     return true;
   }
 
-  _focusId() { return this.hovered || this.selected; }
+  _focusId() {
+    // A hovered/selected node that has since been filtered out, hidden, or
+    // pushed outside local mode is no longer on the canvas — it must stop
+    // acting as a focus, or every other node/edge gets dimmed (or, for
+    // edges, hidden outright) around a phantom that nothing points at.
+    const f = this.hovered || this.selected;
+    if (f == null) return f;
+    if (!this.graph.hasNode(f) || !this._visible(f, this.graph.getNodeAttributes(f))) return null;
+    return f;
+  }
 
   _neighborhood(focus) {
     if (!focus || !this.graph.hasNode(focus)) return null;

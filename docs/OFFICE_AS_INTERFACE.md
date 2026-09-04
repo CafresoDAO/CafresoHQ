@@ -29704,3 +29704,64 @@ This change covers only the two `except` clauses in
 `claude_approval_hook.py`, the one new test file, and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, and no dfx/IC
 action of any kind was run.
+
+---
+
+## 238. A filtered-out selection kept dimming and blanking the graph around it
+
+**The reading.** Assigned area: `graph-engine.js` — the WebGL knowledge-graph
+engine (sigma.js + graphology), specifically the hover/selection focus path:
+`_focusId`, `_neighborhood`, `_nodeReducer`, `_edgeReducer`. `_focusId()`
+returned `this.hovered || this.selected` unconditionally — whichever node was
+last hovered or clicked, no matter what happened to it afterward. Nothing in
+`setFilter`, `setHidden`, or `setLocalMode` ever cleared `selected`/`hovered`
+when the node they pointed at fell out of view, and nothing needed to: those
+three are exactly the paths that can make a node invisible out from under an
+existing selection (narrow the filter box past it, "Hide node" from the
+context menu, or shrink local mode's depth). `_nodeReducer` and
+`_edgeReducer` already catch the focus node itself correctly — `_visible()`
+marks it hidden before the focus branch ever runs. The bug is what a stale,
+now-invisible focus id did to *everything else*: `_nodeReducer` dims every
+node that isn't in the (still-computed) neighborhood of that phantom to
+`DIM`/`DIM_LIGHT` and blanks its label, and `_edgeReducer`'s "reveal only the
+focused node's own edges" branch hides every edge that doesn't touch it —
+which, since the phantom itself renders nothing, means every edge in the
+graph. Click a node, then type a filter query that excludes it (or hide it,
+or narrow local mode past it), and the rest of the graph goes dim and loses
+its entire edge layer, with no visible selection left on screen to explain
+why, until the user happens to hover or click something else.
+
+**The fix.** `_focusId()` now checks that its candidate id is still on the
+graph and still passes `_visible()` before returning it; otherwise it
+returns `null`, exactly as if nothing were focused — no change needed at any
+of the three call sites that can invisible a node, because the one place
+that reads the focus is now the one place that validates it.
+
+**The proof.**
+`scripts/test_a_filtered_out_selection_still_haunted_the_graph.py` lifts the
+real `_focusId`/`_neighborhood`/`_visible`/`_nodeReducer`/`_edgeReducer`
+sources out of `graph-engine.js` (brace-balanced extraction, the same
+technique as `test_graph_filter_speaks_its_own_placeholder_syntax.py`) into a
+node harness driving a tiny three-node stand-in graph (A→B, B→C). It selects
+A, confirms the baseline focus behavior is correct (B, A's neighbor, stays
+full-strength; C dims; A→B is revealed; the unrelated B→C is correctly
+hidden while A is genuinely focused) — then filters A out from under the
+still-active selection and asserts `_focusId()` returns `null`, neither B nor
+C is dimmed, and B→C is no longer hidden.
+
+Fire-tested: copied the fixed `graph-engine.js` to `/tmp`, reverted
+`_focusId()` to the raw `this.hovered || this.selected` in place (never
+`git checkout -- <file>`) — three checks failed (`focus_after_filter`
+still `'A'`, C still dimmed, B→C still hidden), exit 1. Restored from the
+`/tmp` copy, confirmed byte-identical by `md5`, reran — all ten checks
+passed, exit 0.
+
+`npm run build` run after the change — 8 assets built clean (`graphEngine=true`).
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the same `moc`/M0219 `main.mo` toolchain mismatch tracked in `#188` through
+`#228`, on a file a foreign session owns and this change never touches).
+This change covers only `_focusId()` in `graph-engine.js`, the one new test
+file, and this entry; `src/cafresohq_state/main.mo` was never staged or
+edited, and no dfx/IC action of any kind was run.
