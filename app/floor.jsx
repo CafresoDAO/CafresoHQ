@@ -421,7 +421,16 @@ const OFFICE_CAUSES = [
      one has a fix in it, which the generic sentence cannot offer. */
   [/is a folder, not a file|is a directory|eisdir/i,
    "that's a folder — open one of the files inside it"],
-  [/\b40[34]\b|not found|no such file|enoent/i,
+  /* 404 only — 403 belongs to the permission rule below. Both used to be
+     matched here (`\b40[34]\b`), which put this "not found" rule ahead of
+     the eacces/403 rule and swallowed every bare 403 before that rule ever
+     ran: a permission-denied file op reported "the office couldn't find
+     that — it may have been moved or renamed" (told the boss to go looking
+     for a file that was there the whole time) instead of "the office isn't
+     allowed to touch that file", and the dedicated 403 branch below was
+     dead code except when the raw text also said "eacces" or "permission
+     denied" in words. */
+  [/\b404\b|not found|no such file|enoent/i,
    "the office couldn't find that — it may have been moved or renamed"],
   [/eacces|permission denied|\b403\b/i,
    "the office isn't allowed to touch that file"],

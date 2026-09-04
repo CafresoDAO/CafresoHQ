@@ -29201,3 +29201,60 @@ touches). This change covers only `agentFiledPath()` in
 `app/artifacts.jsx`, the one new test file, and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, and no
 dfx/IC action of any kind was run.
+
+---
+
+## 230. A bare 403 read as a missing file, not a locked one
+
+`officeCause()` (`app/floor.jsx`, OFFICE_CAUSES, §7's "one honest sentence
+plus a way forward") is what turns a raw file-op error into the one line
+the boss reads — the office's own voice, standing in for a save, a delete,
+a vault write, whatever the twelve non-brain call sites are doing when it
+fails. The table has a dedicated rule for a locked file: `eacces|permission
+denied|\b403\b` → "the office isn't allowed to touch that file", with a fix
+in it a boss can act on.
+
+**The bug.** The rule two above it — the "not found" rule — was written
+`\b40[34]\b|not found|no such file|enoent`, which matches 403 as well as
+404. Array order is match order (`officeCause` returns on the first regex
+that hits), and the not-found rule sits BEFORE the permission rule. So any
+raw error whose only marker was the bare number "403" — an HTTP 403 from a
+file op that never spelled out "eacces" or "permission denied" in words —
+matched the not-found rule first and got "the office couldn't find that —
+it may have been moved or renamed": the exact opposite of what happened.
+The file was right there; the office just wasn't allowed to touch it. The
+boss reading that sentence goes looking for a file that never moved,
+instead of learning it's a permissions problem. The dedicated 403 branch
+was left reachable only through the words "eacces" or "permission denied"
+literally appearing in the raw text — a bare numeric 403 could never reach
+it, because the rule above always won first.
+
+**The fix.** Narrowed the not-found rule to `\b404\b` — the pattern it was
+always meant to guard, per its own name and the branch below it. 403 now
+falls through to the eacces/403 rule where it belongs; 404 still hits the
+not-found rule exactly as before, and every worded form (`eacces`,
+`permission denied`) is unaffected either way.
+
+**The proof.** `scripts/test_officecause_403.py` runs the real
+`app/floor.jsx` under node (export line stripped, same harness as
+`test_floor.py`) and calls `officeCause()` directly with a bare `'Request
+failed with status code 403'`: asserts the sentence names permission
+("allowed"), not "moved or renamed"; a bare 404 still reads as "not
+found"; and the worded `EACCES: permission denied` form still reads as
+permission-denied too.
+
+Fire-tested: copied the fixed `app/floor.jsx` to `/tmp`, reverted the fix
+in place (`\b404\b` back to `\b40[34]\b`, never `git checkout -- <file>`)
+— the test's first two checks failed, reporting the "moved or renamed"
+sentence for a 403, exit 1. Restored from the `/tmp` copy, confirmed
+byte-identical by `md5`, reran — all four checks passed, exit 0.
+
+`npm run build` ran clean after the `.jsx` change (8 assets, `dist-ui/`).
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the same `moc`/M0219 `main.mo` toolchain mismatch tracked through `#228`,
+on a file a foreign session owns and this change never touches). This
+change covers only the one regex in `OFFICE_CAUSES` in `app/floor.jsx`,
+the new test file, and this entry; `src/cafresohq_state/main.mo` was never
+staged or edited, and no dfx/IC action of any kind was run.
