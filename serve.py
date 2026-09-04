@@ -4510,7 +4510,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             folder = qs.get('dir', [''])[0].strip().strip('/')
             saved, errors = [], []
             for part in msg.get_payload():
-                raw_name = part.get_filename()
+                # Not part.get_filename() — see fs_routes.part_filename for the
+                # U+FFFD the compat32 header parser puts where the boss's
+                # accented or non-Latin letters were. Same door, same loss.
+                raw_name = fs_routes.part_filename(part)
                 if raw_name is None:
                     continue                   # a form field, not a picked file
                 # Same decision as the Projects door, from the same function —

@@ -31695,7 +31695,7 @@ kind was run.
 
 ---
 
-## 261. the held write was only released for half the stores
+## 261. The held write was only released for half the stores
 
 `#232` found that `useFileStored()` holds every file `PUT` until the mount
 fetch settles — `hydratedRef` exists so a fresh browser's empty boot seed can
@@ -31776,3 +31776,76 @@ a foreign session owns and this change never touches). This change covers only
 `app/storage.jsx`, the one new test file, and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, and no dfx/IC action
 of any kind was run.
+
+---
+
+## 262. The upload door dropped the letters out of the filename
+
+**The wreck.** A boss drags `résumé.pdf` onto a project. The receipt comes
+back green — one file filed — and names it `r_sum_.pdf`. Drop `报告.txt` and
+`数据.txt` together and both arrive as the same `_.txt`; only #(the
+step-aside from `free_name`) keeps the second from landing on the first, so
+what the working tree ends up holding is `_.txt` and `_ (2).txt`. Two
+different reports, neither one nameable, and nothing anywhere said a letter
+had been lost.
+
+The sanitizer took the blame for years of this and never deserved it.
+`_UPLOAD_UNSAFE = [^\w .()\[\]\-]+` uses Python's `\w`, which is
+unicode-aware: `é` and `报` are word characters and pass through untouched.
+Measured directly — `upload_name('résumé.txt')['name']` is `'résumé.txt'`.
+
+The name was already destroyed before `upload_name` saw it. Both upload
+doors parse the multipart body with `email.parser.BytesParser()`, whose
+default `compat32` policy decodes header bytes as ASCII and then runs
+`get_filename()` through `email.header`, which replaces every 8-bit byte
+with `U+FFFD`. Browsers send the picked filename as raw UTF-8 (WHATWG; no
+RFC 2231 wrapping), so what reached the sanitizer was
+`'r��sum��.txt'` — and `U+FFFD` is genuinely not `\w`,
+so the underscores were the sanitizer doing exactly its job on rubble. Each
+`é` is two bytes and the pattern collapses runs, which is why three CJK
+characters (nine bytes) came out as a single `_`.
+
+**The fix.** `fs_routes.part_filename(part)` — one function, asked by both
+doors. It takes `part.get_filename()` as-is unless the parser reported loss
+(`U+FFFD` in the result), and only then goes back for the original bytes:
+`email.header.decode_header()` hands an 8-bit header back as
+`(bytes, 'unknown-8bit')`, so those bytes get decoded as UTF-8 and the
+parameter is re-read off a throwaway `Message`. Everything else is
+untouched by construction — an ASCII name never enters the branch, and an
+RFC 2231 `filename*=UTF-8''r%C3%A9.txt`, which `compat32` already decodes
+correctly, never enters it either. (Switching the parser to
+`email.policy.HTTP` also recovers the letters, and was rejected: it leaks
+the `UTF-8''` prefix into the name on that same RFC 2231 form — measured.)
+Payload bytes were never affected and are not touched: a 1 KiB
+all-byte-values blob round-trips identically before and after.
+
+**The proof.**
+`scripts/test_an_upload_keeps_the_letters_in_the_name.py` checks the helper
+on five raw `Content-Disposition` headers (accented, non-Latin, plain ASCII,
+RFC 2231, and a form field with no filename at all), asserts the sanitizer
+was innocent, then drives `_fs_upload` end to end over a temp workspace with
+`résumé.txt`, `报告.txt` and `数据.txt` in one pick: all three must come back
+in `uploaded` under the names picked, none may carry an underscore stand-in,
+none may collapse onto another, and the three real filenames must be what is
+actually on disk. Two structural checks keep the Library door on the same
+function.
+
+Fire-tested: copied the fixed `fs_routes.py` and `serve.py` to `/tmp`,
+reverted both call sites in place with the editor (never
+`git checkout -- <file>`) back to `raw_name = part.get_filename()` — 6
+checks failed, exit 1, with the failure detail printing the original wreck
+verbatim: `['r_sum_.txt', '_.txt', '_ (2).txt']`. Restored from the `/tmp`
+copies, confirmed byte-identical by `md5`
+(`b519176dfe23e87f033953c06fc5807f`, `e5bc3f1f35bdc772ff5aba0e5ad60c8a`),
+reran — all 14 checks passed, exit 0.
+
+`npm run build` run once up front so `dist-ui/manifest.json` exists in a
+fresh worktree; no `.jsx`/`.js` file was changed by this entry.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the `moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on
+a file a foreign session owns and this change never touches). This change
+covers only `fs_routes.py`, `serve.py`, the one new test file, and this
+entry; `src/cafresohq_state/main.mo` was never staged or edited, and no
+dfx/IC action of any kind was run.

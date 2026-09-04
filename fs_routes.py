@@ -419,6 +419,44 @@ def upload_name(raw):
             'renamedFrom': original if name != original else None}
 
 
+def part_filename(part):
+    """The name the boss actually picked, with its non-ASCII letters intact.
+
+    Both upload doors parse the multipart body with email.parser.BytesParser,
+    whose compat32 policy decodes header bytes as ASCII and then hands
+    get_filename() the result through email.header — which turns every 8-bit
+    byte into U+FFFD before upload_name() ever sees it. Browsers send the
+    filename as raw UTF-8 (WHATWG, no RFC 2231 wrapping), so EVERY accented
+    or non-Latin name arrived already destroyed: 'résumé.pdf' reached
+    upload_name() as 'r��sum��.pdf' and was filed as
+    'r_sum_.pdf'; '报告.txt' collapsed to '_.txt', and a second CJK name
+    collapsed to the same '_.txt' and only escaped overwriting it because
+    free_name() stepped it aside to '_ (2).txt'. The sanitizer was never the
+    problem — its \\w class is unicode-aware and keeps é and 报 happily — the
+    name was mojibake by the time it arrived.
+
+    decode_header() is the one public door back to the original bytes: an
+    8-bit header comes back as (bytes, 'unknown-8bit'), so decode those as
+    UTF-8 and re-ask a throwaway Message for the parameter. Only taken when
+    the parser actually reported loss, so an ASCII name and an RFC 2231
+    filename*= (which compat32 already decodes correctly) are untouched.
+    """
+    name = part.get_filename()
+    if name is None or '�' not in name:
+        return name
+    import email.header as _eh
+    import email.message as _emsg
+    try:
+        for chunk, charset in _eh.decode_header(part['content-disposition']):
+            if isinstance(chunk, bytes) and charset in (None, 'unknown-8bit'):
+                probe = _emsg.Message()
+                probe['Content-Disposition'] = chunk.decode('utf-8', 'replace')
+                return probe.get_filename() or name
+    except Exception:
+        pass
+    return name
+
+
 def free_name(name, taken):
     """The first non-colliding variant of `name`: name, 'stem (2).ext', …
 
@@ -501,7 +539,7 @@ def _fs_upload(self):
 
     saved, errors = [], []
     for part in msg.get_payload():
-        raw_name = part.get_filename()
+        raw_name = part_filename(part)
         if raw_name is None:
             continue                       # a form field, not a picked file
         decided = upload_name(raw_name)
