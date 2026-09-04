@@ -30485,3 +30485,93 @@ a foreign session owns and this change never touches). This change covers one
 comparison in `modals/hire.jsx`, the one new test file, the rebuilt bundle and
 this entry; `src/cafresohq_state/main.mo` was never staged or edited, and no
 dfx/IC action of any kind was run.
+
+---
+
+## 248. A saved job description reverted to the old text, one render later
+
+**The reading.** Assigned area: `ui/panels.jsx` — the performance review.
+Team → click a coworker → the "Job description" textarea, which the panel's
+own note calls the persona, "editable in place (§2)". It is a draft field:
+local state while you type, committed on blur.
+
+    const [jd, setJd] = React.useState(null);
+    const jdValue = jd !== null ? jd : (agent.systemPrompt || '');
+    const saveJd = () => {
+      if (jd === null || jd === (agent.systemPrompt || '')) { setJd(null); return; }
+      onUpdate(agent.id, { systemPrompt: jd });
+      setJd(null);
+      if (window.cafresohqToast) window.cafresohqToast.success(`… updated`);
+    };
+
+Both the display fallback and the dirty check read `agent.systemPrompt`, and
+`agent` here is a **frozen snapshot**. `app.jsx` holds the inspected coworker
+in its own state — `const [inspect, setInspect] = useStateA(null)`, set once
+by `onInspect` — and hands that captured object straight to the panel
+(`<InspectPanel agent={inspect} …>`), never re-looking it up from the roster
+the way `FurnishModal` next door does (`agents.find(x => x.id === …)`).
+Meanwhile `onUpdateAgent` is immutable: `const next = { ...a, ...patch };`.
+So the save lands in the roster and the object this panel is holding keeps
+the **old** prompt for as long as the panel stays open.
+
+What the boss saw: type a new brief, click away, get a toast saying
+*"Vera's job description updated"* — and watch the textarea repaint with the
+previous brief. Nothing was actually lost, which is what makes it a trust
+bug rather than a data bug: the office reported a save and then showed the
+save undone, and the only reasonable reading on screen is that the edit was
+thrown away.
+
+The second half is a real loss. The dirty check measured against the same
+stale value, so a boss who typed their coworker's **original** wording back
+in — an undo, from the surface where the edit was made — hit
+`jd === agent.systemPrompt` against a prompt that was no longer on file, the
+blur was swallowed, and the restore never happened. From this panel there was
+no way back.
+
+**The fix.** The panel remembers what it committed, in a ref keyed by
+`agent.id`:
+
+    const savedJd = React.useRef(null);
+    const jdOnFile = (savedJd.current && savedJd.current.id === agent.id)
+      ? savedJd.current.text : (agent.systemPrompt || '');
+
+with `jdValue` and the dirty check both reading `jdOnFile`, and `saveJd`
+writing `savedJd.current = { id: agent.id, text: jd }` as it commits. The id
+key, rather than clearing the ref in the existing `[agent.id]` effect, is
+what keeps one coworker's saved brief off the next one's card in the render
+between a switch and its effect. Nothing upstream changed: the snapshot stays
+a snapshot, and the panel simply stops treating a value it knows to be
+superseded as the truth.
+
+**The proof.**
+`scripts/test_a_saved_job_description_stays_saved.py` drives the **real**
+`InspectPanel` — `ui/panels.jsx` bundled with the project's own `esbuild`,
+its six imports stubbed, hooks driven by a small React stand-in with ordered
+hook slots and a settle-on-quiet render loop — because a re-implementation of
+the draft logic would agree with itself while the shipped panel kept
+reverting. It types a brief, blurs, re-renders with the *same frozen object*
+app.jsx would hand back, and asserts the textarea still shows what was saved;
+that an idle blur neither re-saves nor re-toasts; that restoring the original
+wording is a real second save; and that pointing the panel at another
+coworker shows *their* brief. It also pins the premise in source — that
+app.jsx keeps `inspect` in its own state and that `onUpdateAgent` rebuilds
+the coworker immutably — so the reason the panel cannot see its own save is
+part of the record.
+
+Fire-tested: copied the fixed `ui/panels.jsx` to `/tmp`, reverted the ref and
+both `jdOnFile` readers in place with the editor (never
+`git checkout -- <file>`) — two checks failed ("the textarea still shows the
+new brief after saving" came back with the *previous* brief; "restoring the
+coworker's original brief actually saves" recorded only one save), exit 1.
+Restored from the `/tmp` copy, confirmed byte-identical by `md5`
+(`5867074cda22abe7f26bd00902ed9860`), reran — all checks passed, exit 0.
+
+`npm run build` run after the change.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the same `moc`/M0219 `main.mo` toolchain mismatch tracked from `#188`
+onward, on a file a foreign session owns and this change never touches).
+This change covers only `ui/panels.jsx`, the one new test file, and this
+entry; `src/cafresohq_state/main.mo` was never staged or edited, and no
+dfx/IC action of any kind was run.

@@ -82,10 +82,22 @@ function InspectPanel({ agent, activity = [], experience = [], onClose, onUpdate
      edit never saves on re-render; commit on blur. */
   const [jd, setJd] = React.useState(null);
   React.useEffect(() => { setJd(null); }, [agent.id]);
-  const jdValue = jd !== null ? jd : (agent.systemPrompt || '');
+  /* What we last COMMITTED, and for whom. `agent` is a FROZEN snapshot —
+     app.jsx keeps the inspected coworker in its own state and `onUpdate`
+     rebuilds the roster immutably, so the object this panel holds still
+     carries the OLD systemPrompt after a save. Falling back to it meant the
+     textarea snapped back to the previous job description one render after
+     the toast said it had been updated: the boss watched their edit vanish
+     and was told it was saved. Keyed by agent.id so a save on one coworker
+     can never surface on the next one the panel is pointed at. */
+  const savedJd = React.useRef(null);
+  const jdOnFile = (savedJd.current && savedJd.current.id === agent.id)
+    ? savedJd.current.text : (agent.systemPrompt || '');
+  const jdValue = jd !== null ? jd : jdOnFile;
   const saveJd = () => {
-    if (jd === null || jd === (agent.systemPrompt || '')) { setJd(null); return; }
+    if (jd === null || jd === jdOnFile) { setJd(null); return; }
     onUpdate(agent.id, { systemPrompt: jd });
+    savedJd.current = { id: agent.id, text: jd };
     setJd(null);
     if (window.cafresohqToast) window.cafresohqToast.success(`${agent.name}'s job description updated`);
   };
