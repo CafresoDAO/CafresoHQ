@@ -30741,3 +30741,110 @@ tally is not mistaken for a regression. This change covers only
 `night_runner.py`, the one new test file, and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, and no dfx/IC action
 of any kind was run.
+
+---
+
+## 251. An export addressed to a folder was filed where no one can see it
+
+**The reading.** Assigned area: `exporters.py` — the five binary export
+doors (`EXPORT_PPTX` / `EXPORT_DOCX` / `EXPORT_PDF` and the image/video
+generators) and the one resolver they all share, `_vault_binary_path`.
+
+That resolver opens by asking the office's own question, in the office's own
+words:
+
+    hidden = _vault_hidden_part(rel)
+    if hidden:
+        raise ValueError(
+            'hidden files are not accepted — the Library never lists '
+            f'anything under "{hidden}". Drop the leading dot to file '
+            'this where it can be seen.')
+
+The rule behind it is not cosmetic. Every backend's listing drops a dotted
+part — the fs walk and the OCI branch filter `part.startswith('.')`
+outright, the REST walk skips dot-entries at every level — so a file written
+under one is a deliverable that has left every list the Library keeps, under
+a green **Saved**. `#136` was this disappearance at the upload door, `#137`
+made that door say so out loud, `#140` gave the write doors the sentence,
+and `#141` gave it to these five.
+
+Then the resolver changed the string it had just asked about. Three lines
+later:
+
+    ext = pathlib.Path(rel).suffix.lower()
+    if ext not in allowed_ext:
+        # If no extension was given, append the first allowed one.
+        if not ext:
+            rel = rel + allowed_ext[0]
+
+A path that names a folder has no extension, so it takes that branch — and
+concatenation is not naming. `Slides/` becomes **`Slides/.pptx`**: a file
+whose entire name is the extension, hidden on every backend, invisible from
+the moment it exists. Nothing downstream catches it. The escape check
+passes, because it genuinely *is* inside the vault. `mkdir(parents=True)`
+makes the folder. `prs.save()` writes real bytes. And the door answers
+`200 {"path": "Slides/.pptx"}` — a receipt, a real deck, and no list
+anywhere that will ever show it again. `.` and `..` land the same way, as
+`..pptx` and `...pptx`.
+
+`Slides/` is not a contrived input. It is what a coworker's `EXPORT_*` tool
+sends when it means *put it in Slides* — the trailing slash reading as "this
+is the folder" — and what a boss types into an export field the same way.
+Measured on the real resolver with serve.py's real `_vault_hidden_part`
+injected: `'Slides/' → Slides/.pptx`, `'.' → ..pptx`, `'..' → ...pptx`, and
+the whole `EXPORT_DOCX` door returning `(200, {'path': 'Docs/.docx'})` with
+the bytes on disk. The check that exists to prevent exactly this had already
+run, on a different string.
+
+**The fix.** Ask the question again, about the name actually being filed:
+
+    rel = rel + allowed_ext[0]
+    ext = allowed_ext[0]
+    hidden = _vault_hidden_part(rel)
+    if hidden:
+        raise ValueError(
+            f'"{rel_in}" has no file name — appending {allowed_ext[0]} '
+            f'would file it as "{hidden}", and the Library never lists '
+            'anything under a leading dot. Name the file, not just '
+            'the folder.')
+
+One re-ask, in the one place the string changes, so all five doors inherit
+it. The refusal names the real problem rather than telling someone to drop a
+leading dot they never typed. Nothing else moves: `Slides/q3` still gains
+its `.pptx`, a correct extension still resolves, non-leading dots
+(`notes.and.dots/plan`) are still none of our business, an already-dotted
+path still hears the original `#140` sentence, a traversal is still refused
+as an escape, a wrong extension still as one, and the `#215` sidestep still
+counts `q3 (2).pptx`. The refusal lands before `mkdir`, so a rejected export
+leaves no folder behind either.
+
+**The proof.**
+`scripts/test_an_export_to_a_folder_is_not_filed_where_no_one_can_see_it.py`
+drives the real `_vault_binary_path` against a temp vault with serve.py's
+real hidden-part rule (not a lambda that says `None` to everything), asserts
+`Slides/`, `Reports/Q3/`, `.` and `..` are each refused with a sentence that
+says *no file name*, then asserts every behaviour that must survive; it also
+runs the whole `EXPORT_DOCX` door — only the `python-docx` boundary stubbed,
+since it is not installed on every office — and checks the door answers 400
+and that `Docs/.docx` is not on disk, while `Docs/report` still files and
+still reports its path. Three premise checks keep it honest: serve.py must
+still inject the real `_vault_hidden_part`, that rule must still flag a
+leading dot, and the fs listing must still filter dotted parts — so the day
+hidden stops meaning invisible, this test says so instead of quietly
+passing.
+
+Fire-tested: copied the fixed `exporters.py` to `/tmp`, reverted the re-ask
+in place with the editor (never `git checkout -- <file>`) — 11 checks failed
+(`Slides/` resolving to `Slides/.pptx`, `.` to `..pptx`, `..` to `...pptx`,
+`Reports/Q3/` to `Reports/Q3/.pptx`, a folder left behind by a refusal, and
+the door answering `200 {'path': 'Docs/.docx'}` with the file written),
+exit 1. Restored from the `/tmp` copy, confirmed byte-identical by `md5`
+(`764a9958a1fa15d6e432d2afde674224`), reran — all checks passed, exit 0.
+
+Suite: `python3 scripts/run_tests.py`, with the one known unrelated failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+same `moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on
+a file a foreign session owns and this change never touches). This change
+covers only `exporters.py`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, and no dfx/IC
+action of any kind was run.

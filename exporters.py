@@ -46,6 +46,7 @@ def _vault_binary_path(self, rel: str, allowed_ext: tuple) -> pathlib.Path:
     rel = (rel or '').lstrip('/').replace('\\', '/').strip()
     if not rel:
         raise ValueError('path required')
+    rel_in = rel  # what the caller asked for, for the refusals below
     # Before the extension check and before any mkdir: a dotted segment is a
     # deliverable about to be rendered into a folder no listing will ever
     # show — a success receipt over a file that just left every list the
@@ -65,6 +66,24 @@ def _vault_binary_path(self, rel: str, allowed_ext: tuple) -> pathlib.Path:
         if not ext:
             rel = rel + allowed_ext[0]
             ext = allowed_ext[0]
+            # …and then ask the hidden question AGAIN, about the name we are
+            # actually about to file. The check above ran on the caller's
+            # string; this line can turn a visible one into a hidden one.
+            # "Slides/" — a folder, which is what an EXPORT_* tool hands over
+            # when it means "put it in Slides" — becomes "Slides/.pptx", a
+            # file whose whole name is the extension. Every listing the
+            # Library keeps drops it (fs, oci and REST all filter a dotted
+            # part), so the door was returning 200 and a path over a
+            # deliverable that had just left every list — the exact
+            # disappearance the check above exists to refuse. "." and ".."
+            # land the same way, as "..pptx" and "...pptx".
+            hidden = _vault_hidden_part(rel)
+            if hidden:
+                raise ValueError(
+                    f'"{rel_in}" has no file name — appending {allowed_ext[0]} '
+                    f'would file it as "{hidden}", and the Library never lists '
+                    'anything under a leading dot. Name the file, not just '
+                    'the folder.')
         else:
             raise ValueError(f'extension must be one of {allowed_ext}, got {ext}')
     candidate = (root / rel).resolve()
