@@ -27766,3 +27766,74 @@ This change covers only the one deps array + comment in `app.jsx`,
 the rebuilt `dist-ui/`, the one new test file, and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, and no
 dfx/IC action of any kind was run.
+
+---
+
+## 208. Two tabs saving at once fought over one temp file, and a save the office confirmed could 500 or install a truncated sibling
+
+**The reading.** Assigned area: the local server's state and file
+routes — the `/hq/` state-store handlers (`_hq_handler`, the
+`useFileStored` backend), the sandboxed `/fs/*` API in `fs_routes.py`,
+and `/brave` + `/approvals/external/*`. The `/fs` read routes' guard
+ordering, the CORS host-data fence (`#181`'s neighborhood), the upload
+collision-stepping and the approvals lock discipline all checked out
+as already hardened. The live find was inside the very block whose
+comment promises atomicity: "tmp + fsync + os.replace makes the swap
+all-or-nothing."
+
+**The mechanism.** The PUT side of `_hq_handler` wrote every save
+through `filepath.with_suffix('.json.tmp')` — ONE tmp name per state
+file, shared by every concurrent writer. serve.py is a
+`ThreadingMixIn` server, and the same few names (`activity`,
+`projects`, `receipts`, …) are PUT by every open tab, every office
+sharing the container, the night runner's self-calls and hqsh. Two
+saves landing together collided on that single tmp three ways:
+
+- each `open(tmp, 'wb')` truncated the OTHER writer's half-written
+  bytes, so the tmp a winner then `os.replace`d into place could be a
+  truncated hybrid — installed as the state file, where the client's
+  GET-side shape check silently resets the whole collection to seed
+  data (the exact loss the comment says this block prevents);
+- whichever `os.replace` ran second raised `FileNotFoundError` (its
+  tmp was already renamed away), surfacing as a 500 for a save the
+  client composed correctly — and that writer's body never landed;
+- the loser's client now believes the save failed while the winner's
+  file may hold the loser's truncation, so retry-vs-reload guesses
+  wrong either way.
+
+Measured against a real server on this branch (6 writers × 40 rounds
+released through a barrier): 129 of 240 PUTs came back 500 before the
+fix, round 0 included — this is not a thousand-year race.
+
+**The fix.** One write, one tmp: `tempfile.mkstemp(dir=base)` gives
+every PUT its own file in the same directory (so the rename stays on
+one filesystem), then the same fsync + `os.replace`. The swap is still
+all-or-nothing and last-writer-wins is still the contract —
+`useFileStored` already assumes it — but no writer can truncate
+another's bytes or rename away another's tmp, and a failed write now
+unlinks its own debris. `_night_save` keeps its shared tmp: its
+writers are the scheduler loop and the `/missions` handlers, which
+already serialize behind `_night_lock`.
+
+**The test**
+(`scripts/test_two_tabs_saving_at_once_never_lose_a_save.py`) boots
+the REAL serve.py on a random port with a scratch
+`CAFRESOHQ_HQ_STATE_DIR` and hammers one state name: 25 rounds of 6
+barrier-released concurrent PUTs (200 KB bodies, so a truncated
+sibling is visible). Every PUT must return 200, the file must read
+back as ONE writer's complete body after every round, and no `.tmp`
+debris may remain.
+
+Fire-tested: reverted the PUT block to the shared
+`filepath.with_suffix('.json.tmp')` in place — 77 of 150 PUTs 500'd,
+exit 1. Restored from the /tmp safety copy (shasum-verified
+byte-identical, never `git checkout`), test green.
+
+**Suite: 390/391** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` implicit-`transient`
+toolchain mismatch recorded in `#188`, `#193` and `#203` — a different
+session's in-progress Motoko migration on a file this change never
+touches. This change covers only the PUT block in `serve.py`, the one
+new test file and this entry; `src/cafresohq_state/main.mo` was never
+staged or edited, and no dfx/IC action of any kind was run.

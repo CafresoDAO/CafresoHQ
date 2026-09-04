@@ -3737,12 +3737,29 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 # shape check and the whole collection silently resets to seed
                 # data. tmp + fsync + os.replace makes the swap all-or-nothing,
                 # matching _night_save above.
-                tmp = filepath.with_suffix('.json.tmp')
-                with open(tmp, 'wb') as fh:
-                    fh.write(body)
-                    fh.flush()
-                    os.fsync(fh.fileno())
-                os.replace(tmp, filepath)
+                #
+                # The tmp name must be unique PER WRITE, not per file. This is
+                # a ThreadingMixIn server and every tab, office and the night
+                # runner PUT the same names, so two concurrent PUTs used to
+                # share one '<name>.json.tmp': each open('wb') truncated the
+                # other's half-written bytes, and whichever os.replace ran
+                # second raised FileNotFoundError — measured 129 spurious 500s
+                # out of 240 concurrent PUTs, each one a save the client was
+                # told failed (or worse, a truncated sibling installed as the
+                # state file). mkstemp gives every writer its own tmp; the
+                # replace stays all-or-nothing and last-writer-wins.
+                import tempfile as _tf
+                tfd, tmp = _tf.mkstemp(dir=str(base), prefix=f'.{name}.', suffix='.tmp')
+                try:
+                    with os.fdopen(tfd, 'wb') as fh:
+                        fh.write(body)
+                        fh.flush()
+                        os.fsync(fh.fileno())
+                    os.replace(tmp, filepath)
+                except Exception:
+                    try: os.unlink(tmp)
+                    except OSError: pass
+                    raise
                 # For agent roster, also write a human-readable markdown summary
                 if scope == 'memory' and name == 'agents':
                     self._write_agents_md(base, json.loads(body.decode('utf-8')))
