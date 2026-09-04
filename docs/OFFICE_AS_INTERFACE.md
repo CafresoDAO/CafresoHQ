@@ -28373,3 +28373,63 @@ a file this change never touches. This change covers one line in
 `features.jsx`, the one new test file and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, and no dfx/IC
 action of any kind was run.
+
+---
+
+## 217. The palette said "Composer ready" into a room with nobody in it
+
+**The symptom.** Command palette → "DM @Aria". A toast confirms
+"Composer ready for @Aria", the chat panel opens — and the composer is
+empty, sitting on whatever thread chat was last on. Same with a
+"Recent chat" entry: chat opens, but the message's own thread was
+never selected, so the message you jumped to isn't even on screen.
+And yet, tested with the chat window already open, both commands work
+perfectly. The one state in which a boss reaches for "DM" from the
+palette — chat closed — is the one state in which it half-worked.
+
+**The mechanics.** The palette's DM/jump actions (`app/commands.jsx` →
+`onDmAgent`/`onJumpToMessage` in `app.jsx`) call `goTo('chat')` and
+then dispatch the real bridge events —
+`cafresohq:set-active-thread` and `cafresohq:prefill-composer` — in
+the same synchronous breath. That bridge was `#`-fixed once already
+(the DM entry used to open the Office floor and write a localStorage
+key nothing reads); the events are the right channel. But their only
+listeners live inside `ChatPanel`'s mount effect (`ui/chat.jsx`), and
+`ChatPanel` is not mounted while chat is closed: `ChatWindow` returns
+a collapsed pill without `chatPanel` (`app/windows.jsx`, `if (!open)`),
+and the inline chat view needs `activeView === 'chat'`, which `goTo`
+has only just *requested*. React renders after the handler finishes —
+so both events fired into a window with no listener and evaporated.
+`setChatWinOpen(true)` won the race every time; the payload lost it
+every time.
+
+**The fix** gives the bridge memory instead of a timer. `ui/chat.jsx`
+now registers module-level listeners (alive from import, long before
+any panel exists) that hold the latest dispatch in
+`_chatBridgePending`; `ChatPanel`'s mount effect replays and clears it.
+A live-mounted panel's own handler nulls the slot as it handles the
+event, so nothing ever replays twice and a handled dispatch is never
+resurrected by a later mount. No dispatch site changed, no setTimeout
+guessing at mount latency — every existing `set-active-thread` /
+`prefill-composer` caller (task ASSIGN, project rooms, InspectPanel's
+"Message") gets the same closed-panel safety for free.
+
+**The test** (`scripts/test_palette_dm_survives_a_closed_chat_panel.py`)
+lifts the real pending-buffer block and the real mount-effect body out
+of `ui/chat.jsx` and drives them in node against a fake window: a DM
+dispatched with no panel mounted must select DIRECT and prefill
+`@Aria ` on mount; a second mount must replay nothing; a live dispatch
+must be handled exactly once and never resurrected later.
+
+Fire-tested: removed the buffer, the live-clear lines and the replay
+block in place (never `git checkout`) — test exits 1 on "the bridge
+has no memory"; restored the /tmp safety copy (md5-verified
+byte-identical), all six checks green. `npm run build` rebuilt the UI
+bundle cleanly.
+
+**Suite: 400/401** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc` toolchain mismatch recorded since
+`#188` — a different session's in-progress Motoko migration on
+`src/cafresohq_state/main.mo`, a file this change never touches or
+stages. No dfx/IC action of any kind was run.

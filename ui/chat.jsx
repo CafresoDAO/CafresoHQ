@@ -11,6 +11,30 @@ const THREADS = [
   { id: 'research', label: 'RESEARCH', icon: '🔬', desc: 'Research mission rounds' },
 ];
 
+/* ---- Chat bridge pending buffer ----
+   The cafresohq:set-active-thread / cafresohq:prefill-composer events are
+   dispatched by surfaces that may fire them the very tick they OPEN chat —
+   the command palette's "DM @agent" and "Recent chat" entries call
+   goTo('chat') and dispatch immediately. When the chat panel was closed,
+   ChatPanel isn't mounted yet (ChatWindow renders only a collapsed pill,
+   and the mobile inline view needs activeView==='chat' to render), so
+   there is no listener and both events vanished: chat opened on the wrong
+   thread with an empty composer while the toast said "Composer ready".
+   These module-level listeners exist from import time, so a dispatch with
+   no panel mounted is HELD here and replayed by ChatPanel on mount; a
+   mounted panel's own handler clears the slot, so nothing replays twice. */
+const _chatBridgePending = { thread: null, prefill: null };
+if (typeof window !== 'undefined') {
+  window.addEventListener('cafresohq:set-active-thread', (e) => {
+    const t = e && e.detail;
+    if (typeof t === 'string' && t) _chatBridgePending.thread = t;
+  });
+  window.addEventListener('cafresohq:prefill-composer', (e) => {
+    const t = e && e.detail;
+    if (typeof t === 'string') _chatBridgePending.prefill = t;
+  });
+}
+
 /* ---- Swipe-to-reply/DM wrapper for mobile chat messages ---- */
 function SwipeMessage({ children, onReply, onDM, agentName }) {
   const ref = React.useRef(null);
@@ -169,12 +193,14 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
     const onSet = (e) => {
       const target = e && e.detail;
       if (typeof target === 'string' && target) setActiveThread(target);
+      _chatBridgePending.thread = null; // handled live — nothing to replay
     };
     /* Sister bridge: prefill the composer with text. Used by the Tasks
        view's "→ ASSIGN" button to drop a task into chat ready to send. */
     const onPrefill = (e) => {
       const text = e && e.detail;
       if (typeof text !== 'string') return;
+      _chatBridgePending.prefill = null; // handled live — nothing to replay
       setInput(text);
       requestAnimationFrame(() => {
         if (composerRef.current) {
@@ -187,6 +213,18 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
     };
     window.addEventListener('cafresohq:set-active-thread', onSet);
     window.addEventListener('cafresohq:prefill-composer', onPrefill);
+    /* Replay anything dispatched while no panel was mounted — the palette's
+       DM/jump commands open chat and dispatch in the same breath, before
+       this effect has ever run. Consume-and-clear so it happens once. */
+    if (_chatBridgePending.thread) {
+      setActiveThread(_chatBridgePending.thread);
+      _chatBridgePending.thread = null;
+    }
+    if (_chatBridgePending.prefill != null) {
+      const held = _chatBridgePending.prefill;
+      _chatBridgePending.prefill = null;
+      onPrefill({ detail: held });
+    }
     return () => {
       window.removeEventListener('cafresohq:set-active-thread', onSet);
       window.removeEventListener('cafresohq:prefill-composer', onPrefill);
