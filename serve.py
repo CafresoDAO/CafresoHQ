@@ -1989,6 +1989,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             state_root = os.path.realpath(str(_hq_state_dir))
             if resolved == state_root or resolved.startswith(state_root + os.sep):
                 return False
+            # (d) never serve a hidden file or anything under a hidden
+            # directory. `.env` holds the keys its own header says to fill in,
+            # and `.git/` is the whole repo — every blocked .py included — one
+            # object file at a time. Measured live (port 8971): /.git and
+            # /.env.example both answered 200 to a caller with no API key,
+            # because the static fallthrough is deliberately key-exempt. No
+            # legit UI asset starts with a dot (the canister's .well-known/
+            # ships from hq-ui/, not through this server).
+            if any(part.startswith('.')
+                   for part in os.path.relpath(resolved, root).split(os.sep)):
+                return False
             return True
         except Exception:
             return False

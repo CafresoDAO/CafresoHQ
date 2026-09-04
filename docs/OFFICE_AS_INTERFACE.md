@@ -28058,3 +28058,70 @@ change covers one option + comment in `app.jsx`, one retired check in
 `#177`'s test, the new test file and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, and no dfx/IC
 action of any kind was run.
+
+---
+
+## 212. The front door checked for a badge, and the side door handed out the building's keys
+
+**The reading.** Assigned area: the PWA and build pipeline — `sw.js`,
+the manifest wiring, `scripts/build_ui_bundle.mjs` /
+`scripts/build_hq_ui.py`, and the static-serving and cache paths in
+`serve.py`. The pipeline itself checked out: the allowlist worker is
+sound (and stays deliberately unregistered per `docs/strategy/06`),
+both `<!--HQ_SCRIPTS-->` injectors agree with `check_bundle.py`'s
+contract, the `end_headers` no-store override means local rebuilds can
+never serve stale hashed chunks, and the canister's `.ic-assets.json5`
+pins `bundle/**` immutable against a must-revalidate `hq.html`. The
+live find was in the static fallthrough's gate.
+
+**The mechanism.** The static fallthrough is deliberately key-exempt —
+a `<link>` tag cannot send `X-API-Key`, so `_KEY_PROTECTED_PREFIXES`
+leaves the UI shell open and `_static_path_allowed` is the ONLY fence
+on what `SimpleHTTPRequestHandler` may hand out of the web root. That
+fence had exactly three rules: stay inside the root, never `*.py`,
+never the state dir. Nothing hid the hidden files. Measured live
+(port 8971, no key supplied, isolated state dir):
+
+    GET /.git          → 200
+    GET /.env.example  → 200
+    GET /.gitignore    → 200
+
+`.env.example`'s own header says: copy to `.env` (gitignored) and fill
+in the keys — so on any install that followed its instructions, the
+secrets file sits at the web root, one GET away. And `/.git/` is the
+whole repository: `config` (remote URLs, sometimes embedded tokens),
+`HEAD`, `packed-refs`, and the object store — which serves every
+blocked `.py` after all, one object file at a time, making rule (b) a
+fence with its own gate open. The LAN URL is printed on every boot,
+and directory listings being off only hid the map, not the doors.
+
+**The fix.** Rule (d) in `_static_path_allowed`: refuse any path whose
+resolved form contains a hidden segment. One membership test in the
+style of the three rules above it. No legitimate UI asset starts with
+a dot — the canister's `.well-known/ic-domains` ships from `hq-ui/`
+via dfx, never through this server — so nothing the shell loads is
+touched.
+
+**The test**
+(`scripts/test_a_hidden_file_never_leaves_the_building.py`) boots the
+REAL `serve.py` on a free port with a scratch
+`CAFRESOHQ_HQ_STATE_DIR` and asks over actual HTTP, the way an
+attacker would: five committed hidden files must 404, `/.git/config`,
+`/.git/HEAD`, `/.env` and a hidden directory must 404 whether or not
+they exist, and — the other half — `styles.css`, `sw.js`, the
+webmanifest and an icon must still answer 200, so a gate that refuses
+everything cannot pass either.
+
+Fire-tested: removed rule (d) in place — the five committed hidden
+files all answered 200, exit 1. Restored from the /tmp safety copy
+(cmp-verified byte-identical, never `git checkout`), test green.
+
+**Suite: 395/396** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` implicit-`transient`
+toolchain mismatch recorded in `#188`, `#193`, `#203` and `#208` — a
+different session's in-progress Motoko migration on a file this change
+never touches. This change covers only `_static_path_allowed` in
+`serve.py`, the one new test file and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, and no
+dfx/IC action of any kind was run.
