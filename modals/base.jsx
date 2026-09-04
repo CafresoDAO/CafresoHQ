@@ -200,6 +200,20 @@ function Modal({ open, onClose, title, subtitle, headerActions, footer, size = '
 
     const onKey = (e) => {
       if (e.key === 'Escape' && dismissable) {
+        /* The contract at the top of this component — "skips when typing in
+           inputs/textareas" — was documented and never implemented: Escape
+           closed unconditionally, so a boss half-way through a JOB
+           DESCRIPTION who pressed Esc (IME cancel, autocomplete dismiss,
+           muscle memory) lost the whole draft with no confirm and no way
+           back. Only text-entry targets are skipped: a checkbox, radio,
+           range or button is not "typing", and Esc from those still closes. */
+        const t = e.target;
+        const typing = !!t && (
+          t.tagName === 'TEXTAREA' ||
+          t.isContentEditable === true ||
+          (t.tagName === 'INPUT' &&
+           !/^(checkbox|radio|range|button|submit|reset|file|color)$/i.test(t.type || 'text')));
+        if (typing) return;
         e.stopPropagation();
         onClose && onClose();
         return;

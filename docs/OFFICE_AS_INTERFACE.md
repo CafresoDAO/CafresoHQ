@@ -28737,3 +28737,62 @@ touches. This change covers only the vault-write branch of `run_tool`
 in `night_runner.py`, the one new test file and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, and no
 dfx/IC action of any kind was run.
+
+---
+
+## 223. Escape while typing ate the whole draft
+
+**The reading.** Assigned area: the modals directory — base, collab,
+delivery, hire, settings, starter (providers carries #197 and was left
+alone). The hire form's tool grid reads through `formToolIds`, the
+starter cards' vault and search honesty gates, the workflow modal's
+inbox-only step filter, the wallet card's confirm-then-move ordering,
+and the settings import's file-mirror pushes all checked out. The live
+find was in the shared shell every one of those dialogs stands on.
+
+**The bug.** `<Modal>`'s header comment promises "Esc to close (skips
+when typing in inputs/textareas)" — and the keydown handler never
+implemented the parenthesis. Escape closed unconditionally, from any
+focused element. Every dialog in the app rides this shell, so the blast
+radius is every form in the product: a boss half-way through the hire
+form's JOB DESCRIPTION who pressed Esc — IME cancel, autocomplete
+dismiss, plain muscle memory from editors where Esc means "leave this
+field" — lost the name, the role, the prompt, the tool ticks and the
+creativity dial in one keystroke, with no confirm and no way back:
+HireModal's own `[open]`-reset effect (correct on its own terms) wipes
+the state before the modal can be reopened. Same fate for a workflow
+draft, a meeting-room setup, a starter-task subject. The shell already
+learned this exact lesson once, for the mouse: `backdropPressRef` exists
+because a drag-select that ended on the backdrop used to "dismiss the
+modal and eat the draft". The keyboard path had the same hole and no
+guard.
+
+**The fix.** Implement the documented contract, no more. The Escape
+branch now returns without closing when the event target is a text-entry
+element — textarea, contenteditable, or an input whose type takes typing.
+A checkbox, radio, range or button is not "typing", so Esc from those
+still closes, as do the CLOSE button, the backdrop, and Esc once focus
+has left the field. `dismissable={false}` and the Tab focus trap are
+untouched.
+
+**The proof.** `scripts/test_escape_mid_typing_does_not_eat_the_draft.py`
+lifts the real `onKey` handler out of `modals/base.jsx` by brace-matching,
+rebuilds its closure in node with spy events, and runs it: Esc from a
+textarea, a text input, a bare input (type defaults to text) and a
+contenteditable must not close; Esc from a checkbox, a range, a button
+and the dialog body must; `dismissable=false` still refuses everywhere;
+Tab still wraps last → first.
+
+Fire-tested: reverted the guard in place (never `git checkout`), the four
+typing scenarios closed the modal and the suite exited 1; restored from
+the /tmp safety copy (md5-verified byte-identical), all green.
+`npm run build` rebuilt dist-ui clean.
+
+**Suite: 401/402** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` toolchain mismatch
+recorded in `#188` through `#218` — a different session's in-progress
+Motoko migration on a file this change never touches. This change covers
+only the Escape branch of `Modal`'s key handler in `modals/base.jsx`, the
+one new test file and this entry; `src/cafresohq_state/main.mo` was never
+staged or edited, and no dfx/IC action of any kind was run.
