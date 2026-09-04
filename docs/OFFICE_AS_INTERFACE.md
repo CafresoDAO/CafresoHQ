@@ -30390,3 +30390,98 @@ onward, on a file a foreign session owns and this change never touches).
 This change covers only `applyStatus` in `app/worklog.jsx`, the one new test
 file, and this entry; `src/cafresohq_state/main.mo` was never staged or
 edited, and no dfx/IC action of any kind was run.
+
+---
+
+## 247. A running Hermes gateway could never be the shelf's brain
+
+**The reading.** Assigned area: `modals/hire.jsx` — JOB POSTINGS, the first
+screen a new boss meets. Below the front-desk row, the seven OPENSWARM
+candidate templates do not carry a brain of their own worth trusting: each
+pins a hardcoded `cafresohq:sonnet`, which `#a candidate names the brain it
+will use` replaced with one resolved from the *same* probe the desk cards are
+drawn from. That resolution has a gate, `candidateReady(d)`, and its job is
+to be **stricter** than "has a desk card" — a Codex that won't start and a
+Hermes that isn't running both deserve a card and neither may become the
+brain seven specialists are silently hired onto.
+
+The Hermes arm read:
+
+    if (d.id === 'hermes') return det.installed && det.version === 'reachable';
+
+`'reachable'` is the **local-daemon** word. `drivers/local_http.py` writes it,
+and only it, off the `/models` liveness probe. Hermes has never spoken it —
+`drivers/hermes.py` reports its own liveness in its own vocabulary:
+
+    d['version']    = 'gateway up' if up else ''
+    d['probeError'] = '' if up else 'is not running'
+
+So the arm compared against a string the driver cannot produce, and was false
+on every machine in the world, gateway up or gateway down. The branch that
+exists to admit a live Hermes admitted nothing, ever.
+
+Hermes sits 7th in `CANDIDATE_BRAINS`, so anywhere a local daemon answers or
+a CLI subscription is signed in, a higher entry masks the wrong answer — which
+is why this survived the pass that wrote the gate. On a **Hermes-only** office
+— the house runtime, the one the managed Gemma rides, the configuration §3.1
+names as the original default — it is the whole shelf, and that single screen
+said both things at once:
+
+    AT THE FRONT DESK — found on this machine, ready to join
+      Hermes  [FOUND]   Set up on this machine, with its gateway running.
+
+    Vera   VIRTUAL ASSISTANT   no brain yet — add one in Settings → Connections
+    Kip    DEEP RESEARCH       no brain yet — add one in Settings → Connections
+    ⚡SEED SWARM → "There is no brain on this machine yet, so these 7 would sit
+                    at their desks unable to work."
+
+The desk card printed a gateway the probe had just found up; one row below,
+every candidate denied it, and the bulk tile refused the hire outright. The
+office contradicting a fact it had already measured, on the onboarding screen,
+with the refusal landing on exactly the boss who *was* ready to hire.
+
+**The fix.** One word — compare against the string the driver actually emits:
+
+    if (d.id === 'hermes') return det.installed && det.version === 'gateway up';
+
+The readiness bar does not move. `version` is `''` in precisely the
+gateway-down case, so a stopped Hermes still gets its `NOT RUNNING` desk card
+and is still never chosen; nothing changes for the daemons, the CLIs or the
+cloud accounts. What changes is that a runtime the office found running is now
+allowed to be believed by the row underneath.
+
+**The proof.**
+`scripts/test_the_shelf_speaks_the_hermes_drivers_own_word.py` reads the
+driver's side **out of the driver** rather than assuming it — `hermes.py`
+still says `'gateway up' if up else ''`, still marks a stopped gateway with
+`probeError`, and still contains the word `'reachable'` nowhere;
+`local_http.py` is still the file that owns that word. It then brace-lifts the
+real `candidateReady` together with the real `FRONT_DESK` it closes over (a
+reimplementation would test the test) plus `CANDIDATE_BRAINS`/`candidateBrain`
+from `app/cast.jsx`, and runs them in node against the exact `detect()`
+payloads `GET /agent/drivers?probe=1` returns for Hermes both ways round:
+gateway up → ready and a Hermes-only office resolves to `hermes:hermes-agent`;
+gateway down → not ready and the office resolves to `null`, which is still the
+honest answer. The bar is asserted unmoved for a daemon nobody answered, a
+daemon that answered, a Codex that won't start and a cloud account with no
+sign-in, and free-and-local is still shown to outrank the house runtime when
+both are up.
+
+Fire-tested: copied the fixed `modals/hire.jsx` to `/tmp`, reverted the one
+comparison in place with the editor (never `git checkout -- <file>`) — three
+checks failed (the arm tests hermes against the daemon word; a gateway found
+UP is not ready; a Hermes-only office resolves to no brain), exit 1. Restored
+from the `/tmp` copy, confirmed byte-identical by `md5`
+(`189f26518563732e60451758848ee6c1`), reran — all checks passed, exit 0.
+`scripts/test_a_candidate_names_the_brain_it_will_use.py`, which owns this
+gate's "stricter than a desk card" rule, passes unchanged.
+
+`npm run build` run after the change.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file
+a foreign session owns and this change never touches). This change covers one
+comparison in `modals/hire.jsx`, the one new test file, the rebuilt bundle and
+this entry; `src/cafresohq_state/main.mo` was never staged or edited, and no
+dfx/IC action of any kind was run.

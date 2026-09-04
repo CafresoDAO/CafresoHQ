@@ -338,7 +338,22 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
   const candidateReady = (d) => {
     const det = (d && d.detect) || {};
     if (d.id === 'lmstudio' || d.id === 'ollama') return det.version === 'reachable';
-    if (d.id === 'hermes') return det.installed && det.version === 'reachable';
+    /* 'reachable' is the LOCAL-DAEMON word (drivers/local_http.py writes it
+       from the /models probe). Hermes has never spoken it: drivers/hermes.py
+       reports its liveness as `version = 'gateway up' if up else ''`, with
+       `probeError: 'is not running'` on the down side. So this arm compared
+       against a string the driver cannot produce and was false on EVERY
+       machine — including one whose gateway the probe had just found up.
+       Hermes is 7th in CANDIDATE_BRAINS, so on a box that also runs a local
+       daemon or holds a CLI subscription the wrong answer is masked; on a
+       Hermes-only office it is the whole shelf. There, one screen said both
+       "Hermes · FOUND · Set up on this machine, with its gateway running"
+       and, one row below, "no brain yet — add one in Settings → Connections"
+       on every candidate, with ⚡SEED SWARM refusing outright: "There is no
+       brain on this machine yet, so these N would sit at their desks unable
+       to work." The office contradicting its own measurement, and the
+       refusal landing on the boss who was actually ready to hire. */
+    if (d.id === 'hermes') return det.installed && det.version === 'gateway up';
     if (FRONT_DESK[d.id] && FRONT_DESK[d.id].cloud) return !!det.authenticated;
     return !!det.installed && !det.probeError;
   };
