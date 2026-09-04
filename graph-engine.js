@@ -356,7 +356,38 @@ class GraphEngine {
   // Snapshot for public sharing (Phase 2): positions + community + bc baked in.
   exportSnapshot() {
     const exp = this.graph.export();
-    return { graph: exp, analytics: this.analytics, ts: this.opts.now || 0 };
+    /* Publish only what the boss is LOOKING at. A node dropped via "Hide
+       node", excluded by the filter box, or outside the local-depth set is
+       invisible on the canvas — but graph.export() carries the whole graph,
+       so every one of them (title, path, tags, the raw backend record in
+       `_node`) rode along into the snapshot JSON, which /graph/snapshot
+       serves WITHOUT the API key by design. Anyone handed the share link
+       could read the very notes the boss had just excluded from view.
+       Prune those nodes, every edge touching them, and their analytics
+       traces (nodeAttrs keys, top-influential rows, cluster exemplars,
+       the gap's endpoint notes) before the payload leaves the office. */
+    const dropped = new Set();
+    exp.nodes = (exp.nodes || []).filter((n) => {
+      if (this._visible(n.key, n.attributes || {})) return true;
+      dropped.add(n.key);
+      return false;
+    });
+    let analytics = this.analytics;
+    if (dropped.size) {
+      exp.edges = (exp.edges || []).filter((e) => !dropped.has(e.source) && !dropped.has(e.target));
+      if (analytics) {
+        const nodeAttrs = {};
+        for (const id in (analytics.nodeAttrs || {})) { if (!dropped.has(id)) nodeAttrs[id] = analytics.nodeAttrs[id]; }
+        analytics = {
+          ...analytics,
+          nodeAttrs,
+          topInfluential: (analytics.topInfluential || []).filter((t) => t && !dropped.has(t.id)),
+          clusters: (analytics.clusters || []).map((c) => (c ? { ...c, topNodes: (c.topNodes || []).filter((id) => !dropped.has(id)) } : c)),
+          gap: (analytics.gap && (dropped.has(analytics.gap.aTop) || dropped.has(analytics.gap.bTop))) ? null : analytics.gap,
+        };
+      }
+    }
+    return { graph: exp, analytics, ts: this.opts.now || 0 };
   }
 
   resize() { try { this.renderer.refresh(); this.renderer.getCamera().setState(this.renderer.getCamera().getState()); } catch (_) {} }

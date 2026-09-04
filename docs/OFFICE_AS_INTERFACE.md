@@ -27610,3 +27610,80 @@ is the same pre-existing `moc` toolchain mismatch recorded in `#188`,
 only `night_runner.py`, the one new test file, and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, and no
 dfx/IC action of any kind was run.
+
+---
+
+## 206. Hiding a note from the graph did not hide it from the share link
+
+**The reading.** Assigned area: the knowledge-graph builder —
+`kg_builder.py` (three-backend extraction, signature caches, the
+HQ-state overlay), the `/graph/publish` + `/graph/snapshot` routes in
+`serve.py`, and `graph-viewer.js` on the consumption side. The builder
+checked out clean: the wikilink resolver, the typed-edge classifier,
+the fs/OCI signature caches (both fold in the hq-state JSON), and the
+publish route's slug handling (`token_hex`, strict `fullmatch` on
+read) all do what they say. The live find sat one seam upstream, in
+the exact payload `/graph/publish` stores: `graph-engine.js`
+`exportSnapshot()` returned `this.graph.export()` — the WHOLE graph.
+
+**The mechanism.** The canvas the boss is looking at when they press
+"⤴ Share" is the graph AFTER the reducers: nodes dropped through the
+right-click "Hide node" menu (`views/graph.jsx` → `engine.setHidden`),
+nodes excluded by the filter box, nodes outside the local-depth set.
+None of that ever mutates the graphology graph — it lives in
+`hidden`/`filterFn`/`localSet` and is consulted only by `_visible()`
+at render time. `exportSnapshot()` never asked. So every excluded
+node — title, vault path, tags, and the raw backend record riding on
+`_node` (for message-thread nodes that record carries a body
+`preview`) — was serialized into the publish payload, stored under
+`hq-state/public-graphs/<slug>.json`, and served back by
+`/graph/snapshot/<slug>`, which sits OUTSIDE `_KEY_PROTECTED_PREFIXES`
+by design: it is the public share surface. Hide the salary note,
+share the graph, and anyone handed the link could read the salary
+note's title, path, tags and analytics rank straight out of the JSON
+(and on the rendered viewer too — `graph-viewer.js` draws whatever
+nodes the snapshot holds). The analytics block leaked the same ids a
+second way: `nodeAttrs` keys, `topInfluential` rows, each cluster's
+`topNodes` exemplars, and the structural gap's `aTop`/`bTop`.
+
+**The fix.** `exportSnapshot()` prunes before the payload leaves the
+engine: every node `_visible()` rejects is dropped from the export,
+every edge touching one goes with it, and the dropped ids are scrubbed
+from the analytics traces (`nodeAttrs`, `topInfluential`,
+`clusters[].topNodes`, and the gap is withheld entirely when either
+endpoint was excluded). One visibility verdict owns both the canvas
+and the snapshot — the export did not grow a second copy of the
+filter logic, it calls the same `_visible()` the reducers use. With
+nothing excluded the export is byte-for-byte what it always was, and
+the viewer already guards every analytics field it reads (and
+recomputes `metrics` counts off the graph it renders, per the
+maxnodes fix), so nothing downstream changes shape.
+
+**The test**
+(`scripts/test_a_hidden_note_never_boards_the_public_snapshot.py`)
+lifts the REAL `_visible` and `exportSnapshot` out of
+`graph-engine.js` (brace-balanced extraction, the
+`test_graph_filter_speaks_its_own_placeholder_syntax.py` technique)
+and genuinely executes the export via Node against a graphology-shaped
+stand-in: with nothing excluded all nodes/edges/analytics/ts ride
+through untouched; with the secret note hidden it is absent from the
+nodes, both its edges are gone while the visible pair keeps theirs,
+`JSON.stringify` of the whole snapshot no longer contains it anywhere,
+and `nodeAttrs`/`topInfluential`/`topNodes`/`gap` are all scrubbed; a
+filter-box exclusion prunes through the same verdict.
+
+Fire-tested: reverted `exportSnapshot` to its pre-fix one-liner in
+place — the suite failed 8 checks (the hidden note exported, its
+edges and analytics traces with it), exit 1. Restored from the /tmp
+safety copy (md5-verified byte-identical, never `git checkout`), test
+green, `npm run build` re-run (the dev server never rebuilds
+`dist-ui/`).
+
+**Suite: 390/391** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` implicit-`transient`
+toolchain mismatch recorded in `#188`, `#193` and `#203` — a different
+session's in-progress Motoko migration on a file this change never
+touches. This change covers only `graph-engine.js`, the one new test
+file, and this entry; `src/cafresohq_state/main.mo` was never staged
+or edited, and no dfx/IC action of any kind was run.
