@@ -638,7 +638,15 @@ def _fs_delete(self):
         return self._send_json(403, {'error': str(e)})
     except Exception as e:
         return self._send_json(400, {'error': f'invalid path: {e}'})
-    if not target.exists() and not target.is_symlink():
+    # _validate_path resolves through symlinks (so the whitelist can't be
+    # bypassed by one) — which means `target` is already the link's REAL
+    # destination, and target.is_symlink() below it can never be True. The
+    # link-ness has to be read off the unresolved, anchored path instead
+    # (same anchoring _fs_browse/_fs_file/_fs_stat use, just without the
+    # resolve() that would erase the very thing being asked about).
+    link_path = _workspace_path(raw)
+    is_link = link_path.is_symlink()
+    if not target.exists() and not is_link:
         return self._send_json(404, {'error': 'not found'})
     # Never delete an allowed-dir root itself.
     roots = {str(pathlib.Path(d).resolve()) for d in _cafresohq_allowed_dirs}
@@ -646,12 +654,16 @@ def _fs_delete(self):
         return self._send_json(403, {'error': 'refusing to delete a workspace root'})
     try:
         # Follow-the-link guard: a symlinked dir is unlinked (remove the
-        # link), never rmtree'd (which would wipe the link's target).
-        if target.is_dir() and not target.is_symlink():
+        # link), never rmtree'd (which would wipe the link's target). Using
+        # `target` here (the resolved real destination) instead of
+        # `link_path` used to unlink the wrong thing whenever is_link was
+        # (wrongly) checked on `target` too — see the comment above.
+        if target.is_dir() and not is_link:
             shutil.rmtree(str(target))
         else:
-            target.unlink()
+            (link_path if is_link else target).unlink()
     except Exception as e:
         return self._send_json(500, {'error': str(e)})
-    return self._send_json(200, {'ok': True, 'deleted': str(target)})
+    return self._send_json(200, {'ok': True,
+                                 'deleted': str(link_path if is_link else target)})
 

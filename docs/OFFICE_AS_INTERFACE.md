@@ -28936,3 +28936,63 @@ migration on a file this change never touches. This change covers only
 the `codex` branch of `downgradeElevatedModel` in `app/agents.jsx`, the
 one new test file and this entry; `src/cafresohq_state/main.mo` was never
 staged or edited, and no dfx/IC action of any kind was run.
+
+---
+
+## 226. Deleting a symlinked folder destroyed what it pointed at, not the link
+
+**Claim vs. reality.** `_fs_delete`'s own comment states the contract
+plainly: "a symlinked dir is unlinked (remove the link), never rmtree'd
+(which would wipe the link's target)." The code right under it can never
+honor that. `target = self._validate_path(raw)` — same as every other
+`/fs/*` route — resolves through symlinks before returning, on purpose,
+so the whitelist check can't be dodged by one. But that means `target`
+is already the link's REAL destination by the time the delete logic sees
+it, and `target.is_symlink()` on an already-resolved path is always
+False (the thing a link points at isn't itself a link). So the "follow
+the link" branch can never be taken: any symlinked directory in the
+sandbox fell straight into `shutil.rmtree(str(target))` — on the
+resolved path — recursively destroying the real directory the link
+pointed to, anywhere else in the sandbox, while leaving the (now
+dangling) link itself sitting there untouched. Reproduced directly:
+`allowed/scratch/link_to_keep` → `allowed/keep/important_data/keepme.txt`;
+`POST /fs/delete {path: ".../link_to_keep"}` returned `200 ok` and wiped
+`important_data/` and `keepme.txt`, while `link_to_keep` remained on
+disk as a broken link.
+
+**Fix.** Read link-ness off the *unresolved*, anchored path instead of
+the already-dereferenced `target` — `_workspace_path(raw)` (the same
+anchoring helper `_fs_browse`/`_fs_file`/`_fs_stat` already use, minus
+the `.resolve()` that erases the very thing being asked about). When
+that path is a symlink, `shutil.rmtree` is skipped and the *link path*
+(not `target`) is the one unlinked, so only the link disappears and its
+real target is untouched. A broken symlink (target no longer exists) is
+now also deletable, which the `target.exists()`-gated 404 previously
+refused outright — a smaller side fix from the same root cause. Plain,
+non-symlinked directories are unaffected — still really `rmtree`'d.
+
+**Test coverage.**
+`scripts/test_fs_delete_symlinked_dir_spares_the_target.py` wires
+`fs_routes`'s module globals the way `serve.py` does at import and calls
+the real `_fs_delete` against real temp directories: deleting a symlinked
+dir leaves the real target and its file intact and removes only the
+link; an ordinary directory is still genuinely deleted. Fire-tested: the
+fix copied to `/tmp`, reverted in place (never `git checkout`) — the
+symlink-target-survives checks failed exactly as expected (the real
+directory and its file were gone, the link remained as a dangling
+symlink); the `/tmp` copy restored, md5-verified byte-identical, all
+green again. Pure `.py` change — no `npm run build` needed.
+
+**Suite:** `python3 scripts/run_tests.py`. The sole pre-existing failure
+is unchanged: `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the `#188`–`#223` `moc`/M0219 `main.mo` toolchain mismatch, a different
+session's in-progress migration this change never touches). This change
+touches only `_fs_delete` in `fs_routes.py`, the one new test file, and
+this entry; `src/cafresohq_state/main.mo` was never staged or edited,
+and no dfx/IC/mainnet action of any kind was run.
+
+**Lesson.** A guard comment describing what the code below it does is
+not proof that it does it — `.resolve()` quietly erasing the one bit of
+information ("was this a symlink?") the very next line asks about is
+the kind of thing that only shows up by tracing the actual value flowing
+through, not by reading the check in isolation.
