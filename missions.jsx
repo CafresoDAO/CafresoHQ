@@ -243,17 +243,29 @@ async function runMissionIteration(ctx) {
   } catch (_e) {}
 
   /* For project-study missions, also fetch the project file tree so the
-     agent knows what files are available to read. */
+     agent knows what files are available to read.
+
+     Through CafresoHQClient.toolExec, NOT a bare fetch('/tools/exec'). The
+     API does not live at the page root: _API_BASE is '/u/<slug>' when Caddy
+     serves the office behind the gateway, and a whole other ORIGIN when the
+     UI is on the canister and the shell injects `?api=…`. Every other tool
+     call in the office already goes through the client for exactly that
+     reason (hq-runtime's DIR_LIST/FILE_READ/BASH all do). This one hard-coded
+     the path, so on every hosted deployment the POST landed on the wrong
+     origin/prefix, `data.ok` was never true, and the prompt handed the agent
+     `(could not list files)` — for a study mission, whose entire brief is
+     "read 1-3 files", every round for the whole night.
+
+     `meta.failed` for the second half of the same defect: DIR_LIST soft-fails
+     with ok:true and `Not a directory: <path>` AS the result (serve.py), which
+     the old `if (data.ok)` accepted and listed to the agent as a filename. */
   let fileTree = [];
   if (mission.type === 'project-study' && mission.projectPath) {
     try {
-      const res = await fetch('/tools/exec', {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ tool: 'DIR_LIST', arg: mission.projectPath }),
-      });
-      const data = await res.json();
-      if (data.ok) {
-        fileTree = String(data.result || '').split('\n').filter(Boolean).map(line => {
+      const meta = {};
+      const listing = await CafresoHQClient.toolExec('DIR_LIST', mission.projectPath, { meta });
+      if (!meta.failed) {
+        fileTree = String(listing || '').split('\n').filter(Boolean).map(line => {
           const isDir = line.endsWith('/') || line.endsWith('\\');
           const name = line.replace(/[\\/]+$/, '');
           return { name, isDir };

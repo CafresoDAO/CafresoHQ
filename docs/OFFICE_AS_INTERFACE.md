@@ -29976,3 +29976,82 @@ failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
 This change covers only the CEO turn in `ui/chat.jsx`, the one new test
 file, and this entry; `src/cafresohq_state/main.mo` was never staged or
 edited, and no dfx/IC action of any kind was run.
+
+---
+
+## 242. A study mission was reading the project's file tree from the wrong address
+
+**The reading.** Assigned area: `missions.jsx` — research missions and the
+Night Shift. A project-study mission opens each round by listing the project
+directory, so `buildProjectStudyPrompt` can tell the coworker *which files
+exist* under a brief whose first rule is "Read 1-3 files to understand how
+something works". `runMissionIteration` did that with one hard-coded,
+page-root request: `fetch('/tools/exec', …)` with `{ tool: 'DIR_LIST', arg:
+mission.projectPath }`, then `if (data.ok)`.
+
+**The bug.** The office's API is not at the page root. `_API_BASE`
+(`claude-client.jsx`) resolves to `/u/<slug>` when Caddy serves the office
+behind the gateway, and to an entirely different **origin** when the UI is on
+the ICP canister and the shell injects `?api=https://hq.cafreso.com/u/<slug>`.
+Every other tool call in the office goes through `CafresoHQClient.toolExec`,
+which prefixes that base — `hq-runtime.jsx`'s `FILE_READ`, `DIR_LIST`,
+`FILE_WRITE` and `BASH` all do; this was the only call site in the repo that
+wrote the path itself. So on every hosted deployment the POST landed
+somewhere that isn't the API: a 404, or an HTML error page whose `.json()`
+throws straight into the swallowing `catch (_e) {}`. Either way `fileTree`
+stayed `[]` and the prompt rendered its fallback —
+
+```
+Project file tree (top-level):
+  (could not list files)
+```
+
+— every round, for the whole mission. The mission still ran, still burned its
+token budget, still wrote notes; they were just notes about a project the
+coworker had never been shown. Nothing on the card said so: the mission
+reported its rounds and its saved-note count exactly like a healthy one.
+
+The same `if (data.ok)` carried the second half. `DIR_LIST` **soft-fails**:
+`serve.py` answers a bad path with `ok: True, failed: True, result: 'Not a
+directory: <path>'`, because the coworker needs that sentence to recover (the
+`failed` flag is the office's own answer to that, added after a failed
+DIR_LIST was watched live being captioned "📁 Opened ./site" directly above
+its own "Not a directory: ./site"). `ok` alone accepted the error sentence and listed it
+into the tree as if it were a file.
+
+**The fix.** Route the listing through the same client every other tool call
+uses — `CafresoHQClient.toolExec('DIR_LIST', mission.projectPath, { meta })`
+— so it inherits `_API_BASE`, and consult `meta.failed` so a soft failure
+yields no tree rather than a fabricated one. The parsing, the fallback, and
+the swallowing catch are unchanged: a genuinely unlistable path still says
+"(could not list files)", honestly, instead of being told the wrong address.
+
+**The proof.**
+`scripts/test_a_study_mission_can_see_the_project.py` checks that no
+root-relative `/tools/…` fetch survives in the code (comments about the old
+one don't count — the check reads the source with comments stripped), then
+extracts the **real** `fileTree` block out of `runMissionIteration` and
+executes it under node against two stubs: a `fetch` that flags the test if it
+is touched at all, and a `CafresoHQClient.toolExec` that records its
+arguments and can be made to soft-fail. It asserts the block calls
+`toolExec('DIR_LIST', '/srv/proj')` exactly once and never reaches for
+`fetch`, that a real listing still parses (`src/` → `isDir: true`), and that
+a soft failure yields an empty tree instead of a one-entry tree named
+"Not a directory: /srv/proj".
+
+Fire-tested: copied the fixed `missions.jsx` to `/tmp`, reverted the block to
+the raw `fetch('/tools/exec')` in place (never `git checkout -- <file>`) —
+six checks failed, including the live ones (`bareFetch` true, `calls` empty,
+`fileTree` empty), exit 1. Restored from the `/tmp` copy, confirmed
+byte-identical by `md5` (`5c567b99a94ccd0f064e6b1470ec04be`), reran — all
+eleven checks passed, exit 0.
+
+`npm run build` run after the change.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the same `moc`/M0219 `main.mo` toolchain mismatch tracked from `#188`
+onward, on a file a foreign session owns and this change never touches).
+This change covers only the `fileTree` block in `missions.jsx`, the one new
+test file, and this entry; `src/cafresohq_state/main.mo` was never staged or
+edited, and no dfx/IC action of any kind was run.
