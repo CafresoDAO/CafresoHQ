@@ -477,7 +477,20 @@ function claimedPaths(text) {
 function agentFiledPath(visits) {
   let last = null;
   for (const v of (visits || [])) {
-    if (!v || !CABINET_WRITE.test(String(v.name || ''))) continue;
+    /* A VAULT_NEW that THREW still leaves a visit behind — `arg` is the path
+       it was trying to write, `failed` is the server saying it never landed
+       (hq-runtime.jsx's tool loop: catch sets `meta.failed = true`, the
+       `arg` on the done event is unchanged). Skipping the failed check here
+       meant a write that errored out still won `last`, so the host treated
+       the coworker as having self-filed at a path that was never created —
+       and because `ownPath` came back truthy, app.jsx's
+       `ownPath || await fileDelivery(...)` never ran the host's own
+       fallback filing either. The task's artifactPath — the out-tray's
+       "open the latest" — pointed at a cabinet entry that plain doesn't
+       exist, and the delivery that should have landed as a host-filed copy
+       never landed at all. `unwrittenPaths` and `consulted` below both
+       already skip `v.failed` for the same reason; this one didn't. */
+    if (!v || v.failed || !CABINET_WRITE.test(String(v.name || ''))) continue;
     const p = String(v.arg || '').trim();
     if (p) last = p;          // the newest write wins — that's the deliverable
   }

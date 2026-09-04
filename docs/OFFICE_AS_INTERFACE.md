@@ -29129,3 +29129,75 @@ touches). This change covers only `_hq_state_sig_update()` in
 `kg_builder.py`, the one new test file, and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, and no
 dfx/IC action of any kind was run.
+
+---
+
+## 229. A failed vault write still got credited as filed
+
+`app/artifacts.jsx` decides, at the end of a task, which of two things
+happened: did the coworker file their own deliverable to the cabinet
+(a specialist role told to `[VAULT_NEW: Research/<topic>.md]` its own
+work), or does the host need to file a copy itself? `agentFiledPath()`
+answers that by scanning the run's tool visits for a cabinet-write call
+(`VAULT_NEW`, `VAULT_APPEND`, `EXPORT_PPTX`, …) and handing back the
+newest one's path. `app.jsx` then does
+`const ownPath = agentFiledPath(toolVisits); filedPath = ownPath ||
+await fileDelivery(...)` — if the coworker's own path came back, the
+host trusts it and skips filing its own copy, exactly as `#405`'s
+comment in the same file describes ("filing a second copy would put two
+of one thing in the cabinet").
+
+**The bug.** `agentFiledPath()` never checked `v.failed`. hq-runtime.jsx's
+tool loop wraps every call in try/catch: when a `VAULT_NEW` throws
+(cabinet unreachable mid-write, a rejected write, anything), the `catch`
+sets `meta.failed = true` and the `done` event still carries the
+`arg` the coworker WAS TRYING to write — only `result` becomes the error
+text. That visit reaches `toolVisits` as
+`{ name: 'VAULT_NEW', arg: 'Research/x.md', failed: true }`, and
+`agentFiledPath` handed back `'Research/x.md'` anyway, as if the write
+had landed. Two things followed: `task.artifactPath` — what the
+out-tray's "open the latest" click reads — pointed at a cabinet entry
+that plain does not exist, and because `ownPath` came back truthy, the
+host's own `fileDelivery` fallback never ran either. A task could finish,
+show as delivered, and leave nothing in the cabinet at all — not the
+coworker's file (it failed) and not the host's backup copy (it never
+tried), with the only visible trace a dead link on the task card.
+`unwrittenPaths()` and the `consulted` check a few dozen lines below in
+the same file already skip `v.failed` for this exact reason;
+`agentFiledPath` was the one caller that hadn't been taught it.
+
+**The fix.** Added `v.failed` to `agentFiledPath`'s skip condition,
+matching the guard already used by its neighbors in the same file. A
+failed cabinet write no longer counts as "the coworker filed it
+themselves," so the newest *successful* write wins, and a run where
+every cabinet write failed correctly reports nothing filed — which lets
+`app.jsx`'s `ownPath || await fileDelivery(...)` fall through to the
+host's own filing instead of leaving the task with a receipt for a file
+that was never written.
+
+**The proof.**
+`scripts/test_agent_filed_path_ignores_failed_vault_write.py` runs the
+real (import/export-stripped) `app/artifacts.jsx` under node and checks:
+a lone failed `VAULT_NEW` returns `null`; a failed write followed by a
+successful one returns the successful one's path; a successful write
+followed by a later failed retry still returns the earlier success, not
+`null`; a run where every cabinet write failed returns `null`; and an
+ordinary successful write is unaffected.
+
+Fire-tested: copied the fixed `app/artifacts.jsx` to `/tmp`, reverted the
+`v.failed` check in place (never `git checkout -- <file>`) — three of
+the five checks failed, reporting the failed write's path back instead
+of `null`/the correct survivor, exit 1. Restored from the `/tmp` copy,
+confirmed byte-identical by `md5`, reran — all five checks passed, exit
+0.
+
+`npm run build` was run after the `.jsx` change.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the same `moc`/M0219 `main.mo` toolchain mismatch tracked in `#188`
+through `#228`, on a file a foreign session owns and this change never
+touches). This change covers only `agentFiledPath()` in
+`app/artifacts.jsx`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, and no
+dfx/IC action of any kind was run.
