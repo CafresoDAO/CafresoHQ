@@ -29568,3 +29568,76 @@ on a file a foreign session owns and this change never touches). This
 change covers only the new guard in `ceoStream`, the one new test file, and
 this entry; `src/cafresohq_state/main.mo` was never staged or edited, and no
 dfx/IC action of any kind was run.
+
+---
+
+## 236. A Gemini chunk with a second thing to say lost it
+
+**The reading.** Assigned area: `claude-client.jsx` — the multi-provider
+LLM client, `parseModelId`'s prefix table and `stream()`'s dispatch. #225
+had just closed the `'oca:'` gap there (a synthesized provider id neither
+`parseModelId` nor `stream()` recognized), so the prefix table and the
+dispatch chain were checked first: every id built anywhere in the app —
+`hermes:`, `anthropic:`, `lmstudio:`, `ollama:`, `claudecode:`,
+`cafresohq:`, `codex:`, `google:`, `openrouter:`, `groq:`, `gemini-api:`,
+`gemini:` — is both listed in `parseModelId`'s prefix table and dispatched
+by `stream()`, and `CAFRESOHQ_MODELS` really is `CLAUDECODE_MODELS` (the
+same array, not a copy that could drift). No second unrouted provider. The
+retry/backoff ladder in `fetchStreamHead` (429/5xx only, honors
+`Retry-After`, exits cleanly on user abort) checked out too. The gap turned
+out to be one line into `streamGoogle`'s SSE handler, the one function in
+this file whose own comment already documents one Gemini-specific
+surprise (cumulative `usageMetadata`, fixed in #210) — reason enough to
+read every line of it, not just the one already scarred.
+
+**The bug.** Gemini's `streamGenerateContent` response shapes each
+candidate's content as `parts: [...]`, and that array does not always
+hold exactly one entry. Two chunks:
+
+    parts: [{ text: 'first ' }, { text: 'second' }]
+    parts: [{ text: 'reasoning about it', thought: true }, { text: ' third' }]
+
+are both realistic — the first is the ordinary shape Gemini emits for a
+code-block-then-explanation reply, the second is what a
+dynamically-thinking model (`gemini-2.5-pro`, `gemini-3.1-pro-preview` —
+both already in this file's `GEMINI_MODELS`/`googleModel` default, reasoning
+by default with no `thinkingConfig` needed to trigger it) sends when its
+thought summary and its real answer land in the same chunk. `streamGoogle`
+read only `j.candidates[0].content.parts[0].text` and passed that ALONE to
+`onToken`. On the first shape, `'second'` vanished from the chat bubble
+with no error, no dropped-content notice, nothing — the reply just read
+short. On the second shape it was worse: the FIRST thing `onToken` ever
+saw for that turn was the model's own scratch reasoning, not anything it
+meant to say, and the real answer (`' third'`) never arrived at all.
+
+**The fix.** `streamGoogle` now concatenates every part in
+`content.parts` that actually carries `.text` and is not a `thought`
+part, and only calls `onToken` when that joined string is non-empty —
+matching the same non-empty-only pattern `onUsage` already followed a few
+lines down (only invoked when `inputTokens || outputTokens`).
+
+**The proof.**
+`scripts/test_gemini_multipart_chunk_drops_all_but_first_part.py` lifts
+the real `streamGoogle` out of `claude-client.jsx` by brace-balanced
+extraction (same technique `test_a_turn_is_billed_once_not_twice.py`
+uses), stubs `fetchStreamHead`/`parseSSE` to replay the two chunks above,
+and asserts the assembled reply is exactly `"first second third"` — every
+non-thought part's text present, in order, and the thought-only text
+never reaching `onToken` at all.
+
+Fire-tested: copied the fixed `claude-client.jsx` to `/tmp`, reverted the
+concatenation back to the bare `parts[0].text` read in place (never `git
+checkout -- <file>`) — 4 of 4 checks failed, `onToken` assembling only
+`'first reasoning about it'` (the dropped second part missing, and the
+thought fragment leaking through as if it were the answer). Restored from
+the `/tmp` copy, confirmed byte-identical by `md5`, reran — all 4 checks
+passed. `npm run build` rebuilt `dist-ui/` clean (8 assets).
+
+**Suite: 404/405** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`) is
+the same pre-existing `moc`/M0219 `main.mo` toolchain mismatch tracked in
+`#188` through `#232` — a different session's in-progress Motoko migration
+on a file this change never touches. This change covers only the
+`content.parts` read inside `streamGoogle` in `claude-client.jsx`, the one
+new test file, and this entry; `src/cafresohq_state/main.mo` was never
+staged or edited, and no dfx/IC action of any kind was run.

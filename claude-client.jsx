@@ -1283,8 +1283,19 @@ async function streamGoogle({ system, messages, model, temperature, maxTokens, o
   await parseSSE(res, (event, data) => {
     try {
       const j = JSON.parse(data);
-      if (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) {
-        onToken(j.candidates[0].content.parts[0].text);
+      /* A candidate's parts[] can hold MORE than one entry in a single
+         chunk — e.g. a code-block part followed by an explanation part,
+         or (on thinking-capable models like gemini-2.5-pro /
+         gemini-3.1-pro-preview, which reason by default) a "thought" part
+         ahead of the real answer part. Reading only parts[0].text silently
+         dropped every part after the first — sometimes the whole visible
+         reply, sometimes just the tail of it. Concatenate every part that
+         actually carries text; skip thought-only/function-call parts,
+         which have no .text at all. */
+      const parts = j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts;
+      if (parts) {
+        const text = parts.filter(p => p && !p.thought && p.text).map(p => p.text).join('');
+        if (text) onToken(text);
       }
       /* Record only — report once, below. Gemini stamps usageMetadata on
          streamed chunks with CUMULATIVE counts, and the ceoTokens meter ADDS
