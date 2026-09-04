@@ -22,7 +22,18 @@ const CAST_CLASSES = [
   // nemotron-3-nano and nemotron-3-nano-4b, and both fell through to the
   // generic row and advertised themselves as steady generalists. A model
   // whose name says nano is the small-and-quick class by definition.
-  { re: /haiku|mini|flash|small|nano/,
+  // `mini` is bounded because "gemini" CONTAINS it. Unbounded, this row
+  // swallowed every Google model before the /gemini/ row six lines down
+  // could ever run — that row was unreachable dead code, and a
+  // `gemini:gemini-2.5-pro` hire (the shelf's own default brain for a
+  // Gemini-CLI office, CANDIDATE_BRAINS) introduced itself as "quick with
+  // the small stuff" with DEPTH 2 · CODE 2. Google's deepest model, sold as
+  // the small-and-quick class, on every candidate card of that office.
+  // \b keeps the real members: `gpt-4o-mini`, `o4-mini-high`, `mini` alone
+  // all sit on a non-word boundary; the `mini` inside `gemini` does not.
+  // (`gemini-2.5-flash` is unaffected — it still matches on `flash`, which
+  // is the right answer for it.)
+  { re: /haiku|\bmini\b|flash|small|nano/,
                                     speed: 4, depth: 2, code: 2, cost: 3, tag: 'quick with the small stuff' },
   { re: /gpt-5|o[13]|codex/,        speed: 2, depth: 4, code: 4, cost: 2, tag: 'ships serious code' },
   { re: /claude-code/,              speed: 2, depth: 4, code: 4, cost: 2, tag: 'ships serious code' },

@@ -31607,3 +31607,88 @@ a foreign session owns and this change never touches). This change covers only
 `features.jsx`, the one new test file, and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, and no dfx/IC action
 of any kind was run.
+
+---
+
+## 260. "gemini" contains "mini", so Google's deepest model was the small one
+
+**The wreck.** Hire a coworker on the Gemini CLI and the card introduces
+them:
+
+    Gemini 2.5 Pro     powered by Google
+    quick with the small stuff
+    Speed ████  Depth ██  Code ██  Cost ███
+
+Depth 2. Code 2. On Google's deep-work model, next to a tagline that tells
+the boss to give it the small jobs.
+
+`CAST_CLASSES` in `app/cast.jsx` is an ordered table, first match wins, and
+the small-and-quick row keyed on the bare substring `mini`:
+
+```js
+{ re: /haiku|mini|flash|small|nano/, speed: 4, depth: 2, code: 2, cost: 3,
+  tag: 'quick with the small stuff' },
+…
+{ re: /gemini/,                      speed: 3, depth: 3, code: 3, cost: 2,
+  tag: 'strong all-rounder' },
+```
+
+**ge-mini.** Every model id that contains `gemini` contains `mini`, so the
+quick row won every single time and the `/gemini/` row four lines below it
+was unreachable — dead code that had never once decided a card, on a table
+whose own header says "Order matters: first match wins".
+
+It is not a rare id. `CANDIDATE_BRAINS` hands `gemini:gemini-2.5-pro` to the
+**whole candidate shelf** of a Gemini-CLI office (#the front-desk fix that
+put the detected brain on the cards). So on that office the bars said
+DEPTH 2 · CODE 2 and the tagline said "quick with the small stuff" on the
+Docs Agent, the Research Agent, the Data Agent — every card of the first
+screen a new boss sees — and the same wrong class rode the hire through to
+the coworker card and the inspect panel, which read the same table.
+
+Worse than a shrug: §2 binds these bars as "honest and RELATIVE, not
+benchmark cosplay… coarse 1..4 class judgements a colleague would make".
+A judgement produced by an accidental substring is neither honest nor a
+judgement, and this one is inverted — it is the *deep* class advertised as
+the *shallow* one, which is precisely the bit a boss uses to decide who gets
+the hard job.
+
+**The fix.** One word boundary: `mini` → `\bmini\b`. The row's real members
+all sit on a non-word boundary and keep their class — `gpt-4o-mini`,
+`o4-mini-high`, `phi-4-mini-instruct`, `mini` alone — while the `mini`
+buried inside `gemini` does not. `gemini-2.5-flash` is untouched: it still
+matches on `flash`, which is the right answer for it, and only the *pro*
+ids move.
+
+**The proof.** `scripts/test_gemini_is_not_the_mini_class.py` runs
+`app/cast.jsx` verbatim under node (same harness as `scripts/test_cast.py`)
+and pins both halves. The bug: `gemini:gemini-2.5-pro` — read out of
+`CANDIDATE_BRAINS` rather than typed, so the shelf's own default is what is
+tested — must not read "quick with the small stuff", must show DEPTH 3 and
+CODE 3, and the same must hold for `gemini-api:` and a bare `gemini-1.5-pro`.
+It also asserts the `/gemini/` row is *reachable at all*, by finding which
+row `gemini-2.5-pro` lands on and checking its source contains `gemini` —
+a dead-code assertion, so the row cannot quietly go back to being unreachable
+by some other route. The guard: `gpt-4o-mini`, `o4-mini-high`,
+`phi-4-mini-instruct`, `haiku`, `nemotron-3-nano` and `gemini-2.5-flash` must
+all stay in the quick class.
+
+Fire-tested: copied the fixed `app/cast.jsx` to `/tmp`, reverted `\bmini\b`
+back to `mini` in place with the editor (never `git checkout -- <file>`) —
+7 of 14 checks failed, exit 1, with `gemini-2.5-pro` reported as
+`[4, 2, 2, 3, 'quick with the small stuff']` and the reachability check
+naming row 2, `/haiku|mini|flash|small|nano/`. Restored from the `/tmp` copy,
+confirmed byte-identical by `md5` (`d1740a67ff37b81f31e381b3ce670715`),
+reran — 14 checks passed, exit 0.
+
+`npm run build` was run once up front so `dist-ui/manifest.json` exists in a
+fresh worktree, and again after the `.jsx` edit.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the `moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on
+a file a foreign session owns and this change never touches). This change
+covers only `app/cast.jsx`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any
+kind was run.
