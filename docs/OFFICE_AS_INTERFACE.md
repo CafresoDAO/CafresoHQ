@@ -28996,3 +28996,69 @@ not proof that it does it — `.resolve()` quietly erasing the one bit of
 information ("was this a symlink?") the very next line asks about is
 the kind of thing that only shows up by tracing the actual value flowing
 through, not by reading the check in isolation.
+
+---
+
+## 227. The approval box could be told to lie about what it was showing
+
+**The reading.** `app/approvals.jsx`'s `formatToolInput` is the one CONSENT
+surface in the app — its own header comment says the raw payload IS the
+point, because the row's title is only the requesting agent's own
+`summary` of what it wants to do, a CLAIM, and this gate exists precisely
+to catch a claim that doesn't match the action. Two prior fixes to this
+file (`03f6d63`, `e36ac9f`) hardened exactly that promise: never paraphrase
+the payload, never let truncation silently eat the dangerous end. Both
+treated "painting the string verbatim" as equivalent to "showing the boss
+the truth" about what will execute.
+
+That equivalence breaks for one class of byte: Unicode bidi-control
+characters (U+202A–U+202E, the embedding/override pair, and U+2066–U+2069,
+their "isolate" successors). These don't change what a string IS — only
+the order a renderer PAINTS it in. A `command` value carrying a
+RIGHT-TO-LEFT OVERRIDE (U+202E) renders with everything after it reversed
+until the override ends, the well-documented "trojan source" trick used in
+the wild to disguise an executable as a harmless-looking file — `evil.exe`
+embedded as `evil` + RLO + `exe.txt`, which paints as `evil txt.exe`. Fed
+through the old `formatToolInput`, such a value passed straight into the
+approval box unfiltered: the bytes the CLI would execute and the glyphs
+the boss reads in the tray could diverge, exactly the gap the file's own
+docstring says this gate exists to close ("the action has to be visible
+next to it"). The sharpest case is a lone `command` (the common Bash-tool
+shape) rendered `bare` — no `command:` label ahead of it on the line to
+anchor the eye against a reordered tail.
+
+**The fix.** `escapeBidiControls` replaces each bidi-control code point
+with its literal `\uXXXX` text before the value is clipped and joined —
+escaped, not stripped, so nothing about the payload disappears (the same
+"never silently hide" rule the cap/truncation code already follows), only
+the character's power to reorder how the line reads. Applied to every
+flattened value, labelled or bare, before `clip()` so the truncation math
+still operates on the display string.
+
+**The proof.**
+`scripts/test_approval_box_neutralizes_bidi_override_spoofing.py` builds a
+`command` value with an embedded RLO/PDF pair around a spoofed extension,
+runs it through the real `formatToolInput` under node, and asserts: no
+raw U+202E or U+202C ever reaches the output; the escaped `‮` text
+does; every real character around it survives; an ordinary command with no
+bidi controls is untouched byte-for-byte; and the same neutralisation
+holds for a labelled multi-key value, with its label and surrounding text
+intact.
+
+Fire-tested: copied the fixed file to `/tmp`, reverted `escapeBidiControls`
+in place (never `git checkout`) — the four bidi-specific checks failed and
+the suite exited 1; restored from the `/tmp` copy (md5-verified
+byte-identical), all seven checks passed. `npm run build` rebuilt
+`dist-ui/` clean. `scripts/test_approvals.py`'s existing sixteen checks
+(verbatim passthrough, tail preservation past the cap, lead ordering, bare
+rendering, falsy values) all still pass unchanged — this fix touches only
+the one line producing `flat`, plus the new escape helper.
+
+**Suite: 401/402** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`) is
+the same pre-existing `moc`/M0219 `main.mo` toolchain mismatch recorded in
+`#188` through `#223` — a different session's in-progress Motoko migration
+on a file this change never touches. This change covers only
+`app/approvals.jsx`'s value-flattening step, the one new test file, and
+this entry; `src/cafresohq_state/main.mo` was never staged or edited, and
+no dfx/IC action of any kind was run.

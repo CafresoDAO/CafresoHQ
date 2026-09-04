@@ -29,6 +29,23 @@ const APPROVAL_VALUE_CAP = 8000;
 /* Argument order: what the decision usually turns on, first. */
 const APPROVAL_LEAD_KEYS = ['command', 'file_path', 'path', 'url'];
 
+/* Unicode bidi-control characters (U+202A–U+202E, the embedding/override
+   pair, and U+2066–U+2069, their "isolate" successors) don't change what a
+   value IS — they change the order it's PAINTED in. A command carrying an
+   RLO (U+202E) can render with its tail reshuffled in front of its head,
+   the classic "trojan source" trick (real-world use: disguising `evil.exe`
+   as `evil ‮exe.txt` so it reads as a harmless .txt file). Every other
+   guard in this file protects the CONTENT of the approval box — the cap
+   keeps both ends, the label keeps values unambiguous — on the assumption
+   that painting the string verbatim is the same as showing the boss the
+   truth. For these code points it isn't: the bytes the CLI executes and
+   the glyphs the boss reads can differ, which is exactly the gap this gate
+   exists to close. Escaped to a literal `\uXXXX`, not stripped — nothing
+   about the payload disappears, only its power to reorder how it reads. */
+const BIDI_CONTROL_RE = /[‪-‮⁦-⁩]/g;
+const escapeBidiControls = (s) => s.replace(BIDI_CONTROL_RE,
+  c => '\\u' + c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0'));
+
 function formatToolInput(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return '';
   const keys = Object.keys(input);
@@ -57,7 +74,8 @@ function formatToolInput(input) {
 
   return [...lead, ...rest].map(k => {
     const v = input[k];
-    const flat = (v !== null && typeof v === 'object') ? JSON.stringify(v) : String(v);
+    const raw = (v !== null && typeof v === 'object') ? JSON.stringify(v) : String(v);
+    const flat = escapeBidiControls(raw);
     return bare ? clip(flat) : `${k}: ${clip(flat)}`;
   }).join('\n');
 }
