@@ -523,6 +523,22 @@ function AgentInbox({ agents, activity = [], selectedAgentId, onSelectAgent, onO
               <div className="oc-notif-msg">
                 <span style={{fontWeight:600}}>{ap.by || 'A coworker'}</span> needs a stamp: {ap.title}
               </div>
+              {/* The actual thing being authorised, verbatim — same box, same
+                  rule as the ApprovalTray (features.jsx). The title above is
+                  the REQUESTER's own summary of its request; this row carries
+                  live Approve/Reject, and a consent surface that shows only
+                  the claim asks the boss to rubber-stamp a description
+                  (app/approvals.jsx). Without it, `rm -rf /important` titled
+                  "Harmless cleanup" was approvable from this inbox with the
+                  command visible nowhere on screen. Border colour follows the
+                  tray: red is tuned for a command about to run, not for a
+                  hire proposal making its case. */}
+              {ap.detail && (
+                <pre className="ap-detail"
+                     style={ap.elevated ? undefined : { borderLeftColor: 'var(--ink-3)' }}>
+                  {ap.detail}
+                </pre>
+              )}
               <div className="oc-notif-meta"><span>{ap.kind || 'approval'}{ap.elevated ? ' · 🛡 file and shell access' : ''}</span></div>
               <div className="oc-act-jumps" style={{marginTop:6}}>
                 <button className="px-btn primary" style={{fontSize:8}} onClick={() => onApprove && onApprove(ap.id)}>✓ Approve</button>

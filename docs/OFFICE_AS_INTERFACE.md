@@ -27165,3 +27165,76 @@ session's in-progress Motoko migration on a file this change never
 touches. This change covers only `ui/chat.jsx`, the new test file, and
 this entry; `src/cafresohq_state/main.mo` was never staged or edited,
 and no dfx/IC action of any kind was run.
+
+---
+
+## 200. The Coworker Inbox stamped approvals off the requester's own summary
+
+**The reading.** Assigned area: progression and consent —
+`app/experience.jsx` (XP ledger), `app/approvals.jsx`, the
+`REQUEST_ELEVATION`/approval-card flows in `hq-runtime.jsx` and
+`app.jsx`, `app/attention.jsx`, `app/patience.jsx`. The XP ledger's
+one-done-per-taskId guard, the mission-poll credit loop, the
+pending-elevation slot lifecycle (add on ask, release on approve,
+reject, and roster departure), the external-approval TTL receipts
+(`#182`), and the attention grouping key all checked out as already
+hardened. Double-approve via rapid clicks is closed by React 18's
+synchronous discrete-event flush. The live find was the approvals'
+SECOND consent surface.
+
+**The mechanism.** `app/approvals.jsx` states the contract in its
+header: an approval row's title is the requesting agent's own `summary`
+of what it wants to do — a CLAIM — and "the action has to be visible
+next to it or the boss is being asked to rubber-stamp a description."
+Every surface honored that except one. The ApprovalTray renders
+`p.detail` in the `.ap-detail` box; the Receipts modal renders
+`r.detail` under "what was actually authorised"; the external bridge
+exists to populate `detail: formatToolInput(p.input)` precisely so
+`rm -rf build/` never hides behind "Bash: Clean the build directory".
+But the Coworker Inbox (`views/core.jsx` `AgentInbox`) pins the same
+pending approvals to the top of its "Needs attention" tab with LIVE
+✓ Approve / ✕ Reject buttons wired to the same `onApprove`/`onReject` —
+and rendered only `ap.by`, `ap.title` and `ap.kind`. From that panel
+the boss could stamp a CLI tool call, a shell command, or a
+`grant-elevation` (the highest privilege in the product) with the
+verbatim request visible nowhere on screen — the exact defect the
+tray's own `APPROVAL_VALUE_CAP` commentary documents catching, resold
+through a side door. The inbox is not an obscure surface: the roster
+card's 📥 opens it, and it deliberately lands on the attention tab
+when something is waiting.
+
+**The fix.** The inbox approval row now renders `ap.detail` in the same
+`<pre className="ap-detail">` box the tray uses, guarded on
+`ap.detail` (hire proposals and legacy cards without one render as
+before), with the tray's own border rule carried over: the red left
+rule is tuned for a command about to run, so a non-elevated row gets
+the neutral `var(--ink-3)` border instead. One JSX block in
+`views/core.jsx`, style and comment matching the tray's
+(`features.jsx:1632`); the buttons are untouched — the point is to
+inform the stamp, not remove it.
+
+**The test**
+(`scripts/test_inbox_approval_row_shows_the_verbatim_payload.py`) lifts
+the REAL `AgentInbox` out of `views/core.jsx` (brace-balanced
+extraction, the `test_workspace_terminal_key.py` technique), isolates
+the `pendingApprovals.map` row region, and pins the invariant: the row
+reads `ap.detail`, in a `<pre className="ap-detail">`, conditionally
+(detail-less cards still render), with the border colour keyed off
+`ap.elevated` like the tray — and both stamp buttons still wired, so
+the fix can never regress into hiding the consent controls instead of
+informing them.
+
+Fire-tested: reverted the fix in place (the detail block edited back
+out of the row) — 4 of 8 checks failed, by name, starting with
+`row reads ap.detail`. Restored `views/core.jsx` from the /tmp safety
+copy (`cmp`-verified byte-identical), test green again, `npm run build`
+re-run (the dev server never rebuilds `dist-ui/`).
+
+**Suite: 385/386** (`python3 scripts/run_tests.py`). The one failure
+(`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`)
+is the same pre-existing `moc`/M0219 `main.mo` implicit-`transient`
+toolchain mismatch recorded in `#188`, `#193` and `#198` — a different
+session's in-progress Motoko migration on a file this change never
+touches. This change covers only `views/core.jsx`, the new test file,
+and this entry; `src/cafresohq_state/main.mo` was never staged or
+edited, and no dfx/IC action of any kind was run.
