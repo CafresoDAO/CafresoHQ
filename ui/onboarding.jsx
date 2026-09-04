@@ -167,6 +167,28 @@ function OnboardingTour({ open, steps = [], onClose, onComplete }) {
 
   const step = steps[idx];
 
+  /* Reopening the tour starts it over. `idx` is component state and the host
+     keeps <OnboardingTour> mounted permanently with open={false} (app.jsx
+     renders it unconditionally), so nothing ever put the deck back to the
+     first card. Two ways that reached the boss:
+
+       - Finish, then replay. app.jsx wires `cafresohq:replayTour` (the
+         command palette's "Take the tour") to setTourOpen(true) with no
+         reset, so the replayed tour opened on the LAST card — "Step 10 of
+         10", one Finish button — and was over in a click.
+       - Leave mid-tour and come back. The "Your AI brain" step's "bring your
+         own brain →" button dispatches `cafresohq:openSettings`, whose
+         handler calls setTourOpen(false); reopening resumed at whatever step
+         the boss had walked away from.
+
+     Worse across widths, because the two decks are different lengths: the
+     desktop steps array has 10 entries and the mobile one 9. A tour finished
+     on a laptop and replayed at phone width indexed steps[9] === undefined,
+     so `step` was undefined and the component rendered NOTHING — while
+     `tourOpen` stayed true, which also suppresses <GettingStarted>. A boss
+     who asked for the tour got a blank office and lost the checklist too. */
+  React.useEffect(() => { if (open) setIdx(0); }, [open]);
+
   React.useEffect(() => {
     if (!open || !step) { setSpotlight(null); return; }
     if (step.action) try { step.action(); } catch (_e) {}

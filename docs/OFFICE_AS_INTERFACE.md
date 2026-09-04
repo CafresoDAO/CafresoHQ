@@ -30575,3 +30575,85 @@ onward, on a file a foreign session owns and this change never touches).
 This change covers only `ui/panels.jsx`, the one new test file, and this
 entry; `src/cafresohq_state/main.mo` was never staged or edited, and no
 dfx/IC action of any kind was run.
+
+## 249. "Take the tour" opened on the last card — or on nothing at all
+
+**The reading.** Assigned area: `ui/onboarding.jsx` — the first-run coach
+marks. `<OnboardingTour>` keeps the current card in component state:
+
+    function OnboardingTour({ open, steps = [], onClose, onComplete }) {
+      const [idx, setIdx] = useState(0);
+      …
+      const step = steps[idx];
+      if (!open || !step) return null;
+
+`idx` is initialised once, at mount. And the host never unmounts the tour —
+`app.jsx` renders `<OnboardingTour open={tourOpen} …>` unconditionally and
+the component hides itself by returning `null`. So `idx` survives every
+close, and nothing anywhere put the deck back to card 1 when it reopened.
+
+**What the boss saw.** Two doors lead back into the tour, and both are on the
+first-run path.
+
+The command palette's *Take the tour* fires `cafresohq:replayTour`, wired
+straight to the flag: `const onReplay = () => setTourOpen(true);`. A boss who
+had already walked the tour to the end left `idx` at `steps.length - 1`, so
+the replay opened on **the final card** — "Step 10 of 10", a lone **Finish**
+button — and the tour they asked for was over in one click.
+
+The other door is the "Your AI brain" step itself. Its *bring your own brain
+→* button dispatches `cafresohq:openSettings`, and that handler closes the
+tour first (`setTourOpen(false)`) so its backdrop doesn't swallow the
+Settings modal. Come back afterwards and the tour resumed at whatever step
+the detour interrupted — the cards before it never seen.
+
+The width switch is the bad one. The two decks are different lengths: the
+desktop steps array has **10** entries, the mobile one **9**. A tour finished
+on a laptop and replayed at phone width indexed `steps[9] === undefined`, so
+`step` was falsy and the component rendered **nothing** — while `tourOpen`
+stayed `true`. That flag also gates the checklist
+(`{!gsDismissed && !tourOpen && (<GettingStarted …>)}`), so the boss asked
+for the tour and got a blank office *minus* the getting-started card, with no
+tour surface left to close.
+
+**The fix.** One effect, keyed on the prop that means "the tour is being
+shown again":
+
+    React.useEffect(() => { if (open) setIdx(0); }, [open]);
+
+Reopening is a new run, not a resume. It also makes the out-of-range case
+unreachable by construction: whatever deck is passed, the tour starts at 0.
+
+**The proof.**
+`scripts/test_replaying_the_tour_starts_it_over.py` drives the **real**
+`OnboardingTour` — `ui/onboarding.jsx` bundled with the project's own
+`esbuild`, its one import stubbed, hooks driven by a small React stand-in
+with ordered hook slots and a settle-on-quiet render loop — because a
+re-implementation of a step counter would agree with itself while the shipped
+component kept resuming. It walks a 10-card deck to Finish, asserts
+`onComplete`/`onClose` fire, closes, reopens, and reads the line the boss
+actually reads (`Step 1 of 10`, the first step's title, a **Next →** button
+rather than **Finish**); repeats the check for a mid-tour Settings detour
+from card 3; and finishes on the 10-card desktop deck, then reopens with the
+9-card mobile deck and asserts the tour renders at all. It also pins the
+premise in source — that `app.jsx` mounts the tour unconditionally, that the
+palette replay only flips the flag, and that the key step's Settings link
+closes the tour mid-run.
+
+Fire-tested: copied the fixed `ui/onboarding.jsx` to `/tmp`, deleted the
+reset effect in place with the editor (never `git checkout -- <file>`) —
+seven checks failed (the replay came back `'Step 10 of 10'` showing
+`'desktop step 10'` with a `'Finish'` button, the Settings detour never
+restarted, and the narrow replay rendered `null`), exit 1. Restored from the
+`/tmp` copy, confirmed byte-identical by `md5`
+(`2620bc358c944232e6a3927f09ee9929`), reran — all checks passed, exit 0.
+
+`npm run build` run after the change.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the same `moc`/M0219 `main.mo` toolchain mismatch tracked from `#188`
+onward, on a file a foreign session owns and this change never touches).
+This change covers only `ui/onboarding.jsx`, the one new test file, and this
+entry; `src/cafresohq_state/main.mo` was never staged or edited, and no
+dfx/IC action of any kind was run.
