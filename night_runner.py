@@ -633,6 +633,21 @@ def run_tool(ctx, name, arg, body):
             s, raw = _self_call(ctx, 'GET', '/vault/note?path=' + urllib.parse.quote(arg))
             if s == 404:
                 return 'Not found: ' + arg
+            if s != 200:
+                # 404 was the ONLY status this branch ever read. Every other
+                # refusal GET /vault/note can answer — 502 from a shut
+                # Obsidian or an unreachable OCI bucket, 415 for a filed deck
+                # the editor door can't open, 400 for a path the vault won't
+                # resolve, 500 for a read that blew up — comes back as a JSON
+                # error body, and this returned that body AS THE NOTE'S TEXT.
+                # The coworker then quoted, summarised and VAULT_APPENDed to
+                # `{"error": "obsidian: <urlopen error [Errno 61] Connection
+                # refused>"}` believing it was the note, and the run recorded
+                # errors: 0 — the same quiet-night shape find_first_tool's
+                # docstring condemns, with a fabricated note on top of it. A
+                # door that is shut has to say so.
+                return 'Vault read failed (%d): %s' % (
+                    s, raw[:200].decode('utf-8', 'replace'))
             text = raw.decode('utf-8', 'replace')
             return text[:4000] + '\n\n…(truncated)' if len(text) > 4000 else text
         if name in ('VAULT_APPEND', 'VAULT_NEW'):

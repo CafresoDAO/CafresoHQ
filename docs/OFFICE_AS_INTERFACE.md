@@ -30657,3 +30657,87 @@ onward, on a file a foreign session owns and this change never touches).
 This change covers only `ui/onboarding.jsx`, the one new test file, and this
 entry; `src/cafresohq_state/main.mo` was never staged or edited, and no
 dfx/IC action of any kind was run.
+
+---
+
+## 250. The vault handed its error page over as the note's text
+
+**The reading.** Assigned area: `night_runner.py` — the unattended shift, and
+in particular the one tool a coworker uses when the prompt tells it *"Don't
+re-write notes that already exist — extend them with VAULT_APPEND instead"*.
+Extending a note means reading it first, and `run_tool`'s `VAULT_READ` branch
+read exactly one status back out of the door:
+
+    s, raw = _self_call(ctx, 'GET', '/vault/note?path=' + urllib.parse.quote(arg))
+    if s == 404:
+        return 'Not found: ' + arg
+    text = raw.decode('utf-8', 'replace')
+
+`_self_call` was taught (in `#222`'s neighbourhood) to hand `HTTPError` back
+as a `(status, body)` tuple rather than raise, precisely so callers' status
+checks would *run*. This caller checks one status. `serve.py`'s own
+`GET /vault/note` answers with a JSON error body on at least four others —
+`502` when Obsidian is shut or the OCI bucket is unreachable, `415` for a
+filed deck or PDF the editor door cannot open, `400` for a path the vault
+refuses to resolve, `500` for a read that blew up — and every one of them
+fell through that `if` and came back as `text`.
+
+So the coworker asked for a note and was handed
+
+    {"error": "obsidian: <urlopen error [Errno 61] Connection refused>"}
+
+**as the contents of that note.** Not an empty read it could notice and route
+around — a plausible-looking document. Reproduced against a canned brain: the
+next hop quoted it, summarised it, and filed a new note whose research was a
+stack message. The write itself lands fine (a filesystem vault behind a broken
+REST probe reads badly and writes well), so nothing downstream objected —
+`writes: [path]`, `error: None`, `errors: 0`. This is the exact shape
+`find_first_tool`'s own docstring condemns — *"a quiet night and a broken
+tool-call format are indistinguishable to the boss reading the morning
+report"* — with a fabricated deliverable stacked on top of it, and `#222`
+closed only the half where the *write* was miscounted.
+
+**The change.** Four lines: any non-200 the note door answers is reported to
+the coworker as a failed read, in the same `"<what> failed (NNN): <body>"`
+spelling the write side already uses, and never as content. `404` keeps its
+own office sentence (`Not found: <path>`), a note that opens is returned
+verbatim, and the 4000-character truncation is untouched. The wording is
+deliberately *not* `_VAULT_FAIL_PREFIX` — `vault_write_status` matches on
+`"Vault write failed (NNN)"` with `.match`, and a shut read door must not be
+read as a refused write by the ledger that gates `run_iteration`'s whole
+refusal chain.
+
+**The proof.**
+`scripts/test_a_vault_that_would_not_open_is_not_the_note.py` drives the real
+`run_tool` against a note door answering each of the four statuses — with the
+bodies `serve.py`'s own handler actually sends, not invented ones — and
+asserts none is returned as the note and each names its status. It then drives
+a whole `run_iteration` through the reproduced night (read the note to extend
+it, get the 502 page, write anyway) and checks the `TOOL RESULT [VAULT_READ]`
+message the runner threads back to the brain, because that string is the only
+place the lie could still be told. It pins that the failure is not mistaken
+for a refused write, that the write still lands and the iteration is otherwise
+untouched, and that `404`, a healthy read, and the truncation all behave
+exactly as before.
+
+Fire-tested: copied the fixed `night_runner.py` to `/tmp`, reverted the
+`if s != 200` guard in place with the editor (never `git checkout -- <file>`)
+— 10 checks failed, each reporting the raw JSON error body where the note
+should be, exit 1. Restored from the `/tmp` copy, confirmed byte-identical by
+`md5` (`8b51b21596533de647d251d5eba99078`), reran — all checks passed, exit 0.
+
+No `.jsx`/`.js` file changed, so no `npm run build` was required.
+
+**Suite:** `python3 scripts/run_tests.py` — 434/436, with the expected
+pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the same
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file
+a foreign session owns and this change never touches). The second,
+`scripts/test_terminal_cwd_wired.py`, was the worktree itself: `dist-ui/` is
+gitignored, so a fresh checkout has no `manifest.json` for
+`_hq_manifest_tags` to read. Running `npm run build` once to produce it turned
+that suite green (`ALL PASS`) with no source change — recorded here so the
+tally is not mistaken for a regression. This change covers only
+`night_runner.py`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, and no dfx/IC action
+of any kind was run.
