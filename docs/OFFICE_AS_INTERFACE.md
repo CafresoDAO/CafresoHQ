@@ -30055,3 +30055,83 @@ onward, on a file a foreign session owns and this change never touches).
 This change covers only the `fileTree` block in `missions.jsx`, the one new
 test file, and this entry; `src/cafresohq_state/main.mo` was never staged or
 edited, and no dfx/IC action of any kind was run.
+
+---
+
+## 243. Deleting a note on a narrow window blanked the whole Library
+
+**The reading.** Assigned area: `views/vault.jsx` — the Library. Below 768px
+(`_isMobileV`, which is a narrow desktop *window* as much as a phone) the view
+drops the three-column grid for a single-pane tab switcher, and the pane it
+draws is chosen by one state value, `vaultTab`:
+
+    {vaultTab === 'tree'   && ( …the file tree… )}
+    {vaultTab === 'graph'  && ( …the links graph… )}
+    {vaultTab === 'editor' && openNote && ( …the note… )}
+
+The third guard carries `&& openNote`, correctly — an editor pane with no
+buffer behind it is nothing to draw. What nothing kept was `vaultTab` and
+`openNote` *in step*. Exactly one caller did it by hand: the mobile ✕,
+`onClick={async () => { if (await closeNote()) setVaultTab('tree'); }}`.
+Every other path that ends the open note leaves the stored tab sitting on
+`'editor'` with no note behind it, and the render then produces a tab bar
+over an empty flex box — no pane at all, and not even a lit tab to explain
+it, because the `'editor'` entry in the tab bar is gated on `openNote` too
+(`...(openNote ? [['editor', …]] : [])`) and drops out with the note. Two
+tabs, neither highlighted, nothing underneath.
+
+Two paths reach it, both in this same file:
+
+  · **🗑 Delete.** `deleteNote` awaits `hqConfirm`, calls `vaultDelete`,
+    `setOpenNote(null)`, `refresh()` — and never touches `vaultTab`. The
+    confirm the boss just answered said *"This cannot be undone"*; what they
+    got back for saying yes was an empty cabinet. On the surface §3.6 calls
+    the cabinet, a delete of one note reads as a delete of everything.
+  · **Esc.** The window-level keydown handler calls `closeNote()` directly,
+    which also only `setOpenNote(null)`s. One keypress, on a laptop, with a
+    window narrower than 768px.
+
+**The fix.** One line, inside the mobile branch, and nothing added to any
+caller:
+
+    const tab = (vaultTab === 'editor' && !openNote) ? 'tree' : vaultTab;
+
+— with the three pane guards and the three tab-bar highlight expressions
+reading `tab` instead of `vaultTab`. The invariant is *no note, no editor
+pane*; stating it once at the point of drawing means the next path that ends
+a note cannot reopen the hole, which patching `deleteNote` and the Esc
+handler individually would not have bought. `setVaultTab` still stores what
+the boss actually picked — only what gets **drawn** falls back, so nothing
+about the tab bar's own behaviour changes while a note is open.
+
+**The proof.**
+`scripts/test_deleting_a_note_on_the_phone_does_not_blank_the_library.py`
+extracts the derivation expression out of the real source (regex on the
+mobile branch, not a hand-copied duplicate) and executes it in node across
+the full truth table — three tab values × note/no-note — asserting
+`('editor', no note) → 'tree'` while `('editor', note)`, `'tree'` and
+`'graph'` are all left exactly as stored. It then checks in source that all
+three panes and all three tab-bar highlight expressions read the derived
+value and that none still switches on the raw stored one, and — so the fix
+stays load-bearing rather than decorative — that the two blanking paths are
+still shaped as described: `deleteNote` still `setOpenNote(null)`s without
+touching `vaultTab`, `closeNote` likewise, the window Esc handler still calls
+`closeNote()`, and both the editor pane and the editor tab entry are still
+gated on `openNote`.
+
+Fire-tested: copied the fixed `views/vault.jsx` to `/tmp`, reverted the
+derivation in place with the editor (never `git checkout -- <file>`) — three
+checks failed (no derivation found; all three panes still switching on the
+raw stored tab; the tab-bar highlight still reading it), exit 1. Restored
+from the `/tmp` copy, confirmed byte-identical by `md5`
+(`ba9b84f20d064ffd07fa98a99e7daa9a`), reran — all checks passed, exit 0.
+
+`npm run build` run after the change.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the same `moc`/M0219 `main.mo` toolchain mismatch tracked from `#188`
+onward, on a file a foreign session owns and this change never touches).
+This change covers only the mobile branch of `views/vault.jsx`, the one new
+test file, and this entry; `src/cafresohq_state/main.mo` was never staged or
+edited, and no dfx/IC action of any kind was run.

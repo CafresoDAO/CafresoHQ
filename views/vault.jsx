@@ -1523,6 +1523,29 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       await openByPath(p);
       setVaultTab('editor');
     };
+    /* The phone shows ONE pane, chosen by `vaultTab`, and the 'editor' pane
+       renders only `vaultTab === 'editor' && openNote`. So every path that
+       drops the open note without also moving the tab left the Library
+       showing a tab bar over an empty box: two tabs, neither highlighted,
+       nothing underneath. The ✕ button remembered to move the tab; nothing
+       else did, and the two that matter most are the two that end a note —
+
+         · 🗑 Delete: deleteNote setOpenNote(null)s and refreshes. The
+           confirm said "This cannot be undone", the boss said yes, and the
+           Library went blank on them — reading, on the surface §3.6 calls
+           the cabinet, exactly like the delete took the whole cabinet with
+           it. Reproduced by reading the render: the 'editor' entry drops
+           out of the tab bar (it is gated on openNote too), so there is not
+           even a lit tab to explain the empty pane.
+         · Esc: the window-level handler calls closeNote() directly. And
+           `_isMobileV` is `max-width: 768px` — a narrow desktop WINDOW, not
+           just a phone — so this is one keypress away on a laptop.
+
+       Derived here rather than patched into each caller: the invariant is
+       "no note, no editor pane", and stating it once at the render means the
+       next path that closes a note cannot reopen this hole. `setVaultTab`
+       still stores what the boss picked; only what we DRAW falls back. */
+    const tab = (vaultTab === 'editor' && !openNote) ? 'tree' : vaultTab;
     return (
       <div className="vault-mobile" {...dropZoneProps} style={{display:'flex',flexDirection:'column',height:'100%',background:'var(--paper)',position:'relative'}}>
         {dropHint}
@@ -1545,10 +1568,10 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
               style={{
                 flex:1,
                 padding:'10px 6px',
-                background: vaultTab === key ? 'var(--paper)' : 'transparent',
+                background: tab === key ? 'var(--paper)' : 'transparent',
                 border:'none',
-                borderBottom: vaultTab === key ? '3px solid var(--accent-sun)' : '3px solid transparent',
-                color: vaultTab === key ? 'var(--ink)' : 'var(--ink-2)',
+                borderBottom: tab === key ? '3px solid var(--accent-sun)' : '3px solid transparent',
+                color: tab === key ? 'var(--ink)' : 'var(--ink-2)',
                 cursor:'pointer',
                 fontFamily:"'Press Start 2P',monospace",
                 fontSize:9,
@@ -1563,7 +1586,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
 
         {/* Active pane */}
         <div style={{flex:1,display:'flex',flexDirection:'column',minHeight:0,overflow:'hidden'}}>
-          {vaultTab === 'tree' && (
+          {tab === 'tree' && (
             <div className="vault-tree-pane" style={{flex:1,display:'flex',flexDirection:'column',overflow:'auto',borderRight:'none',maxHeight:'none'}}>
               <div className="vault-toolbar">
                 <span style={{fontWeight:600,fontSize:11,flex:1}}>{status ? status.name : 'Library'}</span>
@@ -1596,13 +1619,13 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
             </div>
           )}
 
-          {vaultTab === 'graph' && (
+          {tab === 'graph' && (
             <div className="vault-graph-pane fullspan" style={{flex:1,display:'flex',flexDirection:'column',borderLeft:'none'}}>
               <GraphView embedded agents={agents} activePath={openNote?.path} onOpenNote={(p) => openGraphNode(p, mobileOpenByPath)} onMinimize={() => setVaultTab('tree')} />
             </div>
           )}
 
-          {vaultTab === 'editor' && openNote && (
+          {tab === 'editor' && openNote && (
             <div className="vault-edit-pane" style={{flex:1,display:'flex',flexDirection:'column',borderRight:'none'}}>
               <div className="vault-edit-head">
                 <div style={{fontSize:10,opacity:0.7,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}}>{openNote.path}</div>
