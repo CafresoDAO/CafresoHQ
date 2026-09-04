@@ -105,6 +105,9 @@ def main():
         '  const abortAgentRun = (aid) => { log.aborted.push(aid); return true; };\n'
         '  const setTasks = (fn) => { const kept = fn(tasks); log.deleted = tasks.filter(t => !kept.includes(t)).map(t => t.id); };\n'
         '  const say = (msg) => log.said.push(msg);\n'
+        # onDeleteTask also purges the tray of approval cards bound to the
+        # deleted task (see test_deleting_a_task_takes_its_approval_cards_with_it).
+        '  const setApprovals = (fn) => { log.approvals = fn(s.approvals || []); };\n'
         '  ' + fn + ';\n'
         '  await onDeleteTask(s.id);\n'
         '  return log;\n'

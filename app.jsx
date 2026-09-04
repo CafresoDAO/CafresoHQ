@@ -4992,6 +4992,27 @@ ${d.text}` : d.text,
       logActivity({ action: 'failed', priority: 'attention',
         text: `deleting "${t.title.slice(0, 30)}" broke a workflow chain link — check any steps that were waiting on it` });
     }
+    /* Approval cards outlive the task they are about. Every task-bound card
+       in the tray carries `taskId` — an 'awaiting stamp' the coworker raised
+       mid-run, and the 'workflow-step' card that queues the NEXT step — and
+       nothing here ever dropped them, so a deleted task kept asking the boss
+       for decisions about itself.
+
+       The workflow-step one is the sharp end. onApprove's branch does
+       `const nextTask = tasks.find(t => t.id === ap.taskId)`, then acts only
+       under `if (nextTask && …)` / `else if (nextTask)`: with the task gone
+       BOTH arms are skipped, while the "✓ APPROVED — Workflow: run …" line
+       has already been written to chat. The boss stamps, reads a receipt
+       saying the step was approved, and absolutely nothing runs — the same
+       false-receipt shape the dismissal cascade already purges approvals to
+       avoid ("clicking Approve … looks like it worked … while the actual
+       grant/hire silently no-ops"). An 'awaiting stamp' for deleted work is
+       the same lie one step quieter.
+
+       Undefined `taskId` never matches, so external/publish/hire/elevation
+       cards are untouched. The chain break itself is already announced by
+       the brokeChain row above. */
+    setApprovals(prev => prev.filter(p => !(p.taskId && p.taskId === id)));
     say(running ? `Deleted "${t.title.slice(0, 30)}" and stopped the run` : `Deleted "${t.title.slice(0, 30)}"`, 'TASK');
   };
   /* taskFresh: a task created in THIS tick (starter cards) isn't in the

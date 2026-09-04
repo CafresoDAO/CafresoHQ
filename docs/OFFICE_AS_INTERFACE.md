@@ -31235,3 +31235,91 @@ onward, on a file a foreign session owns and this change never touches).
 This change covers only `app/windows.jsx`, the one new test file, and this
 entry; `src/cafresohq_state/main.mo` was never staged or edited, and no
 dfx/IC action of any kind was run.
+
+---
+
+## 256. A deleted task kept asking the boss for decisions about itself
+
+**The reading.** Assigned area: `app.jsx` — the task lifecycle and the
+workflow chain-advance. `onDeleteTask` is the most careful delete in the
+office: it confirms over live work (`#86`'s witness, re-spelled), aborts the
+assignee's stream so no delivery is ever filed for removed work, and — since
+"Deleting a workflow-chain task left dangling chainTo/dependsOn pointers" —
+scrubs every other card's `chainTo`/`dependsOn` pointer
+at the id it just dropped, logging one row when a chain link actually broke.
+
+It cleaned the board. It never cleaned the **tray**.
+
+Two of the ApprovalTray's card kinds are bound to one specific task by
+`taskId`: the `'awaiting stamp'` a coworker raises mid-run
+(`onApprovalRequest({ … kind: 'awaiting stamp', agentId, taskId })`), and the
+`'workflow-step'` card the chain-advance raises to ask "run the next step?".
+Delete the task and both stay standing, asking the boss to decide something
+about work the boss has already removed.
+
+The workflow-step card is the sharp end, because stamping it **writes a
+receipt and then does nothing at all**. `onApprove` opens with the common
+prologue — `✕`/`✓` line into chat, card removed — and its branch reads:
+
+    const nextTask = tasks.find(t => t.id === ap.taskId);
+    if (nextTask && nextTask.status === 'inbox') { triggerChainStep(…); }
+    else if (nextTask) { /* "…already underway — nothing was re-run." */ }
+
+Both arms are guarded on `nextTask`. `#252`'s sibling fix added the second
+arm precisely so that a stamp with nothing to start would still *say* so —
+"every stamp does something" — but it only covers a task that is still
+**there**. Delete it and `find` returns `undefined`, both arms are skipped,
+and the boss is left holding a chat line that reads `✓ APPROVED — Workflow:
+run "…"?` over an office where nothing ran, nothing was said, and no card
+remains to show what was stamped. The one artifact of the decision asserts
+the opposite of what happened.
+
+This exact shape is already named and fixed one cascade over. Dismissing a
+coworker purges their approvals, and the comment there argues why: a stale
+card "isn't just clutter: clicking Approve … looks like it worked (the ✓
+APPROVED chat line always fires) while the actual grant/hire silently
+no-ops". Task deletion is the same sentence with a different noun, and it
+had no such line.
+
+**The fix.** One filter, in the same pass that scrubs the chain pointers, at
+the same place every other trace of a deleted task is already cleaned up:
+
+    setApprovals(prev => prev.filter(p => !(p.taskId && p.taskId === id)));
+
+Guarded on `p.taskId` being present, so external / publish / hire-agent /
+hire-assistant / grant-elevation cards — none of which carry one — are never
+collateral. The chain break itself is already announced by the `brokeChain`
+row a few lines above, so the deletion still says once, in the feed, that a
+workflow lost a link; it just no longer leaves a stamp behind that can lie
+about it afterwards.
+
+**The proof.**
+`scripts/test_deleting_a_task_takes_its_approval_cards_with_it.py` lifts the
+real `onDeleteTask` body out of `app.jsx` by signature (failing loudly if the
+locator no longer matches, so a stale regex can never hand back an empty
+string that satisfies a negative check) and asserts the tray purge exists,
+keys on `taskId`, is written in the guarded `p.taskId && p.taskId === id`
+form that spares untagged cards, and runs *after* the task itself is dropped
+rather than instead of it. It also pins the `onApprove` workflow-step branch
+to its `nextTask`-guarded shape — the silent no-op this purge makes
+unreachable — so the fix cannot be quietly undone from the other end.
+
+Fire-tested: copied the fixed `app.jsx` to `/tmp`, reverted the `setApprovals`
+line in place with the editor (never `git checkout -- <file>`) — 4 checks
+failed, exit 1. Restored from the `/tmp` copy, confirmed byte-identical by
+`md5` (`6a46824b8ce7d798630df4261e36908e`), reran — all checks passed, exit 0.
+
+`npm run build` run after the change.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the same `moc`/M0219 `main.mo` toolchain mismatch tracked from `#188`
+onward, on a file a foreign session owns and this change never touches).
+`scripts/test_a_delete_stops_only_its_own_run.py` lifts the real
+`onDeleteTask` and runs it under Node against hand-built stubs, so it needed
+one line — a `setApprovals` stub — to keep running the now-longer function;
+its own twelve behavioral checks are untouched and still pass.
+
+This change covers only `app.jsx`, the one new test file, that one stub line,
+and this entry; `src/cafresohq_state/main.mo` was never staged or edited, and
+no dfx/IC action of any kind was run.
