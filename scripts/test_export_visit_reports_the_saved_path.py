@@ -74,6 +74,16 @@ def check_server_side_extension_append():
         out = exporters._vault_binary_path(None, 'Docs/report', ('.pdf',))
         check('a bare-slug PDF marker path gets .pdf appended on disk',
               out.name == 'report.pdf', out.name)
+
+    # #386: _vault_binary_path now claims its answer atomically (O_CREAT|O_EXCL)
+    # the instant it resolves one, so the call above already left an empty
+    # 'report.pdf' claimed on disk — asking again in the SAME vault would
+    # correctly (and separately, see the sidestep test) count past it to
+    # 'report (2).pdf'. That is a different property; this check is about the
+    # extension-append no-op specifically, so it gets its own clean vault.
+    with tempfile.TemporaryDirectory() as td2:
+        exporters._vault_root = lambda: td2
+        exporters._vault_hidden_part = lambda rel: None
         out2 = exporters._vault_binary_path(None, 'Docs/report.pdf', ('.pdf',))
         check('a path that already carries the right extension is untouched',
               out2.name == 'report.pdf', out2.name)

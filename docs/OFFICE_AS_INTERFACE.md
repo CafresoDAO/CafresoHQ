@@ -40048,3 +40048,108 @@ check. Restored (md5 `e7003cc777e6f74a649146a44871df66`), green again on
 two repeated runs.
 
 No `.jsx`/`.js`/`.css` touched — no build required.
+
+## 386. two exports racing the same name erased each other
+
+**The lead.** `#385`'s own sweep closed with two candidates flagged
+"plausible but lower-confidence, not chased further": `/tools/exec`'s
+`FILE_WRITE` (`p.write_text(content)` on an arbitrary path), and
+exporters.py's seven `out_path.write_bytes(...)` image/video-generation
+call sites. Both got real testing this round rather than another re-read.
+
+**Candidate one — `FILE_WRITE` — tested, confirmed a non-issue.** `content`
+is fully formed by the caller before the tool call; there is no
+read-modify-write for a second writer to land inside, only two full-body
+`write_text` calls landing on the same path. Fired 30 real threads at once
+against a running serve.py, each writing 400 KB of a single repeated byte
+distinct per thread, over 8 repeated rounds (240 concurrent full-body
+writes total) — every round left the file holding exactly ONE writer's
+content in full, byte-for-byte, never a mix of two. Python's buffered
+writer evidently completes a write of this shape fast enough, relative to
+the surrounding request handling, that two `open(path,'w')`s never
+actually interleave in practice — unlike the vault rewrite in `#385`,
+which had real computation (a re-read and a derived substitution) sitting
+in the window. No fix applicable; last-writer-wins on a full-body write is
+the expected, harmless outcome of two callers naming the same path on
+purpose.
+
+**Candidate two — turned up a different, real bug one door over.**
+`out_path.write_bytes(...)` itself checked out the same way: each call is
+a single full write with no derived read. But EVERY export door — pptx,
+docx, pdf, and all seven image/video generators — reaches `out_path`
+through one shared resolver, `_vault_binary_path`, and that resolver had
+its own bug, in the exact family `fs_routes.claim_name` was built to
+close. It asked "is this name free?" with a bare `candidate.exists()`
+check — `fs_routes.free_name`'s shape, the same one that let 27 of 40
+concurrent uploads get overwritten before `## 337.` — and only THEN
+returned the path for the caller to render or generate into. For an
+image generator that call can sit on a provider's API for up to three
+minutes (`_generate_image`'s own `a1111`/`comfyui` branches use a 180–300s
+timeout); a pptx/docx/pdf export still takes real render time. Two
+requests naming the same conventional path in that window — Sloan
+exporting `Slides/q3.pptx` twice back to back, two coworkers both told to
+illustrate the same slide, or a client retry-after-timeout resubmitting
+the identical export while the first is still mid-render — both saw the
+name free, both proceeded, and whichever write landed last silently
+erased the other's deliverable. Both requests still answered 200 with a
+`path` receipt; one of those receipts named a file that, moments later,
+held someone else's work instead.
+
+Reproduced against a real running serve.py: ten concurrent
+`/generate/image` calls (provider `a1111`, pointed at a scratch mock
+server standing in for the real provider, sleeping 0.4s before answering
+— a fraction of a real provider's latency) all naming the same
+`Art/hero.png`, five rounds. Pre-fix, every round left exactly ONE file on
+disk for ten reported successes — nine of the ten receipts pointed at a
+path that, checked immediately after, held a different caller's image
+entirely (or nothing recognizable of the receipt-holder's own request).
+
+**The fix.** `_vault_binary_path` now claims its answer the way
+`claim_name` claims an upload name: `O_CREAT|O_EXCL` on the picked
+candidate, before any render or provider call starts, falling back to the
+next numbered variant (`q3 (2).pptx`, …) on `EEXIST` exactly the way
+`free_name` already numbers them — same spelling, same folder, just
+settled by the kernel instead of a stat. The claimed placeholder's fd is
+closed immediately (the actual bytes land later, through the path, by
+each export function's own existing code — `prs.save()`, `doc.save()`,
+`write_bytes()` — unchanged), so a second caller racing in behind the
+first gets `EEXIST` on the SAME candidate and steps to the next variant
+instead of silently sharing a path with someone already mid-render.
+
+One real behavior change falls out of this and is intentional:
+`_vault_binary_path` now has a disk side effect the instant it resolves a
+name — the placeholder exists before anything is ever written into it —
+where the old `free_name`-based resolver was a pure lookup. A dry call
+that never followed through to an actual write (an export that fails
+after resolving, e.g. a missing `python-pptx`) now still claims the name.
+That is the correct trade for closing the race — the whole point is that
+"resolved" and "reserved" must be the same instant — and it is the same
+trade-off `fs_routes.claim_name`'s own upload doors already accept (a
+write that fails after claiming leaves the claimed file exactly the same
+way there, no cleanup, and no prior test relied on otherwise). Two
+existing tests DID rely on the old pure-lookup behavior incidentally, not
+on purpose:
+`test_an_export_never_replaces_the_deliverable_already_filed.py`'s fourth
+resolution used to reuse `q3 (3).pptx` because nothing had actually been
+written to it yet, and `test_export_visit_reports_the_saved_path.py`
+resolved the same already-claimed name twice in the same vault expecting
+both calls to agree. Both updated to state the new (correct) expectation
+explicitly rather than assume a purity the resolver no longer has.
+
+**Fire-tested.** New
+`scripts/test_two_exports_racing_the_same_name_do_not_erase_each_other.py`:
+a structural check that `_vault_binary_path` goes through
+`fs_routes.claim_name` and not `fs_routes.free_name`; 60 real threads
+calling the resolver for the identical name at once, checking all 60
+answers are distinct paths and every one is already claimed on disk;
+the real-server race above (10 concurrent `/generate/image` calls, one
+shared name, 5 rounds), checking every round that all ten succeed, ten
+distinct files land, and every response's own file holds exactly its own
+caller's bytes; and a plain single export, unaffected. Reverted the fix
+in place (md5 `9fca59c4e871f8e5b85fe5b797279122`, the pre-fix
+exporters.py) — the race check failed on all three repeated runs (one
+file surviving out of ten, every round, content never matching the
+receipt holder's own request). Restored (md5
+`1472ba71943d8fcb1ce3d2b96496c23d`), green again on two repeated runs.
+
+No `.jsx`/`.js`/`.css` touched — no build required.

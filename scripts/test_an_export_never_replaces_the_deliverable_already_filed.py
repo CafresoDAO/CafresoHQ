@@ -53,6 +53,9 @@ def resolver_checks(exporters) -> None:
         first = exporters._vault_binary_path(None, 'Slides/q3.pptx', ('.pptx',))
         check('a fresh name resolves to itself',
               first.name == 'q3.pptx', first.name)
+        check('…and the name is claimed on disk the instant it is resolved '
+              '(#386 — no gap for a second resolver to land in)',
+              first.is_file(), 'not created yet')
 
         first.write_bytes(b'the first deck')
         second = exporters._vault_binary_path(None, 'Slides/q3.pptx', ('.pptx',))
@@ -68,9 +71,15 @@ def resolver_checks(exporters) -> None:
         check('a third export keeps counting rather than eating (2)',
               third.name == 'q3 (3).pptx', third.name)
 
+        # #386 claims the name atomically (O_CREAT|O_EXCL) the moment it is
+        # resolved, closing the race two concurrent exports used to have —
+        # so `third` above is no longer a "would-be" name still free for the
+        # taking, it is ALREADY an empty file on disk the instant
+        # _vault_binary_path returned it, exactly as if it had been written.
+        # A fourth resolution has to count past it too.
         bare = exporters._vault_binary_path(None, 'Slides/q3', ('.pptx',))
         check('the appended-extension spelling collides with the same names too',
-              bare.name == 'q3 (3).pptx', bare.name)
+              bare.name == 'q3 (4).pptx', bare.name)
 
 
 def full_door_checks(exporters) -> None:

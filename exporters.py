@@ -124,18 +124,29 @@ def _vault_binary_path(self, rel: str, allowed_ext: tuple) -> pathlib.Path:
     candidate = (root / rel).resolve()
     try: candidate.relative_to(root)
     except ValueError: raise ValueError('path escapes vault directory')
-    candidate.parent.mkdir(parents=True, exist_ok=True)
-    if candidate.exists():
-        # A deliverable already filed under this name steps aside — never
-        # silently replaced. Same rule, same function, as the upload doors
-        # (fs_routes.free_name): Sloan exporting Slides/q3.pptx twice, or two
-        # coworkers converging on the same conventional name, used to destroy
-        # the first file and hand back a 200 over its grave. The receipt below
-        # derives from the path actually written, and the export tools carry
-        # it out on _ctx.meta.filedAs, so the sidestep is said, not hidden.
-        free, _ = fs_routes.free_name(
-            candidate.name, lambda c: (candidate.parent / c).exists())
-        candidate = candidate.parent / free
+    parent = candidate.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    # A deliverable already filed under this name steps aside — never
+    # silently replaced. This used to be a bare `candidate.exists()` check
+    # (fs_routes.free_name's shape) with the export itself — a pptx/docx/pdf
+    # render, or an image-gen call that can sit on a provider's API for up to
+    # three minutes (see _generate_image below) — happening well after, so
+    # two callers naming the same conventional path (Sloan exporting
+    # Slides/q3.pptx twice back to back, two coworkers both told to
+    # illustrate the same slide, or a client retry-after-timeout that
+    # resubmits the identical export while the first is still mid-render)
+    # could both see the name free and both write it, the second one erasing
+    # the first with no error anywhere — exactly the "is this name free?"
+    # question fs_routes.claim_name exists to make unaskable-twice for the
+    # upload doors. This door asked the same question the same non-atomic
+    # way and never got the fix. O_CREAT|O_EXCL now claims the name up
+    # front, before any rendering or network call starts, so a second caller
+    # racing in behind it gets EEXIST and steps to the next numbered variant
+    # instead of a silent overwrite. The receipt below derives from the path
+    # actually written, and the export tools carry it out on
+    # _ctx.meta.filedAs, so the sidestep is said, not hidden.
+    fd, _, candidate, _ = fs_routes.claim_name(candidate.name, lambda c: parent / c)
+    os.close(fd)
     return candidate
 
 def _read_json_body(self):
