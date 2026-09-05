@@ -17,8 +17,65 @@ import os
 import pathlib
 import re
 import shutil
+import sys
 import time
 import urllib.parse
+
+
+# ---- #411: an errno belongs in the log, a sentence belongs in the toast ---
+#
+# `## 407` swept this class and closed with the fs and pty columns marked
+# "sampled, not cleared" — six doors driven out of a hundred sites. Driving
+# the rest found the same body `## 403` reported for /hermes/provider living
+# at seven more doors here:
+#
+#   GET  /fs/stat   (unreadable file) -> 500 [Errno 13] Permission denied: '/…'
+#   POST /fs/mkdir  (unwritable dir)  -> 500 the same
+#   POST /fs/mkdir  (under a file)    -> 409 cannot create folder here: [Errno 20] …
+#   POST /fs/rename (unwritable dir)  -> 500 the same, with BOTH paths
+#   POST /fs/delete (unwritable dir)  -> 500 the same
+#   POST /fs/upload (unwritable dir)  -> 500 mkdir failed: [Errno 13] …
+#
+# and a second shape `## 407` had not named: the PermissionError raised by
+# _validate_path arrives as `str(e)` — "Path outside allowed directories:
+# '/private/var/…'" — which is an absolute path, over 90 characters, and full
+# of digits, so `cleanCause` cuts it and `officeCause` rewrites what is left.
+# `## 407`'s /vault/open lesson applies to that one exactly: it is not saved
+# by anything, it is only less alarming.
+#
+# Same split and same two constraints as `_log_upstream`/`_obsidian_refusal`
+# in serve.py and `_config_failure` in drivers/hermes.py: the diagnostic goes
+# to stderr, the boss gets one honest sentence that is digit-free (app/
+# floor.jsx's `officeCause` rewrites bare numbers) and inside 90 characters
+# (`cleanCause` truncates at app/floor.jsx:720).
+
+def _fs_log(where, exc):
+    """The errno and the path, on the server's own log, never in a body."""
+    try:
+        sys.stderr.write('[fs] %s: %s\n' % (where, ' '.join(str(exc).split())[:300]))
+    except Exception:
+        pass    # a log line may never be the reason a request fails
+
+
+def _fs_failure(self, status, where, exc, sentence):
+    """Log the exception, answer the sentence. One shape for every door, so a
+    new door cannot be held to a weaker rule than an old one."""
+    _fs_log(where, exc)
+    return self._send_json(status, {'error': sentence})
+
+
+# The sentences, in one place so their length and digit-freedom can be
+# checked without reaching into nine functions.
+BAD_PATH     = 'that is not a path this office can use'
+OUTSIDE      = 'that is outside the folders this office is allowed to open'
+NO_READ      = 'could not read that — the server log says why'
+NO_LIST      = 'could not list that folder — the server log says why'
+NO_MKDIR     = 'could not create that folder — the server log says why'
+IN_THE_WAY   = 'cannot put a folder there — something in the way is not a folder'
+NO_MOVE      = 'could not move that — the server log says why'
+NO_DELETE    = 'could not delete that — the server log says why'
+NO_UPLOAD_DIR = 'could not create the folder to upload into — the server log says why'
+BAD_PREVIEW  = 'that preview link is malformed'
 
 # Injected by serve.py right after import.
 _client_path = None
@@ -63,7 +120,7 @@ def _fs_browse(self):
     try:
         p = _workspace_path(req_path).resolve()
     except Exception as e:
-        return self._send_json(400, {'error': f'invalid path: {e}'})
+        return _fs_failure(self, 400, 'browse: invalid path', e, BAD_PATH)
 
     # Only browse within allowed dirs — enforced in EVERY mode (was
     # container-only, which left local/BYO reads unbounded).
@@ -94,7 +151,7 @@ def _fs_browse(self):
     except PermissionError:
         return self._send_json(403, {'error': 'permission denied'})
     except Exception as e:
-        return self._send_json(500, {'error': f'listing failed: {e}'})
+        return _fs_failure(self, 500, 'browse: listing failed', e, NO_LIST)
 
     # Build entries — guard each is_dir() individually because Windows
     # junction points / reparse points can raise ValueError for some paths.
@@ -140,7 +197,7 @@ def _fs_collect(self):
     try:
         root = _workspace_path(req_path).resolve()
     except Exception as e:
-        return self._send_json(400, {'error': f'invalid path: {e}'})
+        return _fs_failure(self, 400, 'collect: invalid path', e, BAD_PATH)
     # This route is keyless (see _KEY_PROTECTED_PREFIXES in serve.py — only
     # the /fs *mutation* prefixes are key-gated, the read routes rely on the
     # allowed-dirs boundary instead). It used to call self._validate_path(),
@@ -182,7 +239,8 @@ def _fs_collect(self):
             try:
                 data = full.read_bytes()
             except Exception as e:
-                skipped.append({'path': rel, 'reason': str(e)})
+                _fs_log('collect: unreadable file', e)
+                skipped.append({'path': rel, 'reason': NO_READ})
                 continue
             files.append({
                 'path': rel,
@@ -208,7 +266,7 @@ def _fs_file(self):
     try:
         p = _workspace_path(req_path).resolve()
     except Exception as e:
-        return self._send_json(400, {'error': f'invalid path: {e}'})
+        return _fs_failure(self, 400, 'file: invalid path', e, BAD_PATH)
     # Serve only within CAFRESOHQ_ALLOWED_DIRS — every mode (was container-
     # only, which exposed unauthenticated arbitrary file read in local/BYO).
     #
@@ -248,7 +306,7 @@ def _fs_file(self):
     except PermissionError:
         return self._send_json(403, {'error': 'permission denied'})
     except Exception as e:
-        return self._send_json(500, {'error': f'read failed: {e}'})
+        return _fs_failure(self, 500, 'file: read failed', e, NO_READ)
     ctype = mimetypes.guess_type(str(p))[0] or 'application/octet-stream'
     import hashlib as _hl
     fhash = _hl.sha1(data).hexdigest()[:16]
@@ -286,7 +344,7 @@ def _fs_stat(self):
     try:
         p = _workspace_path(req_path).resolve()
     except Exception as e:
-        return self._send_json(400, {'error': f'invalid path: {e}'})
+        return _fs_failure(self, 400, 'stat: invalid path', e, BAD_PATH)
     if not _within_allowed_dirs(p):
         return self._send_json(403, {'error': 'path is outside CAFRESOHQ_ALLOWED_DIRS'})
     if not p.exists():
@@ -297,7 +355,7 @@ def _fs_stat(self):
         st = p.stat()
         h = _hl.sha1(p.read_bytes()).hexdigest()[:16]
     except Exception as e:
-        return self._send_json(500, {'error': str(e)})
+        return _fs_failure(self, 500, 'stat: read failed', e, NO_READ)
     return self._send_json(200, {'ok': True, 'mtime': int(st.st_mtime), 'hash': h, 'size': st.st_size})
 
 def _fs_site(self):
@@ -338,22 +396,22 @@ def _fs_site(self):
         pad = '=' * (-len(b64root) % 4)
         root = base64.urlsafe_b64decode(b64root + pad).decode('utf-8')
     except Exception as e:
-        return self._send_json(400, {'error': f'bad site root: {e}'})
+        return _fs_failure(self, 400, 'site: bad root encoding', e, BAD_PREVIEW)
     rel = urllib.parse.unquote(relpath).strip('/')
     if not rel:
         rel = 'index.html'
     try:
         root_p = self._validate_path(root, strict=_strict)
     except PermissionError as e:
-        return self._send_json(403, {'error': str(e)})
+        return _fs_failure(self, 403, 'site: root outside allowed dirs', e, OUTSIDE)
     except Exception as e:
-        return self._send_json(400, {'error': f'invalid root: {e}'})
+        return _fs_failure(self, 400, 'site: invalid root', e, BAD_PATH)
     try:
         target = self._validate_path(str(root_p / rel), strict=_strict)
     except PermissionError as e:
-        return self._send_json(403, {'error': str(e)})
+        return _fs_failure(self, 403, 'site: path outside allowed dirs', e, OUTSIDE)
     except Exception as e:
-        return self._send_json(400, {'error': f'invalid path: {e}'})
+        return _fs_failure(self, 400, 'site: invalid path', e, BAD_PATH)
     if target.is_dir():
         try:
             target = self._validate_path(str(target / 'index.html'), strict=_strict)
@@ -368,7 +426,7 @@ def _fs_site(self):
     except PermissionError:
         return self._send_json(403, {'error': 'permission denied'})
     except Exception as e:
-        return self._send_json(500, {'error': f'read failed: {e}'})
+        return _fs_failure(self, 500, 'site: read failed', e, NO_READ)
     ctype = mimetypes.guess_type(str(target))[0] or 'application/octet-stream'
     self.send_response(200)
     self.send_header('Content-Type', ctype)
@@ -554,12 +612,12 @@ def _fs_upload(self):
     try:
         target_dir = self._validate_path(raw_dir)
     except PermissionError as e:
-        return self._send_json(403, {'error': str(e)})
+        return _fs_failure(self, 403, 'upload: outside allowed dirs', e, OUTSIDE)
     except Exception as e:
         # Malformed path (e.g. embedded null byte) — resolve() raises
         # ValueError. Mirror _fs_browse/_fs_file: clean 400, not a dropped
         # connection.
-        return self._send_json(400, {'error': f'invalid path: {e}'})
+        return _fs_failure(self, 400, 'upload: invalid path', e, BAD_PATH)
     if target_dir.exists() and not target_dir.is_dir():
         return self._send_json(400, {'error': 'target path is not a directory'})
 
@@ -574,7 +632,7 @@ def _fs_upload(self):
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
     except Exception as e:
-        return self._send_json(500, {'error': f'mkdir failed: {e}'})
+        return _fs_failure(self, 500, 'upload: mkdir failed', e, NO_UPLOAD_DIR)
 
     saved, errors = [], []
     for part in msg.get_payload():
@@ -603,7 +661,8 @@ def _fs_upload(self):
             errors.append({'path': fname, 'error': 'outside allowed dirs'})
             continue
         except Exception as e:
-            errors.append({'path': fname, 'error': str(e)})
+            _fs_log('upload: could not claim a name', e)
+            errors.append({'path': fname, 'error': NO_UPLOAD_DIR})
             continue
         try:
             with os.fdopen(fd, 'wb') as fh:
@@ -615,7 +674,8 @@ def _fs_upload(self):
                 entry['renamedFrom'] = decided['renamedFrom'] or decided['name']
             saved.append(entry)
         except Exception as e:
-            errors.append({'path': fname, 'error': str(e)})
+            _fs_log('upload: could not write file', e)
+            errors.append({'path': fname, 'error': NO_UPLOAD_DIR})
     # A refusal is not a server fault, and the all-refused case used to 500
     # while the mixed case returned 200 — the same outcome reported two ways
     # depending on how many other files happened to be in the pick. One
@@ -657,9 +717,9 @@ def _fs_mkdir(self):
     try:
         target = self._validate_path(raw)
     except PermissionError as e:
-        return self._send_json(403, {'error': str(e)})
+        return _fs_failure(self, 403, 'mkdir: outside allowed dirs', e, OUTSIDE)
     except Exception as e:
-        return self._send_json(400, {'error': f'invalid path: {e}'})
+        return _fs_failure(self, 400, 'mkdir: invalid path', e, BAD_PATH)
     if target.exists():
         if target.is_dir():
             return self._send_json(200, {'ok': True, 'path': str(target), 'existed': True})
@@ -667,9 +727,9 @@ def _fs_mkdir(self):
     try:
         target.mkdir(parents=True, exist_ok=True)
     except (NotADirectoryError, FileExistsError) as e:
-        return self._send_json(409, {'error': f'cannot create folder here: {e}'})
+        return _fs_failure(self, 409, 'mkdir: something in the way', e, IN_THE_WAY)
     except Exception as e:
-        return self._send_json(500, {'error': str(e)})
+        return _fs_failure(self, 500, 'mkdir failed', e, NO_MKDIR)
     return self._send_json(200, {'ok': True, 'path': str(target)})
 
 def _fs_rename(self):
@@ -687,9 +747,9 @@ def _fs_rename(self):
         sp = self._validate_path(src)
         dp = self._validate_path(dst)
     except PermissionError as e:
-        return self._send_json(403, {'error': str(e)})
+        return _fs_failure(self, 403, 'rename: outside allowed dirs', e, OUTSIDE)
     except Exception as e:
-        return self._send_json(400, {'error': f'invalid path: {e}'})
+        return _fs_failure(self, 400, 'rename: invalid path', e, BAD_PATH)
     # Same dereference trap _fs_delete carries a comment about: _validate_path
     # resolves through symlinks, so `sp` is already the link's REAL
     # destination. Renaming a symlink therefore used to os.replace() the file
@@ -706,9 +766,9 @@ def _fs_rename(self):
         try:
             self._validate_path(str(link_src.parent))
         except PermissionError as e:
-            return self._send_json(403, {'error': str(e)})
+            return _fs_failure(self, 403, 'rename: link outside allowed dirs', e, OUTSIDE)
         except Exception as e:
-            return self._send_json(400, {'error': f'invalid path: {e}'})
+            return _fs_failure(self, 400, 'rename: invalid link path', e, BAD_PATH)
     move_src = link_src if src_is_link else sp
     # A dangling symlink still exists as a link and is still renamable.
     if not sp.exists() and not src_is_link:
@@ -751,15 +811,15 @@ def _fs_rename(self):
     except FileExistsError:
         return self._send_json(409, {'error': 'target already exists'})
     except OSError as e:
-        return self._send_json(500, {'error': str(e)})
+        return _fs_failure(self, 500, 'rename: could not claim destination', e, NO_MOVE)
     try:
         os.replace(str(move_src), str(dp))
     except (NotADirectoryError, FileExistsError) as e:
         self._fs_rename_unclaim(dp, is_dir_move)
-        return self._send_json(409, {'error': f'cannot move there: {e}'})
+        return _fs_failure(self, 409, 'rename: something in the way', e, IN_THE_WAY)
     except Exception as e:
         self._fs_rename_unclaim(dp, is_dir_move)
-        return self._send_json(500, {'error': str(e)})
+        return _fs_failure(self, 500, 'rename failed', e, NO_MOVE)
     return self._send_json(200, {'ok': True, 'from': str(move_src), 'to': str(dp)})
 
 def _fs_rename_unclaim(self, dp, is_dir_move):
@@ -787,9 +847,9 @@ def _fs_delete(self):
     try:
         target = self._validate_path(raw)
     except PermissionError as e:
-        return self._send_json(403, {'error': str(e)})
+        return _fs_failure(self, 403, 'delete: outside allowed dirs', e, OUTSIDE)
     except Exception as e:
-        return self._send_json(400, {'error': f'invalid path: {e}'})
+        return _fs_failure(self, 400, 'delete: invalid path', e, BAD_PATH)
     # _validate_path resolves through symlinks (so the whitelist can't be
     # bypassed by one) — which means `target` is already the link's REAL
     # destination, and target.is_symlink() below it can never be True. The
@@ -811,9 +871,9 @@ def _fs_delete(self):
         try:
             self._validate_path(str(link_path.parent))
         except PermissionError as e:
-            return self._send_json(403, {'error': str(e)})
+            return _fs_failure(self, 403, 'delete: link outside allowed dirs', e, OUTSIDE)
         except Exception as e:
-            return self._send_json(400, {'error': f'invalid path: {e}'})
+            return _fs_failure(self, 400, 'delete: invalid link path', e, BAD_PATH)
     if not target.exists() and not is_link:
         return self._send_json(404, {'error': 'not found'})
     # Never delete an allowed-dir root itself.
@@ -831,7 +891,7 @@ def _fs_delete(self):
         else:
             (link_path if is_link else target).unlink()
     except Exception as e:
-        return self._send_json(500, {'error': str(e)})
+        return _fs_failure(self, 500, 'delete failed', e, NO_DELETE)
     return self._send_json(200, {'ok': True,
                                  'deleted': str(link_path if is_link else target)})
 

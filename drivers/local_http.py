@@ -12,11 +12,73 @@ hosts never route elevated tasks here.
 """
 import json
 import os
+import sys
 import urllib.error
 import urllib.request
 
 from .base import (Driver, DriverError, TaskHandle, ev_done, ev_error,
                    ev_status, ev_token, ev_usage)
+
+
+# ---- #411: the upstream body is a diagnostic, not an answer -------------
+#
+# `## 407` found six vault doors relaying Obsidian's own 4xx body verbatim
+# into `error`, and asked whether Obsidian was the only such upstream. It was
+# not. This driver did the identical thing one file away — `e.read()[:300]`
+# folded into a DriverError that /agent/stream sends as `str(e)` — and it is
+# the worse instance, because `_headers()` below puts the key in an
+# `Authorization: Bearer` header and OpenRouter / Groq / Gemini reach the
+# boss's real paid provider credentials through it, not a local daemon's.
+#
+# Driven against a stand-in OpenAI-compat upstream that quotes the request it
+# turned down, the fake LM Studio key came back to the browser in full at
+# `POST /agent/stream` -> 502. With the stand-in serialising its echo in
+# insertion order the key fell one character outside the 300-slice; adding
+# `sort_keys=True` — the most ordinary thing a JSON API does — moved it back
+# inside. `## 407`'s note about `/vault/open` applies exactly: a bound that
+# happens to exclude the secret today is not a defence.
+#
+# Same split as `_log_upstream` in serve.py: the sentence goes to the boss,
+# the body goes to the server log, scrubbed on the way. Same two hard
+# constraints as `## 403`/`## 407`'s refusals — digit-free, because
+# app/floor.jsx's `officeCause` rewrites bare numbers into a sentence about
+# the wrong subject (which is why the status code cannot stay in the text),
+# and inside 90 characters, because `cleanCause` truncates there
+# (app/floor.jsx:720).
+
+def _upstream_refusal(status: int) -> str:
+    """One honest sentence per class of upstream refusal. Digit-free, <=90."""
+    if status in (401, 403):
+        return 'that brain turned down the key — check it in the settings panel'
+    if status == 404:
+        return 'that brain has no such model — pick another one in the settings panel'
+    if status == 429:
+        return 'that brain is rate-limiting us — wait a moment and ask again'
+    if status in (400, 405, 409, 415, 422):
+        return 'that brain would not accept the request — try a shorter prompt'
+    if status >= 500:
+        return 'that brain is having trouble at its end — try again shortly'
+    return 'that brain answered with an error instead of a reply — try again'
+
+
+def _log_upstream(where: str, status: int, body: str, *secrets) -> None:
+    """Keep the diagnostic, move it off the boss's screen.
+
+    Deleting the body would cost a developer the only description of what the
+    backend objected to; that split is the fix, not the deletion. Scrubbed of
+    every key we hold on the way out, because the body that prompted this
+    helper is one that quoted the Authorization header back at us, and a log
+    file is not a place for somebody's credential either."""
+    try:
+        text = str(body or '')
+        for s in secrets:
+            s = (s or '').strip()
+            if len(s) >= 8:            # see exporters._scrub: the short-key
+                text = text.replace(s, '<redacted>')   # hole is deliberate
+        sys.stderr.write('[driver] %s: upstream answered %s — %s\n'
+                         % (where, status, ' '.join(text.split())[:300]))
+    except Exception:
+        pass    # a log line may never be the reason a request fails
 
 
 class OpenAICompatDriver(Driver):
@@ -117,22 +179,32 @@ class OpenAICompatDriver(Driver):
         try:
             resp = urllib.request.urlopen(req, timeout=self.CONNECT_TIMEOUT)
         except urllib.error.HTTPError as e:
+            # #411: the body goes to the LOG, never to the boss. See the note
+            # on _upstream_refusal — this relay handed a provider key back to
+            # the browser when the upstream echoed the request it refused.
             detail = ''
             try:
                 detail = e.read().decode('utf-8', 'replace')[:300]
             except Exception:
                 pass
+            _log_upstream(self.MANIFEST['id'], e.code, detail or e.reason,
+                          self.api_key())
             retry_after = None
             try:
                 ra = e.headers.get('Retry-After') if e.headers else None
                 retry_after = min(float(ra), 30.0) if ra else None
             except (TypeError, ValueError):
                 pass
-            raise DriverError(f'upstream {e.code}: {detail or e.reason}',
+            raise DriverError(_upstream_refusal(e.code),
                               status=502, upstream=e.code,
                               retry_after=retry_after)
         except (urllib.error.URLError, TimeoutError, OSError) as e:
-            raise DriverError(f'cannot reach {base}: {e}', status=502)
+            # The base URL is a host:port — bare digits `officeCause` rewrites
+            # — and `e` is an errno. Both belong in the log, not the toast.
+            _log_upstream(self.MANIFEST['id'], 'unreachable',
+                          '%s: %s' % (base, e), self.api_key())
+            raise DriverError('that brain is not answering — check it is running',
+                              status=502)
 
         handle = TaskHandle()
         handle.private['resp'] = resp
@@ -146,10 +218,17 @@ class OpenAICompatDriver(Driver):
           {"error":{"message":"upstream connect error","type":"server_error"}}
           {"error":{"message":"Failed to load model","code":"model_not_found"}}
           {"error":"model requires more system memory than is available"}
+
+        #411: the `or e` fallback used to stringify the WHOLE error dict when
+        neither key was present — the same verbatim relay the pre-stream path
+        had, and the branch through which a request-echoing upstream's
+        Authorization header would arrive mid-stream. It is dropped: this
+        helper exists to carry the backend's own SENTENCE ("Failed to load
+        model", #258), and a dict with no message field has no sentence in it.
         """
         e = chunk.get('error')
         if isinstance(e, dict):
-            return str(e.get('message') or e.get('code') or e)[:300]
+            return str(e.get('message') or e.get('code') or '')[:300]
         if isinstance(e, str) and e.strip():
             return e.strip()[:300]
         return ''
@@ -198,7 +277,11 @@ class OpenAICompatDriver(Driver):
                     in_tok = u.get('prompt_tokens', in_tok)
                     out_tok = u.get('completion_tokens', out_tok)
         except (TimeoutError, OSError) as e:
-            err = f'stream dropped: {e}'
+            # #411: `{e}` here is an errno-and-address. Log it, say the
+            # sentence — same split as the pre-stream path above.
+            _log_upstream(self.MANIFEST['id'], 'stream dropped', str(e),
+                          self.api_key())
+            err = 'the reply stopped part-way — ask again'
         finally:
             try:
                 resp.close()
@@ -212,6 +295,15 @@ class OpenAICompatDriver(Driver):
             # "Failed to load model" or a rate limit. recoverable=True when
             # some text already reached the screen — the tokens already
             # yielded stand, this only marks where the reply stops.
+            # #411: this branch RELAYS the backend's own sentence on purpose
+            # (#258 — "provider returned no content" sent a boss to the wrong
+            # machine), so it cannot be replaced by a refusal we compose. It
+            # is the one body in this file where redaction is the right
+            # instrument rather than the wrong one, and the key we hold is
+            # redacted out of it before it reaches the screen.
+            _k = (self.api_key() or '').strip()
+            if len(_k) >= 8:
+                err = err.replace(_k, '<redacted>')
             yield ev_error(f"{self.MANIFEST['displayName']}: {err}",
                            recoverable=bool(emitted))
         elif emitted:

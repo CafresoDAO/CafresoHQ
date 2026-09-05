@@ -32,6 +32,46 @@ _client_path = None
 _RUNTIME_ENV = 'local'
 
 
+# ---- #411: the same split fs_routes.py and serve.py already use ----------
+#
+# `## 407` left this file "sampled, not cleared". Driven, three doors carried
+# a Python exception and four reflected an absolute path:
+#
+#   POST /terminal/stream (binary not executable)
+#     -> 500 spawn claude: [Errno 13] Permission denied: '/var/folders/…'
+#   GET  /terminal/spawn|pty, POST /terminal/stream (missing cwd)
+#     -> 400 directory not found: /var/folders/7j/4wdyjwhn5cn…/work/nope
+#   GET  /terminal/nonce (wrong Origin) -> 403 origin not allowed: https://…
+#
+# The `directory not found` three are the interesting ones, because the
+# obvious defence is wrong: "the path came from the caller, so it leaks
+# nothing". That is a statement about secrecy, and the rule being enforced is
+# not only about secrecy. A temp path is eighty-odd characters of digits, so
+# `officeCause` rewrites it and `cleanCause` (app/floor.jsx:720) truncates
+# what is left — the boss is shown a mangled half-sentence about the wrong
+# subject. The path belongs in the log for the same reason the errno does.
+
+def _pty_log(where, detail):
+    """Diagnostic to the server's own log, never into a body."""
+    try:
+        sys.stderr.write('[terminal] %s: %s\n'
+                         % (where, ' '.join(str(detail).split())[:300]))
+    except Exception:
+        pass    # a log line may never be the reason a request fails
+
+
+def _pty_failure(self, status, where, detail, sentence):
+    _pty_log(where, detail)
+    return self._send_json(status, {'error': sentence})
+
+
+# Digit-free, <=90 characters — same two constraints as `## 403`/`## 407`.
+NO_SUCH_CWD = 'that project folder is not there — pick it again in Projects'
+NO_SPAWN    = 'could not start that tool — the server log says why'
+NO_STDIN    = 'that tool closed before it could be given the prompt'
+BAD_ORIGIN  = 'that page is not allowed to open a terminal here'
+
+
 # Per-process nonce for /terminal/pty WebSocket auth.
 # Generated once at startup; never logged.  Frontend fetches it from
 # /terminal/nonce before opening the WebSocket.  Any connection that doesn't
@@ -166,7 +206,7 @@ def _terminal_spawn(self):
         return self._send_json(400, {'error': 'cwd required'})
     cwd_path = pathlib.Path(_client_path(cwd)).resolve()
     if not cwd_path.is_dir():
-        return self._send_json(400, {'error': f'directory not found: {cwd}'})
+        return _pty_failure(self, 400, 'cwd not a directory', cwd, NO_SUCH_CWD)
     if cli == 'claude':
         bin_ = self._claudecode_resolve()
     elif cli == 'codex':
@@ -231,7 +271,7 @@ def _terminal_spawn(self):
             if not launched:
                 return self._send_json(503, {'error': 'no terminal emulator found'})
     except Exception as e:
-        return self._send_json(500, {'error': f'spawn failed: {e}'})
+        return _pty_failure(self, 500, 'spawn (windowed)', e, NO_SPAWN)
     return self._send_json(200, {'ok': True, 'cli': cli, 'cwd': str(cwd_path)})
 
 def _terminal_nonce(self):
@@ -264,7 +304,7 @@ def _terminal_nonce(self):
         return
     _origin = self.headers.get('Origin', '').strip()
     if _origin and _origin not in self._app_origins():
-        return self._send_json(403, {'error': f'origin not allowed: {_origin}'})
+        return _pty_failure(self, 403, 'nonce: origin', _origin, BAD_ORIGIN)
     return self._send_json(200, {'nonce': _PTY_NONCE})
 
 def _terminal_pty_ws(self):
@@ -299,7 +339,7 @@ def _terminal_pty_ws(self):
         return self._send_json(400, {'error': 'cwd required'})
     cwd_path = pathlib.Path(_client_path(cwd)).resolve()
     if not cwd_path.is_dir():
-        return self._send_json(400, {'error': f'directory not found: {cwd}'})
+        return _pty_failure(self, 400, 'cwd not a directory', cwd, NO_SUCH_CWD)
     if cli == 'claude':
         bin_ = self._claudecode_resolve()
     elif cli == 'codex':
@@ -334,8 +374,8 @@ def _terminal_pty_ws(self):
         # note in serve.py); `_origin` is whatever the caller sent, so it
         # belongs in `explain`, which is UTF-8. Otherwise a non-latin-1
         # Origin turns a 403 into a dropped connection.
-        return self.send_error(403, 'WebSocket origin not allowed',
-                               f'WebSocket origin not allowed: {_origin}')
+        _pty_log('pty ws: origin', _origin)
+        return self.send_error(403, 'WebSocket origin not allowed', BAD_ORIGIN)
 
     # Nonce validation — the frontend fetches /terminal/nonce first and
     # appends ?nonce=<value> to the WS URL.  Any connection without the
@@ -841,7 +881,7 @@ def _terminal_stream(self):
         return self._send_json(400, {'error': 'cwd required'})
     cwd_path = pathlib.Path(_client_path(cwd)).resolve()
     if not cwd_path.is_dir():
-        return self._send_json(400, {'error': f'directory not found: {cwd}'})
+        return _pty_failure(self, 400, 'cwd not a directory', cwd, NO_SUCH_CWD)
 
     history_lines = []
     for m in messages:
@@ -953,7 +993,7 @@ def _terminal_stream(self):
             env=agent_env,
         )
     except (FileNotFoundError, OSError) as e:
-        return self._send_json(500, {'error': f'spawn {cli}: {e}'})
+        return _pty_failure(self, 500, 'spawn %s' % cli, e, NO_SPAWN)
 
     # claude/codex read the prompt on stdin; gemini gets it in argv (--prompt)
     # so we just close its stdin to signal no interactive input.
@@ -964,7 +1004,7 @@ def _terminal_stream(self):
     except Exception as e:
         try: proc.kill()
         except Exception: pass
-        return self._send_json(500, {'error': f'stdin: {e}'})
+        return _pty_failure(self, 500, 'stdin to %s' % cli, e, NO_STDIN)
 
     # A client already gone (headMs abort, tab closed) by the time the CLI
     # subprocess is up used to leave it running with nobody reading its

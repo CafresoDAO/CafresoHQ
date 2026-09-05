@@ -44312,3 +44312,170 @@ the comment in `browser_screenshot`'s `run` in `hq-runtime.jsx`, and the two
 new `scripts/test_*.py` files' docstrings. The bare numbers above (31, 8, 7,
 5, 984, 200, 404) are counts, an HTTP status and a line number, not entry
 numbers, and must not be renumbered.
+
+## 411. the hundred doors `## 407` counted, and the key it did not know about
+
+`## 407` swept the class — *server error bodies that hand the boss a Python
+exception instead of a sentence* — fixed five errno-and-path bodies, proved a
+credential leak through six Obsidian relays, and closed by naming what it had
+not done, verbatim:
+
+> Left EXPOSED: ~100 exception-interpolating sites in `fs_routes.py`/
+> `pty_server.py` — **sampled, not cleared**. Six doors driven is not 105.
+
+This is those hundred, driven. **Seventy-two doors, one measurement each.**
+`## 407` was right to refuse the verdict: seven of the doors it did not reach
+answered the exact body `## 403` reported, and the question it left open —
+*is Obsidian the only upstream relayed verbatim?* — turned out to have a
+worse answer than Obsidian.
+
+### The table, extended door by door
+
+`## 407`'s denominator reproduces exactly (fs_routes 32 + 41 = 73,
+pty_server 3 + 24 = 27, the hundred), so this extends it rather than rebuilds
+it. **Driven**, not read:
+
+| door | what it answered, before | verdict |
+|---|---|---|
+| `GET /fs/stat` unreadable file | `[Errno 13] Permission denied: '/private/var/…'` | **FIXED** |
+| `POST /fs/mkdir` unwritable dir | the same | **FIXED** |
+| `POST /fs/mkdir` under a file | `cannot create folder here: [Errno 20] …` | **FIXED** |
+| `POST /fs/rename` unwritable dir | the same, carrying **both** paths | **FIXED** |
+| `POST /fs/rename` into locked dir | the same | **FIXED** |
+| `POST /fs/delete` unwritable file | the same | **FIXED** |
+| `POST /fs/delete` unwritable dir | the same | **FIXED** |
+| `POST /fs/upload` unwritable dir | `mkdir failed: [Errno 13] …` | **FIXED** |
+| `POST /fs/upload` under a file | `mkdir failed: [Errno 20] …` | **FIXED** |
+| `POST /terminal/stream` bad binary | `spawn claude: [Errno 13] …: '/var/folders/…'` | **FIXED** |
+| any `/fs` door outside the sandbox (10 sites) | `Path outside allowed directories: '/private/var/…'` | **FIXED** |
+| `GET /fs/site` bad base64 root | `bad site root: Invalid base64-encoded string: number of data characters (9) cannot be…` | **FIXED** |
+| `GET /terminal/spawn` `/pty`, `POST /terminal/stream`, bad cwd | `directory not found: /var/folders/7j/4wdy…` | **FIXED** |
+| `GET /terminal/nonce` wrong Origin | `origin not allowed: https://evil.example` | **FIXED** |
+| `GET /fs/collect` unreadable file | `skipped[].reason` = `[Errno 13] …` — **in a 200** | **FIXED** |
+| `POST /fs/upload` unwritable file (×2) | `failed[].error` = `[Errno 13] …` — **in a 200** | **FIXED** |
+| `POST /agent/stream`, any OpenAI-compat brain | **the boss's own provider key** | **FIXED** |
+| `POST /hermes/v1/*` pass-through | **the gateway's `API_SERVER_KEY`** | **EXPOSED** |
+| the other 41 fs + 17 pty sites | `not a directory`, `no such file`, `permission denied`, `bad json`, `path required`, … | **SAFE, with measurement** |
+
+**`## 407`'s warning that the table lies in both directions held a third
+time.** Its walk counted only `_send_json(<4xx/5xx>, …)`. Three of the sites
+above are in a **200** — a per-item `reason`/`error` inside the `/fs/collect`
+and `/fs/upload` receipts — and no walk of 4xx/5xx statuses can see them. A
+200 is still a body the boss reads. The invariant here therefore walks the
+whole JSON document rather than `body['error']`.
+
+### The finding: Obsidian was not the only one, and this one is worse
+
+`## 407` asked whether any other upstream's body is relayed verbatim.
+`drivers/local_http.py` did the identical thing one file away —
+`e.read().decode(...)[:300]` folded into a `DriverError` that
+`/agent/stream` sends as `str(e)` — reached through a variable, which is
+exactly the hop `## 407` warned its serve.py-only walk could not see, and
+exactly the hop that hid `drivers/hermes.py`'s eight bad strings from it.
+
+It is the worse instance because `_headers()` puts the key in
+`Authorization: Bearer`, and **OpenRouter, Groq and Gemini all subclass it**.
+The credential at risk is not a local daemon's — it is a paid provider key.
+
+Driven against a stand-in OpenAI-compat upstream that quotes the request it
+turned down (the same instrument that found the Obsidian leak), with LM
+Studio pointed at it through the two env vars fleet provisioning already
+sets:
+
+    POST /agent/stream {"driver":"lmstudio"}
+      -> 502 {"error": "upstream 401: {… \"Authorization\": \"Bearer <THE KEY>\" …}"}
+
+**`## 407`'s `/vault/open` lesson repeated itself precisely.** On the first
+run the key fell *one character* outside the 300-slice — `… "Bearer
+lmstudiofak` — and the check said `LEAKED=False`. The only change that made
+it leak in full was `sort_keys=True` on the stand-in's own JSON, which is the
+most ordinary thing a JSON API does. A near-miss is not a pass; both cases
+are pinned.
+
+### EXPOSED, with the measurement, for a human
+
+`serve.py`'s `_hermes_proxy` injects `Authorization: Bearer API_SERVER_KEY`
+server-side, and its own docstring says why: *"so the key never lives in the
+browser."* It then relays the gateway's response body through untouched.
+Measured against the same echoing stand-in:
+
+    POST /hermes/v1/chat/completions -> 401, gateway key in body: True
+
+**The relay defeats the property the injection exists to provide.** It is not
+fixed here, and the reason is not that it is safe. The body is relayed by a
+streaming `read1()` loop so SSE passes through uncompressed; a key can
+straddle two chunks, so scrubbing it is not the small `serve.py` hunk this
+hunt was scoped to make, and getting it wrong breaks every streaming reply in
+the office. It also raises a design question this hunt should not answer
+alone: *should a transparent pass-through sanitise its upstream at all?*
+Recorded rather than rounded up.
+
+### `_scrub` should NOT be the repo-wide instrument
+
+`## 407` left this open. The answer is no, and the argument is about
+direction. `_scrub` is **subtractive**: it takes a body that should never
+have been user-facing and removes the parts the caller thought to enumerate.
+Pointed at the six vault doors it would have removed the key and left the
+absolute path, the errno, the bare digits and the 300-character length — five
+of the six §7 offences intact. The right instrument is **additive**: compose
+a sentence, and send the body to the log. `_scrub` then belongs on the *log*
+side of that split, which is exactly where `_log_upstream` already uses it
+(re-implemented inline). Promoted there, not to the doors.
+
+Its sub-8-character hole was **verified rather than inherited**: a
+three-character key is genuinely left alone. What changed is that the hole no
+longer has a path to the boss — the body is a composed sentence now, so no
+length of key can ride an upstream body out through `/agent/stream`. Pinned.
+
+One narrow exception, argued: `_frame_error`'s relay of the backend's own
+*sentence* ("Failed to load model", `#258`) is deliberate and must stay, so
+redaction is the right instrument **there** — the key is scrubbed out of it,
+and its `or e` whole-dict fallback, the branch through which headers could
+arrive, is dropped.
+
+### The weakest verdict here, flagged as `## 404` flagged its own
+
+**The 58 sites marked SAFE-with-measurement are the weakest row in that
+table**, and the honest reason is that "driven" means *reached at the state I
+could construct*, not *proved unreachable in every state*. `/fs/site`'s
+`read failed`, `/fs/browse`'s `listing failed` and `/fs/file`'s `read failed`
+sit behind an earlier `PermissionError` catch; I could not reach them, so I
+rewrote them to the same shape rather than clear them — a fix applied to a
+door I never opened is a guess about what it would have said. They are
+counted as FIXED above on the strength of the source, not of a response, and
+that is a weaker claim than every other FIXED row. I have not written "safe
+for two independent reasons" anywhere in this entry; where I was tempted to,
+the sentence became this paragraph instead.
+
+### Test
+
+New `scripts/test_the_errno_and_the_key_reach_the_log_not_the_boss.py`, three
+rounds, general invariant rather than pinned strings: no string a boss can
+read — at any status, at any depth in the document — may carry an absolute
+path, an `[Errno N]`, a newline, more than 90 characters, a bare digit, or a
+credential. Round 1 is AST-based and walks `except … as NAME` bindings, so it
+catches an exception reaching a body through *any* expression rather than the
+`f'…{e}'` spelling. Rounds 2–3 drive all 72 doors. Round 4 is the credential,
+pinned at both upstream key orders. Round 5 measures the pass-through.
+
+Two checks exist only to stop this suite passing vacuously, which is `## 404`'s
+lesson taken one step earlier: `/fs/collect` and `/fs/upload` must be shown to
+have *actually* skipped and failed a file, because a clean 200 with an empty
+`skipped` would satisfy the invariant while exercising nothing. And round 5
+asserts it **reached** the proxy — its first run got `## 399`'s 501
+short-circuit, never opened a connection, and reported a clean proxy. That
+verdict was wrong and the check now makes it impossible.
+
+Fire-tested one fix at a time, in place, twice each: reverting the relay fails
+Round 1 and Round 4 with `CARRIES A CREDENTIAL`; reverting `/fs/stat` and
+`/fs/delete` reproduces `## 403`'s reported line verbatim; reverting the pty
+pair reproduces the `spawn claude:` line. All three files md5-identical
+afterwards, green three times, and run from the main checkout as well as the
+worktree.
+
+Nothing here touched `main.mo`, the II configuration, or the mainnet. Four
+concurrent hunts were appending to this ledger; if this landed other than
+fifth its number moved, and every `#411` in `fs_routes.py`, `pty_server.py`,
+`drivers/local_http.py` and
+`scripts/test_the_errno_and_the_key_reach_the_log_not_the_boss.py` moved
+with it.
