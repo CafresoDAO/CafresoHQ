@@ -1,4 +1,4 @@
-import { floorEmit, snagOpener } from './floor.jsx';
+import { CHAT_CUT_NOTE, CHAT_GONE_NOTE, floorEmit, snagOpener } from './floor.jsx';
 import { withRouteOut } from './cast.jsx';   // import-free module — no cycle
 import { CafresoHQClient } from '../claude-client.jsx';
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useRef: useRefA, useCallback: useCallbackA } = React;
@@ -533,16 +533,23 @@ const persistableChat = (xs) => capChatFair(xs, 80)
    Two endings because there are two: nothing had streamed at all (the common
    one — the debounce means the placeholder is usually all that reached
    disk), and something had. Neither invents an answer; both say what is
-   missing and offer the way back. */
+   missing and offer the way back.
+
+   Both sentences are OFFICE VOICE and live in app/floor.jsx beside the visit
+   templates, which is what keeps them out of the model's context: the note
+   is written into `text`, and `text` is what `chatToMessages` sends as that
+   coworker's own `assistant` turn. Measured under node on this exact chain,
+   an interrupted reply that contributed nothing to the envelope before #348
+   arrived at the brain as `{ role: 'assistant', content: '_(nothing came
+   back — … Ask again when you want it.)_' }` — a turn the coworker never
+   spoke, in the slot every chat API reads as "you said this". They are
+   stripped at the choke point now (#349); say them on the screen, never in
+   the prompt. */
 const chatOnLoad = (xs) => (Array.isArray(xs) ? xs : []).map(m => {
   if (!m || !m.interrupted) return m;
   const { interrupted, ...rest } = m;
   const body = String(rest.text || '');
-  return { ...rest, text: body
-    ? body + '\n\n_(cut off here — this reply stopped when the page reloaded. '
-      + 'Ask again if you need the rest.)_'
-    : '_(nothing came back — this reply stopped when the page reloaded. '
-      + 'Ask again when you want it.)_' };
+  return { ...rest, text: body ? body + '\n\n' + CHAT_CUT_NOTE : CHAT_GONE_NOTE };
 });
 
 /* Desk-screen feed: streams an agent's live output tail onto its office

@@ -44,6 +44,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 STORAGE = ROOT / 'app' / 'storage.jsx'
 APP = ROOT / 'app.jsx'
+# The two sentences moved to app/floor.jsx in #349 — they are office voice,
+# and living beside the visit templates is what keeps them out of the model's
+# context (chatToMessages sends a message's `text` as that speaker's own
+# `assistant` turn). What the bubble says is unchanged; it is now said from
+# one place, so the strip and the screen cannot drift apart.
+FLOOR = ROOT / 'app' / 'floor.jsx'
 FAILS = []
 
 EMPTY = ('_(nothing came back — this reply stopped when the page reloaded. '
@@ -82,16 +88,23 @@ def main():
     cap = re.search(r'const capChatFair = \(xs, max, floor = 15\) => \{[\s\S]*?\n\};', src)
     persist = re.search(r'const persistableChat = \(xs\) =>[\s\S]*?;\n', src)
     scrub = re.search(r'const chatOnLoad = \(xs\) =>[\s\S]*?\n\}\);', src)
+    floor_src = FLOOR.read_text(encoding='utf-8')
+    notes = re.findall(r'const CHAT_(?:CUT|GONE)_NOTE = [\s\S]*?;\n', floor_src)
     check('the chat write filter is still one statement', bool(cap and persist),
           'app/storage.jsx')
     check('the chat load-scrub exists', bool(scrub),
           'app/storage.jsx: chatOnLoad is the read side of the marker')
-    if not (cap and persist and scrub):
+    check('the two sentences it says are declared once, in app/floor.jsx',
+          len(notes) == 2,
+          'app/floor.jsx: CHAT_CUT_NOTE / CHAT_GONE_NOTE — office voice, so '
+          'the office-voice strip can find them (#349)')
+    if not (cap and persist and scrub and len(notes) == 2):
         print()
         print('a silent coworker: FAILED — could not lift the shipped source')
         return 1
 
     R = run("""
+%s
 %s
 %s
 %s
@@ -130,7 +143,7 @@ R.errDropped = persistableChat(
 R.nulls  = chatOnLoad([null, { id:'m6', text:'ok' }]);
 R.notArr = chatOnLoad('not an array');
 console.log(JSON.stringify(R));
-""" % (cap.group(0), persist.group(0), scrub.group(0)))
+""" % (''.join(notes), cap.group(0), persist.group(0), scrub.group(0)))
 
     check('a live spinner is never written to storage',
           'streaming' not in R['writtenEmpty'],
@@ -188,10 +201,19 @@ console.log(JSON.stringify(R));
           'app/storage.jsx: exactly one call site, in the mount initialiser. '
           'The cross-tab absorber must stay off this path — a record another '
           'tab is writing right now belongs to a live run')
+    # One writer each, and after #349 that writer is app/floor.jsx: the strip
+    # that keeps these out of the model's context matches them literally, so a
+    # second copy anywhere is a sentence that reaches the brain.
+    floor_code = re.sub(r'/\*[\s\S]*?\*/', '', floor_src)
     check('the two endings have exactly one writer each',
-          src.count(EMPTY.split('—')[0]) == 1 and src.count(CUT.split('—')[0]) == 1,
-          'app/storage.jsx: these sentences are only ever true of a reply the '
+          floor_code.count(EMPTY.split('—')[0]) == 1
+          and floor_code.count(CUT.split('—')[0]) == 1,
+          'app/floor.jsx: these sentences are only ever true of a reply the '
           'page outlived, so chatOnLoad is the only thing allowed to say them')
+    check('...and app/storage.jsx does not keep a second copy',
+          src.count(EMPTY.split('—')[0]) == 0 and src.count(CUT.split('—')[0]) == 0,
+          'app/storage.jsx must import them; a copy here is one the office-voice '
+          'strip would not recognise, and it would ship to the brain (#349)')
 
     print()
     if FAILS:

@@ -38027,3 +38027,60 @@ a name dropped on the way out of a filter. Both end with the boss reading a
 thread that is *complete* and *wrong*, with nothing on screen admitting a gap.
 A blank bubble at least shows you the silence. A colleague who was never asked
 does not even leave a hole where they should have been.
+
+---
+
+## 351. the office's apology, in the coworker's mouth
+
+**The wreck.** `## 348.` fixed a real thing on the screen. A reply the page
+did not outlive came back from a reload as a blank bubble under a
+coworker's name — no error, no note, nothing saying the answer had been cut
+off — and its fix stamps a durable `interrupted` marker on the write, spends
+it on the read, and writes one of two sentences into the message's `text`:
+
+```
+_(nothing came back — this reply stopped when the page reloaded.
+  Ask again when you want it.)_
+```
+
+Right for the bubble. Wrong one file over. `chatToMessages` is, in its own
+comment, *"the single place stored chat becomes prompt"*, and a message's
+`text` is exactly what it sends as that speaker's `assistant` turn. Measured
+under node on the real `persistableChat → chatOnLoad → chatToMessages`
+chain, with an interrupted reply from a coworker named Kip:
+
+```
+before #348   [ {user: 'summarise the deck'} ]
+after  #348   [ {user: 'summarise the deck'},
+                {assistant: '_(nothing came back — this reply stopped
+                  when the page reloaded. Ask again when you want it.)_'} ]
+```
+
+An empty placeholder used to contribute NOTHING to the envelope — `if (text)`
+dropped it — and now contributes a turn Kip never spoke, in the one
+grammatical slot every chat API defines as *"you said this"*, telling the
+model it had already declined and asked the boss to try again. The partial
+case is worse in kind: the brain reads `Three risks: \n\n_(cut off here —
+…)_` as Kip narrating his own interruption mid-sentence. The chief of
+staff's envelope carried it too, as `[Kip · Deep Research]: _(nothing came
+back…)_`.
+
+This is the forgery `stripOfficeVoice` exists to stop — *"the office's
+report of its OWN actions must not re-enter the model's context as prior
+conversation"* — and the matcher knew only the `📡 …→` visit templates, so
+the office's own newest sentence walked straight past the door built for it.
+
+**The fix.** Both sentences are office voice, so they are declared in
+`app/floor.jsx` beside the visit templates, joined to `_officeVoiceRe()`,
+and imported by `app/storage.jsx` rather than spelled there — one copy, so
+the bubble and the strip cannot drift apart. The empty case then strips to
+`''` and the turn is dropped whole, which is the pre-`## 348.` envelope
+exactly; the partial case keeps the tokens that really arrived and drops
+only the narration, which is that function's standing rule: *result bodies
+survive, only the template goes*. The screen is unchanged.
+
+**Whose twin.** `## 316.`, the declined payment captioned *"Sent 0.05 ICP"*,
+and `## 344.` one ticket ago, the half-hour salary audited as hourly. All
+three are the office putting words somewhere it has no right to put them.
+The difference here is the audience: the wrong number was read by a boss who
+could argue with it, and this sentence was read by a model that cannot.

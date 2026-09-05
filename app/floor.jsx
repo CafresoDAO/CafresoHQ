@@ -337,10 +337,47 @@ const _VISIT_VERBS = (() => {
 })();
 const _VISIT_ICONS = VISIT_WORDS.map(([, w]) => w.icon).concat([VISIT_DEFAULT.icon, VISIT_FAIL_ICON]);
 
+/* What the office says in a coworker's bubble about a reply the page did
+   not outlive (#348's read-scrub, app/storage.jsx `chatOnLoad`). Written
+   HERE, next to the visit templates, because they are the same kind of
+   sentence: the office narrating, inside someone else's speech bubble.
+
+   #348 baked these straight into `text`, which is right for the screen —
+   a bubble that came back from a reload with nothing in it is the defect
+   that ticket fixed — and wrong one file over. `chatToMessages` is "the
+   single choke point where stored chat becomes prompt", and a message's
+   `text` is what it sends as that speaker's own `assistant` turn. Measured
+   under node on the real `persistableChat → chatOnLoad → chatToMessages`
+   chain, an interrupted reply that used to contribute NOTHING to the
+   envelope (`if (text)` dropped the empty placeholder) now contributes:
+
+     { role: 'assistant',
+       content: '_(nothing came back — this reply stopped when the page
+                 reloaded. Ask again when you want it.)_' }
+
+   — a turn the coworker never spoke, in the grammatical slot every chat
+   API defines as "you said this", telling the model to tell the boss to
+   ask again. Exactly the forgery `stripOfficeVoice` exists to stop, from
+   the office's own pen this time.
+
+   So they are office voice, and they leave at the same door. The empty
+   case then strips to '' and the turn is dropped whole, which is the
+   pre-#348 envelope exactly; the partial case keeps the tokens that
+   really arrived and drops only the narration, which is this function's
+   standing rule — "Result bodies survive; only the template goes." */
+const CHAT_CUT_NOTE = '_(cut off here — this reply stopped when the page reloaded. '
+  + 'Ask again if you need the rest.)_';
+const CHAT_GONE_NOTE = '_(nothing came back — this reply stopped when the page reloaded. '
+  + 'Ask again when you want it.)_';
+
 function _officeVoiceRe() {
   const icons = _VISIT_ICONS.map(i => i.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
   const verbs = _VISIT_VERBS.map(v => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
-  return new RegExp(`^[ \\t]*(?:📡[^\\n]*→|(?:${icons})[ \\t]+(?:${verbs})\\b[^\\n]*)[ \\t]*$`, 'gm');
+  const notes = [CHAT_CUT_NOTE, CHAT_GONE_NOTE]
+    .map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  return new RegExp(
+    `^[ \\t]*(?:📡[^\\n]*→|(?:${icons})[ \\t]+(?:${verbs})\\b[^\\n]*|(?:${notes}))[ \\t]*$`,
+    'gm');
 }
 
 function stripOfficeVoice(text) {
@@ -977,4 +1014,4 @@ function toolActivity(agent, ev, extra) {
   };
 }
 
-export { attachVisit, chainHoldLine, cleanCause, deskKit, doneLine, FLOOR_EVENT, floorEmit, floorOn, keyCause, keyOpener, PROP_PLACARD, obsidianCause, officeCause, repoCause, serverWords, shortfallLine, snagCause, snagOpener, snagSentence, stripOfficeVoice, toolActivity, toolProp, toVisit, uploadReceipt, visitLine, visitPlace, visitSubject, visitTense, visitWhere, visitWords };
+export { attachVisit, chainHoldLine, CHAT_CUT_NOTE, CHAT_GONE_NOTE, cleanCause, deskKit, doneLine, FLOOR_EVENT, floorEmit, floorOn, keyCause, keyOpener, PROP_PLACARD, obsidianCause, officeCause, repoCause, serverWords, shortfallLine, snagCause, snagOpener, snagSentence, stripOfficeVoice, toolActivity, toolProp, toVisit, uploadReceipt, visitLine, visitPlace, visitSubject, visitTense, visitWhere, visitWords };
