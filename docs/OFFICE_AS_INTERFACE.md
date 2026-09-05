@@ -37684,3 +37684,43 @@ stating a money number it has no right to state: one wrote the wrong
 ceiling, one narrated a transfer that never happened, and this one reported
 a burn rate at half its real value on the screen built for auditing it. A
 prettier number is not worth a wrong one.
+
+---
+
+## 345. the ticker the tab bar sat on
+
+Two mobile media blocks in `styles.css` reserve bottom room for the fixed
+`.mobile-tabbar` by padding the container of each primary tab — 72px in the
+browser, 80px installed. `## 320.` added Team to both lists; `## 331.` added
+Memory and Calendar. Office was never in either one, and unlike its
+neighbours it was never going to be found by looking for a missing
+`.view-something`: the Office tab's column is `.office-wrap`.
+
+The ticker is the last thing in that column — the office's activity feed, the
+line that says which agent just did what. Measured at 375x812 it ran
+770.0 -> 804.0 against a tab bar starting at 742.0, and `elementFromPoint` at
+the ticker's own coordinates answered `BUTTON.mtab`. `.view-area` did not
+scroll there either (`scrollHeight === clientHeight === 760`), so this was
+not content below the fold. It was content the phone had no way to reach.
+
+The padding alone would have moved the collision rather than ended it. The
+phone block also floors `.pxhq` at `min-height: 420px`, and `.pxhq` is
+already `flex: 1` inside `.office` — so the floor buys nothing when there is
+room and overflows when there is not. On a 375x667 phone the office had
+~328px to give: the building measured 285.1 -> 705.1 inside a container that
+ended at 613.0, hanging 92px past its own parent and painting over the ticker
+at 625.0 -> 659.0. That was the *unfixed* state; an SE owner was already
+losing the feed, to a different cause, with no tab bar involved. `min-height:
+0` lets the flex line shrink to what it was actually given, and `max-height:
+62vh` still caps it on a tall phone.
+
+Both measured after: at 812 the ticker sits 706.0 -> 740.0 and answers
+`DIV.ticker`; at 667 it sits 561.0 -> 595.0 under a 597.0 tab bar and answers
+`DIV.ticker`, with `.pxhq` ending at 547.0 inside a container ending at
+549.0. `## 338.`'s meeting door still hit-tests as itself at maximum scroll
+on both.
+
+Three tab-bar-clearance entries have now been fixed by adding a name to a
+list, and this is the first where the missing name did not look like the
+others. A list you extend by pattern-matching its existing members will keep
+the one member that does not match the pattern.

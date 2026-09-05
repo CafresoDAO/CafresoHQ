@@ -8171,9 +8171,12 @@ body.night .bn-item.active { background: rgba(0,212,181,0.15); color: var(--acce
   }
 
   /* Reserve space at the bottom so the tab bar doesn't cover content.
-     Apply clearance on scrollable content containers, not on .app/.main. */
+     Apply clearance on scrollable content containers, not on .app/.main.
+     Office is `.office-wrap`, not a `.view-*`: it is the only primary tab
+     whose container was missing from this list, which put its ticker (the
+     last thing in the column) entirely behind the tab bar. */
   body { padding-bottom: 0; }
-  .view, .view-projects, .vault-view, .vault-mobile, .view-team, .mobile-chat-view, .view-tasks, .view-memory, .view-calendar {
+  .view, .view-projects, .vault-view, .vault-mobile, .view-team, .mobile-chat-view, .view-tasks, .view-memory, .view-calendar, .office-wrap {
     padding-bottom: calc(72px + env(safe-area-inset-bottom)) !important;
   }
 
@@ -8509,7 +8512,8 @@ body.night .bn-item.active { background: rgba(0,212,181,0.15); color: var(--acce
 
   /* Content views: clear the larger tab bar + home indicator */
   .view, .view-projects, .vault-view, .vault-view.unified, .vault-mobile,
-  .view-team, .mobile-chat-view, .view-tasks, .view-memory, .view-calendar {
+  .view-team, .mobile-chat-view, .view-tasks, .view-memory, .view-calendar,
+  .office-wrap {
     padding-bottom: calc(80px + env(safe-area-inset-bottom)) !important;
   }
 }
@@ -11345,7 +11349,14 @@ body.night .px-lobby .px-int, body.night .px-lobby { filter: brightness(0.85); }
      absolute-positioned room grid) — .pxhq owns scrolling now, and double
      nested scrollers were clipping the bottom of the building unreachably. */
   .office.pxhq-root { max-height: none; overflow: visible; }
-  .pxhq { min-height: 420px; max-height: 62vh; }
+  /* No fixed floor on a phone. `.pxhq` is `flex: 1` inside `.office`, so it
+     already takes every pixel the Situation Wall and the ticker leave over
+     and scrolls the rest inside `.px-scene`. A 420px floor is not a floor,
+     it is an overflow: on a 667px-tall phone (iPhone SE) the office only
+     has ~328px to give, so the building drew 92px PAST its own container
+     and straight over the ticker. `min-height: 0` lets the flex line
+     actually shrink; `max-height` still caps it on tall phones. */
+  .pxhq { min-height: 0; max-height: 62vh; }
   /* Scenery goes; instruments stay. Everything in this list is decoration
      with no state behind it — the LIVE lamp and the Situation Wall used to
      be in it too, which left a phone unable to tell a working office from
