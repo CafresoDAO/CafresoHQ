@@ -38927,3 +38927,62 @@ would be guessing.
 names the risk, and stops at `body`. Stripping the payload is not the same as
 not sending the note, and a comment that says "screen-only" is the sentence a
 reviewer trusts instead of following the bubble.
+
+---
+
+## 366. the office asked one of its two zero-config questions
+
+**Symptom.** A fleet-managed HQ — Cafreso provisioned the container with its
+own brain wired server-side (`LMSTUDIO_BASE_URL`, injected at provision time)
+— opens the first-run tour. Everywhere else in the app this is already a
+solved question: the topbar's ⚠ ADD AI KEY chip stays hidden, the
+getting-started checklist's "Your AI brain" step reads done, `/health` answers
+`{"managed": true, "brain": {"model": "…"}}`. But the tour's own "Your AI
+brain" step — `OnboardingKeyStep` in `ui/onboarding.jsx` — told the boss
+*"Your HQ runs on a free, open-weights AI brain — but it needs your own free
+key from OpenRouter"* and walked them through signing up for one they did not
+need, on the one screen a new user reads before anything else.
+
+**Where it came from.** The step asked exactly one question: `GET
+/hermes/trial-status`, which reports the OTHER zero-config path — the shared
+OpenRouter trial `docker/hermes-bootstrap.py` wires when an operator sets
+`CAFRESOHQ_TRIAL_KEY` and the user has brought no key of their own. That
+mechanism writes `trial.json`; the managed-fleet brain does not, because
+`hermes-bootstrap.py`'s own precedence list puts `LMSTUDIO_BASE_URL` (branch
+2) ahead of the trial fallback (branch 4b) — whichever wins, only one of them
+can ever leave a mark for `/hermes/trial-status` to read. So a box provisioned
+the managed-fleet way answers that endpoint honestly with `active: false`,
+and the step took the absence of ITS mechanism as the absence of any brain at
+all. `## 364.`'s own ledger entry listed this same check as evidence the
+onboarding key step was already honest — it was, about the one mechanism it
+asked after.
+
+**The fix.** `probeManagedBrain()`/`managedBrain()` (claude-client.jsx) already
+exist, are already cached from the same `/health` probe app.jsx's own
+`hasKey`/`officeCanWork` trust, and already fire a `cafresohq:managedBrain`
+event on resolution. `OnboardingKeyStep` now reads that cache (seeding from
+the synchronous getter, re-probing only if it is still `null`, and listening
+for the event so a probe another component kicked off still updates this
+one) alongside the trial check, so "already set" fires on either mechanism —
+never on neither, and never twice-metered: the remaining-count clause the
+trial case shows has nothing to report for a managed brain, so it is
+suppressed there, and the "already set" wording tells the two apart ("its own
+AI brain built in" vs "Cafreso's free shared brain") instead of describing a
+metered trial the box was never on.
+
+**Measured.** A real `serve.py` booted on a scratch `HOME` with
+`LMSTUDIO_BASE_URL` set and no `CAFRESOHQ_TRIAL_KEY` — the managed-fleet
+shape — answers `/health` with `brain: {"model": "…"}` populated and
+`/hermes/trial-status` with `active: false` in the same breath, live,
+confirming the contradiction the fix closes. The real `onTrial` expression,
+lifted verbatim out of `ui/onboarding.jsx` and run under node against that
+live-measured pair plus five more shapes (a genuinely bare box, an unresolved
+probe, a user who already pasted their own key, and the pre-existing
+shared-trial case), reads "already set" only for the two mechanisms that earn
+it and never for a box that has neither.
+
+**Swept for siblings** and found the rest of the office already asking both
+questions correctly through the one shared cache: app.jsx's `hasKey` effect,
+the getting-started checklist, and the topbar chip all read
+`hasUsableKey()`/`probeManagedBrain()` together. This tour step was the one
+surface still asking half.

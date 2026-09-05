@@ -327,7 +327,35 @@ function OnboardingKeyStep() {
       .catch(() => {});
     return () => { dead = true; };
   }, []);
-  const onTrial = !!(trial && trial.active) && !existing;
+  /* The OTHER zero-config path — a fleet-managed HQ with its own brain wired
+     server-side (LMSTUDIO_BASE_URL, see /health's `brain` field in serve.py
+     and probeManagedBrain() in claude-client.jsx). This is a DIFFERENT
+     mechanism from the shared OpenRouter trial above: it writes no
+     trial.json, so /hermes/trial-status.active stays false on exactly the
+     boxes this covers. Before this, the check above was the ONLY thing this
+     step asked, so a managed container that already has a working brain
+     — confirmed by the topbar's own ⚠ ADD AI KEY chip staying hidden, by
+     app.jsx's hasKey/officeCanWork, by the getting-started checklist's
+     "Your AI brain" step reading DONE — still had this step tell the boss
+     "it needs your own free key from OpenRouter" and walk them through
+     signing up for one they do not need. Same class of bug as the CEO's old
+     opening line (app.jsx) and emptyOfficeNote (app/cast.jsx): a fixed
+     string answering a question this component never actually asked.
+     `managedBrain()` returns the cached answer (null unknown, object found,
+     false checked-and-none) from the SAME probe those other surfaces read,
+     so this step can only ever agree with them. */
+  const [managedBrain, setManagedBrain] = useState(() => (C && C.managedBrain) ? C.managedBrain() : null);
+  useEffect(() => {
+    let dead = false;
+    const onProbe = (e) => { if (!dead) setManagedBrain(e.detail); };
+    window.addEventListener('cafresohq:managedBrain', onProbe);
+    if (managedBrain == null && C && C.probeManagedBrain) {
+      C.probeManagedBrain().then(b => { if (!dead) setManagedBrain(b || false); }).catch(() => {});
+    }
+    return () => { dead = true; window.removeEventListener('cafresohq:managedBrain', onProbe); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const onTrial = (!!managedBrain || (!!(trial && trial.active))) && !existing;
 
   const save = async () => {
     const trimmed = (key || '').trim();
@@ -375,9 +403,14 @@ function OnboardingKeyStep() {
     <div>
       {onTrial ? (
         <p style={{ margin: '0 0 var(--sp-3)' }}>
-          <strong>You're already set.</strong> Your HQ runs on Cafreso's free shared
-          brain out of the box — hire an agent and it works right now, no signup.
-          {typeof trial.remaining === 'number' && (
+          {/* Two different reasons this box can already be "set", and only one
+              of them is metered — see the managedBrain note above. A managed
+              container's own brain has no daily cap to report, so the
+              remaining-count clause only ever fires for the shared trial. */}
+          <strong>You're already set.</strong> {managedBrain
+            ? "Your HQ ships with its own AI brain built in — hire an agent and it works right now, no signup."
+            : "Your HQ runs on Cafreso's free shared brain out of the box — hire an agent and it works right now, no signup."}
+          {!managedBrain && trial && typeof trial.remaining === 'number' && (
             <span style={{ color: 'var(--ink-3)' }}>{' '}({trial.remaining} of {trial.cap} free
             messages left today.)</span>
           )}{' '}Want your own model, faster replies, or higher limits? Add a free key
