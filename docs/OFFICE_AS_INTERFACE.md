@@ -37566,3 +37566,66 @@ boots a real server with no configuration, asks with a stranger's Origin, and
 checks the answer that actually comes back — and it pins `/health` still
 public and the `## 333.` and `## 315.` neighbours still closed, so a later
 edit to the list cannot quietly reopen one of them while fixing another.
+
+---
+
+## 343. the stamp the audit trail recorded as a denial
+
+**The wreck.** `/approvals/external/list` answered with one fact — which ids
+are still pending. Three different events drop an id out of that list: the
+boss stamped it, the boss declined it, or `_gc_approvals` auto-denied it
+after thirty minutes because nobody was there. `## 325.` taught the poll to
+stop discarding a vanished row in silence, and, with nothing else to go on,
+to read all three as the third:
+
+```js
+const timedOut = prev.filter(p => p.externalId && !liveIds.has(p.externalId));
+timedOut.forEach(ap => {
+  const rcId = recordReceipt(ap, 'rejected');
+  settleReceipt(rcId, 'expired', 'Timed out waiting for you (30 min) — automatically denied …');
+```
+
+Two ordinary ways in, neither exotic. A second office window: both poll the
+same server, and only the window that clicked removes its own row. Or one
+window, with the click landing between `await r.json()` resolving and the
+updater running — a genuine await boundary, and a click event lands where it
+likes.
+
+Measured end to end against a real `python3 serve.py` and the real
+`claude_approval_hook.py`, nothing mocked between them: a `Bash` call posted
+through the hook, the hook long-polling, then the exact decide body the
+tray's `decideExternal` sends with `allow`. The hook printed
+`"permissionDecision": "allow"` and exited — Claude Code was told to run
+`rm -rf …` and ran it. The next poll of the real list endpoint, fed to the
+real `setApprovals` updater lifted out of `app.jsx`, wrote
+
+```
+receipt   decision='rejected'  outcome='expired'
+chat      ⏱ Timed out waiting for you — Bash: rm -rf … was automatically denied.
+```
+
+for the command the boss had just approved and the machine had just carried
+out. The Receipts modal calls itself *"stamped approvals · audit trail"*.
+Here it recorded the reverse of the stamp it presided over, and the boss —
+who is told the call was denied — has no reason to go looking at what the
+command did.
+
+**The fix.** The server is the only thing that knows why an id left, so it
+says so. `_approvals_resolved` is a bounded, outcome-only stub —
+`{id, ts, decision, reason, expired}`, no tool, no input, no cwd — written
+under the same lock that flips the decision, from both `_approval_decide`
+and `_gc_approvals`, and shipped alongside `pending` on the list endpoint.
+The poll splits the departed rows into the ones a stamp accounts for (the
+receipt carries the boss's real decision, settled `ran` or `blocked`, with
+their own icons rather than the generic ⚠) and the ones it genuinely cannot.
+That second arm is unchanged — `rejected` / `expired`, "automatically
+denied" — and it is where an older server, a restarted one, and an entry
+aged past the cap all still land. The arm that claims less keeps the cases
+nobody can vouch for.
+
+**Whose twin.** `## 316.`, the declined payment captioned *"💸 Sent 0.05
+ICP"*. Same shape, one gate over: the decision happened, the handler never
+received its outcome, and the office narrated the opposite with total
+confidence. A gate that records the wrong verdict is not a gate the boss can
+audit, and audit is the only thing that makes the first stamp worth asking
+for.

@@ -105,10 +105,16 @@ def main():
     check("...settled with an 'expired' outcome (distinct from approved/"
           "rejected/failed elsewhere in this file)",
           re.search(r"settleReceipt\(rcId, 'expired',", app_src) is not None)
+    # `#338` widened this from the literal `timedOut.length === 1` to a
+    # pattern. That check pinned a variable SPELLING, not a behaviour, and
+    # #338 had to split the departed rows into the ones the boss actually
+    # stamped and the ones that really expired — the singular/aggregate fork
+    # this guards now lives on `reallyTimedOut`. The guarantee is unchanged
+    # and the behavioural scenarios below still assert it directly.
     check('...and a chat line so the boss sees it without opening the '
           'Receipts modal',
-          "timedOut.length === 1" in app_src and "were automatically denied"
-          in app_src)
+          re.search(r"\w*[Tt]imedOut\.length === 1", app_src) is not None
+          and "were automatically denied" in app_src)
     check("ReceiptsModal gives the 'expired' outcome its own icon instead "
           "of falling into the generic ⚠ bucket used for a failed publish",
           "r.outcome === 'expired' ? '⏱ '" in feat_src)
@@ -157,6 +163,12 @@ function settleReceipt(rcId, outcome, text) { calls.settleReceipt.push({ rcId, o
 function setChat(fn) { calls.chatMsgs.push(...fn([]).map(m => m.text)); }
 
 let pending = ''' + pending_json + ''';
+/* `#338` gave the poll a second input: the server now says WHY each ask
+   left the pending list (allow / deny / expired). Every scenario here is
+   about the case where nothing is known about the departed row, which is
+   the empty list — i.e. these scenarios pin the "we don't know, so say it
+   timed out" arm, unchanged. */
+let resolved = [];
 ''' + extra_setup + '''
 ''' + block + '''
 

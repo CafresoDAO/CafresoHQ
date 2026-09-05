@@ -1034,6 +1034,36 @@ _approvals_lock = threading.Lock()
 _approvals_pending = {}   # id -> dict (see _new_approval)
 _APPROVAL_TTL_SEC = 30 * 60
 
+# WHY an entry left the pending list. Three different events drop an id out
+# of /approvals/external/list — the boss stamped it, the boss declined it, or
+# _gc_approvals auto-denied it because nobody was there — and until this dict
+# existed the UI could not tell them apart. It only ever saw an id go missing,
+# and `## 325.` had taught it to read a missing id as "timed out". So an ask
+# the boss APPROVED (in a second office window, or in this one with the click
+# landing while a poll was already in flight) was filed in the Receipts
+# modal — "stamped approvals · audit trail" — as REJECTED, settled 'expired',
+# and announced in chat as "automatically denied", while the `claude` CLI on
+# the other end of the same id had already been told `allow` and had run the
+# command. Same family as `## 316.`: the handler never received the outcome,
+# so the office narrated the opposite of what happened.
+#
+# Bounded and outcome-only: no tool, no input, no cwd. This is the receipt
+# stub for a decision already made, not a second copy of the request.
+_approvals_resolved = {}   # id -> {'id','ts','decision','reason','expired'}
+_APPROVALS_RESOLVED_CAP = 200
+
+def _remember_resolution(entry: dict, expired: bool):
+    """Record how a pending approval ended. Call with _approvals_lock held."""
+    _approvals_resolved[entry['id']] = {
+        'id': entry['id'],
+        'ts': time.time(),
+        'decision': entry['decision'] or 'deny',
+        'reason': str(entry.get('reason') or '')[:400],
+        'expired': bool(expired),
+    }
+    while len(_approvals_resolved) > _APPROVALS_RESOLVED_CAP:
+        _approvals_resolved.pop(next(iter(_approvals_resolved)), None)
+
 def _new_approval(payload: dict) -> dict:
     aid = 'ce_' + uuid.uuid4().hex[:10]
     entry = {
@@ -1064,6 +1094,7 @@ def _gc_approvals():
             if e:
                 e['decision'] = 'deny'
                 e['reason'] = 'expired (no human present)'
+                _remember_resolution(e, expired=True)
                 e['event'].set()
 
 
@@ -4293,8 +4324,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 'input': e['input'], 'cwd': e['cwd'], 'agent': e['agent'],
                 'sessionId': e['sessionId'], 'summary': e['summary'],
             } for e in _approvals_pending.values() if e['decision'] is None]
+            # Recently-ended asks travel with the pending ones so a client
+            # that was tracking a row can learn WHY it went away in the same
+            # poll that stops listing it — see _approvals_resolved.
+            resolved = list(_approvals_resolved.values())
         items.sort(key=lambda x: x['ts'])
-        return self._send_json(200, {'pending': items})
+        return self._send_json(200, {'pending': items, 'resolved': resolved})
 
     def _approval_decide(self):
         """UI POSTs the human decision: {id, decision: 'allow'|'deny', reason?}.
@@ -4317,6 +4352,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return self._send_json(409, {'error': 'already decided'})
             entry['decision'] = decision
             entry['reason'] = reason
+            # The stamp itself is the only evidence that this id left the
+            # pending list for a HUMAN reason rather than a timeout. Recorded
+            # here, under the same lock that flips the decision, so no poll
+            # can observe the id gone with its fate not yet written.
+            _remember_resolution(entry, expired=False)
         entry['event'].set()
         sys.stderr.write(f'[approvals] decided {aid} -> {decision}\n')
         return self._send_json(200, {'id': aid, 'decision': decision})

@@ -5856,7 +5856,12 @@ ${d.text}` : d.text,
       try {
         const r = await fetch((window._API_BASE || '') + '/approvals/external/list', { cache: 'no-store' });
         if (!r.ok) return;
-        const { pending = [] } = await r.json();
+        /* `resolved` is the fate of the asks that just LEFT `pending` —
+           see serve.py's _approvals_resolved. An older server that does not
+           send it defaults to [], which lands every departed row in the
+           "we don't know, so say it timed out" arm below: exactly the
+           behaviour this poll had before, and the honest floor. */
+        const { pending = [], resolved = [] } = await r.json();
         if (stopped) return;
         if (pending.length) lastAskRef.current = Date.now();   // stay fast
         setApprovals(prev => {
@@ -5879,6 +5884,35 @@ ${d.text}` : d.text,
              is exactly the one an audit trail exists to catch, and it was
              the one case that left zero trace anywhere in the UI. */
           const timedOut = prev.filter(p => p.externalId && !liveIds.has(p.externalId));
+          /* …and "gone from the server's list" is THREE events wearing one
+             name. `## 325.` (the note above) read every one of them as a
+             timeout, because the list endpoint only ever said which ids were
+             still pending, never why one stopped being. Two of the three are
+             a decision the boss actually made:
+
+             - another office window stamped it (both windows poll the same
+               server; only the one that clicked removes its own row);
+             - THIS window stamped it, with the click landing in the gap
+               between `await r.json()` resolving and this updater running —
+               a real await boundary, so a click event can and does land
+               inside it.
+
+             In both cases onApprove's POST to /approvals/external/decide has
+             already unblocked the hook and the tool call has RUN. The row
+             then arrived here as "timed out", and the office wrote
+             `recordReceipt(ap, 'rejected')` + "automatically denied" into
+             the audit trail for a command it had just approved and executed.
+             That is `## 316.` again — the decision happened, the handler
+             never heard the outcome, and the record states the opposite.
+
+             So ask the server which it was. Anything the server cannot
+             account for (it restarted, the entry aged past the resolved cap)
+             stays in the timeout arm, which is the arm that claims less. */
+          const fate = new Map((resolved || []).map(x => [x.id, x]));
+          const stampFate = (f) => (f && !f.expired
+            && (f.decision === 'allow' || f.decision === 'deny')) ? f : null;
+          const stamped = timedOut.filter(p => stampFate(fate.get(p.externalId)));
+          const reallyTimedOut = timedOut.filter(p => !stampFate(fate.get(p.externalId)));
           // Add any new ones.
           const fresh = pending
             .filter(p => !haveIds.has(p.id))
@@ -5922,16 +5956,40 @@ ${d.text}` : d.text,
             });
           if (fresh.length === 0 && kept.length === prev.length) return prev;
           if (fresh.length) say(`Claude Code wants ${fresh[0].title.slice(0, 30)}…`, 'STAMP');
-          if (timedOut.length) {
-            timedOut.forEach(ap => {
+          /* A stamp the boss really made. The receipt carries THEIR decision
+             (not 'rejected'), and its outcome says what became of the tool
+             call — which for an approval is the sentence that matters, since
+             the command has already run by the time this poll notices. */
+          if (stamped.length) {
+            stamped.forEach(ap => {
+              const f = stampFate(fate.get(ap.externalId));
+              const allowed = f.decision === 'allow';
+              const rcId = recordReceipt(ap, allowed ? 'approved' : 'rejected');
+              settleReceipt(rcId, allowed ? 'ran' : 'blocked',
+                allowed
+                  ? 'You stamped this — the waiting tool call was allowed and ran.'
+                  : 'You declined this — the waiting tool call was blocked.');
+            });
+            const allowedRows = stamped.filter(
+              ap => stampFate(fate.get(ap.externalId)).decision === 'allow');
+            setChat(prevChat => [...prevChat, { id: HQ.uid('m'), from: 'system', name: 'HQ',
+              text: stamped.length === 1
+                ? (allowedRows.length
+                    ? `✓ ${stamped[0].title} was stamped — it ran.`
+                    : `✕ ${stamped[0].title} was declined — it was blocked.`)
+                : `⚖ ${stamped.length} waiting tool calls were stamped `
+                  + `(${allowedRows.length} allowed, ${stamped.length - allowedRows.length} blocked).` }]);
+          }
+          if (reallyTimedOut.length) {
+            reallyTimedOut.forEach(ap => {
               const rcId = recordReceipt(ap, 'rejected');
               settleReceipt(rcId, 'expired',
                 'Timed out waiting for you (30 min) — automatically denied so the waiting tool call could stop blocking.');
             });
             setChat(prevChat => [...prevChat, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-              text: timedOut.length === 1
-                ? `⏱ Timed out waiting for you — ${timedOut[0].title} was automatically denied.`
-                : `⏱ ${timedOut.length} approvals timed out waiting for you and were automatically denied.` }]);
+              text: reallyTimedOut.length === 1
+                ? `⏱ Timed out waiting for you — ${reallyTimedOut[0].title} was automatically denied.`
+                : `⏱ ${reallyTimedOut.length} approvals timed out waiting for you and were automatically denied.` }]);
           }
           return [...kept, ...fresh];
         });

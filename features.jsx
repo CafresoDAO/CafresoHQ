@@ -1674,7 +1674,11 @@ function ReceiptsModal({ open, onClose, receipts, onPin, onClear }) {
                   color: r.outcome === 'failed' ? 'var(--error)' : 'inherit',
                   opacity: r.outcome === 'failed' ? 1 : 0.85,
                 }}>
-                  {r.outcome === 'shipped' ? '🚀 ' : (r.outcome === 'preview' ? '🔗 ' : (r.outcome === 'expired' ? '⏱ ' : '⚠ '))}
+                  {/* 'ran' / 'blocked' are the two endings of an external
+                      (Claude Code hook) stamp the boss made in another
+                      window — a decision carried out, not a breakage, so
+                      neither belongs in the generic ⚠ bucket. */}
+                  {r.outcome === 'shipped' ? '🚀 ' : (r.outcome === 'preview' ? '🔗 ' : (r.outcome === 'expired' ? '⏱ ' : (r.outcome === 'ran' ? '✓ ' : (r.outcome === 'blocked' ? '✕ ' : '⚠ '))))}
                   {r.outcomeText}
                 </div>
               )}
