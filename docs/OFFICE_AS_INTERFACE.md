@@ -38183,3 +38183,49 @@ for free once the door opens: the file carries the new spelling, `/vault/list`
 titles it the new way, and the inbound `[[meeting]]` in another note is rewritten
 to `[[Meeting]]` by the same pass that follows any other move. The office was
 never missing the machinery. It was refusing to start it.
+
+---
+
+## 354. the coworker who got the credit for a job he only mentioned
+
+**The wreck.** A DONE card is the only place the office says who did the work
+and when. Mira finishes "Ship the page" on Tuesday; the card reads
+`✓ Mira finished this · 2 days ago`, and that line is the whole of the office's
+memory of it. On Thursday the boss asks Kenji about the same job in chat, and
+Kenji's reply closes with `[TASK_DONE: t_…][/TASK_DONE]` — the coworkers do
+this constantly, it is the marker they are told to use whenever they believe a
+job is finished. The card then read `✓ Kenji finished this · just now`.
+
+Nothing about the job changed. Kenji did not touch it. Tuesday is gone — the
+new stamp is written to `tasks.json` and the real one is not recovered — and
+the boss's record of who delivered what now names the wrong person on the wrong
+day.
+
+**Where it was.** `applyStatus` (`app/worklog.jsx`) settled this rule for the
+whole office two hundred entries ago: *entering* done, not merely *being* done,
+and its own comment spells out the damage of the other reading — "written to
+disk, with the true finish time gone for good". The chat marker handler in
+`app.jsx` called that function and then spread `completedAt: Date.now(),
+completedBy: agent.id` straight over the answer, unconditionally.
+
+The reachability was not a guess. Twenty lines below, the same handler's XP
+write already asks the question (`if (dt && dt.status !== 'done')`), and
+`xpRecord` says in as many words that it exists so that "every double-fire path
+[is] safe (an agent re-emitting `[TASK_DONE:…]` …)". Two neighbours knew a
+coworker re-closes a closed card as ordinary traffic. The one that writes the
+credit did not.
+
+**Measured**, on the reducer lifted verbatim out of `app.jsx`: a card carrying
+`completedBy: 'mira'` and a Tuesday timestamp, handed a done marker from Kenji,
+came back `completedBy: 'kenji'` with a stamp of the current millisecond. A card
+that finished before the office ever stamped anything — the record `finishedLabel`
+is built to stay silent about — was handed a fabricated finish time and a
+fabricated name in the same pass.
+
+**The fix** hands the timestamp back to `applyStatus`, which already refuses
+both to re-stamp and to invent one, and attaches `completedBy` only when a stamp
+was actually placed. A real close still names the coworker who did it; a card
+reopened and genuinely finished again credits the second run. The toast came
+along, because it was the same claim one surface louder: a re-mention now says
+the job *was already finished* instead of announcing a completion that did not
+happen.

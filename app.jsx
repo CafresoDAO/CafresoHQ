@@ -3196,13 +3196,45 @@ ${d.text}` : d.text,
              finishes it, has moved past whatever they were stuck on, and
              leaving the old reason there would put "waiting on the API key"
              under a job that is done. */
+          /* ENTERING done, not merely being done — applyStatus settled that
+             rule for the whole office and this branch spread its own
+             `completedAt: Date.now(), completedBy: agent.id` straight over
+             the top of it, unconditionally. The XP ledger twenty lines down
+             already asks the question (`if (dt && dt.status !== 'done')`),
+             and xpRecord's own comment names the traffic that makes this
+             reachable: it exists to make "every double-fire path safe (an
+             agent re-emitting [TASK_DONE:…] …)". A coworker closing a card
+             that is already closed is the case that guard was written for.
+
+             Measured on the lifted reducer: a card Mira finished last week
+             came back `completedBy: 'kenji'` with a fresh stamp the moment
+             Kenji's reply mentioned it, so the DONE card read "✓ Kenji
+             finished this · just now" over a job Kenji never touched — the
+             real finish time overwritten and persisted, on the one surface
+             that exists to say who did the work.
+
+             applyStatus already owns the timestamp and already refuses to
+             re-stamp (and refuses to invent one for a legacy card that
+             never had one). The name rides WITH the stamp — a name with no
+             timestamp behind it is worse than no name, in that module's own
+             words — so `completedBy` is attached only when a stamp was
+             actually placed on this pass. */
           if (upd.action === 'done') {
-            if (toast) toast.success(`✓ ${agent.name} completed "${t.title.slice(0, 36)}"`);
-            return { ...applyStatus(t, 'done'),
+            const closed = applyStatus(t, 'done');
+            const nowFinished = !!closed.completedAt && closed.completedAt !== t.completedAt;
+            /* And the toast says which of the two just happened. Announcing
+               a completion for work that was already on the record is the
+               same claim the stamp above stopped making, one surface
+               louder. */
+            if (toast) {
+              toast.success(nowFinished
+                ? `✓ ${agent.name} completed "${t.title.slice(0, 36)}"`
+                : `✓ "${t.title.slice(0, 36)}" was already finished`);
+            }
+            return { ...closed,
                      result: upd.result || t.result || '',
                      blockedReason: '', blockedAt: null,
-                     completedAt: Date.now(),
-                     completedBy: agent.id };
+                     ...(nowFinished ? { completedBy: agent.id } : {}) };
           }
           if (upd.action === 'blocked') {
             if (toast) toast.warn(`⚠ ${agent.name} blocked on "${t.title.slice(0, 36)}": ${upd.note || '(no reason)'}`);
