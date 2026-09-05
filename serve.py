@@ -4827,14 +4827,42 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     key = _oci_obj_key(rel)
                     content = body
                     if mode == 'append':
+                        # An append on a bucket has to read the note before it
+                        # can write it back. A read that FAILED is not a note
+                        # that isn't there. This used to swallow every
+                        # exception as "file doesn't exist yet" and then
+                        # put_object the fragment alone — so one 503 from a
+                        # throttled bucket, one expired instance-principal
+                        # token, one socket timeout mid-night REPLACED the
+                        # whole note with the single line being appended, and
+                        # answered 200 {"mode": "append"} over it. Measured on
+                        # this door: a three-line note plus a 503 on the read
+                        # came back as a one-line note, and the night shift's
+                        # VAULT_APPEND reported "Appended 7 chars" for it.
+                        # Same family as the night ticker's PUT (## 319.) and
+                        # the local append's read-modify-write (_vault_append_local).
+                        # Only a genuine "not there" may fall through to a
+                        # write — the same 404/NoSuchKey/ObjectNotFound
+                        # classification GET and DELETE on this backend use;
+                        # anything else refuses rather than overwriting what
+                        # it could not read.
                         try:
                             existing = cli.get_object(
                                 _oci_vault_namespace, _oci_vault_bucket, key).data.content
                             existing_text = existing.decode('utf-8', 'replace')
                             sep = '' if existing_text.endswith('\n') else '\n'
                             content = existing_text + sep + body
-                        except Exception:
-                            pass  # file doesn't exist yet — treat as write
+                        except Exception as e:
+                            err = str(e)
+                            if not ('404' in err or 'NoSuchKey' in err
+                                    or 'ObjectNotFound' in err):
+                                return self._send_json(502, {
+                                    'error': f'oci: {e}',
+                                    'hint': 'could not read the note to append '
+                                            'to it — nothing was written, so '
+                                            'the note is untouched; retry',
+                                })
+                            # genuinely not there yet — treat as write
                     encoded = content.encode('utf-8') if isinstance(content, str) else content
                     cli.put_object(_oci_vault_namespace, _oci_vault_bucket, key,
                                    put_object_body=encoded)

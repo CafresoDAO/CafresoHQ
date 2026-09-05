@@ -37211,3 +37211,52 @@ Reload button, which for them were always the right door.
 for §3.5 for the same reason and left this one standing. Self-hosting is a
 first-class path; a banner that can only help one kind of boss has to know
 which kind it is talking to.
+
+---
+
+## 335. the note the bucket would not hand back, deleted by the append that could not read it
+
+**The wreck.** Object storage has no append. So the `oci` arm of
+`PUT /vault/note?mode=append` reads the object, glues the new text onto the
+end, and puts the whole thing back. `content` starts life as `body` — the
+fragment alone — and the read that was supposed to replace it with
+`existing + sep + body` was wrapped in this:
+
+```python
+except Exception:
+    pass  # file doesn't exist yet — treat as write
+```
+
+The comment names one reason `get_object` can raise. The `except` covers
+every other one identically: a 503 from a throttled bucket, a 429, an
+instance-principal token that expired since bedtime, a socket timeout, an IAM
+policy edited at midnight. Each of those fell through to `put_object` with
+`content` still holding the fragment, and **replaced the boss's whole note
+with the single line being appended** — then answered `200 {"mode":
+"append"}`, which `night_runner`'s `VAULT_APPEND` renders back to the boss as
+"Appended N chars → path". The one writer that runs while nobody is watching,
+on the one backend the OCI Fleet containers use, deleting notes on a
+transient error and reporting the deletion as a successful append.
+
+Reproduced over real HTTP against a real `python3 serve.py`, twice, with a
+stand-in `oci` SDK backed by one JSON file. Healthy office: write three
+lines, append a fourth, all four on disk. Same note, same office, a 503 on
+the read half of the next append: `200 {"mode": "append", "size": 7}`, and
+the bucket holding `LINE 5\n` — three lines gone, `errors: 0`.
+
+**The fix.** Classify the failure before writing anything. A genuine
+`404`/`NoSuchKey`/`ObjectNotFound` still falls through to a plain write, so an
+append can still create a note that isn't there yet — the case the old comment
+was actually protecting. Anything else is a 502 naming what OCI said, with a
+hint that says the note is untouched, and `put_object` is never reached. The
+marker set is the one `GET` and `DELETE` on this same backend already use, and
+the test asserts the three arms still agree, because a table copied by hand
+into three places is how they drift.
+
+**Whose sibling.** `## 319.`, the night ticker's `cur = json.loads(...) if
+s == 200 else []` — an unattended writer treating a failed read as an empty
+one and writing its optimism to disk. `## 329.` fixed the local-fs half of
+this exact door and left a note saying the `oci` branch still needed an ETag
+precondition for concurrent appends; that is still true, and still not this.
+Two appenders racing is a lost update. One appender and one bad read was a
+deletion.
