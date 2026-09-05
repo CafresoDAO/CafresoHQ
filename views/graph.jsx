@@ -113,6 +113,18 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
   const [sharing, setSharing] = useSV(false);
   const [shareCopied, setShareCopied] = useSV(false);
   const [shareError, setShareError] = useSV(null);
+  /* The LOAD half of the same silence `shareError` was added for. The publish
+     catch twelve lines below it stopped swallowing failure into console.warn;
+     the catch that runs when the map itself cannot be built kept doing exactly
+     that, in this same file. `loadError` is its twin, rendered by the same card
+     shape, so a map that failed to build says so instead of showing a boss the
+     empty box a brand-new office also shows. */
+  const [loadError, setLoadError] = useSV(null);
+  /* Bumped by the error card's "Try again", which is the whole reason the card
+     is worth more than a line of text: the office coming back up is by far the
+     commonest cure for this failure, and without this the only retry available
+     was a full page reload. */
+  const [reloadTick, setReloadTick] = useSV(0);
   const [embedCopied, setEmbedCopied] = useSV(null); // null | true | false — real result of the last "Copy embed" click
   const [edgesHover, setEdgesHover] = useSV(!!persisted.edgesHover); // hide edges until hover
   const edgesHoverRef = React.useRef(edgesHover);
@@ -240,13 +252,21 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
   React.useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setLoadError(null);
     (async () => {
       try {
         const g = await loadData();
         if (cancelled || !containerRef.current) { setLoading(false); return; }
         const eng = mountData(g);
         setLoading(false);
-        if (!eng) return;
+        /* `mountData` returns null when `window.CafresoGraphEngine` is not
+           there — the engine is a SEPARATE <script> (ui_manifest.py emits it
+           only `if manifest.get('graphEngine')`), so a build that shipped
+           without it, or a bundle that 404s, lands here having thrown
+           nothing. The load "succeeded"; the map was never drawn. That is the
+           one path in this component where everything reports success and the
+           work did not happen, and it used to be a bare `return`. */
+        if (!eng) { setLoadError('the graph engine did not load — reload the page, and if it keeps happening the office is serving an incomplete build'); return; }
         window.CafresoHQGraph = {
           _lastGraph: g,
           pulse: (id) => { try { engineRef.current && engineRef.current.focusNode(id); } catch (_) {} },
@@ -256,13 +276,26 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
               if (!containerRef.current) return;
               const e2 = mountData(g2);
               if (e2) window.CafresoHQGraph._lastGraph = g2;
-            } catch (_) {}
+            } catch (e) {
+              /* A refresh is fired by views/vault.jsx after a note write. It
+                 failing silently left the map showing a shape the library no
+                 longer has, with nothing saying it was stale. */
+              console.warn('graph refresh:', e);
+              setLoadError(officeCause((e && e.message) || String(e)));
+            }
           },
         };
-      } catch (e) { console.warn('graph load:', e); setLoading(false); }
+      } catch (e) {
+        console.warn('graph load:', e);
+        setLoading(false);
+        /* Same voice, same classifier and the same card as the publish
+           failure below — the boss is told the map could not be built rather
+           than being handed an empty canvas that reads as an empty library. */
+        setLoadError(officeCause((e && e.message) || String(e)));
+      }
     })();
     return () => { cancelled = true; };
-  }, [source, scope]);
+  }, [source, scope, reloadTick]);
 
   // Folder list for the concept-map scope picker (cheap, once).
   React.useEffect(() => {
@@ -557,6 +590,18 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
         .map(([label, fn]) => React.createElement('div', { key: label, role: 'menuitem', tabIndex: 0, onClick: fn,
           onKeyDown: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); fn(); } },
           style: { padding: '6px 10px', cursor: 'pointer', borderRadius: 5 }, onMouseEnter: (ev) => ev.currentTarget.style.background = 'rgba(245,210,93,0.14)', onMouseLeave: (ev) => ev.currentTarget.style.background = 'transparent' }, label))),
+
+    /* Load failure — the twin of the publish card below, and swallowed to
+       console.warn for exactly as long as that one was. Without it the only
+       thing this view does on a failed load is stop saying "Loading graph…",
+       which on a black canvas is indistinguishable from an empty library. */
+    loadError && React.createElement('div', { style: { position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', zIndex: 60, width: 380, maxWidth: '90%', background: 'rgba(24,20,14,0.98)', border: '1px solid rgba(220,90,90,0.4)', borderRadius: 12, padding: 18, color: '#e9e2d4', font: '13px Inter, sans-serif', boxShadow: '0 18px 60px rgba(0,0,0,0.5)' } },
+      React.createElement('div', { style: { fontWeight: 600, color: '#e08080', marginBottom: 8 } }, source === 'concepts' ? '⚠ Concept map failed' : '⚠ Graph failed to load'),
+      React.createElement('div', { style: { color: '#cabfa9', marginBottom: 12, lineHeight: 1.4 } }, loadError),
+      React.createElement('div', { style: { display: 'flex', gap: 8 } },
+        React.createElement('button', { onClick: () => setReloadTick(n => n + 1), style: { ...ctrlStyle, cursor: 'pointer' } }, 'Try again'),
+        React.createElement('button', { onClick: () => setLoadError(null), style: { ...ctrlStyle, cursor: 'pointer' } }, 'Close')),
+    ),
 
     // Publish failure — was silently swallowed to console.warn before.
     shareError && React.createElement('div', { style: { position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', zIndex: 60, width: 380, maxWidth: '90%', background: 'rgba(24,20,14,0.98)', border: '1px solid rgba(220,90,90,0.4)', borderRadius: 12, padding: 18, color: '#e9e2d4', font: '13px Inter, sans-serif', boxShadow: '0 18px 60px rgba(0,0,0,0.5)' } },

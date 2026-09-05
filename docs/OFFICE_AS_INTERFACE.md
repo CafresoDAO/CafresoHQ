@@ -41054,3 +41054,248 @@ not defined` inside a lift: `test_stop_takes_back_only_your_turn.py` (its
 `PARAM_NAMES` world for `onTaskDropOnAgent`). Both were given the new
 dependency with a comment citing this entry; the other thirty-five pass
 unchanged. `npm run build` succeeds.
+
+## 395. the map that failed to load looked exactly like an empty library
+
+`## 391` swept the client for guards that read a stale value; `## 392` and
+`## 393` closed the doors it left open. While fixing `publishOpen`,
+`## 392` noticed something in passing and did not chase it:
+`setPubMsg({ kind: 'busy', … })` was written and never read. A piece of
+state that existed purely to look like a guard while guarding nothing.
+
+That is a symptom of a class nobody here has ever swept — not "the same
+work happened twice", which `## 388`–`## 393` spent six entries on, but
+**work the code performs that never reaches the boss**. Three shapes:
+state written but never read; an error caught and swallowed; and the
+hardest to see, a path that reports success while the real work did not
+happen. All three make a beta office feel broken in the worst way, which
+is silently.
+
+### What was swept, and how
+
+Mechanically enumerated first, so the denominator is real. Across the 25
+files of `ui/*.jsx`, `views/*.jsx` (less `views/projects.jsx`, just
+rewritten by `## 392`), `features.jsx` and `app/*.jsx` — 23,139 lines:
+
+- **118 brace-delimited `catch` blocks**, every one classified by body:
+  45 empty, 1 console-only, 72 with a body. Of the 72, 47 make no call
+  that could reach a surface; those 47 plus the 45 empties were read
+  individually.
+- **26 `.catch(…)` promise handlers**, listed and read.
+- **654 `setX(…)` call sites over 167 distinct setter names**, and
+  **122 `const [v, setV] = useState/useStored/useSV(…)` pairs** — each
+  value counted for reads elsewhere in its own file.
+- **11 `fetch(` sites**, checked for a `res.ok`/`status` test within the
+  following twelve lines. Four had none.
+
+**Exactly one write-only state pair in 122**: `nodeCount` /
+`setNodeCount` (views/graph.jsx 111, set at 235 from
+`g.nodes.length`, read nowhere). Harmless — it drives no surface — but it
+is a real instance of the shape and is named here rather than deleted,
+because deleting it is a different decision from this hunt's.
+
+### The bug this fixes
+
+The Library graph. `GraphView`'s mount effect resolves a data source and
+mounts sigma on it, and on failure did only:
+
+```
+} catch (e) { console.warn('graph load:', e); setLoading(false); }
+```
+
+`setLoading(false)` takes the "Loading graph…" hint off the canvas and
+nothing replaces it. What the boss gets is an empty black box — which is
+also **precisely what a brand-new office with an empty library looks
+like**. There is no way to tell "the office is down" from "you have not
+written anything yet", and the second reading is the one a new user will
+make. Everything this catch swallowed is something they would act on if
+they were told: `vaultGraph()` rejecting because the office restarted, a
+500 out of `/vault/graph`, or the `'concept builder unavailable'` that
+`loadData` throws itself.
+
+The file already owned the right surface, and that is what makes this
+entry worth writing down. Line 561 carries the comment *"Publish failure —
+was silently swallowed to console.warn before."* An earlier hunt found the
+`console.warn` swallow in `publish`, built a proper error card for it, and
+left the **identical swallow twelve lines above it** untouched. Same file,
+same shape, same author's afternoon. A fix that stops at the first
+instance of a shape is how a class survives.
+
+**And a report-success path, in the same effect.** `mountData` returns
+`null` when `window.CafresoGraphEngine` is absent — the engine is a
+SEPARATE `<script>`, emitted by `scripts/ui_manifest.py` only
+`if manifest.get('graphEngine')` — so a build shipped without it, or a
+bundle that 404s, arrives here having thrown nothing at all. The effect's
+answer was a bare `if (!eng) return;` placed AFTER `setLoading(false)`.
+The load reported itself finished; the map was never drawn; no catch ever
+ran because nothing failed. That is class three exactly.
+
+**And a third:** `window.CafresoHQGraph.refresh`, which
+`views/vault.jsx:450` fires after every note write, ended in
+`catch (_) {}`. A failed refresh left the map showing a shape the library
+no longer has, with nothing saying it was stale.
+
+### Measured, on the real body
+
+`scripts/test_a_graph_that_failed_to_load_says_so.py` brace-lifts the
+actual committed effect out of views/graph.jsx (no re-implementation, the
+rule every harness in this series uses) and drives it under node with the
+collaborators stubbed to produce one specific failure each. Pre-fix, all
+three failure cases returned the identical
+`{ loading: false, loadError: null, mounted: 0, hqGraph: false }` — the
+boss's experience written out as a record: **done loading, nothing drawn,
+nothing said.**
+
+### The fix
+
+A `loadError` state, the twin of the `shareError` the publish half already
+had, set from `officeCause(...)` in the catch and from a plain sentence on
+the missing-engine path, and rendered by the same card shape at the same
+position with the same colours. Cleared at the top of every load, so a
+retry that works does not leave a stale card up. The card offers **Try
+again** (bumping a `reloadTick` that is in the effect's dep list) as well
+as Close, because the commonest cure for this failure is the office coming
+back and without it the only retry available was a full page reload.
+
+Nothing about the publish path moved. This is additive, and the test pins
+that the older card is still there.
+
+### Fire-tested
+
+Reverted in place (md5 `c62b2d4e340bee48c0c4d891a805d924`, byte-identical
+to the pre-fix file) — **12 checks failed reliably across 3 runs**, 4 of
+them the real behavioural evidence above. Restored byte-identical
+(`f630336a03235d7d81fa58baef91ca39`), green on 3 repeated runs.
+`npm run build` succeeds.
+
+**No fallout, for once.** All 26 existing tests that name views/graph.jsx
+were run standalone and pass, including
+`test_graph_publish_reports_failure_instead_of_console_warn.py` (whose
+regex pins `publish`, untouched here) and `test_vault_graph_refresh.py`
+(which pins the `window.CafresoHQGraph` handle whose `refresh` this entry
+edits). The reason is that this fix adds state and a branch rather than
+splitting a function in half, which is what broke tests in `## 389`–`## 393`.
+
+### The inventory
+
+The durable half. Every candidate that could plausibly be a swallow, with
+the specific place the value IS read or the error IS surfaced — a SAFE
+verdict with no named read-site is not a verdict, it is an unexamined
+line.
+
+**EXPOSED — fixed here.**
+
+- `GraphView`'s mount effect (views/graph.jsx 262) — swallowed load
+  failure. Fixed.
+- The same effect's `if (!eng) return;` (249) — reports success over a map
+  that was never drawn. Fixed.
+- `window.CafresoHQGraph.refresh`'s `catch (_) {}` (259) — silently stale
+  map after a note write. Fixed.
+
+**EXPOSED — real, unfixed, named so the next hunt need not re-derive.**
+
+- `runCmd` (ui/feedback.jsx 474) — the ⌘K command palette. It calls
+  `close()`, then defers the command by 30ms and runs it inside
+  `try { cmd.run && cmd.run(); } catch (e) { console.error(e); }`. The
+  palette has already closed, so a throwing command is indistinguishable
+  from a command that did its job. Left unfixed on IMPACT, not on
+  uncertainty: every command registered in `app/commands.jsx` is a
+  navigation call or a modal toggle, and `cmd.run &&` already covers the
+  undefined-handler case, so a throw is rare rather than routine. It is
+  still the palette's only report of failure and it goes to the console.
+- `views/terminal.jsx 1137` — `const j = (p, o) => fetch(base + p, …)
+  .then(r => r.json())`, the shared JSON helper behind every `hq night`
+  subcommand, with no `res.ok` check anywhere on it. A 500 whose body is
+  HTML throws inside `.json()` and surfaces as a parse error rather than
+  the office's actual complaint; a 4xx that returns JSON falls through to
+  `res.existed` / `res.schedule.id` being undefined. `hqsh` is a
+  developer surface, which is why it is not first.
+- `app/storage.jsx 320` — `try { localStorage.setItem(lsKey,
+  JSON.stringify(merged)); } catch (_e) {}`, the mirror write after the
+  mount fetch adopts the file. The two OTHER `setItem` failures in this
+  same function (174) and in `useStored` (84) both dispatch
+  `cafresohq:storage-error`; this one does not. Genuinely lower stakes —
+  the value it failed to mirror is the file's own, so the next mount
+  fetches it again — but it is the same write failing silently three lines
+  from two that do not.
+- `nodeCount` (views/graph.jsx 111) — the one write-only state pair in
+  122. Drives nothing.
+
+**SAFE — each with the read-site or the surface named.**
+
+- `wallSearch` (ui/office.jsx) — the two `catch` bodies that set
+  `{ ok: false }` (1194, 1199) and the two in the probe (920, 926) are
+  read at **1187-1200**, which renders a row whose title and label both
+  branch on `wallSearch.ok` ("Search network is unavailable — check
+  again"). The failure is the thing on screen.
+- `wallHealth` (ui/office.jsx 920) — read at **1184-1185**, driving the
+  `sw-lamp` colour and its tooltip; `null` is amber "Checking…", `false`
+  is a red lamp. A caught failure is a lit lamp.
+- `plWallets` (ui/office.jsx 805, `setPlWallets([])`) — read at **931,
+  936, 945**; an empty array is the honest "no wallets" state and the
+  effect at 931 refuses to go further on it.
+- `vaultPaths` (views/core.jsx 764, `setVaultPaths(null)`) — read at
+  **901, 903** via `memoryLabel(a, vaultPaths)` / `memoryNotes(a,
+  vaultPaths)`, and the comment at 899 is about exactly this null.
+- `shareCopied` (views/graph.jsx 339) — read at **572**: "Copied to your
+  clipboard." vs "Copy it below — your browser blocked the automatic
+  copy." A blocked clipboard is said out loud.
+- `embedCopied` (views/graph.jsx 579) — read at **581**, the button's own
+  label goes to 'Copy failed'.
+- `copied` (features.jsx 1301) — read at **1369-1370**, which renders
+  'copy blocked — check browser permission' on the false branch.
+- `saved` / `saveDetail` (ui/onboarding.jsx 394) — read at **482**,
+  `{saved === 'err' && ('✕ ' + keyOpener(saveDetail) + '.')}`. The
+  server's own words reach the first-run key step.
+- `trial` (ui/onboarding.jsx 327, `.catch(() => {})`) and `managedBrain`
+  (353, same) — both READ-ONLY probes whose result only widens the copy
+  (`onTrial` at 358). A failed probe falls back to the narrower, more
+  cautious text; there is no work to lose and nothing to report.
+- `ElevatedToolkit`'s `/codex/status` (ui/panels.jsx 26) — same shape:
+  `if (!status) return null` at **29**. A decoration that does not appear
+  is the correct answer to a probe that did not answer.
+- `useStored`'s save catch (app/storage.jsx 84-88) and `persist`'s
+  (174-180) and the file PUT's (212-215) — all three dispatch
+  `cafresohq:storage-error`, listened for at **app.jsx:1695** and toasted.
+  Pinned by `test_file_persist_reports_failure_instead_of_silent_drop.py`.
+- The `pagehide` flush's `.catch(() => {})` (app/storage.jsx 256) — the
+  ONE swallow in this file that is correct by construction, and the
+  comment at 235 says why: the document is gone, there is no surface left
+  to show anything on, and localStorage still holds the value.
+- The mount fetch's `.catch(() => { hydratedRef.current = true; })`
+  (app/storage.jsx 365) — not a swallow: an unreachable server is
+  deliberately treated as settled so an offline office can still write.
+- `graph publish`'s catch (views/graph.jsx 347) — sets `shareError`, read
+  at **562-565**. The fix this entry's twin.
+- `views/ide.jsx` 387 and 403 — `setErr(officeCause(…))` and a per-path
+  `{ error: officeCause(…) }`, both rendered by the tree; the file-browser
+  reports its own failures already.
+- `views/terminal.jsx` 39 and 54 — `doFlash('copy blocked — check browser
+  permission')` / `'paste blocked — use Ctrl+V or grant clipboard
+  access'`. Named failures on the surface itself.
+- `views/terminal.jsx 1265` — `print('err', String(e.message || e))`
+  writes into the hqsh transcript, which IS the surface.
+- `views/vault.jsx` 520 and 607 — `/* keep the hits we have */` and
+  `/* a missed look is silence, never an error banner */`. Deliberate,
+  documented, and correct: these are speculative background lookups, not
+  actions the boss took.
+- `ui/chat.jsx` 544 and 555 — both route to `bowOut(a, err)`, which files
+  the coworker's own failure bubble via `chatErrorText`. 1175's synthesis
+  catch is documented and true: the specialist replies it would have
+  summarised are already in the thread.
+- `ui/feedback.jsx 56` — an AudioContext beep. `/* silent is fine, this is
+  a beep */`.
+- Every remaining empty catch in the 45 — `localStorage.setItem` of a UI
+  preference (ui/chat.jsx 121/140, ui/office.jsx 1741, views/graph.jsx 58,
+  views/terminal.jsx 1250), `fit()`/`dispose()`/`destroy()` on a teardown
+  path (views/terminal.jsx 263/285/298/299/310/313, views/graph.jsx
+  223/284), a `dispatchEvent` on an animation (features.jsx 1556/1569),
+  and `decodeURIComponent` on a malformed path (views/ide.jsx 85). None
+  carries a boss's action; all fall through to a legitimate default.
+
+**What this closes and what it does not.** The catch/`setX`/fetch
+denominators above are exhaustive for the 25 files listed. They do NOT
+cover `app.jsx` or `hq-runtime.jsx` (a concurrent hunt owns both) or
+`views/projects.jsx` (rewritten by `## 392` as this ran), and they do not
+cover `serve.py` or the drivers, where the same three shapes are very
+likely to live and nobody has counted them yet.
