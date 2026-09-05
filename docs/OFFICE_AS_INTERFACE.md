@@ -40806,3 +40806,135 @@ standalone and still passes. `npm run build` succeeds.
 `ui/chat.jsx`'s `send`, `FocusMode.send` (features.jsx),
 `TerminalChat.send` (views/terminal.jsx), and `onPin` (app.jsx, left alone
 on purpose — the duplicate is one removable corkboard row).
+## 393. three composers, one stale guard, and the boss typed into all of them
+
+`## 391` swept the client for guards that read a value which does not update
+synchronously, fixed the two biggest it found, and left an inventory of the
+rest — each named with its line and the exact stale value it reads. This
+hunt takes three of them, and they are not three bugs. They are the SAME bug
+in the three surfaces the boss actually types into: `ui/chat.jsx`'s `send`,
+`FocusMode.send` (features.jsx) and `TerminalChat.send` (views/terminal.jsx).
+
+`## 391`'s inventory was one agent's reading, and the whole point of this
+series is that claimed-safe assessments keep turning out wrong — so the same
+skepticism was applied in the other direction and all three were re-derived
+against the current source before anything was changed. All three confirmed,
+and all three then measured on the real extracted bodies before the fix
+went in. Nothing here rests on the inventory's word.
+
+**The bug.** `ui/chat.jsx`'s `send` opens with
+`if (!text || streaming) return;`, `FocusMode.send` with the same line, and
+`TerminalChat.send` with `if (!text || busy || !project) return;`.
+`streaming` and `busy` are React state; the `setStreaming(true)` /
+`setBusy(true)` that would flip them runs further down the SAME handler and
+only tells the truth on the NEXT render. The handler closes over this
+render's copy — `onApprove` over a stale `approvals` in `## 388`,
+`resendMessage` over a stale `messagesRef.current` in `## 389`,
+`StandupModal.start` over a stale `phase` in `## 391`, and now the composer
+over a stale `streaming`.
+
+Nothing on screen makes up for it, because every control that looks like a
+guard renders off that same state. The main composer is
+`{streaming ? <button onClick={stop}>■ Stop</button> : <button onClick={send}
+disabled={backendDown}>Send ↵</button>}` — the only `disabled` it carries is
+for the office being offline. The quiet room's is
+`{streaming ? ■ STOP : <button onClick={send}>SEND</button>}`. The terminal
+has the most guard-looking markup of the three — `disabled={busy}` on the
+textarea, `disabled={!busy && …}` on the ↑ button, `onClick={busy ? stop :
+send}` — and every one of those reads the same uncommitted `busy`. And all
+three Enter handlers are a bare
+`if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }` with
+no guard of their own, which matters here in a way it did not for a modal's
+▶ START: this is a KEYBOARD surface. The second event does not have to be a
+mis-registered double-tap. Enter and then a click on Send is one perfectly
+ordinary thing for a person to do, and so is a key that repeats.
+
+What it costs, per surface:
+
+- **`ui/chat.jsx`** — the largest duplicate this series has found, on the
+  single most-used surface in the product. A doubled boss message is a
+  doubled `HQ.ceoStream` PLUS a doubled `onDispatchToAgent` for every
+  @mentioned coworker and every seat in an open room. On a message naming
+  three people that is eight real model calls for the four asked for. It
+  also clobbers `abortRef.current`, so ■ Stop reaches only the second turn
+  while the first keeps streaming AND keeps walking into its own DM fan-out
+  — a turn the boss can no longer take back, still delegating. And it files
+  two `onBossAsk` records, so the Inbox shows one question asked twice.
+- **`FocusMode`** — one extra `HQ.ceoStream`, the boss's own message twice
+  in the transcript, a second empty CEO bubble, and the same clobbered
+  `abortRef`. Smaller, and the third sibling of the two `## 391` fixed in
+  this very file.
+- **`TerminalChat`** — the only one in the family that does not spend the
+  office's tokens. It spends the USER'S OWN subscription: two real
+  non-interactive `claude`/`codex`/`gemini` turns, scoped to their own
+  project directory, each free to write files there. Plus a clobbered
+  `ctrlRef.current` so ■ reaches only one of them, and two writers racing
+  the same `asstIdx` — `appendChunk` closes over an index computed from each
+  call's own `history`, so two streams interleave into one transcript row.
+
+**Measured, on the real bodies.** `scripts/harness_composer_send_race.mjs`
+lifts the actual committed `send`/`_send` source out of all three files
+(brace-balanced text extraction, no re-implementation) and calls each twice,
+then three times, against one unchanged snapshot. Pre-fix: on
+`@A0 @A1 @A2 …`, `onDispatchToAgent` fired **6** times for a double and
+**9** for a triple where one round is 3; on a plain question `HQ.ceoStream`
+fired **2** and **3** and `onBossAsk` filed **2** and **3** records where
+one turn is 1; FocusMode's `ceoStream` fired **2** and **3** with 2 and 3
+boss bubbles; and `CafresoHQClient.terminalStream` — a real CLI turn on the
+user's own subscription — fired **2** and **3**. Post-fix every one of those
+is exactly one round.
+
+**The fix.** `## 391`'s shape, applied three times. A `sendRunningRef`
+(`runningRef` in FocusMode) — a live ref, the only thing in each component
+true the instant the turn begins — is checked-and-claimed as the very FIRST
+thing the handler does, synchronously, before `input`, `streaming`, `busy`
+or `project` are read at all. As in `## 391`'s modals, and unlike
+`## 388`'s `approvedIdsRef`, `## 389`'s `resendingIdsRef` and `## 390`'s
+`startingTaskIdsRef`, there is no id to key a `Set` on: those Sets held the
+id of the one thing being acted on, and a composer has exactly one live
+turn, so the claim IS the ref.
+
+The turn moves behind the claim into `_send` so the release is a single
+`finally` covering every ending — delivered, refused, stopped, threw. That
+is not tidiness here, it is the whole reason the split exists:
+`ui/chat.jsx`'s `send` has SEVEN terminal `return`s (no text, office
+offline, mentions matched nobody in the room, an empty `/brainstorm`, the
+@mention fan-out, the hand-off path, and the end of the CEO turn), and a
+release written at each of them is a release that will be missed the next
+time somebody adds an eighth. One missed path is a composer that is dead
+until reload. The original state guards stay exactly where they are, now the
+second line of defence rather than the only one.
+
+**Test.** New `scripts/test_a_second_enter_in_the_composer_does_not_send_
+the_message_twice.py`. Round 1 structural — all three refs declared as
+live refs, all three claims with NOTHING executable before them, all three
+released in a `finally`, all three original state guards still present.
+Rounds 2-4 — the real extracted bodies, twice and three times against one
+snapshot, with each real side effect firing exactly once; a plain single
+send unaffected; and a second turn started AFTER the first finished still
+running in full, proving the claim releases rather than permanently
+deadening the composer (this fix's analogue of `## 390`'s "a genuinely
+different taskId still starts" and `## 391`'s "RE-RUN still works").
+Fire-tested: reverted in place (md5 `46c046e8e4e559058016748e3b5a8edf`,
+`c4db4ecac90a1577dda0e03bf114a399`, `cf184697a2b72b81a7ed82a90233a59f`),
+**27** checks failed reliably across 3 runs — 12 of them the real doubled
+spend counts; restored byte-identical, green on 3 repeated runs.
+`npm run build` succeeds.
+
+**Fallout, the pattern this series keeps producing.** Every one of `## 388`
+through `## 391` broke existing tests, because tests here lift a function's
+source by name. Two did this time, both for the same reason and neither for
+a new ref: `test_the_publish_door_has_a_name.py` and
+`test_the_quiet_room_gets_the_same_clean.py` both `brace_lift(..., 'const
+send = async () => {')` and then assert on what is INSIDE the turn — the
+publish-door decision, the `visibleReply`+`cleanHarmony` recipe. Post-fix
+`send` is a three-line wrapper and the turn lives in `_send`, so one lifted
+an empty shell and the other crashed on a missing substring. Both now lift
+`const _send = async () => {`, with a comment saying why. Nothing else about
+either test moved. All 94 tests that name any of the three files were run
+standalone and pass.
+
+**What is left of `## 391`'s inventory** after this: `publishOpen` and
+`submitGithub` in `views/projects.jsx` (handled in parallel with this hunt),
+and `onPin` in `app.jsx`, still deliberately unfixed — the duplicate there
+is one corkboard row the boss can remove, no dispatch and no spend.

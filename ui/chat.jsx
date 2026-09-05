@@ -352,7 +352,39 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
     return () => { mo.disconnect(); if (raf) cancelAnimationFrame(raf); };
   }, []);
 
+  /* The composer's one-live-turn lock. `streaming` (React state) is what
+     the turn below checks and what swaps Send ↵ for ■ Stop, but a state
+     value only tells the truth about the turn on the NEXT render — `send`
+     closes over THIS render's `streaming`, `input` and `activeThread`, the
+     Send button carries only `disabled={backendDown}`, and the composer's
+     Enter key calls `send()` with no guard of its own. So the two most
+     ordinary ways to send a message — Enter and then the button, or a fast
+     double-click, or a duplicate synthetic click off a double-tap — both
+     read the same stale `streaming: false` and run the WHOLE turn again.
+     This is the same shape as `## 388`'s approval stamps, `## 389`'s
+     ↻ RE-SEND, `## 390`'s ▶ START and `## 391`'s stand-up, on the single
+     most-used surface in the product, and it is the most expensive of them:
+     a doubled boss message is a doubled `HQ.ceoStream` PLUS a doubled
+     `onDispatchToAgent` for every @mentioned coworker and every seat in the
+     room — on a message naming three people that is eight real model calls
+     for four asked for. It also clobbers `abortRef.current`, so ■ Stop
+     reaches only the second turn while the first keeps streaming and keeps
+     delegating, and it files two `onBossAsk` records for one question. A
+     ref is the only thing in this panel true the instant the turn begins,
+     so the claim lives here. */
+  const sendRunningRef = useRef(false);
+
   const send = async () => {
+    /* Claim SYNCHRONOUSLY, before `input`/`streaming`/`backendDown` are
+       read — see sendRunningRef above. Released in the `finally` below on
+       every ending (delivered, refused, stopped, threw), so the next Enter
+       is a legitimate new turn rather than a permanently dead composer. */
+    if (sendRunningRef.current) return;
+    sendRunningRef.current = true;
+    try { await _send(); } finally { sendRunningRef.current = false; }
+  };
+
+  const _send = async () => {
     const text = input.trim();
     if (!text || streaming) return;
     /* Hard gate, not just the banner: with no live container every path

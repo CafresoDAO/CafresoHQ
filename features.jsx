@@ -809,10 +809,32 @@ function FocusMode({ active, onClose, chat, setChat, agents = [] }) {
   const [streaming, setStreaming] = useSF(false);
   const ref = useRF(null);
   const abortRef = useRF(null);
+  /* This room's one-live-turn lock, the third sibling of the
+     `standupRunningRef` / `roundRunningRef` pair below. `streaming` is React
+     state and `send` reads THIS render's copy of it — the `setStreaming(true)`
+     that would flip it runs further down the same handler and only tells the
+     truth on the NEXT render. Neither SEND (`{streaming ? ■ STOP : <button
+     onClick={send}>}`) nor the composer's Enter key carries a guard of its
+     own, so a second call landing before React commits runs the whole turn
+     again: a second real `HQ.ceoStream`, a second boss bubble and a second
+     empty CEO bubble in the transcript, and a clobbered `abortRef.current`
+     that leaves ■ STOP able to reach only one of the two streams. Declared
+     above the `if (!active) return null;` with the other hooks, where the
+     hook order is unconditional. */
+  const runningRef = useRF(false);
   useEF(() => { if (ref.current) ref.current.scrollTop = ref.current.scrollHeight; }, [chat]);
   if (!active) return null;
   const stop = () => { if (abortRef.current) abortRef.current.abort(); };
   const send = async () => {
+    /* Claim SYNCHRONOUSLY, before `input`/`streaming` are read — see
+       runningRef above. Released in the `finally` on every ending
+       (finished, stopped, threw), so the next SEND still works. */
+    if (runningRef.current) return;
+    runningRef.current = true;
+    try { await _send(); } finally { runningRef.current = false; }
+  };
+
+  const _send = async () => {
     const text = input.trim(); if (!text || streaming) return;
     setInput('');
     const userMsg = { id: 'm_'+Math.random().toString(36).slice(2,7), from:'user', name:'You', text };

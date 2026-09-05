@@ -445,7 +445,37 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
     setBusy(false);
   };
 
+  /* This chat's one-live-turn lock. `busy` is React state, and the
+     `if (!text || busy || !project) return;` line below reads THIS render's
+     copy — the `setBusy(true)` that would flip it runs further down the same
+     handler and only lands on the NEXT render. Everything on screen that
+     looks like a guard renders off that same state (`disabled={busy}` on the
+     textarea, `disabled={!busy && …}` on the ↑ button, `onClick={busy ? stop
+     : send}`), and the Enter handler
+     (`if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }`)
+     adds none, so a fast double-tap — or Enter and then the button — runs
+     the whole turn twice before React has committed anything. What that
+     costs here is not tokens on a key the office pays for: it is two real
+     non-interactive `claude`/`codex`/`gemini` turns on the USER'S OWN
+     subscription, against their own project directory, each free to write
+     files. It also clobbers `ctrlRef.current`, so ■ reaches only the second
+     run while the first keeps going with nothing left to stop it, and both
+     writers race the same `asstIdx` slot — `appendChunk` closes over an
+     index computed from each call's own `history`, so two streams interleave
+     into one transcript row. Same shape as `## 388`–`## 391`; a ref is the
+     only thing here true the instant the turn begins. */
+  const sendRunningRef = React.useRef(false);
+
   const send = async () => {
+    /* Claim SYNCHRONOUSLY, before `input`/`busy`/`project` are read — see
+       sendRunningRef above. Released in the `finally` on every ending
+       (finished, aborted, threw), so the next turn still runs. */
+    if (sendRunningRef.current) return;
+    sendRunningRef.current = true;
+    try { await _send(); } finally { sendRunningRef.current = false; }
+  };
+
+  const _send = async () => {
     const text = input.trim();
     if (!text || busy || !project) return;
     const userMsg = { role: 'user', content: text };

@@ -114,7 +114,12 @@ def main():
     # it three times on a two-way fan-out. ABOVE EVERY ROUTE is #5eefde5:
     # a mechanism wired to three of four paths is drifting, and `send`
     # has five ways out.
-    send = brace_lift(chat, 'const send = async () => {')
+    # `_send`, not `send`: `## 393` put a one-live-turn claim in front of
+    # this handler (a doubled Enter used to run the whole turn — and the
+    # whole fan-out — twice), so `send` is now a three-line wrapper and the
+    # turn with all its routes out lives in `_send`. Everything below is
+    # unchanged; only the name of the body being lifted moved.
+    send = brace_lift(chat, 'const _send = async () => {')
 
     check('the office asks about the publish door exactly once per turn',
           send.count('HQ.publishDoorNote(') == 1,

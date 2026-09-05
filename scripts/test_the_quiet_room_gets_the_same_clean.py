@@ -101,7 +101,11 @@ def main():
     src = RUNTIME.read_text(encoding='utf-8')
     have_node = bool(shutil.which('node'))
 
-    send_body = brace_lift(features, 'const send = async () => {')
+    # `_send`, not `send`: `## 393` put a one-live-turn claim in front of
+    # FocusMode's handler (a doubled Enter used to run a second real
+    # ceoStream), so `send` is now a three-line wrapper and the turn itself
+    # — including the clean recipe this test is about — lives in `_send`.
+    send_body = brace_lift(features, 'const _send = async () => {')
 
     # ── 1. the sibling recipe actually exists in ui/chat.jsx (sentinel —
     #        if this ever moves or is rewritten, the whole comparison this
