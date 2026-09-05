@@ -970,7 +970,11 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
     setArchived(false);
     setSummary('');
     setSummaryFail('');
-    setReports(participating.map(a => ({ agentId: a.id, name: a.name, color: a.color, role: a.role, text: '', streaming: true, error: false })));
+    /* `outcome` is how this row ENDED, seeded null and written exactly once
+       by whichever of the four endings below reaches it: 'reported',
+       'timeout', 'stopped', 'error'. It exists because `text` and `error`
+       between them cannot tell those four apart — see reported(). */
+    setReports(participating.map(a => ({ agentId: a.id, name: a.name, color: a.color, role: a.role, text: '', streaming: true, error: false, outcome: null })));
     setPhase('running');
     const controller = new AbortController();
     abortRef.current = controller;
@@ -1035,7 +1039,7 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
         updateReport.cancel();
         const said = HQ.visibleReply(buf, a && a.name);
         setReports(prev => prev.map(r => r.agentId === a.id ? { ...r, text: said } : r));
-        setReports(prev => prev.map(r => r.agentId === a.id ? { ...r, streaming: false } : r));
+        setReports(prev => prev.map(r => r.agentId === a.id ? { ...r, streaming: false, outcome: 'reported' } : r));
         finished.push({ name: a.name, role: a.role, text: said });
       } catch (err) {
         updateReport.cancel();
@@ -1049,7 +1053,9 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
            blob, on the one ritual meant to feel like the whole team
            checking in. */
         setReports(prev => prev.map(r => r.agentId === a.id
-          ? { ...r, streaming: false, error: !label, text: label ? (buf + ' ' + label) : `⚠ ${snagSentence(err && err.message || String(err))}` }
+          ? { ...r, streaming: false, error: !label,
+              outcome: userStopped ? 'stopped' : timedOut ? 'timeout' : 'error',
+              text: label ? (buf + ' ' + label) : `⚠ ${snagSentence(err && err.message || String(err))}` }
           : r));
         if (userStopped) {
           clearTimeout(timeoutId); controller.signal.removeEventListener('abort', onParentAbort);
@@ -1060,7 +1066,8 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
              even though nothing is running and the footer already shows
              ▶ START again. */
           setReports(prev => prev.map(r => r.streaming
-            ? { ...r, streaming: false, text: (r.text ? r.text + ' ' : '') + '…(stopped)' }
+            ? { ...r, streaming: false, outcome: r.outcome || 'stopped',
+                text: (r.text ? r.text + ' ' : '') + '…(stopped)' }
             : r));
           setPhase('idle'); abortRef.current = null; return;
         }
@@ -1129,8 +1136,28 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
 
   /* How many of the people who were asked actually said something. An error
      row and a silent row are both "did not report" — the reports array keeps
-     them so the record shows WHO was asked, and this counts who answered. */
-  const reported = () => reports.filter(r => r.text && !r.error).length;
+     them so the record shows WHO was asked, and this counts who answered.
+
+     That is what the sentence above has always said, and for the row that
+     ran out of time it was not what the code did. A stand-up has four
+     endings — answered, failed, timed out, stopped — and only the first two
+     were ever spelled: `text && !error`. The watchdog branch sets
+     `error: false` (a timeout is nobody's fault) and writes the label INTO
+     `text`, so a coworker whose model never loaded ended with a non-empty
+     text and no error flag and was counted here as having reported. The
+     preflight promises the opposite in so many words — "up to 45s before
+     someone is counted as not reporting" — and the count is not a modal
+     ornament: archive() writes "N of M reported" into the DETAIL of a DONE
+     task, the line a boss reads off the board a week later without opening
+     anything. A stand-up where two of three coworkers timed out silently
+     was filed, permanently, as "3 of 3 reported".
+     So the row now carries how it ENDED, and only the ending that means
+     someone spoke is counted. */
+  const reported = () => reports.filter(r => r.outcome === 'reported').length;
+  /* Named separately because the card says so out loud: silence caused by a
+     slow or unloaded model is a different fact from a coworker refusing, and
+     the boss can act on it (a smaller model, a longer leash). */
+  const timedOut = () => reports.filter(r => r.outcome === 'timeout').length;
 
   const fullText = () => {
     const date = new Date().toLocaleDateString(undefined, { weekday:'long', month:'long', day:'numeric' });
@@ -1196,6 +1223,7 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
          same claim as the heading this fix just stopped writing — one line
          further out, where it is read more often and opened less. */
       detail: `End-of-day team stand-up — ${reported()} of ${reports.length} reported`
+        + (timedOut() ? `, ${timedOut()} ran out of time` : '')
         + (summaryFail === 'stopped' ? '; you stopped it before the summary.'
            : summaryFail ? '; no closing summary.' : '.'),
       result: fullText(),

@@ -76,8 +76,11 @@ FULLTEXT = brace_lift(FEAT, '  const fullText = () => {')
 ARCHIVE = brace_lift(FEAT, '  const archive = () => {')
 
 # `reported` is a one-line arrow, not a braced block — lift it by line.
+# `timedOut` is its sibling (##323): the detail expression names the rows the
+# watchdog killed, so the harness must carry both or the lift won't run.
 _rep_line = [l for l in FEAT.splitlines()
-             if l.strip().startswith('const reported = ()')]
+             if l.strip().startswith('const reported = ()')
+             or l.strip().startswith('const timedOut = ()')]
 
 
 def harness(reports, summary, summary_fail):
@@ -97,12 +100,17 @@ console.log(JSON.stringify(out));
     return run_js(js)
 
 
+# `outcome` (##323) is how the row ENDED. These fixtures used to carry only
+# `text` + `error`, which is exactly the two-ending shorthand ##323 found the
+# count relying on — a row that timed out has text and no error and is
+# neither of these two. Every real row now gets stamped with its ending, so
+# the fixtures state it too.
 ONE_GOOD = [{'agentId': 'a1', 'name': 'Local Brain', 'role': 'Generalist',
              'text': 'TODAY: vendor list\nBLOCKED: nothing\nTOMORROW: numbers',
-             'streaming': False, 'error': False}]
+             'streaming': False, 'error': False, 'outcome': 'reported'}]
 ONE_ERR = [{'agentId': 'a1', 'name': 'Local Brain', 'role': 'Generalist',
             'text': '⚠ hit a snag — couldn\'t reach that brain',
-            'streaming': False, 'error': True}]
+            'streaming': False, 'error': True, 'outcome': 'error'}]
 SNAG = "hit a snag — couldn't reach that brain — it looks offline from here"
 
 

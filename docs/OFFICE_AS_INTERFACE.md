@@ -36190,3 +36190,68 @@ broadly it forbade the rule that finishes its own job, while every assertion
 it actually makes stayed green either way. Narrowed to the rules that set
 `top` or `bottom`; a rule that sets only `max-height` is not competing to
 anchor anything. No assertion was removed or relaxed.
+
+## 321. two coworkers said nothing all evening and the board recorded three reports
+
+The end-of-day stand-up is the ritual where the office speaks to itself. Every
+coworker gets a turn, a token cap and forty-five seconds; whatever they say is
+gathered, synthesised by CafresoHQ, and — this is the part that matters — filed
+to the task board as a DONE card. The card's face carries one line of tally:
+
+    End-of-day team stand-up — 3 of 3 reported.
+
+A turn ends four ways, and the loop that runs it already knows all four. It
+deliberately keeps the boss's STOP and its own watchdog on separate
+`AbortController`s "precisely so it can tell '…(stopped)' from '…(timed out)'"
+— its own comment, written when a slow summary was being blamed on the boss.
+The row that counts them knew two: `r.text && !r.error`. A watchdog abort sets
+`error: false` on purpose, because a model that will not load is nobody's
+fault, and writes its label into `text`. So the timed-out row satisfied both
+halves of the predicate and was counted as a report. Two coworkers on a local
+model that never woke up, zero tokens between them, and the count read three.
+
+The count's own comment said the opposite — "an error row and a silent row are
+both 'did not report'" — and so did the preflight the boss reads before
+pressing START: "up to 45s before someone is counted as not reporting." Both
+were true of the design and false of the code. The modal was even honest
+elsewhere: open the card and each silent section reads "…(timed out — model too
+slow or unloaded)". But a filed stand-up is read from the board, days later, at
+a glance, and the glance is the tally. The boss would have believed their team
+checked in, and gone looking in the body for what Ada said, and found a machine
+saying it had run out of time — with no way, by then, to tell whether it was
+one evening or every evening since the model was swapped.
+
+Silence is not a report, and "the model never loaded" is not "the coworker had
+nothing to say." Each row now carries how it actually ended — `reported`,
+`timeout`, `stopped`, `error` — written once by whichever branch reaches it,
+and the tally counts the one ending that means somebody spoke. The card names
+the timeouts too (", 2 ran out of time"), because a bare "1 of 3 reported"
+invites the boss to blame two coworkers for a machine.
+
+`scripts/test_a_coworker_who_ran_out_of_time_did_not_report.py` lifts the real
+success block, the real catch block and the real counting expressions out of
+`features.jsx` and drives a three-person stand-up through each ending —
+comments stripped first, since the fix's own comment quotes the old predicate.
+It checks the ending stamped on every row, the tally for all-answered,
+one-timeout, all-timeout, one-refusal and a STOP on the first turn, and the
+exact sentence the DONE card would carry in each case.
+
+Fire-tested: copied the fixed `features.jsx` to `/tmp`, reverted `reported()`
+and the four `outcome` writes in place with the editor (never
+`git checkout -- <file>`), the tally and card-sentence checks failed, exit 1.
+Restored from `/tmp`, `md5` byte-identical, reran — all passed, exit 0.
+
+`.jsx` change, so `npm run build` after.
+
+**One existing test changed, and loudly.**
+`scripts/test_the_standup_files_only_what_happened.py` (#143) lifts the real
+`reported()` and `detail` builders into node. Two mechanical changes, no
+assertion touched: it now lifts `timedOut()` alongside `reported()` (the
+detail expression calls it, so the lift would not run otherwise), and its two
+report fixtures gained the `outcome` field. That second one is the interesting
+half — those fixtures described a row with `text` and `error` and nothing
+else, which is precisely the two-ending shorthand ##323 found the count
+relying on. A row that ran out of time is neither of the two shapes that file
+described, so the fixture set could not have caught this. Both of its
+counting assertions ("an error row is not counted as a report", "mixed run
+counts only the answers") still hold, unchanged and unrelaxed.
