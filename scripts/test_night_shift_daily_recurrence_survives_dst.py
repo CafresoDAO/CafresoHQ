@@ -184,7 +184,11 @@ def main():
             time.tzset()
 
     src = SERVE.read_text(encoding='utf-8')
-    m = re.search(r"if s\.get\('recurrence'\) == 'daily':\n(.*?)\n            else:\n                s\['enabled'\] = False",
+    # #384 wrapped _night_scan's body in a `with _night_lock: ... try:`
+    # section (a cross-process scan lock), shifting this branch's
+    # indentation in one level (12/16 -> 16/20 spaces) without touching
+    # its logic — the pin below matches the current indentation.
+    m = re.search(r"if s\.get\('recurrence'\) == 'daily':\n(.*?)\n                else:\n                    s\['enabled'\] = False",
                   src, re.S)
     check("serve.py's _night_scan still has the daily-recurrence branch",
           m is not None)
