@@ -26,12 +26,25 @@ function slugify(s) {
      hanging: "Save a note to your memory saying the boss likes bullet
      points, then confirm" filed as
      `save-a-note-to-your-memory-saying-the-boss-likes-bullet-.md`.
-     Caught by reading a real filename rather than the function. */
-  return String(s || '').toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 56)
-    .replace(/-+$/, '') || 'delivery';
+     Caught by reading a real filename rather than the function.
+
+     `[^a-z0-9]` is not "unsafe characters", it is "not the Latin alphabet":
+     every letter of Japanese, Russian, Greek, Hebrew, Arabic and Korean was
+     replaced with a dash, the trim ate the dashes, and what was left fell
+     through to the `|| 'delivery'` fallback — so a boss who does not type in
+     English got `Deliveries/delivery.md`, `delivery-2.md`, `delivery-3.md`
+     for every task they ever finished, with the title thrown away. This is
+     `#279`'s bug ("every japanese starter task was filed as note.md",
+     modals/starter.jsx `filePath`) in its twin: the header above this file
+     says the two are "kept in step with" each other, and only one of them
+     was fixed. `\p{L}\p{N}` under /u still turns `.` and `/` into `-`, which
+     is what the old class was really protecting, and the cap now counts code
+     points so an astral character is never cut into a lone surrogate. */
+  const cleaned = String(s || '').toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
+    .replace(/^-+|-+$/g, '');
+  return Array.from(cleaned).slice(0, 56).join('')
+    .replace(/^-+|-+$/g, '') || 'delivery';
 }
 
 /* A page deliverable is only worth saving as .html if it actually IS html.

@@ -74,12 +74,21 @@ const INTERVAL_PRESETS = [
   { label: 'every 20 min', ms: 20 * MIN },
 ];
 
-/* Slugify a topic into a vault-friendly folder name. */
+/* Slugify a topic into a vault-friendly folder name.
+
+   Same class, same twin as `slugify` in app/artifacts.jsx and `filePath` in
+   modals/starter.jsx (`#279`): `[^a-z0-9]` deletes every non-Latin script
+   wholesale, so every mission a non-English office ever ran was pointed at
+   the one folder `Research/untitled` — where its notes sit on top of the
+   previous mission's, VAULT_NEW being an overwrite. `\p{L}\p{N}` under /u
+   still turns `.` and `/` into `-`, so a topic still cannot walk out of the
+   vault, and the cap counts code points rather than UTF-16 units. */
 function topicSlug(topic) {
-  return String(topic || '').trim().toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60) || 'untitled';
+  const cleaned = String(topic || '').trim().toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
+    .replace(/^-+|-+$/g, '');
+  return Array.from(cleaned).slice(0, 60).join('')
+    .replace(/^-+|-+$/g, '') || 'untitled';
 }
 
 /* Build the per-iteration prompt for a project-study mission. The agent

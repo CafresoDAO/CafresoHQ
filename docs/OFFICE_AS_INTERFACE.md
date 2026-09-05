@@ -33644,3 +33644,105 @@ a foreign session owns and this change never touches). This change covers only
 the two test files and this entry; `src/cafresohq_state/main.mo` was never
 staged or edited, no II or `derivationOrigin` value was read or written, and no
 dfx/IC action of any kind was run.
+
+---
+
+## 285. the deliverable filer never got the fix the starter card got
+
+`#279` fixed the slug in `modals/starter.jsx`: `[^a-z0-9]` is not "unsafe
+characters", it is "not the Latin alphabet", so every letter of Japanese,
+Russian, Greek, Hebrew, Arabic and Korean was replaced with a dash, the trim
+ate the dashes, and the empty string fell through to the `|| 'note'`
+fallback. That entry fixed the three starter cards and stopped there.
+
+**The wreck.** The starter cards are not the filer. `app/artifacts.jsx`
+`slugify` names the sheet for **every** finished task — the host-side filer
+that runs whether or not the coworker cooperates, the one the boss meets on
+their first delivery — and it carried the identical constant, four lines
+long, with the fallback spelled `'delivery'` instead of `'note'`. The header
+of that very file says the shelf constants beside it are "kept in step with
+modals/starter.jsx"; the slug underneath them was not.
+
+Measured on the old code:
+
+```
+slugify('顧客への提案メール')          ->  'delivery'
+slugify('新製品の価格戦略')            ->  'delivery'
+slugify('Стратегия ценообразования')  ->  'delivery'
+slugify('개 산책 사업 홈페이지')         ->  'delivery'
+```
+
+`#278` had already given `fileDelivery` a `pathIsFree` step loop, so this is
+no longer the silent destruction `#279` described — and that is the whole
+reason it survived the sweep. What a non-English office got instead was
+`Deliveries/delivery.md`, `delivery-2.md`, `delivery-3.md`, … forever: a
+cabinet in which no sheet can be told from any other, `artifactPath` on every
+task pointing at an interchangeable name, and — past the 20th step, which a
+working office reaches — a finished task whose deliverable is filed nowhere
+at all and reported as no artifact. Degraded rather than destructive, which
+is exactly the kind of second site a fix aimed at one call site leaves
+standing.
+
+`missions.jsx` `topicSlug` is the third site of the same constant and was
+fixed with it. It names the **folder** an entire mission writes into
+(`Research/${topicSlug(topic)}`), so every mission a non-English office ever
+ran was aimed at the one folder `Research/untitled`, where each round's notes
+land on the previous mission's — and `VAULT_NEW`'s own doc line still reads
+"create a new note (overwrites if exists)".
+
+**The fix.** `#279`'s, applied where it should have been applied the first
+time — keep letters and digits from every script:
+
+```js
+const cleaned = String(s || '').toLowerCase()
+  .replace(/[^\p{L}\p{N}]+/gu, '-')
+  .replace(/^-+|-+$/g, '');
+return Array.from(cleaned).slice(0, 56).join('')
+  .replace(/^-+|-+$/g, '') || 'delivery';
+```
+
+`\p{L}\p{N}` under `/u` still turns `.` and `/` into `-`, so what the old
+class was actually protecting is untouched: a title cannot walk out of the
+cabinet and cannot file itself under a leading dot where `serve.py` refuses
+to list it (`#140`). The cap counts code points rather than UTF-16 units, so
+an astral CJK-extension character is never sliced into a lone surrogate, and
+the trim runs again after the cut, which preserves `#215`'s no-dangling-dash
+result rather than re-deriving it. The `'delivery'` / `'untitled'` fallbacks
+stay for a title that genuinely has no letters or digits — "!!!" or a row of
+emoji — which is now the only way two titles can collide at all.
+
+**The test.**
+`scripts/test_a_deliverable_in_japanese_is_not_filed_as_delivery_md.py` lifts
+the real `slugify` and `topicSlug` out of the app with `brace_lift` and runs
+them under Node: nine task titles in seven scripts must produce nine
+different sheets, and three mission topics must produce three different
+folders. Distinctness alone does not pass — a counter bolted onto the
+constant would satisfy it while still throwing the title away — so each
+filename must also *carry* what the boss typed. The rest guards the
+properties the old class got right and a rewrite could lose: the fallback,
+no `/`, no `..`, no leading dot, an ordinary English title unchanged, the
+56-cap, no dangling dash, no lone surrogate. A structural check keeps
+`#279`'s own fix in place, and a last one reads `dist-ui/` so a stale bundle
+cannot ship the old class while the source looks fixed.
+
+Fire-tested: copied the fixed `app/artifacts.jsx` and `missions.jsx` to
+`/tmp`, reverted both slugs in place with the editor (never
+`git checkout -- <file>`) and rebuilt — 13 checks failed, exit 1, with all
+seven non-Latin titles landing on the single name `delivery` and all three
+mission topics on `untitled`. Restored from the `/tmp` copies, confirmed
+byte-identical by `md5` (`d742688b48926645cd263684a9e5f142`,
+`92f74e59ab95185c9915221f0a7ed7c3`), rebuilt and reran — all 25 checks
+passed, exit 0.
+
+`npm run build` was run once up front so `dist-ui/manifest.json` exists in a
+fresh worktree, and again after the `.jsx` edits.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file
+a foreign session owns and this change never touches). This change covers only
+`app/artifacts.jsx`, `missions.jsx`, the one new test file, and this entry
+(`dist-ui/` is gitignored and rebuilt, never committed);
+`src/cafresohq_state/main.mo` was never
+staged or edited, no II or `derivationOrigin` value was read or written, and
+no dfx/IC action of any kind was run.
