@@ -481,6 +481,45 @@ def free_name(name, taken):
     return '%s (%d)%s' % (stem, n, ext), True
 
 
+def claim_name(name, path_for):
+    """The first free variant of `name`, CLAIMED — not merely observed free.
+
+    free_name only ASKS whether a name is taken. Both upload doors then went
+    away and wrote to it, and the gap between the question and the write is
+    wide enough for another coworker to land in — this is a ThreadingMixIn
+    server and two people dropping files into the same folder at the same
+    moment is an ordinary Tuesday. Measured on /fs/upload before this
+    existed: forty concurrent uploads of `report.txt`, forty 200s each
+    reporting one file filed, THIRTEEN files on disk. `report (2).txt` was
+    handed to twelve different uploads; eleven of them were overwritten by
+    the twelfth and their owners were told, in writing, that the file was
+    shared. Same family as the vault append (## 329.) and the OCI append
+    (## 335.): a read-or-check, a decision made from it, and a write that
+    assumes nothing moved in between.
+
+    O_CREAT|O_EXCL makes "is this name free?" and "this name is now mine"
+    the SAME syscall, so the loser of a race gets EEXIST and steps to the
+    next variant instead of silently replacing the winner. free_name still
+    does the skipping-ahead — it is one stat per variant instead of one
+    create — and the exclusive open is what actually settles it.
+
+    Returns (fd, chosen_name, path, collided); the caller owns the fd.
+    `path_for(candidate)` maps a basename to the real destination and may
+    raise (the doors re-assert their whitelist inside it).
+    """
+    cand, collided = name, False
+    for _ in range(10000):
+        p = path_for(cand)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            fd = os.open(str(p), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
+        except FileExistsError:
+            cand, collided = free_name(name, lambda c: path_for(c).exists())
+            continue
+        return fd, cand, p, collided
+    raise OSError('could not claim a free name for %r' % name)
+
+
 def _fs_upload(self):
     """POST /fs/upload?path=<dir>   (multipart/form-data)
     Drop files into a project's working tree so the agents (FILE_READ /
@@ -547,19 +586,28 @@ def _fs_upload(self):
             errors.append({'path': decided['shown'], 'error': decided['refusal']})
             continue
         fname = decided['name']
-        # A name already on disk steps aside — never silently replaced.
-        fname, collided = free_name(fname, lambda c: (target_dir / c).exists())
-        dest = (target_dir / fname).resolve()
-        # Defense-in-depth: re-assert the whitelist on the final path even
-        # though a sanitized basename can't traverse.
+
+        def _dest(c, _d=target_dir):
+            p = (_d / c).resolve()
+            # Defense-in-depth: re-assert the whitelist on the final path even
+            # though a sanitized basename can't traverse.
+            self._validate_path(str(p))
+            return p
+
+        data = part.get_payload(decode=True) or b''
         try:
-            self._validate_path(str(dest))
+            # A name already on disk steps aside — never silently replaced,
+            # and the step aside is a claim, not a look. See claim_name.
+            fd, fname, dest, collided = claim_name(fname, _dest)
         except PermissionError:
             errors.append({'path': fname, 'error': 'outside allowed dirs'})
             continue
-        data = part.get_payload(decode=True) or b''
+        except Exception as e:
+            errors.append({'path': fname, 'error': str(e)})
+            continue
         try:
-            dest.write_bytes(data)
+            with os.fdopen(fd, 'wb') as fh:
+                fh.write(data)
             entry = {'path': str(dest), 'name': fname, 'size': len(data)}
             if decided['renamedFrom'] or collided:
                 # Whichever name the boss actually picked — pre-sanitize

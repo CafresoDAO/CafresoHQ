@@ -62,11 +62,20 @@ def main():
     # ── structure: both doors actually ask it ───────────────────────────
     fs_src = (ROOT / 'fs_routes.py').read_text(encoding='utf-8')
     serve = (ROOT / 'serve.py').read_text(encoding='utf-8')
-    check('the Projects door asks before writing',
-          re.search(r'free_name\(fname,[\s\S]{0,80}target_dir / c\)\.exists', fs_src))
-    check('the Library door asks before writing (fs backend)',
-          'fs_routes.free_name(' in serve and '_vault_resolve(' in
-          serve[serve.index('fs_routes.free_name('):serve.index('fs_routes.free_name(') + 400])
+    # These two used to pin the doors to `free_name(fname, lambda c: (target_dir
+    # / c).exists())` immediately above the write — the ask-then-write shape.
+    # #337 measured what that shape does under two coworkers at once: forty
+    # concurrent uploads of one name, forty green receipts, thirteen files on
+    # disk. The step-aside is now a CLAIM (fs_routes.claim_name, O_CREAT|
+    # O_EXCL), so what the doors must be caught doing is claiming, not asking.
+    # Every behavioural check above is untouched and still passes: a collision
+    # still steps to (2). The guarantee got stronger, not looser.
+    check('the Projects door claims the name before writing',
+          re.search(r'claim_name\(fname,[\s\S]{0,120}target_dir / c\b', fs_src)
+          or re.search(r'_d / c\)[\s\S]{0,600}claim_name\(fname,', fs_src))
+    check('the Library door claims the name before writing (fs backend)',
+          'fs_routes.claim_name(' in serve and '_vault_resolve(' in
+          serve[serve.index('fs_routes.claim_name('):serve.index('fs_routes.claim_name(') + 400])
     check('a sidestep reaches the receipt on the Projects door',
           re.search(r"renamedFrom'\] or collided", fs_src))
     check('a sidestep reaches the receipt on the Library door',

@@ -5102,15 +5102,25 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     continue
                 fname = decided['name']
                 collided = False
+                claimed = None
                 if _vault_backend not in ('rest', 'oci'):
                     # fs (the shipping default): a name already filed steps
-                    # aside — never silently replaced. rest/oci can't check
+                    # aside — never silently replaced. The sidestep CLAIMS the
+                    # name with O_CREAT|O_EXCL rather than merely asking
+                    # whether it is free, because two coworkers dropping into
+                    # the Library at the same moment both got the same answer
+                    # to that question and both wrote it. rest/oci can't check
                     # existence without a round-trip per part and keep their
                     # backends' own overwrite semantics.
-                    fname, collided = fs_routes.free_name(
-                        fname,
-                        lambda c: _vault_resolve(
-                            (folder + '/' if folder else '') + c).exists())
+                    try:
+                        claimed, fname, _tgt, collided = fs_routes.claim_name(
+                            fname,
+                            lambda c: _vault_resolve(
+                                (folder + '/' if folder else '') + c))
+                    except Exception as e:
+                        errors.append({'path': (folder + '/' if folder else '') + fname,
+                                       'error': str(e)})
+                        continue
                 data = part.get_payload(decode=True) or b''
                 rel = (folder + '/' if folder else '') + fname
                 try:
@@ -5125,9 +5135,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         cli.put_object(_oci_vault_namespace, _oci_vault_bucket,
                                        _oci_obj_key(rel), put_object_body=data)
                     else:
-                        target = _vault_resolve(rel)
-                        target.parent.mkdir(parents=True, exist_ok=True)
-                        target.write_bytes(data)
+                        with os.fdopen(claimed, 'wb') as fh:
+                            claimed = None      # fdopen owns it now
+                            fh.write(data)
                     entry = {'path': rel, 'size': len(data)}
                     if decided['renamedFrom'] or collided:
                         # Whichever name the boss actually picked — pre-
@@ -5136,6 +5146,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         entry['renamedFrom'] = decided['renamedFrom'] or decided['name']
                     saved.append(entry)
                 except Exception as e:
+                    if claimed is not None:
+                        try: os.close(claimed)
+                        except OSError: pass
                     errors.append({'path': rel, 'error': str(e)})
             # 200 even when nothing was filed — see _fs_upload's note. The
             # body says what happened to every part; the status line only

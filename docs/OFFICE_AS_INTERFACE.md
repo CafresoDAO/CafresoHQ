@@ -37316,3 +37316,67 @@ including the roster.
 because the writer counted a different set than the reader. Same species one
 layer down: two halves of one store, and a rule applied to only one of them
 is a rule the other half quietly undoes on the next reload.
+
+---
+
+## 337. the name two coworkers were both told was free
+
+**The wreck.** `## 137.` made a colliding upload step aside instead of
+replacing: `deck.pptx` dropped onto a `deck.pptx` becomes `deck (2).pptx`,
+and the receipt says so in the sentence a sanitized name already gets. Both
+upload doors got the same helper, `fs_routes.free_name`, and both used it
+the way the office asks most of its questions — ask, then act:
+
+```
+fname, collided = free_name(fname, lambda c: (target_dir / c).exists())
+...
+dest.write_bytes(data)
+```
+
+`serve.py` is a `ThreadingMixIn` server. Every handler runs beside every
+other one, and two coworkers dropping files into the same project folder at
+the same moment is an ordinary Tuesday — it is the whole point of the
+"share files with agents" loop that a room of people uses at once. Both of
+them ask whether `report.txt` is free. Both are told yes, because between
+the question and the write there is nothing holding the name. Both write it.
+
+Measured on a real server on this branch, forty concurrent POSTs of
+`report.txt` to `/fs/upload`, each with its own body:
+
+```
+receipts saying filed        40
+files on disk                13
+'report (2).txt' handed to   12 different uploads
+```
+
+Twenty-seven people were told, in writing, that their file had been shared
+with the project. It was not there. The receipt was at its most confident
+exactly where the loss was total — a full path, a byte count, and a
+`renamedFrom` line explaining the considerate sidestep onto a name eleven
+other people had also been given. The Library's own `/vault/upload` door,
+carrying the same helper, lost seventeen of forty the same way.
+
+**The fix.** `fs_routes.claim_name`: the first free variant of a name,
+**claimed** rather than observed. `O_CREAT|O_EXCL` makes "is this name
+free?" and "this name is mine" one syscall, so the loser of a race gets
+`EEXIST` and steps to the next variant — which is what stepping aside was
+always supposed to mean. `free_name` survives underneath it doing the
+skipping-ahead, so a folder holding fifty `report (n).txt` costs fifty
+stats and not fifty creates, and both doors write through the descriptor
+they claimed instead of re-opening a path they merely looked at. Forty
+concurrent uploads now land forty files, forty distinct names, thirty-nine
+honest sidesteps.
+
+Two structural checks in `## 137.`'s own test had to move. They pinned each
+door to the literal ask-then-write shape, which is the bug; they now pin it
+to the claim. Every behavioural check in that test is untouched and still
+passes — a collision still steps to `(2)`. The guarantee got stronger, not
+looser.
+
+**Whose twin.** `## 329.`, the vault append that read, added a line and
+wrote the whole note back, losing seventy-nine of eighty concurrent
+paragraphs; and `## 335.`, the OCI append whose failed read deleted the
+note it could not see. Same species: a look, a decision made from the look,
+and a write that assumes the world held still in between. `## 329.` lost
+what two writers wrote to one name. This one lost what two writers wrote
+because they were **given** one name.
