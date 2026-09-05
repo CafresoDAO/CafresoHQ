@@ -41600,3 +41600,300 @@ renumbered at integration. Every `#397` in the code comments and in
 `scripts/test_a_save_that_failed_is_said_out_loud.py` moves with it. The
 bare line numbers in those comments (84, 174, 247…) are LINE numbers, not
 entry numbers, and must not be renumbered.
+## 398. the ✕ on a card stopped a note it never named
+
+`## 394` opened a class and closed two of its doors. The class: **an
+observation made before an `await`, acted upon after it, when the observed
+thing can change during the wait.** The suspend point can be anything — a
+`hqConfirm` dialog, a `fetch`, a `setTimeout` sleep, an `await` on a
+stream. The tell is `const x = <read of mutable shared state>` … `await
+<anything>` … code that assumes `x` is still true. This is that sweep: all
+**85** suspend points in `app.jsx` and `hq-runtime.jsx`, each classified
+with its reason, plus the two it turned up.
+
+Counted mechanically — every `await` token in the two files after comments
+are stripped (52 in `app.jsx`, 33 in `hq-runtime.jsx`) — and then each read
+backwards for reads of mutable shared state (`*Ref.current`, module-level
+maps and caches, React state closed over from the render) that are used
+again on the far side. The inventory is at the bottom, and it is the
+durable half of this entry: `## 391`'s was consumed directly by three later
+fixes.
+
+**The bug, at the third door of `## 394`'s own family.** `onDeleteTask`
+(app.jsx 5285) computes
+
+    const running = t.status === 'doing' && !t.blockedReason && !!t.assignedTo
+      && agentAbortersRef.current.has(t.assignedTo);
+
+raises `${who} is working on "…" right now.\n\nDelete it and stop them?`
+and, on yes, runs `abortAgentRun(t.assignedTo)`. That abort takes whatever
+is on the desk WHEN THE DIALOG CLOSES. A modal is open for as long as the
+boss leaves it open; `dispatchToAgent`'s wait re-polls the same desk every
+750ms. So the card's own run can finish on its own while the boss reads,
+a note that queued behind that desk wakes, finds it clear, claims it and
+starts streaming — and the ✕ kills the note.
+
+`## 394` swept the two CLAIM sites (`beginAgentRun` behind a dialog) and
+did not look at the one ABORT site behind a dialog, which is the same
+window pointed the other way. The trigger needs no bad luck and is if
+anything more ordinary than `## 394`'s: a coworker who is slow is exactly
+the coworker whose card the boss reaches for the ✕ on, and exactly the desk
+notes are queuing behind.
+
+Reproduced 2026-09-05 by new `scripts/harness_delete_desk_race.mjs`,
+lifting the REAL `onDeleteTask`, the REAL busy-desk deferral block and
+claim out of `dispatchToAgent`, and the REAL
+`beginAgentRun`/`endAgentRun`/`abortAgentRun` registry (marker-bounded /
+brace-balanced extraction of committed source, no re-implementation).
+Scenario `delete-dialog-outlives-the-run`: the dialog said "Vera is working
+on 'the quarterly summary' right now", the card's run ended while it was
+open, Sam's note woke and claimed the desk, the boss said yes —
+`samsNoteStarted: true, samsNoteEvicted: true, displacementReported:
+false`, an empty `transitions` array and one team-room line, the one saying
+Sam's note was politely waiting its turn. The record stays `in_progress`
+forever. Identical measured shape to `## 394`'s, at a door `## 394` never
+opened.
+
+**The fix, deliberately not a new mechanism.** `displaceDeskNote` and
+`deskWorkRef` already exist, and this door wants exactly what they do. So:
+`priorRun` and `who` are hoisted above the ask (`who` was declared INSIDE
+the `if (running)` branch, which is why nothing after the ask could name
+whose desk the dialog had described), and
+
+    if (running) displaceDeskNote(t.assignedTo, who, priorRun, `deleting "${t.title}"`);
+    if (running) abortAgentRun(t.assignedTo);
+
+Unchanged desk, it returns null and says nothing. Changed desk, the boss
+still gets the deletion they asked for — they asked for it — and the note
+it actually stopped is filed `cancelled` / `kind: 'displaced'` /
+`retryable: true` with one team-room line, `## 384`'s Retry door included.
+Its own statement rather than a brace around the abort, following
+`## 394`'s hard-won rule about not moving pinned markers: the regex
+`if \(running\) abortAgentRun\(t\.assignedTo\);` is pinned verbatim by
+`test_a_delete_stops_only_its_own_run.py`, and bracing it would have broken
+that test for nothing.
+
+**The second finding: a SAFE verdict that was wrong, and the sweep is how
+it surfaced.** `## 391` listed the night-run XP guard (app.jsx 1352,
+`experienceRef.current.some(e => e.taskId === r.id)`) as SAFE "for two
+independent reasons: it runs inside the serialised poll above, and
+`xpRecord` enforces one-`done`-per-taskId append-only at WRITE time."
+
+Both halves are wrong, in different ways.
+
+- The serialised poll is the CHAIN/WALLET poll (app.jsx 4447,
+  `if (dead || polling || document.hidden) return; polling = true;`), three
+  thousand lines away and a different `useEffect` entirely. The night-shift
+  poll (1297) had `if (document.hidden || stop) return;` and nothing else,
+  while being fired from three places — mount, a 15s interval, and every
+  `visibilitychange`. Two invocations can sit inside each other's `await`s
+  with nothing stopping them, and `experienceRef` is EFFECT-assigned, so it
+  cannot possibly have caught up in the milliseconds between them.
+- `xpRecord`'s write-time guard is real (a functional `setExperience`
+  updater, so it does see the latest ledger) and it dedupes `'done'` ONLY —
+  a `'snag'` sails straight through. And it is not the only side effect in
+  that loop: `logActivity` sits right beside `recordXp` and dedupes
+  nothing at all.
+
+Driven, not argued, by the same harness with the poll lifted WHOLE — from
+its own `let stop = …` through the end of `poll`, so the latch a fix adds
+is genuinely shared between invocations rather than one per call — and
+called twice 5ms apart inside one fetch. Pre-fix, a FAILED overnight run
+went into the coworker's résumé ledger **twice** (`xpCallsMade: 2,
+ledgerEntries: 2`) and filed **two** notification rows; a SUCCESSFUL one
+was deduped in the ledger and still filed **two** rows. An alt-tab away and
+back fires `visibilitychange` twice; that is the whole setup.
+
+Fixed in the sibling poll's own idiom, `let stop = false, polling = false;`
+with the claim on the statement after the test and the release in a
+`finally` — `## 392`'s rule, because a release written at each terminal
+point is one a later edit will miss, and a missed one here is a night-shift
+board that never updates again.
+
+**Test.** New
+`scripts/test_the_x_on_a_card_stopped_a_note_it_never_named.py`. Structural
+— the delete door holds `priorRun` and `who` across the ask, reports
+exactly once, names the deletion as what took the desk, gates the report on
+the same `running` the abort is gated on, leaves the pinned abort marker
+and the full in-flight witness untouched, and the load-bearing negative:
+nothing awaitable between the report and the abort, since the report reads
+the desk to decide whether it changed hands and an `await` there re-opens
+the very window it closes. Plus the poll's latch, its claim-after-test, its
+`finally` release, and a pin on the chain/wallet poll still having the
+latch this one borrows the idiom from. Behavioural, through the harness —
+the race itself (the displaced note named in the team room and cancelled
+against its own record, the boss still getting their deletion), an
+unchanged desk saying nothing at all, a DECLINED delete keeping both the
+card and the note, the two overlapping night polls filing one snag / one
+row / one XP call, and a poll started AFTER the first ended still running
+in full (this fix's analogue of `## 390`'s "a genuinely different taskId
+still starts").
+
+**Fire-tested.** Reverted in place (md5 `8766cac14c8803609178fbea36756321`
+fixed, `550668bddee2cf77b515af1ddf72a18d` reverted) — **15** checks failed
+reliably across 3 repeated runs, including all six live ones, while the
+pinned negatives (the abort marker, the in-flight witness, the sibling
+poll's latch, the unchanged desk, the declined delete, the sequential poll)
+kept passing, which is what says they are properties of the doors and not
+artifacts of the fix. Restored byte-identical, green on three repeated
+runs. `npm run build` succeeds.
+
+**Fallout, repaired here.** One of the thirty-seven tests that name these
+functions broke, the usual way: `test_a_delete_stops_only_its_own_run.py`
+lifts `onDeleteTask` into an isolated Node namespace and hands it its
+dependencies by name, so the new call threw `ReferenceError:
+displaceDeskNote is not defined` before its first case ran. Given the
+dependency with a comment citing this entry. Every other test that lifts or
+pins `onDeleteTask`, the night-shift poll, the desk registry (`agentAbortersRef`)
+or the XP ledger — **49** of them — was run standalone and passes unchanged.
+
+### The inventory
+
+Every suspend point in `app.jsx` and `hq-runtime.jsx`, grouped by what it
+suspends on and what it observed first. A SAFE verdict names the specific
+reason THAT read cannot go stale across THAT await; where one could not be
+named, the entry says "unexamined", not "safe".
+
+**EXPOSED — fixed here.**
+
+- `onDeleteTask` (app.jsx 5285 → 5321) — `running` and the desk it names,
+  observed before `hqConfirm`, acted on by `abortAgentRun` after. Silent
+  lost work: a note evicted with no line and no transition. Fixed above.
+- The night-shift poll (app.jsx 1297) — no re-entrancy latch, three
+  triggers, an effect-assigned `experienceRef` read after two `await`s.
+  Duplicate résumé snags and duplicate notification rows. Fixed above.
+
+**EXPOSED — real, unfixed, named precisely so the next hunt does not have
+to re-derive them.**
+
+- `onDeleteTask`, the OTHER direction (app.jsx 5285). When `running` is
+  FALSE at observe time and the boss is answering the result-guard confirm
+  instead, a chain step can auto-dispatch onto that card inside the gap
+  (`triggerChainStep` → `onTaskDropOnAgent` with `opts.auto`, which never
+  asks). `if (running)` is then still false, so the card is deleted and the
+  run is left alive — which is verbatim the bug the abort's own comment
+  says was fixed ("a minute later the run finished and FILED A DELIVERY
+  into the cabinet for work the boss had explicitly removed"). The
+  await re-opens it from the other side. Not fixed here because the honest
+  fix is to re-derive the whole witness against `tasksRef.current` after
+  the ask, which changes what the abort does and moves the marker
+  `test_a_delete_stops_only_its_own_run.py` pins — a second behaviour
+  change in one entry, fire-tested properly by neither.
+- `isVaultReady` (hq-runtime.jsx 1779) — reads `now = Date.now()` and the
+  cache, `await CafresoHQClient.vaultStatus()`, then calls
+  `_noteVaultReady(ok, now)` with the PRE-await stamp. Two consequences: a
+  `clearVaultReadyCache()` landing during an in-flight probe (Settings →
+  Connections after a backend swap, which is exactly when a probe is in
+  flight) is silently undone by the probe writing the OLD vault's answer
+  back over the cleared cache; and a slow probe is filed as if it answered
+  when it was asked, so the 5s freshness window is already partly spent.
+  The harm is a coworker card advertising a vault the boss just
+  disconnected. Small, visible, and genuinely this class.
+- `onStopAll` (app.jsx 1491) — `inflight`, `localRunning` and
+  `nightRunning` are all counted BEFORE the confirm, and the chat line and
+  the ticker report those numbers AFTER it. A desk that lit up or went
+  quiet while the boss read the dialog makes "aborted 3 streams" a number
+  about a moment that has passed. Left alone deliberately: the sweep it
+  performs is unconditional and correct, and the cost is a wrong count in
+  one sentence, not lost work. Named here so the next reader does not
+  re-derive it.
+
+**SAFE — with the specific reason.**
+
+*Re-checked on the far side (the correct pattern, and worth knowing where
+it already exists).*
+
+- `dispatchToAgent`'s busy-desk wait (2723-2764) — re-reads
+  `agentsRef.current` after the poll to see if the recipient was dismissed
+  while it waited, and re-reads both epochs. `## 394` pinned the rest.
+- The sub-agent dispatch (4020 → 4042) — same shape, same re-check on
+  `transientAgent.id`, plus a fresh `agentAbortersRef` read at 4052.
+- The first-run welcome (643) — `decideFirstRunWelcome` is handed a COUNT,
+  and the caller then re-reads `firstRunAgentsRef.current.length` after the
+  await precisely because the roster fetch can hydrate during it. The
+  comment says so; the code does it.
+- The three backend-health loops (843/854, 881, 911) — every one re-tests
+  its own `cancelled`/`stop`/`stopped` flag after each await before writing
+  any state.
+- The external-approvals poll (6169-6176) — everything it decides is
+  decided INSIDE `setApprovals(prev => …)`, a functional updater that reads
+  at commit time, not before the fetch. `## 325` and `## 316` are the two
+  entries that made it so, and the comment at 6208 names the await boundary
+  explicitly.
+
+*Nothing else writes the observed thing.*
+
+- `anchorWorkReceipt` (2321-2342) — `rcId`, `ev` and `arg` are locals of
+  one tool visit; the write is `setReceipts(prev => prev.map(r => r.id ===
+  rcId …))`, keyed on an immutable id through a functional updater.
+- `onDismiss`'s night-schedule cleanup (1985-1990) — `leaving` is a `Set`
+  built synchronously before the IIFE and never written again.
+- `onApprove`'s publish branch (6478) and both `decideExternal` IIFEs
+  (6682, 6824) — each closes over `ap` and `rcId`, which are read once and
+  are immutable for the life of the call.
+- `onAddSticky` (4979) — reads NOTHING before its `hqPrompt`; the write is
+  a functional `setPins`.
+- `saveCurrentWorkspace` (7235) — awaits the prompt FIRST and reads the
+  workspace state after, from a `useCallbackA` dependency list. The values
+  are a render's snapshot, which is `## 391`'s class and not this one, and
+  a modal prompt is the one moment nothing else is writing them.
+- `onRetryFailed` (7442) and `onRetryActivity` — read `messagesRef.current`
+  and hand `failed[0]` straight to `resendMessage` with no await in
+  between; `resendMessage` claims `resendingIdsRef` as its own first
+  statement (`## 389`).
+- The DM fan-outs (3768→3790, 3941, 4916, 6063) — each iteration re-reads
+  `agentsRef.current` for its own `target` immediately before its own
+  `await dispatchToAgent(...)`, and the await IS the use. A stale target
+  cannot survive into the next iteration because the next iteration reads
+  again.
+- hq-runtime's tool executors (2001-2150, 2254, 2303, 3029-3085,
+  3101, 3157, 4487) — every one reads its `path`/`body`/`arg` out of the
+  immutable arguments the tool was called with. The vault ones are a
+  read-then-write across an await on a FILE, which is a real race and a
+  different family (`## 386`'s, and the vault write-lock tests own it).
+- hq-runtime's turn loops (4243/4247/4348, 4517/4523/4527/4724) —
+  `toolsExecuted`, `reachedFor` and `CEO_HAS` are locals of one turn;
+  nothing outside the turn can reach them.
+- `_registryCache.inflight` (hq-runtime 4190) — module-scope promise
+  memoisation, assigned on the statement after the check. `## 391` read it;
+  it still holds.
+
+*The observed thing is only written by the thing being awaited.*
+
+- Every `await HQ.agentStream(...)` (3116, 4754, 5617) — the buffers,
+  queues and visit lists read after it (`buf`, `dmQueue`, `toolVisits`,
+  `usedTokens`) are written exclusively by that stream's own callbacks.
+  `peers` is the one thing in that call that IS shared, and both the
+  `dispatchToAgent` and `onTaskDropOnAgent` sites already read it through
+  `agentsRef.current` rather than the render closure, with a comment at
+  5652 naming this exact hazard ("can sit at either `hqConfirm` await above
+  for as long as the boss takes to answer it").
+- `onDelegate`'s and `onTaskDropOnAgent`'s dialogs (4697, 5476, 5519) —
+  `## 394`'s two doors, now reporting. Re-read here: the reports sit with
+  nothing awaitable between them and the claim, which is the property the
+  fix rests on.
+- `resendMessage`'s confirm (5113) — `all`, `already` and `agent` are read
+  before it. `resendingIdsRef` is CLAIMED before any of them and held
+  across the dialog, so no second retry of the same id can file the child
+  `already` was looking for; and the recipient can only be dismissed by a
+  boss gesture, which the modal is holding.
+- `onDismiss`'s cascade prompt (1861) — `assistants` is read before it.
+  A `reportsTo` edge is only ever written by a boss gesture (hire, or the
+  transfer this very prompt performs), and the prompt is modal.
+- The Gazette's away-report timer (4559) — `acts` and `recs` are read
+  before the `/missions/runs` fetch, so a row landing during it misses the
+  paper. Harmless by construction: `beat()` already advanced `lastSeenAt`
+  before the timer was ever set, so nothing is consumed or discarded, and
+  the row is still in the activity feed.
+- `fileDelivery`'s path walk (5801, app/artifacts.jsx) — check-then-act
+  across an await, but on filenames, and `## 386` owns that family.
+
+*Structurally cannot overlap itself.*
+
+- The chain/wallet poll (4447) — `if (dead || polling || document.hidden)
+  return; polling = true;` on a plain closure boolean written on the next
+  statement. This is the latch the night-shift poll now copies, and it is
+  what makes the `payoutSeenRef` / `walletDirtyRef` reads inside it safe.
+- The external-approvals poll (6167) — self-reschedules from the END of
+  each poll rather than on a `setInterval`, so a slow server cannot stack
+  two of them. Its own comment says why.

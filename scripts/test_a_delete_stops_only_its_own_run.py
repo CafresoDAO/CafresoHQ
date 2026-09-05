@@ -105,6 +105,13 @@ def main():
         '  const abortAgentRun = (aid) => { log.aborted.push(aid); return true; };\n'
         '  const setTasks = (fn) => { const kept = fn(tasks); log.deleted = tasks.filter(t => !kept.includes(t)).map(t => t.id); };\n'
         '  const say = (msg) => log.said.push(msg);\n'
+        # #398 — onDeleteTask now reports a displacement before the abort when
+        # the desk changed hands while the confirm was open (the class #394
+        # opened). Nothing here moves the desk mid-dialog, so it can only
+        # return null; it just has to EXIST, or the lift throws ReferenceError
+        # before the first case runs. What it does when the desk does change is
+        # test_the_x_on_a_card_stopped_a_note_it_never_named.py's job.
+        '  const displaceDeskNote = (aid) => { log.displaced = (log.displaced || []).concat([aid]); return null; };\n'
         # onDeleteTask also purges the tray of approval cards bound to the
         # deleted task (see test_deleting_a_task_takes_its_approval_cards_with_it).
         '  const setApprovals = (fn) => { log.approvals = fn(s.approvals || []); };\n'

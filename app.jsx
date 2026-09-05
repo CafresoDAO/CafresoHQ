@@ -1293,9 +1293,33 @@ function App() {
      just never went anywhere. */
   const [nightShiftPending, setNightShiftPending] = useStateA([]);
   React.useEffect(() => {
-    let stop = false;
+    /* `polling`, the same latch the chain/wallet poll has carried since it was
+       written (`if (dead || polling || document.hidden) return; polling =
+       true;`). `## 391` swept the night-run XP guard below and filed it SAFE
+       on the strength of that latch — "it runs inside the serialised poll
+       above" — but that is a DIFFERENT poll, three thousand lines away. This
+       one is fired from three places (mount, a 15s interval, every
+       visibilitychange) and had nothing serialising it at all, so two
+       invocations can sit inside each other's `await`s. Both then read the
+       same `experienceRef.current` — EFFECT-assigned, so it cannot possibly
+       have caught up in the milliseconds between them — and both act.
+
+       #398, measured via scripts/harness_delete_desk_race.mjs with this poll
+       lifted whole (its own scope, so the latch is genuinely shared) and
+       called twice 5ms apart: a FAILED night run was written to the résumé
+       ledger TWICE (`xpRecord`'s one-per-taskId guard covers 'done' only, so
+       the second reason `## 391` gave was half a backstop), and a run of
+       either ending filed TWO notification rows, because `logActivity` has no
+       dedupe of any kind. Two triggers inside one fetch is ordinary: an
+       alt-tab away and back fires visibilitychange twice.
+
+       In the `finally`, not at each return, for the reason `## 392` gives:
+       a release written at each terminal point is one a later edit will miss,
+       and a missed one here is a board that never updates again. */
+    let stop = false, polling = false;
     const poll = async () => {
-      if (document.hidden || stop) return;
+      if (document.hidden || stop || polling) return;
+      polling = true;
       try {
         const base = (CafresoHQClient && CafresoHQClient.backendBase()) || '';
         const [sr, rr] = await Promise.all([
@@ -1387,6 +1411,7 @@ function App() {
                            : `finished the overnight run "${(r.topic || '').slice(0, 60)}"` });
         }
       } catch (_e) { /* ambient board — a failed poll just leaves the last-known state */ }
+      finally { polling = false; }   // #398 — see the latch above
     };
     poll();
     const t = setInterval(poll, 15000);
@@ -5284,8 +5309,14 @@ ${d.text}` : d.text,
     // check on blockedReason on purpose: progress notes clear it to ''.
     const running = t.status === 'doing' && !t.blockedReason && !!t.assignedTo
       && agentAbortersRef.current.has(t.assignedTo);
+    /* Both held across the ask below, for #398's check under it. `running` and
+       the name in the dialog are an observation of the desk as it is RIGHT
+       NOW, and the boss's answer can arrive long after that stopped being
+       true — `who` was declared inside the branch, which is why nothing after
+       the ask could say whose desk it had been talking about. */
+    const priorRun = t.assignedTo ? agentAbortersRef.current.get(t.assignedTo) : null;
+    const who = (agents.find(a => a.id === t.assignedTo) || {}).name || 'someone';
     if (running) {
-      const who = (agents.find(a => a.id === t.assignedTo) || {}).name || 'someone';
       if (!(await window.hqConfirm(`${who} is working on "${t.title}" right now.\n\nDelete it and stop them?`, { danger: true }))) return;
     } else if (t.result && !(await window.hqConfirm(`Delete "${t.title}"? Your coworker's work on it will be lost.`, { danger: true }))) {
       return;
@@ -5300,7 +5331,26 @@ ${d.text}` : d.text,
        Aborting by assignee is right because a coworker runs one thing at a
        time — starting a new run aborts the prior — so their in-flight stream
        IS this task's. The abort branch then does its usual work; the task it
-       would return to inbox is already gone, and that map is a no-op. */
+       would return to inbox is already gone, and that map is a no-op.
+
+       …and "their in-flight stream IS this task's" is a fact about the desk
+       AS IT WAS when `running` was computed, which on this path is before a
+       modal the boss can sit on indefinitely. #398: the third door of the
+       family `## 394` opened. A note that queued behind this same busy desk
+       (#98's poll re-tests it every 750ms) can wake inside the gap, find the
+       desk clear because THIS card's run finished on its own, claim it and
+       start streaming — and the ✕ then aborts the note. Measured 2026-09-05
+       via scripts/harness_delete_desk_race.mjs with the real handler, the
+       real deferral block and the real registry: the dialog said "Vera is
+       working on 'the quarterly summary' right now", the boss said yes,
+       Sam's note started and was evicted, and nothing anywhere said so —
+       `samsNoteStarted: true, samsNoteEvicted: true, displacementReported:
+       false`. Same report as the other two doors, for the same reason: the
+       gesture still wins, and the work it actually stopped gets named.
+       Deliberately its own statement rather than a brace around the abort,
+       so the `if (running) abortAgentRun(t.assignedTo);` marker that
+       test_a_delete_stops_only_its_own_run.py pins does not move. */
+    if (running) displaceDeskNote(t.assignedTo, who, priorRun, `deleting "${t.title}"`);
     if (running) abortAgentRun(t.assignedTo);
     /* A deleted task can still be a live link in someone else's workflow:
        another card's `chainTo` may point AT this id (the predecessor that
