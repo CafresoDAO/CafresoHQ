@@ -32316,3 +32316,86 @@ covers only `cooccur.jsx`, the one new test file, and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any
 kind was run.
+
+## 269. A stamp that never stopped asking for the boss
+
+**The wreck.** The office pill says "⚠ N need you". Every approval the boss
+stamped left one of those N behind, permanently, with nothing on screen that
+could answer it. Stamp ten things over a session and the pill reads ten —
+open the queue and find ten decisions you already made.
+
+One approval request writes **two** things. `onApprovalRequest` (`app.jsx`)
+pushes the stamp card into `approvals`, and then logs a mirror row into the
+activity feed so "Selvin requests approval: Ship the pricing page" sits in
+the queue alongside failures and blocks:
+
+```js
+logActivity({ agentName: req.by || 'a coworker', action: 'attention',
+  priority: 'attention', text: `requests approval: …`, taskId: req.taskId });
+```
+
+`priority:'attention'` plus `logActivity`'s default `unread: true` makes that
+row a **live queue item**, not history. `app/attention.jsx`'s
+`attentionCount` — the single source behind the office pill, the Team-nav
+badge and the inbox's "Needs attention · N" tab — counts an attention row
+for exactly as long as its own `unread` flag is true, and the only thing in
+the whole app that flips that flag is clicking the row in the Team inbox.
+
+`onApprove` and `onReject` removed the **card** and never touched the **row**:
+
+```js
+const ap = approvals.find(p => p.id === id);
+setApprovals(prev => prev.filter(p => p.id !== id));
+```
+
+So the instant the boss decided, the decision they had just made went on
+being counted as still needing them — and now unanswerable, because Approve
+and Reject live on the card and the card is gone. This is the failure mode
+`app/attention.jsx` exists to prevent, arriving through the one door it
+doesn't watch: not a repeat report of one problem (entry 231 collapses
+those), not a ghost coworker's row (the roster filter drops those), but a
+*resolved* item that nothing ever told the queue was resolved.
+
+**The fix.** The mirror row now carries an id derived from the approval it
+mirrors — `approvalNoticeId(apId)` → `'act-ap-' + apId`, passed into
+`logActivity` (whose `...entry` spread lets the caller override the default
+`HQ.uid('act')`) — and both handlers call `clearApprovalNotice(id)` right
+next to the `setApprovals` that drops the card. The decision closes its own
+notice. The row stays in the log, marked read: this closes a queue item, it
+does not erase what happened, which is the same split every other entry in
+this file defends.
+
+Placement is load-bearing. Both handlers fork hard on `ap.kind` and `return`
+from the `publish`, `hire-agent`, `hire-assistant`, `grant-elevation` and
+`workflow-step` branches. A clear call anywhere after that fork would fire
+only for the kinds that fall through — most of the bug, back again, and
+harder to see the second time.
+
+**The proof.**
+`scripts/test_a_stamped_approval_stops_asking_for_the_boss.py` lifts the real
+`logActivity`, the real `onApprovalRequest`, and the real
+`approvalNoticeId`/`clearApprovalNotice` out of `app.jsx`, runs them under
+`node` over a plain array standing in for React state, and asks the real
+`app/attention.jsx` `attentionCount` the only question the pill asks. Ten
+checks: the pill *does* count a request while it is still pending (the fix
+must not silence live work); it counts nothing once the stamp is made; the
+row survives in the log, marked read rather than deleted; stamping one
+request does not silence another still waiting; and both handlers clear the
+notice *before* their first `ap.kind`.
+
+Fire-tested: copied the fixed `app.jsx` to `/tmp`, reverted all four hunks in
+place with the editor (never `git checkout -- <file>`) — 4 of the checks
+failed, exit 1. Restored from the `/tmp` copy, confirmed byte-identical by
+`md5` (`367eab94e029bdc5cd142179c741fc16`), reran — 10 of 10 passed, exit 0.
+
+`npm run build` was run once up front so `dist-ui/manifest.json` exists in a
+fresh worktree.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the `moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on
+a file a foreign session owns and this change never touches). This change
+covers only `app.jsx`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any
+kind was run.

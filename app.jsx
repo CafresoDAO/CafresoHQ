@@ -35,6 +35,21 @@ const { TasksView, MemoryPage, TeamView, CalendarView, VaultView, GraphView, Pro
    the cap and forgets the accounting. */
 const MSG_BODY_CAP = 8000;
 
+/* An approval request writes TWO things: the stamp card itself, and a
+   `priority:'attention'` mirror row in the activity log so the boss sees
+   "Selvin requests approval: …" alongside every other thing needing them.
+   That row is a live queue item — app/attention.jsx's `attentionCount`
+   counts it for as long as its own `unread` flag is true, which drives the
+   office "N need you" pill, the Team-nav badge and the inbox's attention
+   tab. Approve/Reject dropped the CARD and never touched the row, so the
+   decision the boss had just made went on being counted as still needing
+   them, forever, with no control left anywhere that could answer it (the
+   Approve/Reject buttons live on the card, and the card is gone) — the
+   only escape was noticing the dead row in the Team inbox and clicking it.
+   Deriving the row's id from the approval id at log time lets the decision
+   close its own notice. */
+function approvalNoticeId(apId) { return 'act-ap-' + String(apId); }
+
 /* Structured failure cause for a dead stream — Plato's "no silent
    failures" ask. Classifies the common cases so the inbox can show an
    actionable hint instead of a raw error string. This lived inline in
@@ -5732,9 +5747,17 @@ ${d.text}` : d.text,
     const id = HQ.uid('ap');
     setApprovals(prev => [...prev, { id, ...req }]);
     say(`Approval requested: ${req.title.slice(0, 30)}…`, 'STAMP');
-    logActivity({ agentName: req.by || 'a coworker', action: 'attention', priority: 'attention',
+    /* Keyed off the approval id so onApprove/onReject can mark this exact
+       row read when the stamp is made — see approvalNoticeId. */
+    logActivity({ id: approvalNoticeId(id), agentName: req.by || 'a coworker', action: 'attention', priority: 'attention',
       text: `requests approval: ${String(req.title || '').slice(0, 48)}`, taskId: req.taskId });
   };
+  /* The decision closes its own notice. Both handlers fork hard on
+     `ap.kind` and return early from several branches, so this fires up
+     front, next to the setApprovals that removes the card — never inside a
+     branch that some other kind of approval skips past. */
+  const clearApprovalNotice = (apId) => setActivity(xs =>
+    xs.map(x => x.id === approvalNoticeId(apId) ? { ...x, unread: false } : x));
   const onApprovalRequestRef = useRefA(null);
   onApprovalRequestRef.current = onApprovalRequest;
 
@@ -5993,6 +6016,7 @@ ${d.text}` : d.text,
   const onApprove = (id) => {
     const ap = approvals.find(p => p.id === id);
     setApprovals(prev => prev.filter(p => p.id !== id));
+    clearApprovalNotice(id);
     const rcId = recordReceipt(ap, 'approved');
     if (ap) {
       /* Office voice — the boss clicked Approve, they didn't type this.
@@ -6277,6 +6301,7 @@ ${d.text}` : d.text,
   const onReject = (id) => {
     const ap = approvals.find(p => p.id === id);
     setApprovals(prev => prev.filter(p => p.id !== id));
+    clearApprovalNotice(id);
     const rcId = recordReceipt(ap, 'rejected');
     if (ap) {
       /* Office voice — same reasoning as the APPROVED line above. */
