@@ -35858,3 +35858,64 @@ a foreign session owns and this change never touches). This change covers
 `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any kind
 was run.
+
+---
+
+## 317. the office opened a second terminal tab and called it #1 as well
+
+Every project's Terminal pane, and the standalone Terminal view behind it,
+comes up with one session already on the bar. `ProjectTerminal` mints it in
+its own initialiser — `{ id: 's1', cli: 'hermes', sessionId: _uuid() }` —
+and the same record is respawned whenever the last tab is closed, because
+closing the last tab here means "start over", not "leave me with nothing".
+
+A lone tab is named plainly: `getLabel` returns "Hermes" and stops, because
+a number is only useful once there is something to tell it apart from. The
+moment a second session of the same CLI exists, both start carrying one.
+Sessions the boss added carry a stable `n` stamped at creation, so a middle
+tab closing can never renumber its neighbours; the seed record has no `n`,
+so it falls back to its position in the array. Position zero, plus one:
+number one. That fallback is correct and the seed tab really is the first.
+
+`addSession` picked the new tab's number by asking only the sessions that
+already had one:
+
+    const n = prev.filter(s => s.cli === cli)
+      .reduce((m, s) => Math.max(m, s.n || 0), 0) + 1;
+
+On a floor whose only Hermes tab is the seed, that filter finds one record
+with nothing explicit on it, the reduce comes back 0, and the second tab is
+stamped n = 1 — the number the first tab was already showing. The tab bar
+read
+
+    ☼ Hermes #1    ☼ Hermes #1
+
+Two tabs, two separate PTYs on the backend, one name. Open a third and it
+went #1 · #1 · #2. Nothing else on the row separates them — same icon, same
+CLI, no path, no age — and the × closes by id, so a boss who wanted to end
+"the other Hermes" was picking between two identical labels and finding out
+which one they had killed afterwards.
+
+This is a seam an empty-office sweep cannot reach and a busy one hides. At
+zero tabs there is nothing to name. At one tab the label is bare "Hermes"
+and the arithmetic never runs. It appears on the second tab, on the first
+day, to a boss doing the most ordinary thing the + menu invites — and by
+the time there are five tabs the duplicate is a pair of ones buried in a
+row that mostly looks right.
+
+The ordinal now starts from every seat already taken, explicit or implied:
+
+    const same = prev.filter(s => s.cli === cli);
+    const n = same.reduce((m, s) => Math.max(m, s.n || 0), same.length) + 1;
+
+A record with no `n` still occupies an ordinal, because `getLabel` gives it
+one, and the writer has to count what the reader counts. The seed record
+also carries `n: 1` of its own now, in both places the office mints it, so
+a fresh floor is exactly numbered rather than merely non-colliding — and
+the seeded reduce still covers the tabs already persisted on offices that
+predate this, which cannot be handed an ordinal retroactively.
+
+The renumbering invariant the original comment was written to protect is
+untouched: closing a middle tab still leaves #1 and #3 sitting where they
+were, with a gap, rather than sliding #3 down onto a number the boss has
+already learned belongs to something else.

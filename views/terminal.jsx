@@ -1243,8 +1243,11 @@ function ProjectTerminal({ project, visible }) {
   const sessKey = pid ? `cafresohq_terminal:sessions:${pid}` : null;
   const activeKey = pid ? `cafresohq_terminal:active:${pid}` : null;
 
+  /* `n: 1` on the very first tab, not just on the ones the boss adds — see
+     addSession's ordinal. A seed session with no ordinal is the reason two
+     tabs could carry the same name. */
   const [sessions, setSessions] = useStoredV(sessKey, () => {
-    return [{ id: 's1', cli: 'hermes', sessionId: _uuid() }];
+    return [{ id: 's1', cli: 'hermes', sessionId: _uuid(), n: 1 }];
   });
   const [activeId, setActiveId] = useStoredV(activeKey, () => sessions[0]?.id);
 
@@ -1252,7 +1255,7 @@ function ProjectTerminal({ project, visible }) {
      snap to the first available session. */
   React.useEffect(() => {
     if (sessions.length === 0) {
-      const fresh = [{ id: 's1', cli: 'hermes', sessionId: _uuid() }];
+      const fresh = [{ id: 's1', cli: 'hermes', sessionId: _uuid(), n: 1 }];
       setSessions(fresh);
       setActiveId(fresh[0].id);   // was a bare `id` — ReferenceError when this path ran
       return;
@@ -1306,7 +1309,20 @@ function ProjectTerminal({ project, visible }) {
       // Stable per-CLI ordinal, assigned once at creation. Deriving the label
       // from the array index made "Claude #3" silently become "Claude #2" when
       // a middle tab closed — labels must never renumber under the user.
-      const n = prev.filter(s => s.cli === cli).reduce((m, s) => Math.max(m, s.n || 0), 0) + 1;
+      /* Seeded with `same.length`, not 0. A session that carries no `n` still
+         OCCUPIES an ordinal, because getLabel below falls back to that
+         session's array position + 1 for exactly those records — and the
+         office mints one such session on every floor: the seed tab, `{ id:
+         's1', cli: 'hermes' }`, written by the initialiser above and by the
+         respawn effect. Counting only explicit ordinals therefore handed the
+         SECOND Hermes tab n = 0 + 1 = 1, while the first tab fell back to
+         index 0 + 1 = 1, and the tab bar showed "Hermes #1" twice — one tab
+         live, one tab a reconnect away, and nothing on screen telling them
+         apart. Add a third and it read #1 · #1 · #2.
+         Two tabs cannot both be number one, so the floor of a new ordinal is
+         "one past every seat already taken", explicit or implied. */
+      const same = prev.filter(s => s.cli === cli);
+      const n = same.reduce((m, s) => Math.max(m, s.n || 0), same.length) + 1;
       return [...prev, { id, cli, sessionId: _uuid(), n }];
     });
     setActiveId(id);
