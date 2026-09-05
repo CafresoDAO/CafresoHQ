@@ -83,8 +83,13 @@ def main():
     # ── 1. both caps go through the fair helper ─────────────────────────
     check('the fair helper exists once',
           storage.count('const capChatFair = (xs, max, floor = 15) =>') == 1)
+    # #345 broke this pin on FORMATTING only: persistableChat's body moved to
+    # the next line when it grew a second clause. The claim it makes — the
+    # save cap is capChatFair(xs, 80) and nothing else — is unchanged, so the
+    # pin is re-spelt to allow the wrap rather than relaxed.
     check('the save cap reads it',
-          'const persistableChat = (xs) => capChatFair(xs, 80).map(' in storage,
+          re.search(r'const persistableChat = \(xs\) =>\s*capChatFair\(xs, 80\)\s*\.map\(',
+                    storage) is not None,
           '— the saved file is the one a reload trusts')
     check('the in-memory ceiling reads it',
           'setChat(prev => capChatFair(prev, 100));' in app)
@@ -167,8 +172,22 @@ console.log(JSON.stringify({
                   r['sameRef'] is True,
                   '— the React setter bails out on reference equality; a '
                   'fresh copy every pass is a render loop')
-            check('the save cap still strips streaming/error',
-                  sorted(r['stripped']) == ['from', 'id', 'text'],
+            # CHANGED by #345, and deliberately: the old spelling of this
+            # check was `== ['from', 'id', 'text']`, which pinned the wreck.
+            # It asserted that a message still STREAMING when it was written
+            # persists as an ordinary, finished record with nothing left of
+            # the fact — and with useStored's save debounce re-armed by every
+            # token frame, that record is the untouched placeholder, `text:
+            # ''`. Measured: reload mid-answer and the thread comes back as
+            # the coworker's name over a blank bubble. The live flags are
+            # still never persisted (a restored spinner would blink forever)
+            # — what is added is the durable marker chatOnLoad spends on the
+            # way in. Both halves of that are asserted here.
+            check('the save cap still strips the live streaming/error flags',
+                  'streaming' not in r['stripped'] and 'error' not in r['stripped'],
+                  r['stripped'])
+            check('...and keeps the durable marker in their place',
+                  sorted(r['stripped']) == ['from', 'id', 'interrupted', 'text'],
                   r['stripped'])
 
     print()

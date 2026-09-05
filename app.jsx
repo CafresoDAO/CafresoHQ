@@ -15,7 +15,7 @@ import { taskKind, xpRecord } from './app/experience.jsx';
 import { attachVisit, chainHoldLine, doneLine, floorEmit, officeCause, shortfallLine, snagCause, snagSentence, toolActivity, visitLine, visitPlace } from './app/floor.jsx';
 import { formatToolInput, approvalTitle } from './app/approvals.jsx';
 import { attentionCount as attentionCountOf } from './app/attention.jsx';
-import { capChatFair, chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, mergeMessages, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored } from './app/storage.jsx';
+import { capChatFair, chatErrorText, chatOnLoad, k, ks, makeScreenEmitter, mergeByIdCap, mergeMessages, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored } from './app/storage.jsx';
 import { ChatWindow, MSG_STATES, WindowFrame, _chatAnchor, _railRight } from './app/windows.jsx';
 /* ==========================================================================
    CafresoHQ — root app
@@ -186,7 +186,7 @@ function App() {
     const t2 = setTimeout(sync, 10000);
     return () => { cancelled = true; clearTimeout(t1); clearTimeout(t2); };
   }, []);
-  const [chat, setChat] = useStored(k('chat'), HQ.INITIAL_CHAT, persistableChat);
+  const [chat, setChat] = useStored(k('chat'), HQ.INITIAL_CHAT, persistableChat, chatOnLoad);
   /* The live conversation, readable from a closure that was built some
      renders ago. `chat` itself is a per-render snapshot, and the dispatch
      helpers below are handed to the chat panel as props: by the time the

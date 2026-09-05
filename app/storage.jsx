@@ -37,7 +37,15 @@ function _shapeMatches(parsed, base) {
   if (t === 'object') return parsed != null && typeof parsed === 'object' && !Array.isArray(parsed);
   return typeof parsed === t;
 }
-function useStored(key, initial, transform) {
+/* `transform` is the WRITE filter; `onLoad` is the READ scrub, and they are
+   separate here for the same reason useFileStored keeps them apart: a scrub
+   that says "this reply stopped when the page reloaded" is a lie the moment
+   it runs at write time, on a run that is still going. onLoad runs once, on
+   the value this page found in storage — nothing this session produced ever
+   passes through it. The cross-tab absorber below is deliberately NOT on
+   this path: a record another tab is writing right now belongs to a live
+   run, and nothing there is finished enough to narrate. */
+function useStored(key, initial, transform, onLoad) {
   const [v, set] = useStateA(() => {
     const fallback = () => (typeof initial === 'function' ? initial() : initial);
     try {
@@ -45,7 +53,8 @@ function useStored(key, initial, transform) {
       if (raw == null) return fallback();
       const parsed = JSON.parse(raw);
       const base = fallback();
-      return _shapeMatches(parsed, base) ? parsed : base;
+      if (!_shapeMatches(parsed, base)) return base;
+      return onLoad ? onLoad(parsed) : parsed;
     } catch (_e) {
       return fallback();
     }
@@ -493,7 +502,48 @@ const capChatFair = (xs, max, floor = 15) => {
 };
 // Cap chat history at 80 entries so localStorage doesn't bloat — fairly,
 // per thread, so one busy room can't evict another room's history.
-const persistableChat = (xs) => capChatFair(xs, 80).map(({ streaming, error, ...rest }) => rest);
+/* `streaming` is translated, not dropped. Dropping it is right for the flag
+   itself — a spinner restored on load belongs to a run that died with the
+   last page and would blink forever — but the FACT it carried is the only
+   thing that tells a finished reply from one the page outlived, and the
+   write path was throwing that fact away.
+
+   Measured 2026-09-05 against a real `python3 serve.py` and a real local
+   brain: ask a coworker something, kill and restart the server mid-answer,
+   reload. `useStored`'s 300ms debounce is re-armed by every token frame, so
+   nothing of the answer is ever written while it streams — the record on
+   disk is still the placeholder the dispatcher seeded, `text: ''`. With
+   `streaming` gone it is an ordinary message, and the transcript comes back
+   as `<div class="msg-body"></div>` under KIP · DEEP RESEARCH: the coworker's
+   name over a blank bubble, no error, no note, nothing anywhere saying the
+   answer was cut off. Tasks (tasksOnLoad), missions (missionsOnLoad) and the
+   roster (persistableAgents) all learned this; the chat did not.
+
+   `interrupted` is a durable marker and never a live one: chatOnLoad below
+   spends it on the way in, and the finalize (`streaming: false`) that ends
+   every real reply re-persists the record without it. */
+const persistableChat = (xs) => capChatFair(xs, 80)
+  .map(({ streaming, error, ...rest }) => (streaming ? { ...rest, interrupted: true } : rest));
+
+/* Load-scrub for the chat, the read-side twin of the marker above. A reply
+   the page outlived is said out loud, in the same voice tasksOnLoad uses for
+   the run that died with it, and the marker is spent here so a later write
+   cannot re-stamp it onto a bubble that is fine.
+
+   Two endings because there are two: nothing had streamed at all (the common
+   one — the debounce means the placeholder is usually all that reached
+   disk), and something had. Neither invents an answer; both say what is
+   missing and offer the way back. */
+const chatOnLoad = (xs) => (Array.isArray(xs) ? xs : []).map(m => {
+  if (!m || !m.interrupted) return m;
+  const { interrupted, ...rest } = m;
+  const body = String(rest.text || '');
+  return { ...rest, text: body
+    ? body + '\n\n_(cut off here — this reply stopped when the page reloaded. '
+      + 'Ask again if you need the rest.)_'
+    : '_(nothing came back — this reply stopped when the page reloaded. '
+      + 'Ask again when you want it.)_' };
+});
 
 /* Desk-screen feed: streams an agent's live output tail onto its office
    monitor (OfficeView listens for 'cafresohq:agentScreen'). Throttled to one
@@ -700,4 +750,4 @@ const mergeMessages = (inMem, fetched) => {
 // the cap two functions up had been quietly disproving. `terminal` states
 // can't be transitioned out of (except via explicit reopen).
 
-export { capChatFair, chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, mergeMessages, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored };
+export { capChatFair, chatErrorText, chatOnLoad, k, ks, makeScreenEmitter, mergeByIdCap, mergeMessages, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored };

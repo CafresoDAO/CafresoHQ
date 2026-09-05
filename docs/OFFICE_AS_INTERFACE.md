@@ -37826,3 +37826,63 @@ upstream's own `Access-Control-Allow-Credentials`.
 and quietly assumed in a second. Here the assumption was that withholding the
 upstream's answer left the office's own answer standing. It left no answer at
 all.
+
+---
+
+## 348. the coworker who came back from the reload with nothing to say
+
+**The wreck.** Second session, the way a tester actually has one. Day one they
+hired Kip, dropped a card on his desk, watched him file a memo. Day two they
+open the office, ask him something long — twenty risks, one paragraph each —
+and while it is coming the box reboots, or `serve.py` is bounced, or they hit
+reload. They open the thread again to read the answer.
+
+    KIP · DEEP RESEARCH
+    <div class="msg-body"></div>
+
+His name over a blank bubble. Not an error, not a spinner, not a note: a turn
+in the conversation where their colleague said nothing at all.
+
+Two ordinary things meet here. `persistableChat` drops `streaming` on the way
+to storage — right for the *flag*, since a spinner restored on load belongs to
+a run that died with the last page and would blink forever, but the flag was
+the only thing carrying the *fact*, and the write path threw the fact away.
+And `useStored`'s 300 ms save debounce is re-armed by every token frame, so
+while a reply streams nothing of it is ever written; the record on disk is
+still the placeholder the dispatcher seeded, `text: ''`. Strip `streaming` off
+that and it is an ordinary, finished message that happens to be empty.
+
+Measured 2026-09-05 against a real `python3 serve.py`, a real hired coworker on
+a real local brain, nothing mocked: ask, `kill` the server mid-answer, restart
+it, reload. The bubble above is what came back, and it stays that way. The
+office already knows this lesson three times over — `tasksOnLoad` sends a card
+the reload killed back to the inbox saying so, `missionsOnLoad` parks a running
+mission with "paused on reload — resume to continue", `persistableAgents`
+refuses to re-seat a busy sprite. Every one of those guards a board. None of
+them guards the thread, which is the surface the boss actually reads.
+
+**The fix.** The same two-sided shape those use, on the store that never got
+it. `persistableChat` now TRANSLATES the flag rather than dropping it: a
+message still streaming when it is written goes to disk carrying
+`interrupted: true` — durable, never live, so nothing on the next load spins.
+`chatOnLoad` spends that marker on the way in and says what happened, in the
+voice `tasksOnLoad` already uses: *"nothing came back — this reply stopped when
+the page reloaded. Ask again when you want it."*, or, if some of the answer had
+landed, that text kept verbatim under *"cut off here"*. Nothing invented for
+what the coworker did not say; nothing thrown away of what they did.
+
+It is wired as a READ scrub, through a new fourth argument to `useStored`,
+because that separation is the whole point — passed as the third it would
+become the write filter and stamp "this reply stopped when the page reloaded"
+onto a run that is still going, which is precisely the lie `useFileStored`'s
+own comment says the two hooks exist to keep apart. The cross-tab absorber is
+deliberately left off the path for the same reason: a record another tab is
+writing right now belongs to a live run, and nothing there is finished enough
+to narrate.
+
+**Whose twin.** `## 328.`, the night still running in the morning. Same
+restart, same orphan, opposite tell — that one left a dead run wearing a live
+badge, this one left a dead run wearing a finished one. The board learned to
+close its orphans at import; the thread had no such moment, because a chat has
+no status field to be wrong about. Its only field is what the coworker said,
+and silence is a thing a colleague can mean.
