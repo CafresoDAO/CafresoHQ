@@ -1,336 +1,408 @@
 # Beta readiness — re-audit
 
-**2026-09-05.** Supersedes the audit dated at `aae4317`. Verified against
-`89d1163` on branch `hunt316-beta2`.
+**2026-09-05 (second pass).** Supersedes the audit dated the same day at
+`89d1163`, whose verdict was *"not shippable to an outside tester today, for
+exactly one reason: the default security posture."* Verified against `6887f20`
+(`#336`), in a clean worktree, `npm run build` → `[ui] built 8 assets ->
+dist-ui/ (graphEngine=true)`.
 
-Method: a genuine fresh install — `git archive HEAD | tar -x` into an empty
-scratch directory, then the README's commands run verbatim as a stranger would
-run them, followed by adversarial probing of the running server. Every finding
-below carries a command I actually ran or a line I actually read.
+One commit landed after the measurements below were taken: `## 337.`, on the
+integration branch, closing an ask-then-write race on both upload doors. It is
+described under durability rather than measured here, because it postdates the
+running server every probe in this document was sent to. It strengthens the
+verdict and changes nothing in it.
 
-**Headline: the three blockers from the last audit are genuinely closed, and
-the first-run path now works end to end on a cold clone.** What is left is one
-finding that is materially worse than anything the last audit found — it is a
-security problem, not a startup problem — and a small cluster of first-run
-papercuts around the printed URLs. The previous audit's verdict, "the app is in
-better shape than its docs," is still true of the *product*; it is no longer
-true of the *default security posture*, and one line of the old report's own
-"clean" list turns out to have been wrong.
+Method: a real `python3 serve.py` with **no configuration at all** — no `.env`,
+no `CAFRESOHQ_ALLOWED_DIRS`, no `CAFRESOHQ_API_KEY` — then adversarial probing
+of the running process with raw `http.client`, not `urllib`, so the `Host`
+header could be forged (urllib rewrites it from the URL and would have turned
+every rebinding probe into a no-op). Twenty-eight request shapes in the first
+sweep, thirty-one in the second. Every finding below carries a request I
+actually sent and the reply I actually got back.
 
-Test suite at this commit: **496/497 suites pass**. The single failure is the
+Test suite at this commit: **519/520 suites pass**. The single failure is the
 known, pre-existing, foreign-owned
-`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (it fails
-on `moc`'s implicit-`transient` diagnostics in `src/cafresohq_state/main.mo`,
-not on the behaviour it tests).
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`: its nine
+behavioural assertions all pass and it fails only on `moc`'s implicit-`transient`
+diagnostics (`M0219`) in `src/cafresohq_state/main.mo`, a file this session may
+read and must not touch.
 
 ---
 
-## Closed and verified since the last audit
+## Headline
 
-Each of these was re-run, not taken on trust.
+**Yes. An outside beta tester can be handed this today.**
 
-- **A fresh clone can start.** `npm install` → `npm run build` → `python3 serve.py`
-  works from a bare `git archive` export with nothing else on the machine.
-  `npm run build` printed `[ui] built 8 assets -> dist-ui/ (graphEngine=true)`.
-  Every asset `hq.html` references resolves 200 on the fresh server — all five
-  icons, all seven bundle files, `manifest.webmanifest`, `styles.css?v=22`. The
-  first pixel renders. (Old items 1, 2; ledger `## 296.`, `## 300.`)
-- **The startup banner survives a redirect.** `serve.py:5497` calls
-  `sys.stdout.reconfigure(line_buffering=True)` before anything prints.
-  Confirmed: `python3 serve.py > log 2>&1` produced the full banner including
-  the `CafresoHQ -> …` line. (Old item 3; ledger `## 301.`)
-- **The onboarding green ✓ is gone.** `ui/onboarding.jsx:348` now reads
-  `if (!(r && r.serverStored))` and takes the error branch, with a comment
-  naming the exact failure it closed. (Old item 4; ledger `## 297.`)
-- **The README no longer documents `frontend/`.** `README.md:16` and `:50-52`
-  now say it lives in `../cafreso-pages` and was deleted here in `8dbcc6f`.
-  `README.md:86` no longer mentions `GATEWAY_IP`. (Old item 6.)
-- **The cross-origin `/fs` read hole is closed.** `serve.py:1822-1838` withholds
-  `Access-Control-Allow-Origin` entirely for `_HOST_DATA_PREFIXES`. Confirmed:
-  `curl -H 'Origin: https://evil.example' /fs/file?path=$HOME/.zshrc` returns
-  200 with **no** ACAO header, so a browser refuses the body. (Ledger `## 294.`)
-- **Server-side state writes are atomic.** `serve.py:3853-3867` uses
-  `mkstemp` + `fsync` + `os.replace`, with a per-name temp file so two
-  concurrent writers cannot truncate each other. A killed server mid-write
-  leaves the previous complete file, not a truncated one.
+The blocker the last audit named is closed, closed on all three of the
+mechanisms that made it work, and closed in a way I re-measured rather than
+read. Everything still open is a rough edge: a tester is annoyed, confused for
+a minute, or waits fifteen seconds too long. Nobody's SSH key leaves the
+machine, nobody loses work, and nothing on the first-run path dead-ends.
+
+What follows is the measurement, then the annoyances, then the four gates that
+are real but are not this session's to close.
 
 ---
 
-## (a) Genuinely broken
+## The default posture, re-measured from scratch
 
-### 1. A default `python3 serve.py` serves the tester's entire home directory to any unauthenticated caller — and the one knob that looks like it turns this off turns the sandbox off instead.
+This is the section the last audit's verdict turned on, so it is the section I
+re-derived from nothing rather than diffing.
 
-This is the finding that would embarrass the project. It has two halves.
-
-**Half one — the default is $HOME, not "disabled".** `serve.py:197-203`:
-
-```python
-_ALLOWED_DIRS_EXPLICIT = 'CAFRESOHQ_ALLOWED_DIRS' in os.environ
-_cafresohq_allowed_dirs = [d.strip() for d in
-                          os.environ.get('CAFRESOHQ_ALLOWED_DIRS',
-                              os.path.expanduser('~') + os.pathsep +
-                              os.path.join(os.path.expanduser('~'), 'Documents')
-                          ).split(os.pathsep)
-                          if d.strip()]
-```
-
-The comment eleven lines above it (`serve.py:187-188`) says the opposite:
-"If either allowlist is empty the endpoint refuses requests, so the
-unconfigured default is safe." `.env.example:7` says a third thing: "defaults
-to `$HOME/Documents`". The default is `$HOME` **and** `$HOME/Documents`, and
-`$HOME` subsumes the other.
-
-The `/fs` read routes are keyless by design (`serve.py:366-370, 403-410`). On
-the fresh install, with no configuration at all:
+Startup banner on a bare `python3 serve.py`:
 
 ```
-$ curl -s 'http://localhost:8974/fs/collect?path=/Users/anthonym/.ssh'
-{"root": "/Users/anthonym/.ssh", "files": [{"path": "id_ed25519",
- "contentType": "application/octet-stream", "size": 419,
- "b64": "LS0tLS1CRUdJTiBPUEVOU1NIIFBSSVZBVEUgS0VZLS0tLS0K…"}]
+CafresoHQ -> http://localhost:8974/hq.html
+  📱 Mobile / LAN  -> http://10.0.0.131:8974/hq.html
+  proxy /lmstudio/* -> localhost:1234/*
+  proxy /ollama/*   -> localhost:11434/*
+  /cafresohq/stream  ELEVATED · tools=… · dirs=['/Users/anthonym/Documents']
+  /fs/* reads        sandboxed to ['/Users/anthonym/Documents']
+  /codex/stream      CODEX · dirs=['/Users/anthonym/Documents']
 ```
 
-That is the private key, base64, in one request. `~/.hermes/.env` — the file
-holding the tester's own OpenRouter key — also returns 200.
+Two things changed in that banner since the last audit and both matter: the
+sandbox is `~/Documents` alone, and the `/fs` read routes now get their own
+line saying what they will do rather than leaving the reader to infer it from
+the agent endpoint's line.
 
-**And it is reachable from a web page.** The DNS-rebinding defence in
-`_app_origins` (`serve.py:3652-3682`) is real and works, but only guards the
-routes that consult it. `/fs` does not:
+### What a page the tester merely visits can reach
 
-```
-$ curl -H 'Host: evil.example:8974' '…/terminal/nonce'            → 403
-$ curl -H 'Host: evil.example:8974' '…/fs/file?path=$HOME/.zshrc' → 200 + body
-```
+Every row below is a request sent at that running server. `ACAO` is the
+`Access-Control-Allow-Origin` header on the reply — with no ACAO the browser
+refuses the body to the page, whatever the status code says.
 
-Under a rebinding attack the attacker's page is *same-origin* with the server,
-so the (correct) CORS withholding above never comes into play — the browser
-needs no ACAO for a same-origin fetch. Loopback binding does not help either,
-because that is precisely what rebinding defeats. Net: any page a beta tester
-visits while the office is running can read their home directory.
+**Reads.**
 
-**Half two — the documented opt-out is an opt-*in* to everything.**
-`serve.py:222-223`, inside `_within_allowed_dirs`:
+| request | result |
+|---|---|
+| `GET /fs/file?path=~/Documents/<decoy>` | 200, **no ACAO** |
+| `GET /fs/file?path=~/<decoy>` (dotfile tier) | **403** `path is outside CAFRESOHQ_ALLOWED_DIRS` |
+| `GET /fs/file?path=/etc/hosts` | **403** |
+| `GET /fs/browse?path=$HOME` | **403** |
+| `GET /fs/collect?path=~/.ssh` | **403** |
+| `GET /hq/state/tasks`, `/vault/list`, `/terminal/status`, `/browser/status` | 200, **no ACAO** |
+| `GET /health`, `/idle`, `/market/quotes` | 200, `ACAO: *` — public by design |
 
-```python
-if not _cafresohq_allowed_dirs:
-    return True
-```
+The `$HOME`-wide default is gone (`## 315.`). `~/.ssh` and `~/.hermes/.env` are
+403 on a default run — I probed the real paths and read no byte of either; the
+assertion is about the boundary, not the secret.
 
-and the banner, `serve.py:5599-5600`:
-
-```
-  /cafresohq/stream  DISABLED (set CAFRESOHQ_ALLOWED_DIRS to enable)
-```
-
-A security-conscious tester who reads that banner and sets
-`CAFRESOHQ_ALLOWED_DIRS=` to lock the thing down gets told **DISABLED** and
-gets the whole filesystem:
+**Writes and code execution.** Every one of these was fired with
+`Content-Type: text/plain`, which is not preflighted, so the browser cannot
+refuse on the office's behalf and the gate has to:
 
 ```
-$ CAFRESOHQ_ALLOWED_DIRS= PORT=8976 python3 serve.py
-  /cafresohq/stream  DISABLED (set CAFRESOHQ_ALLOWED_DIRS to enable)
-$ curl 'http://localhost:8976/fs/file?path=/etc/hosts'
-##
-# Host Database
-$ curl 'http://localhost:8976/fs/browse?path=/etc'
-{"path": "/private/etc", "parent": "/private", "entries": [{"name": "apache2", …
+POST /tools/exec          Origin: https://evil.example  → 403 origin not allowed
+POST /spawn                       "                     → 403
+POST /missions                    "                     → 403
+POST /projects/clone              "                     → 403
+POST /approvals/external          "                     → 403
+POST /agents/install              "                     → 403
+POST /graph/publish               "                     → 403
+POST /browser/open                "                     → 403
+POST /fs/mkdir                    "                     → 403
+POST /fs/delete                   "                     → 403
+PUT  /hq/state/<name>             "                     → 403
+PUT  /vault/note                  "                     → 403
+POST /cafresohq/stream            "                     → 403
+POST /lmstudio/v1/chat/completions "                    → 403
 ```
 
-The banner is honest about `/cafresohq/stream` — that endpoint genuinely does
-refuse. It is the `/fs` read routes that read the same variable with the
-opposite polarity, and nothing in the banner or the docs distinguishes them.
+That is `## 322.` (the gate over the key-protected prefixes) plus `## 332.`
+(the `ROUTES` proxy fall-through it did not originally cover). `/tools/exec` and
+`/lmstudio/` now answer the same forged Origin the same way, which is exactly
+the discrepancy `## 332.` existed to remove.
 
-**Why this matters more than the last audit's items 1–3.** Those were dead ends
-before a pixel rendered: annoying, visible, self-correcting. This one is
-invisible, and the failure mode is the tester's SSH key leaving their machine.
-
-**Not fixed here** (audit, not bug hunt). Three things want deciding, not
-guessing: whether the local default should be the state dir rather than `$HOME`;
-whether an empty allowlist should mean "refuse" everywhere rather than "allow"
-in `_within_allowed_dirs`; and whether the `/fs` reads should get the same
-loopback-literal `Host` gate that `_app_origins` already implements for the PTY.
-
-### 2. The banner prints two URLs. One can silently land on a different server, and the other is dead.
-
-**The LAN URL is dead.** `serve.py:5580-5581` prints the Mobile/LAN line
-whenever `_local_ip()` returns anything — unconditionally, with no reference to
-what the server actually bound. `serve.py:5552-5554` binds `127.0.0.1` on every
-genuine local run. Measured:
+**The rebinding path — the one that defeats both CORS and loopback binding.**
+An attacker who points `evil.example` at `127.0.0.1` has a page that is
+genuinely same-origin with the office, sends no `Origin` at all, and originates
+on the victim's own loopback. Sent with `Host: evil.example:8974`:
 
 ```
-$ lsof -nP -iTCP:8974 -sTCP:LISTEN
-Python  94318 anthonym  3u  IPv4  …  TCP 127.0.0.1:8974 (LISTEN)
-
-banner said:  📱 Mobile / LAN  -> http://10.0.0.131:8974/hq.html
-$ curl -m 3 http://10.0.0.131:8974/health   →  exit 7 (connection refused)
+GET  /fs/file?path=~/Documents/<decoy>  → 403 host not allowed
+GET  /fs/browse?path=~/Documents        → 403 host not allowed
+POST /fs/mkdir                          → 403 host not allowed
+POST /tools/exec                        → 403 host not allowed
+POST /terminal/spawn                    → 403 host not allowed
+POST /cafresohq/stream                  → 403 host not allowed
+GET  /terminal/nonce                    → 403 host not allowed
 ```
 
-"Try it on my phone" is one of the first things a tester does with a product
-that ships a mobile tab bar and an iOS service worker. The banner invites it
-and the address does not work, with nothing on screen explaining why or naming
-`CAFRESOHQ_BIND`.
+`## 315.` for the `/fs` family, `## 323.` for the terminal. The terminal one is
+the important half: `## 315.` left it explicitly as a measured, unpulled thread
+and `## 323.` pulled it and found `101 Switching Protocols` on the end of it.
+On this build `/terminal/nonce` answers a forged `Host` with 403, and the
+`Origin: https://evil.example` variant with `403 origin not allowed`.
 
-**The localhost URL is IPv4-only while `localhost` is IPv6-first.**
-`serve.py:5569` prints `http://localhost:{PORT}/hq.html`; the socket is bound to
-the IPv4 literal `127.0.0.1`. On macOS `localhost` resolves `::1` first. On this
-very machine, the maintainer's own, running the README's exact command:
+**The empty-string trap.** `CAFRESOHQ_ALLOWED_DIRS=` used to print `DISABLED`
+and open the whole disk — the most security-conscious reading of the banner was
+the one that unlocked everything. `.env.example:13-15` now documents the
+reversed polarity, and the opt-out has a name of its own
+(`CAFRESOHQ_ALLOWED_DIRS_UNRESTRICTED`) that cannot be arrived at by leaving a
+variable blank. A dangerous behaviour no longer hides behind an absence.
+
+**Secrets on the way out.** `_LOG_SECRET_RE` now covers
+`k|key|token|api_key|nonce`. Measured on the live server:
+
+```
+$ curl -H 'Upgrade: websocket' '…/terminal/ws?k=HUNT341FAKEKEY'
+$ grep HUNT341FAKEKEY serve.log      → no match
+$ grep terminal/ws    serve.log      → "GET /terminal/ws?k=<redacted> HTTP/1.1" 404
+```
+
+That is `## 315.`'s incidental find plus `## 326.`, which caught the PTY nonce
+riding the parameter that the first redaction did not name. `## 325.` closed the
+worst of the family — a BYOK Google key returned whole in a 500 body, because a
+`ValueError` on a mistyped model name stringified a URL with `?key=` in it —
+by moving the credential to an `x-goog-api-key` header and scrubbing every
+generate error path.
+
+### Verdict on the default posture
+
+A page the tester merely visits gets: `/health`, `/idle`, `/market/quotes`, and
+nothing else it can read or fire. That is the right answer, and it is the answer
+the last audit was waiting for.
+
+---
+
+## The last audit's four findings, tracked
+
+1. **`$HOME` served keylessly to any caller, and the documented opt-out opened
+   the whole disk.** — **CLOSED**, `## 315.`, all three mechanisms (default
+   narrowed to `~/Documents`, empty list now denies, `/fs` family behind the
+   rebinding host gate). Re-measured above. `## 323.` closed the terminal-shaped
+   twin that `## 315.` had measured and left standing.
+2. **The banner prints two URLs; one lands on a different server, the other is
+   dead; a contended port is a raw traceback.** — **STILL OPEN**, all three
+   halves, re-measured. See rough edges 1–3.
+3. **The unload flush is capped at 64 KiB by `keepalive`.** — **UNCHANGED** in
+   code (`app/storage.jsx:242-246`), and on re-reading it is smaller than the
+   last audit ranked it. See rough edge 4.
+4. **The API key lands verbatim in the access log.** — **CLOSED**, `## 315.` +
+   `## 326.`. Measured above.
+
+---
+
+## Rough edges — a tester is annoyed, not hurt
+
+Ordered by how likely a tester is to hit one, not by how loud it is.
+
+### 1. The `📱 Mobile / LAN` URL the banner prints does not work
+
+`serve.py:6109-6122` prints the LAN line whenever `_local_ip()` returns
+anything, with no reference to what the server actually bound;
+`serve.py:6093-6095` binds `127.0.0.1` on every local run. Measured against the
+address the banner itself printed:
+
+```
+banner:  📱 Mobile / LAN  -> http://10.0.0.131:8974/hq.html
+$ curl -m 4 http://10.0.0.131:8974/health   →  exit 7, connection refused
+```
+
+"Try it on my phone" is one of the first things anyone does with a product that
+ships a mobile tab bar and an iOS service worker. The banner invites it and the
+address is dead. `README.md:75-78` now explains this, which is why it is an edge
+and not a blocker — but the explanation is in a file the tester has already
+scrolled past, and the invitation is on the screen in front of them.
+
+### 2. `localhost` is IPv6-first and the office binds IPv4 only
+
+`serve.py:6110` prints `http://localhost:{PORT}/hq.html`; the socket is bound to
+the IPv4 literal. On macOS `localhost` resolves `::1` first. Reproduced on this
+machine, on the default port, running the README's exact command:
 
 ```
 $ python3 serve.py
-CafresoHQ -> http://localhost:8787/hq.html      ← started fine, bound 127.0.0.1
-$ curl -w '%{remote_ip}' http://localhost:8787/health
-200 via ::1   {"status":"ok", …, "uptime_seconds": 2729697, …}
+CafresoHQ -> http://localhost:8787/hq.html     ← started fine, bound 127.0.0.1
+$ lsof -nP -iTCP:8787 -sTCP:LISTEN
+  com.docke …  TCP *:8787 (LISTEN)             ← IPv6, someone else's
+  Python    …  TCP 127.0.0.1:8787 (LISTEN)     ← ours
+$ curl http://localhost:8787/health
+  {"status":"ok", …, "uptime_seconds": 2738921, "platform": "Linux",
+   "runtime_env": "container"}                 ← 31 days up, a different server
 ```
 
-31 days of uptime: that is a *different* long-running container on `[::1]:8787`,
-not the server just started. The banner says the office is up, the office is up,
-and the printed URL goes somewhere else entirely — no error, no warning.
+The banner says the office is up, the office *is* up, and the printed URL goes
+somewhere else with no error and no warning. This is the highest-consequence
+edge on the list because it is silent, and the lowest-frequency one because it
+needs something already listening on `::1:8787`. A tester with a clean machine
+never sees it; a tester who once ran the container does.
 
-**The other half of the same trap: a truly occupied port is a raw traceback.**
-`serve.py:5560`'s `with ThreadedServer((_bind_host, PORT), Handler)` is
-unguarded. With an IPv4 listener already on the port:
+### 3. A genuinely contended port is a stack trace
+
+`serve.py:6101`'s `with ThreadedServer((_bind_host, PORT), Handler)` is
+unguarded. Measured:
 
 ```
-Traceback (most recent call last):
-  File ".../serve.py", line 5560, in <module>
-    with ThreadedServer((_bind_host, PORT), Handler) as httpd:
-  ...
 OSError: [Errno 48] Address already in use
 ```
 
-No sentence naming `PORT`, no suggestion to pick another. So port 8787 has two
-opposite failure modes and neither is explained: contended on IPv4 → stack
-trace; contended on IPv6 → silent wrong server.
+No sentence naming `PORT`, no suggestion to pick another. So the default port
+has two opposite failure modes — contended on IPv4 gives a traceback, contended
+on IPv6 gives the wrong server silently — and neither is explained on screen.
 
-### 3. The unload flush that closes `## 305.` is capped at 64 KiB, and the store it was written for is the one that outgrows it.
+### 4. The unload flush is capped at 64 KiB, and it matters less than it looks
 
-`app/storage.jsx:242-247`, the last-gasp write:
+`app/storage.jsx:242-246` still sends the last-gasp PUT with `keepalive: true`,
+which every browser caps at 64 KiB across all in-flight keepalive requests,
+rejecting an oversize body with a `TypeError` that the deliberate
+`.catch(() => {})` swallows. Unchanged since the last audit, and I did not
+reproduce it in a browser.
 
-```js
-fetch(`${window._API_BASE || ''}/hq/${p.scope}/${p.name}`, {
-  method: 'PUT', headers: { 'content-type': 'application/json' },
-  body: p.body, keepalive: true,
-}).catch(() => {});
-```
+Ranked lower than last time, on re-reading rather than on new evidence. The
+comment at `:226-227` is right that "localStorage still holds the value either
+way": the browser copy is written synchronously and is what the next load reads,
+so the cap costs the *server file's* freshness, not the tester's work. The loss
+only materialises for someone who clears site data or moves browsers between
+sessions. And `## 336.` shrank the exposure from the other end — `receipts` was
+the store with no bound at all, growing 220 bytes a stamp toward the origin's
+5 MB ceiling, and now caps at 200 in both the write and the mount-fetch merge,
+the way the activity log always did.
 
-`keepalive: true` is what makes the write survive the page teardown, and it is
-also what caps the request body at 64 KiB across all in-flight keepalive
-requests — a Fetch-spec limit every browser enforces, rejecting the oversize
-request with a `TypeError` rather than truncating it. The `.catch(() => {})` on
-the same expression swallows that rejection, deliberately and for a good reason
-(`app/storage.jsx:226-227`: "no toast on failure here — there is no surface left
-to show one on").
+Worth a browser-side reproduction before anyone changes code. Not worth holding
+a beta for.
 
-The consequence is that the fix works while the office is small and stops
-working once it isn't, with no signal at either point. The stores at risk are
-exactly the two `## 305.` names as most exposed. `messages` is capped at 500
-records (`app/storage.jsx:626`), each carrying up to 30 history entries
-(`:627`) — 15,000 objects at the ceiling, far past 64 KiB; `activity` is the
-store `## 305.` describes as "perpetually mid-debounce for as long as anyone is
-working". The debounced timer at `:190-207` has no such cap and is unaffected;
-it is only the tab-close path that quietly stops paying, and that is the path
-the entry exists to protect.
+### 5. A missing brain costs fifteen silent seconds before the error
 
-I did not reproduce this in a browser — a fair reading is "a described risk with
-a named mechanism", not "a measured loss". It is ranked third because when it
-does bite, it re-opens `## 305.` exactly, and the person it bites is a tester
-who has used the product enough to have something worth losing.
-
-### 4. The API key lands verbatim in the server's access log.
-
-`serve.py:5264-5265`:
-
-```python
-def log_message(self, fmt, *args):
-    sys.stderr.write(f'{self.address_string()} - {fmt % args}\n')
-```
-
-No redaction. `serve.py:1876-1884` permits the key in the query string for
-WebSocket handshakes — with a comment that names this exact hazard ("query
-strings leak into access logs, proxy logs and the Referer of any resource the
-page loads") as the reason to refuse `?k=` everywhere else. Measured:
+`_hermes_proxy` retries the upstream connect ten times at 1.5s apart before
+answering. Measured with the gateway port pointed at a dead port:
 
 ```
-$ curl -H 'Upgrade: websocket' 'http://localhost:8974/terminal/ws?k=SUPERSECRETKEY123'
-$ grep SUPERSECRET serve.log
-127.0.0.1 - "GET /terminal/ws?k=SUPERSECRETKEY123 HTTP/1.1" 404 -
+POST /hermes/v1/chat/completions
+  → nothing for ~15s, then 502
+    {"error": "hermes: [Errno 61] Connection refused",
+     "hint": "the agent gateway is restarting or down — retry in ~15s"}
 ```
 
-`*.log`, `serve_stdout.log` and `serve_stderr.log` are all gitignored
-(`.gitignore:8-10`), so this cannot be committed by accident. The realistic
-route out is a tester attaching their log to a bug report — which is exactly
-what you ask a beta tester to do. A one-line `?k=` scrub in `log_message` closes
-it.
+The retry exists for a good reason (the gateway is briefly down after any key or
+model change, and a transient 502 mid-conversation is worse). The error, when it
+finally lands, is well built — it names the cause and offers a next step, which
+is more than most. But a first-run tester whose gateway never came up types
+hello and watches nothing happen for fifteen seconds, three times, before
+learning anything.
+
+`Start-CafresoHQ.sh:66-68` heads this off for the commonest case — no `hermes`
+CLI at all gets an immediate `WARN … /hermes will 502 until you install it
+(Settings → Agents)` — and `## 334.` fixed the cruellest version of it, where
+the gateway's own 401 was relayed to the shell and rendered as *"Your session
+expired — reopen HQ from ai.cafreso.com"* to somebody who had installed the
+thing ninety seconds ago and had no session to expire. The banner now branches
+on `runsLocally` (`app.jsx:761, 7260-7299`) and sends a local reader to
+Settings → Connections instead of out of the product.
+
+The residue is the fifteen seconds of silence, and it is the largest thing
+standing between a first-run tester and their first reply.
+
+### 6. `/gap/status` and `/news/status` are readable cross-origin — new, minor
+
+Not in the last audit, and not in any prefix list. `## 333.` made
+`_HOST_DATA_PREFIXES` iterate `ROUTES` so a proxied GET stops handing the local
+model roster to a stranger's tab. These two are hand-named paths
+(`serve.py:2141-2142`) that proxy the standalone search worker's status
+listener, and they sit under no listed prefix at all. Measured:
+
+```
+GET /gap/status   Origin: https://evil.example
+  → 200, Access-Control-Allow-Origin: *
+    {"brave": {"month": "2026-09", "used": 0, "cap": 3000,
+               "remaining": 3000, "byKind": {}, …}}
+GET /news/status  Origin: https://evil.example
+  → 200, ACAO: *   {"news": {"enabled": false, "perRunMax": 6, …}}
+```
+
+Operational counters — search quota consumed, per-kind breakdown, run history.
+No credential, no file, no write, and only populated when the standalone worker
+container is running. It is the same species as `## 333.` one route further out,
+and it is on this list rather than the one above because what leaks is a usage
+graph, not a secret.
+
+### 7. The relayed upstream ACAO defeats `## 333.` when the model server is permissive
+
+`_proxy` (`serve.py:5314-5318`) forwards every upstream response header except
+the hop-by-hop set and `content-encoding` — including the upstream's own
+`Access-Control-Allow-Origin`. So `## 333.`'s withholding is only as good as the
+model server's CORS. Measured with a service on `:1234` that echoes `Origin`:
+
+```
+GET /lmstudio/v1/models   Origin: https://evil.example
+  → 404 (upstream's), Access-Control-Allow-Origin: https://evil.example
+```
+
+The office withheld its own header correctly; the upstream's rode through
+underneath it. Read-only, and the POST arm is 403 regardless (`## 332.`, proved
+above), so what a stranger's tab can obtain is whatever the local model server
+answers to a GET — the roster, on a real LM Studio. Worth a hunt of its own; not
+worth a beta.
 
 ---
 
-## (b) Works, but unexplained
+## What is *not* on the blocker list, and why
 
-- **Nothing on the first-run path says the office exposes `$HOME`.** Finding 1
-  is the mechanism; this is the missing sentence. The banner reports the
-  allowlist accurately (`dirs=['/Users/anthonym', '/Users/anthonym/Documents']`)
-  and a tester will read it as a capability, not an exposure.
-- **`Start-CafresoHQ.sh` is still the better entry point and the README still
-  does not mention it.** Unchanged from the last audit. It starts the Hermes
-  gateway, shares the bearer key, and explains the mkcert tradeoff. A README
-  pointer is added in this commit.
-- **The office still lives in this browser and nowhere else.** Unchanged and
-  still worth a first-run sentence. The export/import is well built and
-  scrubs secrets in both directions (`modals/settings.jsx:1355-1356`); nothing
-  on the way in mentions it exists.
-- **`.env.example:7` misdescribes the allowlist default** as `$HOME/Documents`.
-  Corrected in this commit.
+Three things a generous auditor would be tempted to write up, checked and found
+not to be problems:
+
+- **`/cafresohq/stream` is `ELEVATED` by default with `Edit,Write` in its tool
+  list.** That is the product — an office whose agent cannot write is not a
+  safer office, it is a broken one — and it is reachable only from loopback,
+  only same-origin, and only inside `~/Documents`. Forged Origin: 403. Forged
+  Host: 403.
+- **The first-run path.** `npm install` → `npm run build` → `python3 serve.py`
+  works from the tree; `hq.html` is 200 and all fourteen of its referenced local
+  assets are 200. `Start-CafresoHQ.sh` does the npm steps itself if `dist-ui/`
+  is missing, rather than handing the 500 page the job of teaching a stranger
+  what to run.
+- **Server-side durability.** `PUT /hq/state/<name>` → `GET` round-trips through
+  `hq-state/`, written with `mkstemp` + `fsync` + `os.replace` under a per-name
+  temp file. `## 335.` closed the one path that could *delete* data on a
+  transient fault — the OCI append arm treated any exception on the read half as
+  "the note does not exist yet" and wrote the fragment over the whole note,
+  answering `200 {"mode":"append"}` while the boss's note went to the bucket in
+  pieces. It now classifies the failure and refuses to write on anything that is
+  not a genuine 404.
+
+  `## 337.` closed the last member of that family I am aware of, and it is the
+  one most likely to have met a beta tester. `serve.py` is a `ThreadingMixIn`
+  server, and both upload doors asked `free_name` whether a name was taken and
+  *then* wrote it. Forty concurrent POSTs of `report.txt` to `/fs/upload`
+  produced **40 receipts saying filed and 13 files on disk**, with
+  `report (2).txt` handed to twelve different uploads; `/vault/upload` lost
+  seventeen of forty the same way. The receipt was at its most confident exactly
+  where the loss was total — full path, byte count, and a `renamedFrom` line
+  explaining a considerate sidestep onto a name eleven other people had also been
+  given. `claim_name` now makes "is this free?" and "this is mine" one
+  `O_CREAT|O_EXCL` syscall, and both doors write through the descriptor they
+  claimed rather than re-opening a path they merely looked at.
+
+  I did not re-measure this one: it landed after the server every probe above
+  was sent to. I am reporting it because a tester dragging files into a shared
+  project is an ordinary Tuesday, and a lie in a receipt is the one failure
+  shape a beta tester cannot detect for themselves.
 
 ---
 
-## (c) Checked and found clean — do not re-audit these
+## Gates that exist and are not this session's to close
 
-- **Path traversal, every route I could reach.** `/hq/state/..%2f..%2f..%2fetc%2fpasswd`
-  → `{"error": "invalid name: …"}`; `PUT /hq/state/../../../../tmp/pwned` wrote
-  nothing (`/tmp/pwned.json` does not exist); `/vault/file?path=../../../../etc/hosts`
-  → `{"error": "path escapes vault directory"}`. `_within_allowed_dirs`
-  (`serve.py:215-224`) uses `Path.relative_to` on a resolved path, not
-  `str.startswith`, so a sibling prefix and a symlink both fail closed. The
-  sandbox logic is right; only its default membership (finding 1) is wrong.
-- **Error pages disclose nothing.** A malformed JSON body returns
-  `{"error": "body must be valid JSON"}`; an unknown route returns the plain
-  stdlib 404 page. `grep -c 'traceback.print_exc\|traceback.format_exc' serve.py`
-  → 0. No stack trace reaches a client on any path I could provoke. (The
-  `Server: SimpleHTTP/0.6 Python/3.14.6` header is version disclosure and is not
-  worth a line item.)
-- **No secrets in tracked files.** `git grep -nIE '(sk-or-v1-…|sk-ant-…|AKIA…|ghp_…|-----BEGIN … PRIVATE)'`
-  over the whole tree returns exactly one hit, and it is a deliberate decoy in
-  `scripts/test_a_late_init_frame_never_types_your_api_key_into_the_terminal.py:82`.
-- **`.gitignore` covers what it needs to.** `hq-state/` (which contains the
-  TLS cert and key — `_ensure_local_tls` caches them under `<state_dir>/tls`,
-  `serve.py:5363-5371`), `.env`, `.env.local`, `worker.env`,
-  `worker-standalone.env`, `*.log`, `dist-ui/`, `node_modules/`. I looked for a
-  secret-bearing artifact the file misses and did not find one.
-- **localStorage quota failure is handled properly.** `app/storage.jsx:165-171`
-  catches, warns and dispatches; `app.jsx:1519-1538` listens, throttles to one
-  toast per 10s, and distinguishes `QuotaExceededError` ("storage full") from a
-  generic failure and both from a failed *file* write. This is better than most
-  shipped products do.
-- **Server-side write atomicity** — see "Closed and verified" above.
-- **`serve.py` is cwd-independent.** `os.chdir(os.path.dirname(os.path.abspath(__file__)))`
-  at `serve.py:5505`. Launched from an unrelated directory, `hq.html`,
-  `graph-viewer.html` and `/health` all return 200, `PUT /hq/state/tasks` lands
-  in the script's own `hq-state/`, and `/graph/publish` →
-  `/graph/snapshot/<slug>` round-trips. I went looking for a split between
-  `_hq_state_dir` (script-relative, `serve.py:432-433`) and `_public_graph_dir`
-  (`os.getcwd()`, `serve.py:2165`) and the `chdir` makes them agree.
-- **Cross-origin reads and the PTY rebinding gate** — see "Closed and verified".
-- **The stale-bundle warning, the no-brain state, the destructive-action
-  labelling and the error-copy classifier** were all re-confirmed present at the
-  lines the last audit cited. I have nothing to add to that section and did not
-  reproduce it here.
+Named explicitly so nobody reads their absence above as a claim that they are
+done. None of them blocks handing a **local** office to a tester — the default
+run is `mode: local`, `auth_required: false`, `vault_backend: fs`, and touches
+no canister — but all four are real, and three of them gate the *hosted* path.
 
-**One correction to the last audit's clean list.** It stated: "the *dangerous*
-surface is off by default: `/cafresohq/stream` is DISABLED unless
-`CAFRESOHQ_ALLOWED_DIRS` is set, and the banner says so." That is true of
-`/cafresohq/stream` and false of the `/fs` read routes reading the same
-variable, and the banner it cites is what makes the mistake easy to make. See
-finding 1.
+1. **The `src/cafresohq_state/main.mo` heap → stable-memory migration**
+   (`docs/STATE_CANISTER_STORAGE_MIGRATION.md`, Track 2, not started). A foreign
+   session holds uncommitted work in that file; this audit read it and changed
+   nothing. It is also the sole failing suite, via `moc`'s `M0219` diagnostics.
+2. **Any mainnet action.** No `dfx deploy`, no install/upgrade, no IC call of any
+   kind was made here, read-only ones included. Only the user can trigger one,
+   and the hosted beta needs one.
+3. **Cycles auto-top-up.** Still absent. `cafresohq_state` reached zero on
+   2026-08-05 and the IC wiped module and state; the monitor dashboard that
+   landed the same day reports but does not alert and does not top up. A hosted
+   beta that outlives its balance loses its testers' data, exactly once.
+4. **Nine MCP connectors unauthorized in this session** (figma, intercom, asana,
+   atlassian, clickup, linear, monday, notion, slack). They need authorization
+   through claude.ai connector settings or an interactive `claude mcp` / `/mcp`
+   session; nothing here can do it, and no finding above depends on them.
 
 ---
 
@@ -338,32 +410,34 @@ finding 1.
 
 Only errors verified by running them:
 
-- `.env.example` — the `CAFRESOHQ_ALLOWED_DIRS` comment said the default is
-  `$HOME/Documents`; it is `$HOME` **and** `$HOME/Documents`. Corrected, with a
-  note that leaving it unset exposes the home directory to the keyless `/fs`
-  reads.
-- `README.md` — added a pointer to `Start-CafresoHQ.sh` (the entry point that
-  starts the Hermes gateway, which bare `serve.py` does not), and a short
-  "what a local run exposes" note covering finding 1 and the loopback bind.
+- `README.md:78-80` — "The `/fs` read routes … default to serving your **home
+  directory**." That was true at the last audit and has been false since
+  `## 315.`: the default is `$HOME/Documents`, and `$HOME` itself is 403.
+  Corrected, with the empty-string polarity and the named opt-out spelled out,
+  since the sentence's whole job is to tell a tester what a bare run exposes.
+- `.env.example:15` — the parenthetical crediting the empty-list reversal cites
+  `#318`; the entry that made an empty list deny is `## 315.` (`#318` is the
+  night-shift one). Corrected.
 - `docs/BETA_READINESS.md` — this file, rewritten.
 
-No behavioural code changes. Every code-level finding above is described, not
-fixed.
+No behavioural code changes and no new tests. Every code-level finding above is
+described, not fixed.
 
 ---
 
 ## Verdict
 
-**Not ready to hand to an outside tester today — but for one reason, and it is
-fixable in an afternoon.**
+**Shippable to an outside beta tester today.**
 
-The product itself is in good shape and has visibly improved: the cold-start
-path works, the error copy remains the best-built thing in the repo, the
-persistence layer is atomic on the server and honest about failure in the
-browser, and the traversal and CORS defences held under every probe I threw at
-them. Finding 1 is the blocker, and it is a configuration-default problem sitting
-on top of sandbox code that is otherwise correct. Findings 2 and 4 are an hour
-of work between them. Finding 3 wants a browser-side reproduction before anyone
-changes code.
+The one blocker is closed on every mechanism that made it work, and I measured
+each one rather than reading the entry that claims it. A page the tester merely
+visits can reach `/health`, `/idle` and a stock ticker. Their home directory is
+403. Their shell is 403 twice over — once on Origin, once on Host. Their API key
+is `<redacted>` in the log and absent from the error body.
 
-Ship the moment finding 1 is decided.
+What is left is seven annoyances, and the two worth fixing before the invitation
+goes out are the cheap ones: the LAN URL the banner promises and cannot deliver,
+and the fifteen seconds of silence before a missing brain says so. Neither costs
+a tester anything but patience, and neither needs a decision — only an hour.
+
+Send the invitation.

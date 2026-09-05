@@ -75,9 +75,12 @@ sh Start-CafresoHQ.sh                # serve.py + the Hermes gateway + TLS notes
 **What a local run exposes.** `serve.py` binds `127.0.0.1` only, so the
 `📱 Mobile / LAN` address it prints is *not* reachable from your phone unless
 you also set `CAFRESOHQ_BIND` (and, off loopback, `CAFRESOHQ_API_KEY`). The
-`/fs` read routes are keyless by design and default to serving your **home
-directory** — see `CAFRESOHQ_ALLOWED_DIRS` in [`.env.example`](.env.example)
-and narrow it before running the office on a machine you share.
+`/fs` read routes are keyless by design and default to serving **`$HOME/Documents`
+and nothing above it** — `$HOME` itself, and everything outside that tree, is
+refused. Narrow it with `CAFRESOHQ_ALLOWED_DIRS` before running the office on a
+machine you share; setting it to the *empty* string means locked, not open, and
+the one way to widen it past the sandbox is the explicitly named
+`CAFRESOHQ_ALLOWED_DIRS_UNRESTRICTED`. See [`.env.example`](.env.example).
 
 **Self-hosted container**
 ```bash
