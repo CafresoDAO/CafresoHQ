@@ -2199,6 +2199,47 @@ def _obsidian_search_refusal(status: int, unparseable: bool = False) -> str:
     return 'it answered with an error instead of results — check it is still running'
 
 
+# #407: the same sentence-instead-of-a-dump rule for the six NOTE doors, which
+# had no classifier at all — they relayed Obsidian's own body verbatim
+# (`resp[:300].decode(...)`) into `error`. Measured against a stand-in plugin
+# that echoes the request it turned down (a shape real servers ship in debug
+# mode): GET, PUT and DELETE /vault/note each handed the boss's own Obsidian
+# API key back to the browser, in a toast, inside `Bearer …`. That is a §7 raw
+# dump whose payload happens to be a credential.
+#
+# Same two hard constraints as the search sentences above, for the same
+# reason: digit-free, because `officeCause` rewrites bare numbers, and inside
+# 90 characters, because `cleanCause` truncates there.
+def _obsidian_refusal(status: int) -> str:
+    if status in (401, 403):
+        return 'it turned down the API key — copy it again from its Local REST API settings'
+    if status == 404:
+        return 'that note is not there — it may have been renamed or moved'
+    if status in (400, 405, 409, 415):
+        return 'it would not accept that note — check the name, then try again'
+    return 'it answered with an error instead of the note — check it is still running'
+
+
+def _log_upstream(where: str, status: int, body: bytes) -> None:
+    """Keep the diagnostic, move it off the boss's screen.
+
+    Deleting the upstream body would cost a developer the only description of
+    what Obsidian actually objected to, so it goes to the server log instead —
+    that split is the fix, not the deletion. Scrubbed of the REST key on the
+    way, because the body that prompted this helper is one that quoted the
+    Authorization header back at us, and a log file is still not a place for
+    somebody's credential."""
+    try:
+        text = body[:300].decode('utf-8', 'replace') if body else ''
+        k = (_vault_rest_key or '').strip()
+        if len(k) >= 8:
+            text = text.replace(k, '<redacted>')
+        sys.stderr.write('[vault] %s: obsidian answered %s — %s\n'
+                         % (where, status, ' '.join(text.split())))
+    except Exception:
+        pass    # a log line may never be the reason a request fails
+
+
 def _rest_search(query: str, limit: int = 10) -> list:
     """Search the vault through Obsidian's Local REST API.
 
@@ -5230,7 +5271,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if s == 404:
                     return self._send_json(404, {'error': 'not found'})
                 if s != 200:
-                    return self._send_json(s, {'error': body[:300].decode('utf-8', 'replace')})
+                    _log_upstream('GET /vault/note', s, body)
+                    return self._send_json(s, {'error': _obsidian_refusal(s)})
                 self.send_response(200)
                 self.send_header('content-type', 'text/markdown; charset=utf-8')
                 self.end_headers()
@@ -5301,7 +5343,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     if s == 404:
                         return self._send_json(404, {'error': 'not found'})
                     if s != 200:
-                        return self._send_json(s, {'error': data[:300].decode('utf-8', 'replace')})
+                        _log_upstream('GET /vault/file', s, data)
+                        return self._send_json(s, {'error': _obsidian_refusal(s)})
                 elif _vault_backend == 'oci':
                     cli = _oci_object_client()
                     data = cli.get_object(_oci_vault_namespace, _oci_vault_bucket,
@@ -5366,7 +5409,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 except Exception as e:
                     return self._send_json(502, {'error': f'obsidian: {e}'})
                 if s not in (200, 204):
-                    return self._send_json(s, {'error': resp[:300].decode('utf-8', 'replace')})
+                    _log_upstream('PUT /vault/note', s, resp)
+                    return self._send_json(s, {'error': _obsidian_refusal(s)})
                 return self._send_json(200, {'path': rel, 'mode': mode, 'backend': 'rest'})
             if _vault_backend == 'oci':
                 try:
@@ -5441,7 +5485,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     with _vault_write_lock:
                         _vault_write_local(target, body)
             except Exception as e:
-                return self._send_json(500, {'error': str(e)})
+                # #407, measured: a vault folder the office cannot write to
+                # answered `[Errno 13] Permission denied: '/Users/…/vault/
+                # .x.md.95ug1cbf.tmp'` — an errno the boss cannot act on and
+                # an absolute path naming a temp file that no longer exists.
+                sys.stderr.write('[vault] PUT /vault/note %s: %s\n' % (rel, e))
+                return self._send_json(500, {'error': 'the note could not be saved — '
+                                                      'check the vault folder is writable'})
             return self._send_json(200, {'path': rel, 'mode': mode, 'size': target.stat().st_size})
 
         # ---------- Delete ----------
@@ -5453,7 +5503,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 except Exception as e:
                     return self._send_json(502, {'error': f'obsidian: {e}'})
                 if s not in (200, 204):
-                    return self._send_json(s, {'error': resp[:300].decode('utf-8','replace')})
+                    _log_upstream('DELETE /vault/note', s, resp)
+                    return self._send_json(s, {'error': _obsidian_refusal(s)})
                 return self._send_json(200, {'deleted': rel})
             if _vault_backend == 'oci':
                 try:
@@ -5518,7 +5569,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         'PUT', '/vault/' + urllib.parse.quote(dst),
                         body=body, content_type='text/markdown')
                     if s2 not in (200, 204):
-                        return self._send_json(s2, {'error': resp[:300].decode('utf-8', 'replace')})
+                        _log_upstream('POST /vault/rename', s2, resp)
+                        return self._send_json(s2, {'error': _obsidian_refusal(s2)})
                     _obsidian_request('DELETE', '/vault/' + urllib.parse.quote(src))
                 except Exception as e:
                     return self._send_json(502, {'error': f'obsidian: {e}'})
@@ -5581,7 +5633,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 d_path.parent.mkdir(parents=True, exist_ok=True)
                 os.replace(str(s_path), str(d_path))
             except Exception as e:
-                return self._send_json(500, {'error': str(e)})
+                sys.stderr.write('[vault] POST /vault/rename %s: %s\n' % (src, e))
+                return self._send_json(500, {'error': 'that note could not be moved — '
+                                                      'check the vault folder is writable'})
             # Follow the rename through every inbound [[wikilink]] (fs
             # backend only — the shipping default). Without this, renaming
             # a linked note silently broke every link to it: the graph
@@ -5715,7 +5769,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                             'PUT', '/vault/' + urllib.parse.quote(rel),
                             body=data, content_type='application/octet-stream')
                         if s not in (200, 204):
-                            raise RuntimeError(resp[:200].decode('utf-8', 'replace'))
+                            _log_upstream('POST /vault/upload', s, resp)
+                            raise RuntimeError(_obsidian_refusal(s))
                     elif _vault_backend == 'oci':
                         cli = _oci_object_client()
                         cli.put_object(_oci_vault_namespace, _oci_vault_bucket,
@@ -5842,8 +5897,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 s, _h, resp = _obsidian_request('POST', '/open/' + urllib.parse.quote(rel))
             except Exception as e:
                 return self._send_json(502, {'error': f'obsidian: {e}'})
-            return self._send_json(s if s != 200 else 200,
-                                   {'opened': rel} if s == 200 else {'error': resp[:200].decode('utf-8','replace')})
+            if s != 200:
+                _log_upstream('POST /vault/open', s, resp)
+                return self._send_json(s, {'error': _obsidian_refusal(s)})
+            return self._send_json(200, {'opened': rel})
 
         return self._send_json(404, {'error': f'unknown vault route: {path}'})
 

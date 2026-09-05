@@ -43552,3 +43552,177 @@ be renumbered at integration. Every `#406` in `claude-client.jsx` and
 `scripts/test_a_truncated_answer_is_not_a_finished_one.py` moves with it.
 The bare numbers in the inventory above (27, 143, 505, 1024, 4247…) are LINE
 and TOKEN numbers, not entry numbers, and must not be renumbered.
+
+## 407. the errno, the developer's home directory, and somebody's API key
+
+`## 403` fixed two doors that answered 200 over a failure and left one finding
+behind, for whoever held `/hermes/provider`: that its 500 carries **a raw
+errno and an absolute filesystem path** into a body §7 says the boss must not
+meet. This is the sweep of that class — *server error bodies that hand the
+boss a Python exception instead of a sentence* — and the class turned out to
+have a worse member than the one that was reported.
+
+### The denominator, so the next hunt inherits a count
+
+Every `_send_json(<4xx/5xx>, …)` and `send_error` call in the five server
+files, AST-walked and classified by what the body actually is. **357 call
+sites**, against `## 401`'s cross-check of 409 `except` handlers.
+
+| file | sentence | interpolated exception | interpolated path | other interpolation | upstream relay | scrubbed | no body | total |
+|---|---|---|---|---|---|---|---|---|
+| serve.py | 103 | 59 | 5 | 22 | 2 | — | 8 | 199 |
+| fs_routes.py | 41 | 32 | — | — | — | — | — | 73 |
+| exporters.py | 33 | 14 | — | 3 | — | 8 | — | 58 |
+| pty_server.py | 18 | 3 | — | 6 | — | — | — | 27 |
+| **total** | **195** | **108** | **5** | **31** | **2** | **8** | **8** | **357** |
+
+`drivers/*.py` scores **zero rows and is not therefore clean** — the drivers
+never call `_send_json` at all. They `raise DriverError(err)` and the host
+sends `str(e)`, so their bodies are composed one file away and arrive through
+a variable. `## 403` warned that a mechanical count misses exactly this, and
+it did: **the reported bug is not in serve.py.** All eight of its error
+strings live in `drivers/hermes.py`.
+
+The count is also not the finding. Driving `fs_routes.py`'s doors — the file
+with the worst-looking ratio, 32 of 73 — returned `not a directory`, `no such
+file`, `permission denied`. Its `f'invalid path: {e}'` sites raise
+`ValueError` with prose the code wrote itself. **A verdict from the table
+alone would have been wrong in both directions**, which is why everything
+below was driven.
+
+### What was measured, before anything was changed
+
+A real `serve.py` on its own port, scratch `HOME`, `HERMES_HOME` in a temp
+dir, `PATH` pinned to a directory holding one stub `hermes` — `gateway_restart`
+is a bare `Popen(['hermes','gateway','restart'])`, a plain PATH lookup not
+gated on `HERMES_HOME`, so a test run on a developer box would otherwise
+restart their own gateway.
+
+    POST /hermes/provider, ~/.hermes unwritable
+      -> 500 write .env: [Errno 13] Permission denied: '/Users/…/.hermes/..env.25a018b7.tmp'
+    POST /hermes/provider {"key": ""}   (the REMOVAL path)   -> the same
+    POST /hermes/model, config.yaml unreadable
+      -> 500 read config: [Errno 13] Permission denied: '/Users/…/.hermes/config.yaml'
+    PUT  /vault/note, vault folder unwritable
+      -> 500 [Errno 13] Permission denied: '/private/var/…/vault/.x.md.95ug1cbf.tmp'
+    POST /vault/rename, vault folder unwritable                -> the same shape
+
+`## 403` reported one of these. There are five, and the fifth and sixth are in
+a different file from the one its finding named.
+
+Three things are wrong with each line, and the third had not been named. The
+errno is not something a boss can act on. The absolute path is the
+developer's own machine arriving in a browser toast. And the path names a
+**temporary file** — `_atomic_write` writes through `.name.hex.tmp` and
+unlinks it — so the single concrete-looking detail in the message is also the
+false one, pointing at a file that cannot be gone and looked at.
+
+### The worse member: a credential in a user-facing body
+
+The question `## 403` did not ask was whether any error body can carry a
+**key**. It can, and the answer was found by driving rather than reading.
+
+Six vault doors relayed Obsidian's own response body verbatim
+(`resp[:300].decode(...)`) straight into `error`. Pointed at a stand-in Local
+REST API that quotes the request it turned down, headers included — not a
+strawman, that is a debug shape real servers ship — three of them handed the
+boss's own Obsidian API key back to the browser:
+
+    GET    /vault/note   -> 401 {"error": "{… \"Authorization\": \"Bearer <THE KEY>\" …}"}
+    PUT    /vault/note   -> 401  the same
+    DELETE /vault/note   -> 401  the same
+    POST   /vault/open   -> 401  the same relay, saved ONLY by its [:200] truncation
+    GET    /vault/file   -> the same relay, untested by that plugin's 401
+    POST   /vault/rename -> the same relay
+
+`/vault/open` is the one to read twice. It did not leak, and it is not safe —
+it truncates at 200 characters instead of 300 and the header happened to fall
+outside. A longer note path moves it back in. **Three doors leaked and three
+more were one path length away**, which is the difference between a mechanism
+and a measurement.
+
+`exporters.py` has had `_scrub(text, api_key)` on its four generate doors
+since `## 322`. **Nothing else in the server had ever used it** — 8 uses, all
+four doors of one file — and the six doors that most needed it were in
+another. Driven against the shapes that actually occur (a bare string, an
+exception object, a `urllib.HTTPError` quoting the URL, an upstream JSON
+body, a percent-encoded URL), `_scrub` holds on every one. Its single hole is
+deliberate and documented: secrets under 8 characters are left alone so a
+one-character key cannot redact half a sentence. No provider key is that
+short, so the hole is real and unreachable — recorded here rather than
+rounded up to "safe".
+
+### The fixes, in the precedent each door already had
+
+**The six relays refuse in a sentence.** `_obsidian_refusal(status)` sits
+beside `## 403`'s `_obsidian_search_refusal` and is written under the same two
+hard constraints, for the same reasons: **digit-free**, because
+`app/floor.jsx`'s `officeCause` rewrites bare numbers and a sentence carrying
+"404" comes back as *"the office couldn't find that"* — wrong subject; and
+**inside 90 characters**, because `cleanCause` truncates there
+(app/floor.jsx:720) and a sentence that says what to do in its second half
+loses exactly that half.
+
+**The upstream body is kept, not deleted.** `_log_upstream` writes it to the
+server log — that split is the fix; deleting it would cost a developer the
+only description of what Obsidian objected to. It is scrubbed of the REST key
+on the way out, because the body that prompted all this is one that quoted
+the Authorization header back at us, and a log file is not a place for
+somebody's credential either.
+
+**`drivers/hermes.py` gets `_config_failure(verb, exc, what)`** — one
+function, eight call sites, errno to `stderr` and prose to the caller. It is
+the driver's own word rather than the host's, so `configure()`'s
+`DriverError(err)` needs no change and `_hermes_set_provider` keeps sending
+`str(e)`; nothing at the seam moved. Each sentence is true on a machine that
+simply has no hermes on it, per `## 399`'s rule and `## 403`'s note about
+advice that is false about a file which does not exist.
+
+`## 403`'s own `read_model` sentence, which deliberately NAMES `config_path()`,
+is left exactly as it is. That is not this bug: it is a written sentence in
+the settings panel telling the boss which file to go and repair, and the file
+it names exists.
+
+### Test
+
+New `scripts/test_an_error_the_boss_meets_is_a_sentence_not_a_stack.py`,
+three rounds, asserting a **general invariant** rather than pinned strings:
+no error body a boss can reach may carry an absolute path, an `[Errno N]`, a
+newline, more than 90 characters, a bare digit, or a credential. One
+`offences()` function, so a new door cannot be held to a weaker rule than an
+old one.
+
+Round 1 is structural and AST-based — `serve.py` sends no sliced upstream
+body as an error (walked as an expression, so a reformat cannot hide one),
+and `drivers/hermes.py` returns no interpolated exception. It also **executes
+both refusal helpers** over twelve statuses and judges every branch they can
+return by the same rule the live rounds use, so the sentences cannot drift
+past 90 characters or grow a digit unnoticed.
+
+Round 2 is the real office with files it cannot read or write — five doors,
+each required to answer prose. Round 3 is the verbose stand-in plugin against
+six vault doors, with the fake key in the invariant.
+
+Fire-tested one fix at a time, in place: reverting the relay fails Round 1 and
+Round 3 (`['CARRIES A CREDENTIAL', 'is 268 chars', 'carries a bare digit']`),
+reverting `write_provider` reproduces `## 403`'s reported line verbatim,
+reverting the vault write reproduces the `PUT /vault/note` line. Both files
+md5-identical afterwards, green three times.
+
+### EXPOSED, deliberately, with the count
+
+The remaining **~100 exception-interpolating call sites** are not fixed and
+not cleared. Driving `fs_routes.py` and `pty_server.py` found sentences at
+every door reached, but "every door reached" is six doors, not 105 — that is a
+sample, not a verdict, and this ledger has seven collapsed "already safe"
+verdicts to its name. What is settled is narrower and worth having: **no
+credential now reaches a user-facing body through any door in this sweep**,
+and the four measured errno-and-path bodies are prose. The next hunt inherits
+the table above and should treat the fs and pty columns as unmeasured.
+
+Nothing here touched `main.mo`, the II configuration, or the mainnet. Four
+concurrent hunts were appending to this ledger; if this landed other than
+fourth its number moved, and every `#407` in `serve.py`, `drivers/hermes.py`
+and
+`scripts/test_an_error_the_boss_meets_is_a_sentence_not_a_stack.py` moved
+with it.

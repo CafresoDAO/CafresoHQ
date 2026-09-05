@@ -146,6 +146,36 @@ def gateway_can_appear(binary_override=''):
     silence. See #399."""
     return _gateway_seen_alive or bool(resolve(binary_override))
 
+def _config_failure(verb, exc, what='settings'):
+    """One sentence for a config file the office could not read or write, and
+    the errno in the SERVER LOG where it belongs (#407).
+
+    Every one of these used to be `f'write .env: {e}'`. `configure()` wraps it
+    in a DriverError and `_hermes_set_provider` sends `str(e)` as the body, so
+    what the boss actually met — measured on a real serve.py against an
+    unwritable HERMES_HOME — was:
+
+        500 {"error": "write .env: [Errno 13] Permission denied:
+             '/Users/…/.hermes/..env.25a018b7.tmp'"}
+
+    Three things wrong with that in one line. The errno is not something a
+    boss can act on. The absolute path is the developer's own machine leaking
+    into a browser toast. And it names a TEMPORARY file (`_atomic_write`
+    writes through `.name.hex.tmp`) which does not exist by the time anyone
+    reads the message — so the one concrete-looking detail is also the false
+    one, pointing at a file the boss can never go and look at.
+
+    The sentences below are digit-free and inside 90 characters for the same
+    reason #403's are: `officeCause` rewrites bare numbers and `cleanCause`
+    truncates at 90. Each says what went wrong and what to do about it, and
+    each is still true on a machine that simply has no hermes installed."""
+    sys.stderr.write('[hermes] %s failed: %s\n' % (verb, exc))
+    return ('the office could not save your %s — check it can write to the '
+            'Hermes folder' % what) if verb.startswith('write') else (
+           'the office could not read your %s — check that file, then reopen '
+           'this panel' % what)
+
+
 def gateway_restart(reason=''):
     """Best-effort `hermes gateway restart` (replaces the running singleton;
     the proxy keeps serving until the new gateway binds, ~10s). Returns
@@ -255,7 +285,7 @@ def write_model(model):
         with open(config_path(), 'r', encoding='utf-8') as f:
             cfg = f.read()
     except Exception as e:
-        return False, False, f'read config: {e}'
+        return False, False, _config_failure('read config', e, 'model settings')
     new_cfg, n = re.subn(r'(^\s*default:\s*).+$',
                          lambda m: m.group(1) + model, cfg,
                          count=1, flags=re.MULTILINE)
@@ -264,7 +294,7 @@ def write_model(model):
     try:
         _atomic_write(config_path(), new_cfg)
     except Exception as e:
-        return False, False, f'write config: {e}'
+        return False, False, _config_failure('write config', e, 'model settings')
     return True, gateway_restart('model'), ''
 
 
@@ -294,14 +324,14 @@ def write_capability(mode):
         with open(config_path(), 'r', encoding='utf-8') as f:
             cfg = f.read()
     except Exception as e:
-        return False, False, f'read config: {e}'
+        return False, False, _config_failure('read config', e, 'settings')
     idx = cfg.find('\ntoolsets:')
     new_cfg = (cfg[:idx + 1] if idx >= 0 else cfg.rstrip() + '\n') + block
     try:
         _atomic_write(config_path(), new_cfg)
         _atomic_write(capability_file(), mode)
     except Exception as e:
-        return False, False, f'write config: {e}'
+        return False, False, _config_failure('write config', e, 'settings')
     return True, gateway_restart('capability'), ''
 
 
@@ -368,7 +398,7 @@ def write_provider(provider, key, model, base_url):
             except Exception:
                 pass
     except Exception as e:
-        return False, False, f'write .env: {e}'
+        return False, False, _config_failure('write .env', e, 'key')
 
     try:
         cfg = ''
@@ -390,7 +420,7 @@ def write_provider(provider, key, model, base_url):
                        'tools:\n  tool_search:\n    enabled: true\n    threshold_pct: 0\n')
         _atomic_write(config_path(), new_cfg)
     except Exception as e:
-        return False, False, f'write config: {e}'
+        return False, False, _config_failure('write config', e, 'brain settings')
 
     if not local:
         os.environ[spec['env']] = key
@@ -426,7 +456,7 @@ def clear_provider_key(provider):
             except Exception:
                 pass
     except Exception as e:
-        return False, False, f'write .env: {e}'
+        return False, False, _config_failure('write .env', e, 'key')
     os.environ.pop(spec['env'], None)
     return True, gateway_restart('provider-key-removed'), ''
 
@@ -458,7 +488,7 @@ def import_config(cfg, capability=''):
                 pass
         _atomic_write(cfg_p, cfg)
     except Exception as e:
-        return False, False, cfg_p + '.bak', f'write config: {e}'
+        return False, False, cfg_p + '.bak', _config_failure('write config', e, 'settings')
     if capability in ('lite', 'full'):
         try:
             _atomic_write(capability_file(), capability)
