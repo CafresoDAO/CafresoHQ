@@ -146,7 +146,15 @@ function buildProjectStudyPrompt(mission, agent, notesIndex, fileTree) {
     ``,
     `Rules:`,
     `  - Read 1-3 project files, then write ONE focused note. Don't try to document everything at once.`,
-    `  - Use frontmatter: ---\\ntags: [project-study, ${mission.projectName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}]\\n---`,
+    /* The third site of the same twin (`#279`, `#285`). This one names a
+       TAG rather than a path, so it survived both earlier passes — but the
+       collapse is identical and lands one level down: every non-Latin
+       project name reduced to the bare string `-`, so `tags: [project-study,
+       -]` went on EVERY note of EVERY project a non-English office studied.
+       The tag index is how those notes are found again; one shared tag for
+       all of them is the same as no tag at all. `topicSlug` is already the
+       function that answers this question correctly — ask it. */
+    `  - Use frontmatter: ---\\ntags: [project-study, ${topicSlug(mission.projectName)}]\\n---`,
     `  - Wikilink to other notes you've written ([[other-note]]) to build a connected knowledge graph.`,
     `  - Include code snippets with \`\`\` fences when they clarify how something works.`,
     `  - Focus on the WHY and HOW, not just listing what exists. Explain design decisions if apparent.`,

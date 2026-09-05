@@ -33746,3 +33746,31 @@ a foreign session owns and this change never touches). This change covers only
 `src/cafresohq_state/main.mo` was never
 staged or edited, no II or `derivationOrigin` value was read or written, and
 no dfx/IC action of any kind was run.
+
+---
+
+## 286. Every studied project was tagged with the same dash
+
+`#279` fixed the Latin-only slug in the starter card. `#285` swept for its
+twins and found two more — the deliverable filer and the mission's folder
+name. This is the third, and it survived both passes for a reason worth
+recording: it doesn't name a file. It names a *tag*.
+
+The mission brief told every studying coworker to stamp its notes with
+`tags: [project-study, <project>]`, and built that second tag the same way
+the paths used to be built — by deleting every character outside `a-z0-9`.
+A project named in Japanese, Russian, Greek, Hebrew, Arabic or Korean has
+no character that survives, so the whole name collapsed to the single
+character `-`. Not one project's notes. Every project's notes, in every
+non-English office, carrying one identical tag.
+
+The tag index is how a note is found again months later, when nobody
+remembers which folder it went in. One shared tag across every project is
+the same as no tag at all — and unlike the path bugs this one leaves no
+trace on screen: the note is written, the frontmatter is there, the tag
+looks like a tag. `topicSlug` was already sitting in the same file
+answering exactly this question correctly. The brief now asks it.
+
+Three sites, one constant, three separate discoveries. The lesson isn't
+about slugs — it's that a fix lands on the call site someone was looking
+at, and the twins keep working until somebody goes looking on purpose.
