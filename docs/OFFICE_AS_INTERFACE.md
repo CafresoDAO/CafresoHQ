@@ -35311,3 +35311,54 @@ copy, confirmed byte-identical by `md5`, reran — all checks passed, exit 0.
 
 Pure `.py` change — no `npm run build` needed for it, though the worktree's
 `dist-ui/` was built once to run the suite.
+
+---
+
+## 311. the boss approved 0.01 ICP and five ICP left the payroll budget
+
+Every coworker's wallet card in Settings → ICP Services carries one payroll
+row: a mode, an amount box, a token dropdown, a period, then `SAVE` and
+`⚡ NOW`. Two buttons, and only one of them writes. The boxes are a draft
+until `SAVE` is pressed — `savePay` is the only thing that puts an amount
+on-chain, and it is the number stored there that gets paid.
+
+`⚡ NOW` calls `chain().payroll.run(agentId)`, which is `runPayrollNow` in
+the state canister. It takes an agent id and nothing else. It looks the
+salary up by that id and hands the stored base-unit integer to the ledger.
+The boxes on the screen are not part of that call and cannot be.
+
+The confirmation dialog quoted the boxes.
+
+    Run payroll for Ada right now?
+
+    Pays 0.01 ICP from your signed payroll budget (the budget cap still
+    applies).
+
+with a saved salary of 5 ICP sitting behind it. Press Pay now and 500000000
+base units leave the boss's own main account, out of the ICRC-2 allowance
+they signed once and cannot claw back — 499 times the sum they were shown,
+in the one dialog the office puts in front of an irreversible transfer. The
+token dropdown carried the same lie in a different currency: draft sGLDT
+over a saved ICP salary asked permission to spend gold and sent ICP.
+
+The edit is not an exotic gesture. The row populates itself from the saved
+salary on load, so the only reason to touch the amount box is to change it,
+and `⚡ NOW` is eleven pixels away from `SAVE` on the same row. A boss who
+adjusts the pay and reaches for the button that says NOW is doing the most
+natural thing on that card.
+
+`savedPayStatement(sal, WALLET_TOKEN_DECIMALS)` is now the only source of
+the figure in the dialog, and it reads the saved row through the same
+`fromBaseUnits` the card already trusts to display it — so the sentence the
+boss consents to round-trips to the exact integer the ledger will move, at
+that token's own decimals rather than a hardcoded eight. `payDraftDiffers`
+covers the other half: when the boxes disagree with the saved row the dialog
+names both and says which one has not been saved, because a boss who edited
+the row meant the edit and should not have it silently discarded any more
+than they should have it silently paid. The OK button carries the amount
+too, the way the fund button already did.
+
+The same file's `fund()` was checked alongside and is honest — it quotes the
+string it passes to the bridge. The difference is that funding sends what is
+on the screen; payroll sends what is on the chain, and only one of those two
+dialogs was reading from the right place.

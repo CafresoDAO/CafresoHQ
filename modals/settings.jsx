@@ -448,6 +448,34 @@ function fromBaseUnits(raw, decimals) {
   } catch { return '0'; }
 }
 
+/* What ⚡ NOW will actually pay, read off the SAVED salary row.
+
+   `chain().payroll.run(agentId)` takes an agentId and nothing else:
+   `runPayrollNow` in the state canister looks the salary up by that id and
+   hands `s.amount` — the base-unit integer stored on-chain — to the ledger.
+   The payroll inputs beside the button are an unsaved DRAFT until SAVE is
+   pressed, so quoting them in the confirm dialog told the boss a number the
+   chain was never going to move. Type 0.01 over a saved 5 ICP salary, press
+   ⚡ NOW, and the office asked permission for 0.01 ICP while 5 ICP left the
+   signed payroll budget — 499× the sum consented to, irreversibly, and the
+   token dropdown could be wrong in the same way (approve an sGLDT payment,
+   send ICP). The saved row is the only thing that can be quoted honestly.
+
+   Returns null when there is no saved salary — there is nothing ⚡ NOW could
+   run, so there is nothing to confirm. */
+function savedPayStatement(sal, decimalsFor) {
+  if (!sal || sal.amount == null || !sal.token) return null;
+  const dec = (decimalsFor && decimalsFor[sal.token]) ?? 8;
+  return { amount: fromBaseUnits(sal.amount, dec), token: sal.token, raw: String(sal.amount) };
+}
+/* True when the draft in the inputs is not what ⚡ NOW would pay. The dialog
+   says so rather than silently paying the other number: a boss who edited the
+   row and reached for NOW meant the edit. */
+function payDraftDiffers(stated, draftAmt, draftTok) {
+  if (!stated) return false;
+  return String(draftAmt || '').trim() !== stated.amount || draftTok !== stated.token;
+}
+
 function AgentWalletCard({ agent }) {
   const [policy, setPolicy] = useStateM(null);
   const [bals, setBals] = useStateM(null);
@@ -565,9 +593,17 @@ function AgentWalletCard({ agent }) {
     setBusy('');
   };
   const payNow = async () => {
+    // Quote the SAVED salary — that is what runPayrollNow pays. See
+    // savedPayStatement above.
+    const stated = savedPayStatement(sal, WALLET_TOKEN_DECIMALS);
+    if (!stated) { setMsg('No saved payroll to run — press START first.'); return; }
+    const drafted = payDraftDiffers(stated, payAmt, payTok);
     if (!(await window.hqConfirm(
-      `Run payroll for ${agent.name} right now?\n\nPays ${payAmt} ${payTok} from your signed payroll budget (the budget cap still applies).`,
-      { okLabel: 'Pay now' }))) return;
+      `Run payroll for ${agent.name} right now?\n\nPays ${stated.amount} ${stated.token} from your signed payroll budget (the budget cap still applies).`
+      + (drafted
+        ? `\n\nThe ${String(payAmt || '').trim()} ${payTok} in the row above has not been saved — press SAVE first if you meant to pay that.`
+        : ''),
+      { okLabel: `Pay ${stated.amount} ${stated.token}` }))) return;
     setBusy('paynow'); setMsg('Running payroll — waiting for the chain…');
     try {
       const r = await chain().payroll.run(agentId);
