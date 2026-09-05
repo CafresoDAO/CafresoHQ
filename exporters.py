@@ -30,7 +30,26 @@ _vault_root = None
 _vault_hidden_part = None
 
 
+def _scrub(text, *secret_values):
+    """Return `text` with every non-empty secret in `secret_values` replaced by
+    a fixed marker.
 
+    The generate endpoints hand an exception's str() straight back to the
+    browser, and the browser renders it as a toast the tester will screenshot
+    or paste into a bug report. urllib's own error strings quote the URL it
+    was asked to open, so anything living in that URL travels with them. The
+    Google branches below no longer put the key in the URL at all (see the
+    x-goog-api-key note), but this is the belt to that fix's braces: a
+    provider that echoes the credential in its 4xx body, or an exception type
+    nobody anticipated, must still not be able to hand the tester's own
+    credential back to them in plain text.
+    """
+    out = str(text)
+    for s in secret_values:
+        s = (s or '').strip()
+        if len(s) >= 8:
+            out = out.replace(s, '<redacted>')
+    return out
 
 
 # ---- Export endpoints (PowerPoint / Word / PDF) ----------------------
@@ -335,9 +354,9 @@ def _generate_image(self):
             if not b64: return self._send_json(502, {'error': 'no image returned'})
             out_path.write_bytes(base64.b64decode(b64))
         except urllib.error.HTTPError as e:
-            return self._send_json(e.code, {'error': e.read().decode('utf-8', 'replace')[:600]})
+            return self._send_json(e.code, {'error': _scrub(e.read().decode('utf-8', 'replace'), api_key)[:600]})
         except Exception as e:
-            return self._send_json(500, {'error': str(e)})
+            return self._send_json(500, {'error': _scrub(e, api_key)})
     elif provider == 'google':
         api_key = os.environ.get('GOOGLE_API_KEY') or api_key
         if not api_key: return self._send_json(400, {'error': 'GOOGLE_API_KEY required'})
@@ -348,16 +367,28 @@ def _generate_image(self):
         #    candidates[0].content.parts[*].inlineData.data
         # We pick the right endpoint based on the model name so the same
         # GOOGLE_API_KEY works for both — no extra setting required.
+        #
+        # #322: both URLs used to carry `?key={api_key}`. Google accepts that,
+        # but a credential in a URL is a credential in every string that ever
+        # quotes the URL — and `model_id` is free text the tester types into
+        # Settings → Media. Type a model name with a space in it ("imagen 4")
+        # and urllib refuses the URL before any socket opens, with
+        # ValueError("URL can't contain control characters. '<the whole URL>'").
+        # The Exception arm below returned str(e) to the browser, so the app
+        # answered the tester's own image request with their plaintext Google
+        # key in the error toast. The key rides a header now; the URL holds
+        # nothing worth reading.
         is_gemini = 'gemini' in model_id.lower()
         try:
             if is_gemini:
-                url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent?key={api_key}'
+                url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent'
                 payload = {
                     'contents': [{'parts': [{'text': prompt}]}],
                     'generationConfig': {'responseModalities': ['IMAGE']},
                 }
                 req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'),
-                    headers={'content-type': 'application/json'})
+                    headers={'content-type': 'application/json',
+                             'x-goog-api-key': api_key})
                 with urllib.request.urlopen(req, timeout=180) as r:
                     j = json.loads(r.read().decode('utf-8'))
                 b64 = ''
@@ -379,10 +410,11 @@ def _generate_image(self):
                     return self._send_json(502, {'error': f'no image bytes in Gemini response{": " + text_out[:200] if text_out else ""}'})
                 out_path.write_bytes(base64.b64decode(b64))
             else:
-                url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_id}:predict?key={api_key}'
+                url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_id}:predict'
                 payload = {'instances': [{'prompt': prompt}], 'parameters': {'sampleCount': 1}}
                 req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'),
-                    headers={'content-type': 'application/json'})
+                    headers={'content-type': 'application/json',
+                             'x-goog-api-key': api_key})
                 with urllib.request.urlopen(req, timeout=120) as r:
                     j = json.loads(r.read().decode('utf-8'))
                 preds = j.get('predictions', [])
@@ -391,9 +423,9 @@ def _generate_image(self):
                 if not b64: return self._send_json(502, {'error': 'no image bytes in response'})
                 out_path.write_bytes(base64.b64decode(b64))
         except urllib.error.HTTPError as e:
-            return self._send_json(e.code, {'error': e.read().decode('utf-8', 'replace')[:600]})
+            return self._send_json(e.code, {'error': _scrub(e.read().decode('utf-8', 'replace'), api_key)[:600]})
         except Exception as e:
-            return self._send_json(500, {'error': str(e)})
+            return self._send_json(500, {'error': _scrub(e, api_key)})
     elif provider == 'fal':
         api_key = os.environ.get('FAL_KEY') or api_key
         if not api_key: return self._send_json(400, {'error': 'FAL_KEY required'})
@@ -409,9 +441,9 @@ def _generate_image(self):
             with urllib.request.urlopen(img_url, timeout=60) as img:
                 out_path.write_bytes(img.read())
         except urllib.error.HTTPError as e:
-            return self._send_json(e.code, {'error': e.read().decode('utf-8', 'replace')[:600]})
+            return self._send_json(e.code, {'error': _scrub(e.read().decode('utf-8', 'replace'), api_key)[:600]})
         except Exception as e:
-            return self._send_json(500, {'error': str(e)})
+            return self._send_json(500, {'error': _scrub(e, api_key)})
     elif provider == 'a1111':
         # Automatic1111 Stable Diffusion WebUI — REST API at /sdapi/v1/txt2img.
         # Run A1111 with --api (or --api --listen for LAN). No API key needed.
@@ -546,9 +578,9 @@ def _generate_video(self):
             with urllib.request.urlopen(video_url, timeout=300) as vid:
                 out_path.write_bytes(vid.read())
         except urllib.error.HTTPError as e:
-            return self._send_json(e.code, {'error': e.read().decode('utf-8', 'replace')[:600]})
+            return self._send_json(e.code, {'error': _scrub(e.read().decode('utf-8', 'replace'), api_key)[:600]})
         except Exception as e:
-            return self._send_json(500, {'error': str(e)})
+            return self._send_json(500, {'error': _scrub(e, api_key)})
     elif provider == 'openai':
         # Sora API is gated; we provide the call shape but most accounts
         # will get a 403. The error message guides the user.

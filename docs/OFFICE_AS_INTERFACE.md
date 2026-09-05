@@ -36619,3 +36619,95 @@ still be a declared parameter, because a prop read out of the closure would
 be exactly the impurity the check exists to forbid. A new assertion was added
 alongside: every call site must pass the roster, so no door can quietly stop
 asking. No assertion was removed or weakened.
+
+---
+
+## 325. the office answered "make me a picture" with the tester's own API key
+
+`## 315.` found the office's own key on stderr because it rode in a `?k=`
+query parameter, and fixed it by redacting the access log. That was found
+incidentally, while looking at something else. This is the same axis followed
+on purpose: for every secret the app touches — BYOK provider keys,
+`CAFRESOHQ_API_KEY`, the PTY nonce, the `hq_session` cookie, vault contents —
+where does the value actually end up.
+
+One of them ends up in the tester's own hands, which is the one place nobody
+thinks to check.
+
+Settings → Connections takes a Google AI Studio key. It is AES-GCM encrypted
+in the browser, mirrored to the on-chain keychain, decrypted only for the
+call that needs it, and handed to `/generate/image` in a POST body. All of
+that is careful. Then `exporters.py` built the outbound URL:
+
+    https://generativelanguage.googleapis.com/v1beta/models/{model_id}:predict?key={api_key}
+
+Google accepts a key there, so the line looks finished. But a credential in a
+URL is a credential in every string that ever quotes that URL, and this URL
+has a second free-text field in it. `model_id` comes from Settings → Media,
+where the tester types the model name themselves. Type one with a space in it
+— "imagen 4", "gemini 2.5 flash image", the way the models are actually
+written down — and `urllib` refuses the URL before a socket is ever opened:
+
+    ValueError: URL can't contain control characters.
+                '/v1beta/models/imagen 4:predict?key=<the key>' (found at least ' ')
+
+The handler's last arm is `except Exception as e: return
+self._send_json(500, {'error': str(e)})`. So the app's answer to "make me a
+picture" was a 500 whose body was the tester's plaintext Google key. Observed
+against a live `serve.py` with a sentinel value, and it came back whole — not
+truncated, not masked, the entire string they pasted in.
+
+That is worse than a log line. A log is a file the operator owns; this is the
+error toast the tester screenshots, the string they copy out of the console
+and paste into a bug report to say the image generator is broken. The leak
+travels by the tester deciding to be helpful, and there is nothing they can
+clean up afterwards, because the copy is already in someone else's chat
+window.
+
+**The fix.** The key rides an `x-goog-api-key` header — which Google
+documents and which both endpoints accept — so the URL holds nothing worth
+reading and no exception, log line, redirect or proxy record can carry the
+credential out. The URL still fails on a bad model name; it just fails with
+the model name in it and nothing else.
+
+And a `_scrub(text, *secrets)` helper now sits between every generate error
+path and the client: the four `str(e)` arms and the four relayed HTTPError
+bodies. The header fix is the one that matters; the scrub is what catches the
+provider that quotes the credential back in its own 4xx (OpenAI masks it,
+which is not a guarantee anyone owes us), and the exception type nobody
+anticipated. Route gating is somebody else's sweep — this is only about where
+the value goes once it is inside.
+
+**The proof.**
+`scripts/test_a_rejected_image_model_does_not_hand_back_your_google_key.py`
+drives the real `_generate_image` through a fake handler with a sentinel key
+and both bad model names, and asserts the sentinel is in no response body on
+any path. That path opens no socket — `urllib` rejects the URL locally — so
+the test talks to nobody and spends no quota. It then strips comments AND
+docstrings from `exporters.py` with `tokenize`/`ast` before grepping (this
+file's own prose contains the bad pattern, and so does that module's), and
+pins that no `googleapis.com` URL is built with `?key=`, that both endpoints
+send `x-goog-api-key`, and that no generate 500 returns a bare `str(e)`.
+
+Fire-tested: copied the fixed `exporters.py` to `/tmp`, reverted the
+`:predict` URL and all four `_scrub` calls in place with the editor (never
+`git checkout -- <file>`), 4 of 8 checks failed, exit 1 — the first failure
+printing the sentinel key back out of the response body, which is the bug
+stated as a sentence. Restored from `/tmp`, `md5` byte-identical, reran — all
+8 passed, exit 0.
+
+**What else was followed, and stayed put.** The BYOK keys into `/terminal/stream`
+reach the child as environment, never argv, and the log line records
+`byok_claude=True`, not the value. The late `init` frame on the PTY socket is
+recognised and dropped rather than typed into the CLI (`## 315.`'s
+neighbour). `API_SERVER_KEY` is injected server-side into the Hermes proxy and
+the client's own `Authorization` is dropped on the way. `/hermes/config/export`
+returns `config.yaml`, which holds no key material on this machine, and the
+import side refuses any that appears. `hq-state/` is gitignored.
+
+One thing was traced and left for a separate change: the PTY nonce reaches
+stderr in full. `_LOG_SECRET_RE` redacts `k|key|token|api_key` and the WS
+handshake carries `&nonce=`, so any `/terminal/pty` request that fails before
+the 101 — a missing CLI, a bad `cwd` — logs the whole 64-hex value. Observed;
+it is the `## 315.` hazard wearing the other parameter's name, and it belongs
+with whoever is holding the terminal route.
