@@ -38263,3 +38263,47 @@ it stops rather than measuring it. Fire-tested against a real squatter on
 18893 — the suite now fails with `serve.py exited with 1`, the true reason,
 instead of six assertion failures about someone else's process.
 
+---
+
+## 356. the button that stood in the meeting-room doorway
+
+On a phone, tapping the meeting door in the office lobby opened the command
+palette. Not sometimes — every time, at every phone size, unless you were
+careful enough to hit the door's left twelve pixels.
+
+`.palette-fab` is the little 🛠️ command-palette button, `position: fixed`,
+pinned at `right: 10px; bottom: calc(130px + safe-area)`. The meeting door is
+`right: 24` inside `.px-lobby`, at the bottom of a floor you scroll to the
+end of. Both are anchored to the bottom-right, so they were never going to
+miss each other, and they didn't:
+
+  375x812  fab 638.0 -> 682.0 x 321.0 -> 365.0   door 644.2 -> 678.2 x 309 -> 341
+  375x667  fab 493.0 -> 537.0 x 321.0 -> 365.0   door 499.2 -> 533.2 x 309 -> 341
+  320x568  fab 394.0 -> 438.0 x 266.0 -> 310.0   door 400.2 -> 434.2 x 254 -> 286
+
+The same 44px box over the same door three times, because the door's distance
+from the bottom of the viewport is a constant 133.8px on every phone — the
+floor is bottom-anchored too. `elementsFromPoint` at the door's own centre
+returned `BUTTON.palette-fab` first at all three. The door was drawn, lit,
+labelled MEETING, and wired to `onOpenMeeting`, and it did not work.
+
+The fix is one word. There was nowhere to put the button vertically: the band
+below the door is 28px of gap before the ticker and this box is 44, and the
+band above it is the room grid, where agent characters are clickable and
+scroll past. There was nowhere on the right either — the door's right edge is
+341 of 375. So the button went to the lobby's other end, `left: 10px`, where
+the only thing under it is the water cooler, which has no click handler, and
+the ambient walkers, which are `aria-hidden`. Measured on all six mobile tabs
+at all three sizes after the move: the button hit-tests as itself everywhere
+and covers the centre of no interactive control anywhere in the app.
+
+The part worth keeping is what happened to the test. #352 measured this exact
+overlap and then wrote it into its own docstring as an exclusion — it asked
+whether the door was topmost *on the office floor*, not topmost on the page,
+because the honest question was red for a bug that change was not fixing. So
+a suite carried, in prose, the precise coordinates of a live bug it had
+proven and could not fix. That is the right thing to do at the time and the
+wrong thing to leave. The exclusion is now deleted: the suite asks the
+question a person tapping a door actually asks — is anything at all painted
+over this — and it fails, loudly and at both sizes, the moment the button
+goes back to `right: 10px`.

@@ -972,10 +972,31 @@ body.night .oc-palette-backdrop { background: rgba(0, 0, 0, 0.55); }
 .palette-fab { display: none; }
 
 @media (max-width: 768px) {
+  /* LEFT, not right. This is fixed furniture pinned 130px off the bottom,
+     and at that height it lands in the office lobby's row — the strip that
+     ends, at its right edge, in the meeting door (`right: 24` on
+     .px-meetdoor, ui/office.jsx ~1655) and its MEETING label. Both are
+     bottom-anchored, so they collided by construction at every phone size:
+     measured 638->682 x 321->365 against a door at 644.2->678.2 x 309->341
+     on a 375x812, and the same 44px box over the same door at 375x667 and
+     320x568, because the door's distance from the bottom of the viewport is
+     a constant 133.8px. The FAB covered the door's CENTRE — a tap on the
+     meeting room opened the command palette instead, with only the door's
+     left ~12px still its own.
+
+     There is no room to solve this vertically: below the door is the ticker
+     (28px of gap, and this box is 44px) and then the tab bar; above it is
+     the room grid, where agent characters are clickable and scroll past.
+     Horizontally on the right there is none either — the door's right edge
+     is 341 of 375 and this box is 44 wide. The lobby's LEFT end holds one
+     element, the water cooler (no handler), and ambient walkers, which are
+     aria-hidden. Measured on all six mobile tabs at 375x812, 375x667 and
+     320x568: from here the FAB hit-tests as itself and covers the centre of
+     no interactive control anywhere in the app. */
   .palette-fab {
     display: flex;
     position: fixed;
-    right: 10px;
+    left: 10px;
     bottom: calc(130px + env(safe-area-inset-bottom));
     z-index: 140;
     width: 40px; height: 40px;

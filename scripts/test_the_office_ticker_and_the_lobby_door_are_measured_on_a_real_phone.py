@@ -34,6 +34,7 @@ Measured on the fix, 2026-09-05, on a cold first run:
            door 643.7 -> 677.7, entirely inside the scene
            elementsFromPoint at the door's centre: the door is the
            topmost thing on the floor
+           fab 638.0 -> 682.0 x 10.0 -> 54.0, clear of the door
 
   375x667  ticker 561.0 -> 595.0, tab bar top 597.0  (2.0px clear)
            .pxhq 285.1 -> 547.0 inside a root ending 549.0
@@ -41,6 +42,7 @@ Measured on the fix, 2026-09-05, on a cold first run:
            door 498.7 -> 532.7, entirely inside the scene
            elementsFromPoint at the door's centre: the door is the
            topmost thing on the floor
+           fab 493.0 -> 537.0 x 10.0 -> 54.0, clear of the door
 
 The exact figures move a fraction of a pixel between runs and will move
 further as the office column gains or loses content; every assertion
@@ -55,20 +57,30 @@ painted box and appeared nowhere in the stack at any scroll position —
 and, separately, that nothing above the door in that stack belongs to
 `.mobile-tabbar`, which is what the stack actually returned back then.
 
-It does NOT assert that the door is the topmost element on the whole
-page, because it is not — at either size. `.palette-fab`
-(ui/feedback.jsx ~523) is a fixed 40px command-palette button pinned at
-`bottom: calc(130px + safe-area)` on every phone, and the lobby door
-happens to come to rest under it: measured 638.0 -> 682.0 x 321.0 ->
-365.0 at 375x812 against a door at 643.7 -> 677.7 x 309.0 -> 341.0, and
-493.0 -> 537.0 against a door at 498.7 -> 532.7 at 375x667. The FAB
-covers the door's centre both times; only the door's left ~12px is
-exposed. That is a real overlap and a separate ticket. Asserting it
-away would have meant a red suite for a bug this change is not fixing,
-and quietly hit-testing somewhere other than the centre would have meant
-a green test over a covered control — so it is measured, excluded on
-purpose, and written down here so the next person to look does not think
-they found it fresh.
+It now ALSO asserts that the door is the topmost element on the whole
+page, and that `.palette-fab` does not touch the door's box at all.
+
+That pair of checks is #353, and it replaces an exclusion this suite
+shipped with. When these measurements were first written the door was
+NOT topmost on the page at either size: `.palette-fab`
+(ui/feedback.jsx ~523) is a fixed 40px command-palette button that was
+pinned at `right: 10px; bottom: calc(130px + safe-area)` on every phone,
+and the lobby door came to rest under it — measured 638.0 -> 682.0 x
+321.0 -> 365.0 at 375x812 against a door at 644.2 -> 678.2 x 309.0 ->
+341.0, and 493.0 -> 537.0 against a door at 499.2 -> 533.2 at 375x667,
+and 394.0 -> 438.0 against a door at 400.2 -> 434.2 at 320x568. The FAB
+covered the door's CENTRE every time; only the door's left ~12px was
+still its own, so a person tapping the meeting room opened the command
+palette instead.
+
+That overlap was measured here and then excluded on purpose, with the
+weaker "topmost ON THE FLOOR" wording standing in for the real
+requirement, because asserting it would have meant a red suite for a bug
+that change was not fixing. The exclusion is gone: the FAB now sits at
+the lobby's other end (`left: 10px`, styles.css ~975, over the water
+cooler, which has no handler), and the assertions below say what a
+person tapping a door actually needs — that nothing whatsoever is
+painted over it.
 
 NO NEW DEPENDENCY. There is no puppeteer, playwright, jsdom or
 happy-dom in node_modules and this suite does not add one. It drives
@@ -305,7 +317,7 @@ MEASURE_JS = r"""(() => {
     const tabbar = q('.mobile-tabbar');
     const ticker = q('.ticker');
     let stack = [], firstInScene = null, tabbarAbove = null, doorIndex = -1;
-    let cx = null, cy = null;
+    let cx = null, cy = null, above = [];
     if (dr) {
       cx = dr.left + dr.width / 2;
       cy = dr.top + dr.height / 2;
@@ -314,6 +326,9 @@ MEASURE_JS = r"""(() => {
       for (let i = 0; i < els.length; i++) {
         const e = els[i];
         if (e === door) doorIndex = i;
+        /* Everything painted STRICTLY above the door at its own centre. The
+           door's own sprite children count as the door, not as cover. */
+        if (doorIndex === -1 && !door.contains(e)) above.push(tag(e));
         if (firstInScene === null && scene && scene.contains(e)) firstInScene = i;
         if (tabbarAbove === null && tabbar && (e === tabbar || tabbar.contains(e))
             && (doorIndex === -1 || i < doorIndex)) tabbarAbove = tag(e);
@@ -348,7 +363,8 @@ MEASURE_JS = r"""(() => {
       scene: box(scene),
       scrollTop: scene ? scene.scrollTop : null,
       scrollMax: scene ? (scene.scrollHeight - scene.clientHeight) : null,
-      door: box(door), doorIndex, firstInScene, tabbarAbove, stack, cx, cy,
+      door: box(door), doorIndex, firstInScene, tabbarAbove, above, stack,
+      cx, cy, fab: box(q('.palette-fab')),
       openBackdrops: document.querySelectorAll('.backdrop').length,
     });
   })));
@@ -476,8 +492,10 @@ def assert_viewport(m, width, height):
               f'scene {n(sc["top"])} -> {n(sc["bottom"])} · '
               f'scroll {m["scrollTop"]}/{m["scrollMax"]}')
 
-    # The hit test itself. See the module docstring for why this asks for
-    # "topmost ON THE FLOOR" and not "topmost on the page".
+    # The hit test itself. See the module docstring: this asks for topmost on
+    # the WHOLE PAGE, which is what "a person tapping the meeting door opens
+    # the meeting room" actually requires. Until #353 it could only ask for
+    # topmost on the floor, because `.palette-fab` sat on the door's centre.
     check(f'[{tag}] the door hit-tests at its own centre',
           m['doorIndex'] >= 0,
           f"document.elementsFromPoint({n(m['cx'])}, {n(m['cy'])}) returned "
@@ -492,6 +510,24 @@ def assert_viewport(m, width, height):
           m['tabbarAbove'] is None,
           f"{m['tabbarAbove']} is painted above the door at its own centre — "
           'this is exactly the stack #338 measured')
+    fb = m['fab']
+    check(f'[{tag}] nothing at all is painted over the door',
+          m['doorIndex'] == 0,
+          f"{m['above']} sits above the door at its own centre. A tap there "
+          'runs whatever is on top, not the meeting room'
+          + (f" — .palette-fab is at {n(fb['top'])} -> {n(fb['bottom'])} "
+             f"x {n(fb['left'])} -> {n(fb['right'])}" if fb else ''))
+    if dr and fb:
+        clear = (fb['right'] <= dr['left'] + 0.5 or fb['left'] >= dr['right'] - 0.5
+                 or fb['bottom'] <= dr['top'] + 0.5 or fb['top'] >= dr['bottom'] - 0.5)
+        check(f'[{tag}] the command-palette button does not touch the door',
+              clear,
+              f"fab {n(fb['top'])} -> {n(fb['bottom'])} x {n(fb['left'])} -> "
+              f"{n(fb['right'])} overlaps door {n(dr['top'])} -> {n(dr['bottom'])} "
+              f"x {n(dr['left'])} -> {n(dr['right'])}. Both are bottom-anchored, "
+              'so they collide by construction, not by accident.')
+        print(f'        fab {n(fb["top"])} -> {n(fb["bottom"])} · '
+              f'x {n(fb["left"])} -> {n(fb["right"])}')
 
 
 def main():
