@@ -1208,14 +1208,38 @@ function App() {
            repeatedly. Recorded here, the one place both sides meet — a
            run this poll has not seen finish before, going by `taskId` in
            the ledger the same way the task and mission paths already key
-           on it. errors>0 keeps the streak honest even when iterations
-           also happened; the reverse (0 iterations, 0 errors — a run that
+           on it. A failure keeps the streak honest even when iterations
+           also happened; the reverse (0 iterations, no failure — a run that
            finished without ever really starting) records nothing, same
            call `iterations > 0` already makes on the mission side. */
         for (const r of (rj.runs || [])) {
           if (!r || !r.id || !(r.finishedAt > 0)) continue;
           if (experienceRef.current.some(e => e.taskId === r.id)) continue;
-          const outcome = (r.errors > 0) ? 'snag' : ((r.iterations > 0) ? 'done' : null);
+          /* Three endings, not two — and `errors` can only see two of them.
+             night_runner.py sets BOTH fields when a round fails, but on a
+             night the boss CANCELLED (STOP ALL, or deleting the schedule)
+             it writes only `lastError`, leaving `errors` at 0. Keying on
+             `errors > 0` therefore filed a cancelled night as `done` and
+             paid XP for hours that never ran — permanently, because the
+             ledger is append-only and this loop skips any run it has
+             already recorded. The three sibling surfaces that render these
+             same rows (features.jsx's Gazette story, missions.jsx's run
+             list icon and its one-line summary) all read `lastError`, so
+             the Gazette drew ⚠ over the very run the record called done.
+             But reading `lastError` ALONE is the same bug facing the other
+             way: it docks the coworker a snag for the boss's own decision,
+             which §5 forbids just as plainly (see STOP ALL below). So the
+             stop is recognised first and recorded on neither side — from
+             the flag the runner now stamps, and from the shape that only a
+             stop can produce, prose with no failure behind it. Nothing here
+             compares against the sentence itself; that stays free to be
+             reworded, which is the rule test_gazette_prints_the_correction
+             pins. `failed` still reads `errors` too, so a run logged with a
+             count and no prose is not quietly downgraded. */
+          const failed = (r.errors > 0) || !!r.lastError;
+          const stopped = r.stoppedByBoss === true || (!!r.lastError && !(r.errors > 0));
+          if (stopped) continue;
+          const outcome = failed ? 'snag' : ((r.iterations > 0) ? 'done' : null);
           if (!outcome) continue;
           recordXp({ agentId: r.agentId, kind: 'mission', outcome, taskId: r.id, title: r.topic });
           // Same event, the notification bell's own "🔬 Missions" filter —

@@ -1129,6 +1129,7 @@ def run_mission(ctx, sched, on_progress=None, should_abort=None):
         'tokensUsed': 0,
         'errors': 0,
         'lastError': '',
+        'stoppedByBoss': False,
         'summary': '',
         'grammarVersion': NIGHT_GRAMMAR_VERSION,
     }
@@ -1155,6 +1156,16 @@ def run_mission(ctx, sched, on_progress=None, should_abort=None):
             # surface. Nothing reads this field as a sentinel; all three
             # surfaces that show it print it as prose. It was easy to miss
             # because the Gazette used to bury it behind `summary`.
+            # A flag for the XP ledger, set BEFORE the prose so nothing comes
+            # between that assignment and the break (a sibling test reads the
+            # sentence out of exactly that shape). The browser used to have to
+            # infer this ending from `errors` -- 0 on a stop, so a cancelled
+            # night was filed as a finished one and paid for -- or from
+            # `lastError`, which is set here and would have docked it as a
+            # snag instead. Neither is true; the boss stopped it, and §5 says
+            # that is on neither side of the ledger. Nothing compares against
+            # the sentence itself; that stays free to be reworded.
+            run['stoppedByBoss'] = True
             run['lastError'] = 'you stopped this one — the rest of the night did not run'
             break
         res = run_iteration(ctx, sched, run['iterations'], total_iters)

@@ -35919,3 +35919,120 @@ The renumbering invariant the original comment was written to protect is
 untouched: closing a middle tab still leaves #1 and #3 sitting where they
 were, with a gap, rather than sliding #3 down onto a number the boss has
 already learned belongs to something else.
+
+---
+
+## 318. a night the boss stopped was filed as a night that finished
+
+**The wreck.** The boss sets a night shift running, then at 6am — coffee in
+hand, before the run's four hours are up — presses STOP ALL. `_missions_delete`
+flags the abort, `run_mission` breaks out of its loop on the very next
+`should_abort()`, and writes the one honest sentence it has: *"you stopped this
+one — the rest of the night did not run"*. The Gazette's night-shift story
+draws a ⚠ next to it. The run list draws a ⚠ next to it. The run list's summary
+line prints the sentence itself.
+
+And the coworker's record says the night went fine. Full Jobs credit, a streak
+day, and a routine 🔬 Missions notification reading *"finished the overnight
+run"* — for hours that never happened, next to three surfaces all showing a
+warning about the same row.
+
+**What was actually happening.** `run_mission` ends a night in three shapes,
+and it does not write them the same way:
+
+| ending | `errors` | `lastError` |
+|---|---|---|
+| clean finish | `0` | `''` |
+| failed round(s), or a vault that refused the note | `N` | the failure |
+| **the boss stopped it** | **`0`** | the sentence above |
+
+`app.jsx`'s XP loop keyed on the one field that cannot see the third row:
+
+```js
+const outcome = (r.errors > 0) ? 'snag' : ((r.iterations > 0) ? 'done' : null);
+```
+
+A cancelled night has `errors` at 0 and `iterations` above 0, so it fell
+straight through to `done`. The three sibling surfaces that render these very
+rows — `features.jsx`'s Gazette story, `missions.jsx`'s run-list icon and its
+one-line summary — all read `lastError`, which is why the office could show a
+warning and a completion for one run at the same time. `lastError` is the
+field the surfaces got right: `run_mission` sets it on every ending that is
+not clean, including the one `errors` cannot see.
+
+The XP ledger is append-only and this loop skips any run whose `id` it has
+already recorded, so the credit was not merely wrong, it was permanent. There
+was no morning in which it could be corrected.
+
+**But `lastError` alone is the same bug facing the other way.** `app.jsx`'s own
+STOP ALL handler already states the rule, in the file, about missions: *"§5's
+rule that a boss-stop is not the coworker's failure … the boss pressed the
+button; the office should not file it as something that went wrong."* Switching
+the night classifier to `lastError` and stopping there would have docked the
+coworker a **snag** and broken their streak because the boss changed their
+mind. A stop belongs on neither side of the ledger. So `run_mission` now stamps
+`stoppedByBoss` alongside the prose — the sentence itself stays exactly as it
+was, for the four surfaces that print it — and the classifier recognises that
+case first and records nothing, before reading the two fields together for the
+honest snag/done split.
+
+It recognises the stop a second way as well, and that second way is what makes
+the fix work on the nights already logged. Read the table again: `errors 0`
+with `lastError` set is a shape **only** a stop produces. Every real failure
+increments the counter in the same breath as it writes the sentence. So prose
+with no failure behind it *is* the boss-stop, in every run already sitting in
+`mission-runs.json` from before the flag existed — and those matter, because
+the night shift's whole point is that the browser was closed when they
+finished, so this poll is still meeting them for the first time.
+
+What the fix deliberately does **not** do is match the sentence.
+`scripts/test_gazette_prints_the_correction.py` pins the rule that nothing may
+compare against that text —
+*"the moment something compares against it the wording is no longer free to be
+honest"* — and recognising a cancelled night by its prose would have taken that
+freedom away in the same commit that depends on it. `errors` is also still
+read, so a row carrying a count and no sentence is not quietly downgraded to a
+clean night; that direction is checked too.
+
+**The proof.**
+`scripts/test_a_cancelled_night_is_not_a_finished_one.py` lifts the real
+classifier out of `app.jsx` — anchored on the ledger guard, not on any spelling
+of the outcome, so it keeps running the real code however that line is later
+reworded — and runs it under `node` across nine endings: clean, failed,
+stopped-with-flag, stopped-without-flag (the pre-upgrade row),
+stopped-before-the-first-round, the vault-refused night that has `errors` but
+zero iterations, the run that finished without ever starting, and a failure
+counted but never described. It first
+establishes the premise in `night_runner.py`'s own source — that the stop path
+writes `lastError` and does **not** touch `errors`, and that a failed round
+writes both — because a table like the one above is a claim, not a fact, until
+something checks it. Comments are stripped first: the fix is explained in a
+comment that quotes `errors > 0` verbatim.
+
+Fire-tested: copied the fixed files to `/tmp`, reverted the classifier in place
+with the editor back to `(r.errors > 0) ? 'snag' : …` (never `git checkout --
+<file>`) — the stopped night came back classified `done`, 5 checks failed, exit
+1. Restored, `md5` byte-identical, reran — all 23 passed, exit 0.
+
+**One detour worth recording.** The first shape of this fix pulled the stop
+sentence out into a named constant and had the browser recognise a legacy row
+by matching its opening words. Three existing suites went red on it, and all
+three were right: `test_gazette_prints_the_correction.py` reads the sentence
+out of the abort branch by its exact literal-then-`break` shape, and
+`test_night_shift_runs_reach_the_xp_ledger.py` and
+`test_mission_notifications_reach_the_bell.py` both feed the classifier a run
+with a failure count and no prose. Nothing was weakened to get past them — the
+constant went back to being a literal, the flag assignment moved above it so
+nothing sits between the sentence and the `break`, and the classifier learned
+to read the two fields together instead of matching text. The fixtures those
+two suites use are the reason `failed` still consults `errors`.
+
+`npm run build` run after the `.jsx` change.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`, on a
+file a foreign session owns and this change never touches. This change covers
+`app.jsx`, `night_runner.py`, one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any kind
+was run.
