@@ -2323,15 +2323,31 @@ const TOOL_REGISTRY = {
     requires: () => true,
     doc: '- [BROWSER_SCREENSHOT: <url>] — capture a PNG screenshot of a URL via the user\'s Chromium browser (must be running with --remote-debugging-port=9222). Returns a markdown image embed.',
     docShort: 'Capture a PNG screenshot of a URL. Requires Brave/Chrome with --remote-debugging-port=9222.',
-    run: async (url, { signal }) => {
+    run: async (url, { signal, meta }) => {
       const u = `/browser/screenshot?url=${encodeURIComponent(url.trim())}`;
       const r = await fetch(u, { signal });
       const j = await r.json();
       /* Office voice on the label, the backend's own words for the cause —
          see the note on BROWSER_FETCH above for why snagCause must NOT be
          used here. The hint is kept: §7 wants the route out. */
-      if (j.error) return `Couldn't take that screenshot — ${j.error}` +
-        (j.hint ? `\n${j.hint}` : '');
+      /* #410 — and `meta.failed`, for the same reason its sibling one block
+         up sets it. A browser that is not running with
+         --remote-debugging-port=9222 is the ORDINARY state of this tool, and
+         it answers normally: `{ error, hint }`, HTTP 200, nothing thrown. So
+         the visit went out with `failed: false`, and every reader of the
+         visit record took that as a trip that arrived — the header read
+         "🗒 Captured example.com" over "Couldn't take that screenshot" in
+         the same element, the filed note's Working footer listed the page as
+         captured, and `buildDelivery`'s `consulted` test counted it as a
+         source this run actually opened, which is the test that decides
+         whether a reply full of citations gets the "treat these as recalled"
+         caveat. One failed screenshot was enough to suppress it. BROWSER_FETCH
+         was taught this and the tool eleven lines below it was not. */
+      if (j.error) {
+        if (meta) meta.failed = true;
+        return `Couldn't take that screenshot — ${j.error}` +
+          (j.hint ? `\n${j.hint}` : '');
+      }
       // Embed as markdown — chat renders the data: URL inline
       return `Screenshot of ${j.url} (${j.width}×${j.height}):\n\n![screenshot](${j.png})`;
     },

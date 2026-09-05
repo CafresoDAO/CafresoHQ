@@ -44076,3 +44076,239 @@ foreign moc M0219 on `src/cafresohq_state/main.mo`.
 *(Four other hunts were appending to this ledger at the same time; this entry
 took `## 409` from the brief. Every reference above is greppable as `#409` if
 the coordinator renumbers it.)*
+---
+
+## 410. the office hashed the sentence about the deck, not the deck
+
+`## 229` fixed one instance of a shape and named it: **the office records
+that a tool was CALLED, and a later reader treats that record as evidence
+the work was DONE.** `agentFiledPath` was the caller that had not been
+taught `v.failed`. Nobody had swept the rest. This is the sweep, with the
+denominator published so the next hunt inherits a count rather than a
+hunch.
+
+### The denominator
+
+**31 tools** in `TOOL_REGISTRY` (counted out of the source, not listed by
+hand). **8** of them are host-dispatched and emit no `done` event at all
+(ACK, SPAWN_SUBAGENT, REQUEST_ELEVATION, HIRE_ASSISTANT, HIRE_AGENT, DM_TO,
+HANDOFF_TO, and the CEO path's own early returns), so they leave no visit to
+misread. **7** are rebound per-agent in `toolsForAgent` (MEMORY_LIST/READ/
+WRITE/APPEND, PEER_JOURNAL, WALLET_BALANCE, WALLET_SEND) and their real
+bodies live there.
+
+**The visit record has exactly 7 fields**, set at the two `onTool({ phase:
+'done', … })` emissions in `hq-runtime.jsx` (ceoStream and agentStream):
+`name`, `arg` (`meta.filedAs || call.arg`), `result`, `failed`, `outcome`,
+`cwd`, `echo`. `app.jsx` keeps **5** of them in `toolVisits` — `result` and
+`cwd` are dropped at all three push sites, so no downstream reader of
+`toolVisits` can see what a tool actually said.
+
+**The readers**, all of them:
+
+| reader | file | reads `failed`? | verdict |
+|---|---|---|---|
+| `agentFiledPath` | app/artifacts.jsx | yes (`## 229`) | SAFE — measured |
+| `unwrittenPaths` | app/artifacts.jsx | yes | SAFE — measured |
+| `consulted` (in `buildDelivery`) | app/artifacts.jsx | yes | SAFE — measured |
+| `workingNotes` → `visitTense` | app/artifacts.jsx + app/floor.jsx | yes | SAFE — measured |
+| `unfiledPath` / `honestyNotes` | hq-runtime.jsx | yes (via `unwrittenPaths`) | SAFE — measured |
+| `stripToolEcho` | app/artifacts.jsx | n/a (`echo` only) | SAFE |
+| `toolActivity` → `visitTense` | app/floor.jsx | yes | SAFE — measured |
+| `attachVisit` → `visitTense` | app/floor.jsx | yes | SAFE — measured |
+| `recordToolReceipt` | app.jsx | yes (`deliverableNow`) | SAFE — measured |
+| `anchorWorkReceipt` | app.jsx | via its caller | **FIXED** — below |
+| `pulseGraph` | app.jsx | no | EXPOSED — below |
+
+Every `failed` reader in that table is correct, and the two bugs are both
+one layer beneath it: they are about a tool that never SAYS it failed, and
+about a reader that asks a different question and gets a different lie.
+
+### FIXED 1 — the on-chain receipt hashed the sentence about the deck
+
+`recordToolReceipt` files a deliverable receipt for every EXPORT_/GENERATE_
+tool that lands and `anchorWorkReceipt` writes it on-chain with two fields,
+`argHash` and `contentSha256`. Its own comment says what the second is for:
+*"real file bytes off `/fs/file` for exports/media, the result/arg text
+otherwise"*. It was asking the wrong door.
+
+`/fs/file` resolves its `path` through `fs_routes._workspace_path` and then
+refuses anything outside `CAFRESOHQ_ALLOWED_DIRS`. Every EXPORT_/GENERATE_
+tool files into the **Library**: `exporters._vault_binary_path`, under
+`CAFRESOHQ_VAULT`, a different tree that is deliberately not in the
+workspace sandbox. Measured on a real `serve.py` on its own free port, a
+temp Library, a temp workspace, every provider key stripped, with a deck
+sitting in the Library at `Slides/q3.pptx`:
+
+    GET /fs/file?path=Slides/q3.pptx     404 {"error": "no such file"}
+    GET /vault/file?path=Slides/q3.pptx  200 PK\x03\x04…
+
+So the branch could never reach the bytes it exists to hash — and `if
+(r.ok)` says nothing when it doesn't. Measured on the real lifted
+`anchorWorkReceipt` + `sha256Hex` bodies under node, driven against a stub
+answering exactly as the server above:
+
+    anchored contentSha256: 746d6fd6b6872a9f…
+    deck bytes sha256:      6cde7bb77f6e5a69…
+    result sentence sha256: 746d6fd6b6872a9f…   ← what went on-chain
+
+For every deck, document, PDF, image and video the office has ever anchored,
+`contentSha256` was the sha256 of the tool's own SENTENCE — "Saved
+PowerPoint (5 slides) → Slides/q3.pptx" — in a field that is
+indistinguishable on-chain from a genuine hash of the deliverable. A boss
+checking a receipt against the file it names could never make them agree,
+and the receipt looked exactly as good either way. This is `## 229`'s shape
+pushed one surface further: not "a call was made, so the file exists", but
+"a call was made, so this hash proves the file".
+
+**The fix.** Fetch `/vault/file`, and address it by `ev.arg` — which is
+already `meta.filedAs`, the path the SERVER saved to, carried out of the
+tool for exactly this reason in `## 180` — falling back to the
+sentence-scrape only when `arg` is empty. A VAULT_NEW anchor is untouched:
+it still hashes its result text and makes no fetch at all.
+
+### FIXED 2 — a screenshot that never happened was a trip that arrived
+
+`BROWSER_SCREENSHOT` drives a Chromium over CDP. A browser not running with
+`--remote-debugging-port=9222` is the ORDINARY state of this tool, and
+`serve.py` answers politely: HTTP 200, `{error, hint}`. Nothing throws. The
+tool composed the office's own sentence — "Couldn't take that screenshot —
+…" — and returned it as its RESULT.
+
+The loop learns of a failure two ways only: a throw, or `meta.failed`. This
+tool did neither, so `failed: false` went out on the `done` event and every
+reader in the table above concluded the trip arrived. Measured on the real
+lifted `run` bodies, driven with the same `{ signal, cwd, meta }` context
+object the loop builds, before the fix:
+
+    meta.failed        false      (the refusal did not throw)
+    visitTense         'past'     → "Read example.com" over "Couldn't take
+                                     that screenshot" in the same element
+    workingNotes       ["- Read example.com"]   in the FILED sheet
+    buildDelivery      the reply cited example.com and got NO
+                       "treat those as recalled" caveat
+
+That last one is the expensive line. `consulted` is
+`(visits||[]).some(v => v && v.name && !v.failed)` — one failed screenshot
+was enough to make a run look like it had opened a source, which suppresses
+the caveat on a reply full of citations nothing checked. `BROWSER_FETCH`,
+eleven lines above it in the same registry, was taught `meta.failed` for
+precisely this and its sibling was not.
+
+**The fix.** The `j.error` branch sets `meta.failed = true`; the run
+signature destructures `meta` so it can. One tool, one branch.
+
+### EXPOSED
+
+- **`pulseGraph` (app.jsx) does not read `failed`.** It is the one reader in
+  the table that never asks. A failed VAULT_READ still draws the coworker→
+  file edge in the knowledge graph, so the graph says a coworker touched a
+  document they could not open. Not fixed here: the graph write path is
+  `views/graph.jsx`'s surface and a live hunt owns it. Measured only as an
+  absence in the source — I did not drive the graph — so treat this as a
+  lead, not a finding.
+- **`PUT /vault/note` reports the path it was GIVEN, not the path it
+  WROTE.** Measured on the same real `serve.py`:
+
+      PUT /vault/note?path=Research/topic&mode=write
+        → 200 {"path": "Research/topic", "mode": "write", "size": 8}
+        on disk: Research/topic.md
+
+  `_vault_resolve` appends `.md` to a bare slug (its own comment says so),
+  and the success body hands back `rel` unchanged. So `VAULT_NEW`/
+  `VAULT_APPEND` cannot set `meta.filedAs` the way the exporters do — the
+  server never tells them the corrected name — and `agentFiledPath` returns
+  `Research/topic` for a file that is `Research/topic.md`. `task.artifactPath`
+  is then a path that appears in no Library listing, which is what the
+  out-tray's "open the latest" click and `buildDelivery`'s duplicate check
+  both match on. This is `## 180` for the VAULT_ family, and fixing it needs
+  BOTH `serve.py`'s success body and the two vault tools' `run`s. Left
+  EXPOSED as a two-file change outside this hunt's one-commit scope, with
+  the measurement above so the next hunt does not have to re-derive it.
+
+### The brief's four questions, answered
+
+1. **Per tool, what does each failure mode leave behind?** Three modes.
+   *Throws* → the loop's catch sets `meta.failed`, `arg` unchanged; every
+   reader in the table is correct. *Returns an error object* → the client
+   helpers (`exportPptx`, `vaultWrite`, `toolExec`, …) all throw on non-2xx,
+   so this collapses into the first; `toolExec` additionally forwards the
+   server's own `j.failed`. *Returns successfully having done nothing* →
+   this was the hole, and BROWSER_SCREENSHOT was the whole of it. The
+   general sweep in the new test walks every `run` body in the file and
+   requires that any body composing an office-voice refusal reaches
+   `meta.failed`; before the fix it named exactly one offender, line 984.
+2. **Does the loop believe `## 401`'s 0-byte husk is a filed deliverable?**
+   No, on a real measurement rather than a mechanism: the export doors
+   answer non-2xx, `claude-client.jsx`'s five export/generate helpers all
+   `throw new Error(j.error || 'HTTP …')` on `!r.ok`, the loop's catch sets
+   `meta.failed`, and `agentFiledPath` skips it — so `ownPath` comes back
+   null and `app.jsx`'s `ownPath || await fileDelivery(…)` files the host's
+   own copy. `## 401` then removes the husk itself. **This is my weakest
+   verdict and I am flagging it as weak**: it is safe for two independent
+   reasons and I only measured one end of it (the client helpers' throw, and
+   `agentFiledPath`'s skip, in isolation) — I did not drive an export
+   refusal end-to-end through the loop into `filedPath`. `## 391`'s worst
+   verdict was wrong on both stated mechanisms and citing two made it read
+   stronger; this one reads stronger than it was measured.
+3. **Is a run reported complete when every tool call failed?** Yes, and
+   that is not by itself the bug: `produced` is `!shortfall`, and a coworker
+   whose tools all failed can still write a true answer from what it knows.
+   The three surfaces that would lie about it are all guarded — `consulted`
+   adds the recalled caveat, `unwrittenPaths` names the file nothing wrote,
+   `workingNotes` writes the failure tense. FIXED 2 is the case where one of
+   those guards was fed a false `failed` and went quiet.
+4. **A truncated answer that cuts a tool call in half?** The marker regexes
+   all require their closing bracket (and, for the block tools, their
+   closing marker), so a severed call matches nothing, runs nothing, and
+   leaves no visit — the honest outcome. `unsentBlocks`/`honestyNotes` then
+   names the unclosed write on the card. `## 406`'s `finish_reason` signal
+   reaches the boss through the token stream but does not reach
+   `agentStream`'s `ending`, so `produced` cannot see it; that is `## 406`'s
+   surface, not mine, and it left it that way deliberately.
+
+### The proof
+
+`scripts/test_the_receipt_hashed_the_sentence_not_the_deck.py` — round 1
+boots a real `serve.py` on a free port with a temp Library and temp
+workspace and re-measures both doors every run; round 2 lifts the real
+`sha256Hex` + `anchorWorkReceipt` bodies out of `app.jsx` and drives them
+under node against a stub answering exactly as that server did, asserting
+the anchored `contentSha256` is the deck bytes, is NOT the sentence, that
+the two differ (so the assertion cannot pass vacuously), that the Library
+door was asked and the workspace door was not, and that a VAULT_NEW anchor
+is unchanged.
+
+`scripts/test_a_screenshot_that_never_happened_is_not_a_visit.py` — round 1
+drives the real lifted `run` bodies of both browser tools with the loop's
+own `{ signal, cwd, meta }` object; round 2 feeds the resulting visit
+through the real `visitTense`, `workingNotes` and `buildDelivery`; round 3
+is the general sweep described above. Both tools appear, so the sibling that
+already worked is the control.
+
+Neither test can crash instead of failing: every lift returns `''` rather
+than raising when its declaration is absent, and reports one clean FAIL.
+
+Fire-tested, both, separately and in place (never `git checkout -- <file>`).
+`app.jsx` md5 `1bd814e18c2331f7564fa6c9c9e41e5b`: reverted the door and the
+`arg`-first address, 4 checks failed ×3 with the sentence hash printed as
+the anchored value; restored, md5 byte-identical, green ×3.
+`hq-runtime.jsx` md5 `01049c88eab1e4ee9c1cd4b50e8a28d9`: reverted the
+`meta.failed` branch and the destructure, 5 checks failed ×3 — including all
+three reader consequences and the sweep naming line 984; restored, md5
+byte-identical, green ×3. Both new tests were also run from the MAIN
+checkout's working directory, not only from inside the worktree.
+
+`npm run build` was run after the two `.jsx` changes.
+
+No mainnet action of any kind was taken, no dfx command was run,
+`src/cafresohq_state/main.mo` was never read into a change and never staged,
+and no II configuration value was touched.
+
+Four other hunts were appending concurrently, so this number may collide and
+be renumbered at integration. Every `#410` marker lives in exactly three
+places and moves together: the comment above the export branch in `app.jsx`,
+the comment in `browser_screenshot`'s `run` in `hq-runtime.jsx`, and the two
+new `scripts/test_*.py` files' docstrings. The bare numbers above (31, 8, 7,
+5, 984, 200, 404) are counts, an HTTP status and a line number, not entry
+numbers, and must not be renumbered.

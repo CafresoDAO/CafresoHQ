@@ -2378,8 +2378,8 @@ ${d.text}` : d.text,
      for non-elevated agents (would just be noise). */
   /* Sprint 3: anchor headline deliverables on-chain (best-effort, NEVER blocks
      a tool). Hashes the closest artifact bytes reachable (real file bytes off
-     /fs/file for exports/media, the result/arg text otherwise) and patches the
-     local receipt with {chainId, verifyUrl} once the anchor lands. */
+     /vault/file for exports/media, the result/arg text otherwise) and patches
+     the local receipt with {chainId, verifyUrl} once the anchor lands. */
   const sha256Hex = async (data) => {
     const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data;
     const d = await crypto.subtle.digest('SHA-256', bytes);
@@ -2391,12 +2391,38 @@ ${d.text}` : d.text,
       if (!(chain && chain.isAvailable && chain.isAvailable() && chain.receipt)) return;
       const arg = String(ev.arg || '');
       let content = String(ev.result || '') || arg;
+      /* #410 — the LIBRARY door, not the workspace one.
+         Every EXPORT_/GENERATE_ tool files into the vault: exporters.py
+         resolves its answer through `_vault_binary_path`, under
+         CAFRESOHQ_VAULT. `/fs/file` resolves its `path` through
+         `_workspace_path` and then refuses anything outside
+         CAFRESOHQ_ALLOWED_DIRS — a different tree entirely, and the vault
+         is deliberately not in it. Measured on a real serve.py, a deck
+         sitting in the Library at `Slides/q3.pptx`:
+
+           GET /fs/file?path=Slides/q3.pptx     404 {"error": "no such file"}
+           GET /vault/file?path=Slides/q3.pptx  200 PK\x03\x04…
+
+         So this branch could never reach the bytes it exists to hash, and
+         `if (r.ok)` says nothing when it doesn't: `contentSha256` went
+         on-chain as the sha256 of the RESULT SENTENCE — "Saved PowerPoint
+         (5 slides) → Slides/q3.pptx" — for every deck, document, PDF, image
+         and video the office has ever anchored, in a field that is
+         indistinguishable on-chain from a real hash of the deliverable. A
+         boss checking a receipt against the file it names could never make
+         them agree, and the receipt looked exactly as good either way.
+
+         `arg` first, the sentence-scrape only as a fallback: `ev.arg` is
+         already `meta.filedAs` — the path the SERVER saved to, carried out
+         of the tool for exactly this reason (#180) — while the regex reads
+         a path back out of a sentence the tool composed about itself. */
       if (/^(EXPORT_|GENERATE_)/.test(ev.name)) {
         try {
           const m = String(ev.result || '').match(/[\w\-./ ]+\.(pptx|docx|pdf|png|jpg|jpeg|gif|mp4|webm)\b/i);
-          if (m) {
-            const r = await fetch((CafresoHQClient.backendBase() || '') + '/fs/file?path=' +
-              encodeURIComponent(m[0].trim()), { credentials: 'include' });
+          const filed = arg || (m ? m[0].trim() : '');
+          if (filed) {
+            const r = await fetch((CafresoHQClient.backendBase() || '') + '/vault/file?path=' +
+              encodeURIComponent(filed), { credentials: 'include' });
             if (r.ok) content = new Uint8Array(await r.arrayBuffer());
           }
         } catch (_e) { /* fall back to the text hash */ }
