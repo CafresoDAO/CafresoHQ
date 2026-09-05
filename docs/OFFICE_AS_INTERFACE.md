@@ -39386,3 +39386,70 @@ pair, not the stale one. Reverted the fix in place, confirmed the same
 check fails (`['Milo']` — the dismissed coworker still listed, the new
 hire missing), restored from a `/tmp` copy, confirmed the restored
 `app.jsx` is byte-identical (md5) to the fixed one.
+
+---
+
+## 377. the performance review that never heard about the promotion
+
+**The lead.** A hunt for the same stale-snapshot category `#374`–`#376`
+each found in a different corner, aimed this time at Roster/Settings: edit
+a coworker's name, color, brain, tools, or File & shell access, while some
+OTHER surface is still holding them open. `#248` had already done half of
+this exact search and left a marked trail: it named the root cause in
+plain words — `app.jsx` sets `inspect` once, by `onInspect`, and hands the
+captured object straight to `<InspectPanel agent={inspect} …>` — and
+closed with "Nothing upstream changed: the snapshot stays a snapshot,"
+having patched only the one field (job description) it happened to be
+looking at. `onUpdateAgent` rebuilds a coworker immutably
+(`{ ...a, ...patch }`), so every Settings edit produces a NEW object for
+that id; `inspect` is never reassigned to it.
+
+**The wreck.** Every other field `InspectPanel` renders straight off
+`agent` — Brain (`brainName`/`poweredBy`), the "Can use" tool chips
+(`grantedTools(agent.tools, …)`), the 🛡 elevated banner, the sprite color,
+even the name in the header — kept describing the coworker as they stood
+at the moment Inspect was opened. Click a coworker on Team to review them,
+then in Settings → Roster switch their brain, tick Vault Notes, or grant
+File & shell access and save: the still-open review carries on showing
+the old brain, the old tool chips, no elevated banner — right next to a
+Settings panel that just confirmed the change took. The very next modal
+in this same file already knows better: `FurnishModal` re-looks its
+subject up in the live roster on every render
+(`agents.find(x => x.id === furnishFor.id) || furnishFor`) instead of
+trusting the object it was first handed.
+
+**The fix.** `<InspectPanel agent={agents.find(x => x.id === inspect.id) || inspect} …>`
+— the same lookup `FurnishModal` already does two lines below. `inspect`
+itself still only tracks WHICH coworker is being reviewed, set once by
+`onInspect`; the read at the mount site now always resolves that id
+against the live `agents` array, so the whole card tracks Settings the
+way the rest of the roster does. The `|| inspect` fallback keeps a
+dismissed coworker's last-known card on screen rather than crashing, on
+the same grounds `FurnishModal`'s own fallback does. `#248`'s ref-keyed
+`savedJd`/`jdOnFile` workaround for the job-description field is
+untouched — now redundant in the common case (the live agent already
+carries the saved prompt) but harmless, and still the correct guard for
+the tick between a save and the next re-render.
+
+**No collateral.** Nothing about `inspect` state, `onInspect`, or the
+close/dismiss/furnish handlers changed — only the one prop expression at
+the mount site. `#248`'s own test
+(`scripts/test_a_saved_job_description_stays_saved.py`) and the Snags-row
+test (`scripts/test_the_inspect_panel_showed_half_a_coworkers_record.py`)
+both still pass unchanged.
+
+**Fire-tested.** New
+`scripts/test_inspect_panel_reads_live_agents_not_a_frozen_snapshot.py`
+extracts the actual `agent={...}` prop `app.jsx` passes to
+`<InspectPanel/>` (not a hand-copied duplicate) and runs it under Node
+against a captured `inspect` snapshot (a coworker's state at the moment
+Inspect opened) plus a live `agents` array where that same coworker's
+brain, color, tools and elevated grant have all since changed, confirming
+the extracted expression resolves to the freshly-saved record. Reverted
+the fix in place, confirmed the resolved object came back as the STALE
+snapshot on every field (old brain, old color, `tools: ['web']`,
+`elevated: false`), restored from a `/tmp` copy, confirmed the restored
+`app.jsx` is byte-identical (md5, `22add1b4ed113a94407dc96e7439433d`) to
+the fixed one.
+
+`npm run build` run after the change.

@@ -7716,7 +7716,24 @@ ${d.text}` : d.text,
       {/* Mounted only while open: the card holds a job-description DRAFT
           (saved on blur), and an always-mounted panel would resurface an
           abandoned draft on reopen as if it were saved — §4-dishonest. */}
-      {inspect && <InspectPanel agent={inspect} activity={activity} experience={experience} onClose={()=>setInspect(null)} onUpdate={onUpdateAgent} onDismiss={onDismiss}
+      {/* `agents.find(...) || inspect`, not the bare `inspect` state —
+          `#248`'s own note named this: `inspect` is set once by `onInspect`
+          and held as a FROZEN snapshot, the same shape `furnishFor` was
+          before `FurnishModal` was given this exact re-lookup a few lines
+          down. `#248` patched the one field that panel could see was
+          stale (systemPrompt, via a ref keyed by agent.id) and said so in
+          plain words: "the snapshot stays a snapshot". Everything else on
+          the card — Brain, Can Use, the elevated banner, the sprite color,
+          the name — kept reading the frozen object. Edit a coworker's
+          model or tools in Settings, or grant File & shell access, while
+          their Inspect panel is still open on Team, and the card kept
+          showing what they had BEFORE the edit until it was closed and
+          reopened. Looking the id up in the live `agents` array on every
+          render makes the whole card track Settings the way the rest of
+          the roster already does; the `|| inspect` fallback keeps a
+          dismissed coworker's last-known card on screen instead of
+          crashing, exactly as `FurnishModal`'s own fallback does. */}
+      {inspect && <InspectPanel agent={agents.find(x => x.id === inspect.id) || inspect} activity={activity} experience={experience} onClose={()=>setInspect(null)} onUpdate={onUpdateAgent} onDismiss={onDismiss}
         onCoffee={onCoffee}
         onFurnish={(a)=>{ setInspect(null); setFurnishFor(a); }}
         onMessage={(a)=>{ setInspect(null); if (window.cafresohqSetChatOpen) window.cafresohqSetChatOpen(true); window.dispatchEvent(new CustomEvent('cafresohq:set-active-thread', { detail: 'direct' })); window.cafresohqToast && window.cafresohqToast.info(`Chat open — ask the CEO to brief ${a.name}`); }}/>}
