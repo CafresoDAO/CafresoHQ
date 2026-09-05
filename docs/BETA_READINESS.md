@@ -838,3 +838,46 @@ a tester anything but patience, and neither needs a decision — only an hour.
 > what the missing brain cost was the whole first impression.
 
 Send the invitation.
+
+---
+
+## Durability: what a tester loses when the office restarts (`## 408.`, 2026-09-05)
+
+Measured, not derived — the real `useFileStored` driven headlessly against a
+real `python3 serve.py`, thirteen file-backed stores, three events each.
+`hq-state/` is gitignored, so `git status --short hq-state/` proves nothing;
+these are round trips.
+
+| what the office holds | (a) reload | (b) `serve.py` restart | (c) fresh origin / cleared data |
+|---|---|---|---|
+| tasks, missions, workflows, projects, meetings, pins, receipts, experience, messages, activity, windows, roster, office memory | survives | survives | survives |
+| the Library (`hq-state/vault/`) | survives | survives | survives |
+| **the conversation (`chat`)** | survives | survives | **LOST** |
+| **saved workspaces** | survives | survives | **LOST** |
+| theme / density / read-marks / onboarding flags | survives | survives | lost (correct) |
+| **half-typed message in the composer** | **LOST** | **LOST** | **LOST** |
+| approvals, install jobs, night locks, market cache, PTY sessions | survives | **LOST — correct** | survives |
+
+### Closed by `## 408.`
+
+An edit made while the office was down (restart, crash, sleeping laptop) had
+its PUT refused, lived on in `localStorage` — and then the **reload deleted
+it**, because a freshly reloaded tab is neither dirty nor touched and the
+mount fetch adopted the stale file over it. The only warning was a toast on
+the page the reload destroyed. Now a `<key>::unpaid` note survives the reload,
+the mount reads it as "local is ahead", and disk is healed. Guarded by
+`scripts/test_an_edit_made_while_the_office_was_down_is_not_deleted.py`.
+
+### New beta gates
+
+1. **The conversation is not file-backed.** `app.jsx:189` uses `useStored`,
+   so there is no `hq-state/chat.json`. A tester on a second browser or a
+   cleared cache keeps everything except every conversation they have had.
+   This is the largest remaining gap on the map and should close before the
+   invitation goes out to anyone likely to use two devices.
+2. **There is no export-all and no restore.** The whole map above is one
+   `hq-state/` directory on one laptop. A tester who loses it loses
+   everything, and nothing in the product tells them that or offers a way to
+   take a copy.
+3. Saved workspaces (`app.jsx:619`) and the composer draft (`ui/chat.jsx:90`)
+   are the two smaller losses, in that order.

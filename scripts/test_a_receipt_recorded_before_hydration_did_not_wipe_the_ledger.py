@@ -200,6 +200,11 @@ function check(name, cond, detail) { results.push([name, !!cond, detail === unde
 function runEffect(opts) {
   const hydratedRef = { current: false };
   const dirtyRef = { current: !!opts.dirty };
+  // #408: the cross-reload "this browser still owes disk a write" note,
+  // read by the adoption body alongside dirtyRef. `opts.unpaid` so this
+  // harness can still drive the case it was written for (a live
+  // pre-hydration edit) with nothing outstanding from an earlier page.
+  const unpaidRef = { current: !!opts.unpaid };
   const valRef = { current: opts.initialVal };
   const seedRef = { current: opts.seed };
   const mergeOnDirty = !!opts.mergeOnDirty;

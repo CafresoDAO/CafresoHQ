@@ -162,6 +162,37 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
      real roster, and the office comes back whole. */
   const hydratedRef = useRefA(false);
 
+  /* Does this BROWSER still owe disk a write it never managed to pay?
+     `pendingRef` is the debt within one page; this is the debt across a
+     reload, and until now nothing carried it.
+
+     Measured 2026-09-05 against a real `python3 serve.py` on a scratch
+     office, driving this exact hook headlessly (test_durability_retry.py
+     said "the hook cannot be driven headlessly" — it can, see
+     scripts/test_an_edit_made_while_the_office_was_down_is_not_deleted.py).
+     File on disk: one task, "yesterday". The boss adds "the thing I just
+     did" while the office is restarting. The 1500ms PUT fires into a dead
+     port and fails; localStorage holds both tasks; the toast fires. The
+     office comes back. The boss reloads — and a freshly reloaded tab has
+     `dirtyRef` false, so the mount fetch below adopts the STALE file,
+     mirrors it back over localStorage at 331, and the next write PUTs it.
+     Measured `afterReload` and `fileAfterReload`: `[{"id":"old"}]`. The
+     edit is gone from BOTH halves, and the one surface that ever mentioned
+     it died with the page that showed it.
+
+     The toast was the whole remedy, and a toast cannot survive the reload
+     it is warning you about. So the failure leaves a NOTE instead — a
+     sibling key in the same store as the value, so the two are cleared
+     together and can never disagree — and the mount fetch reads it as
+     "local is newer than the file", heals disk, and clears it. Read once,
+     on the first render, before anything this session does can clear it. */
+  const unpaidKey = lsKey + '::unpaid';
+  const unpaidRef = useRefA(null);
+  if (unpaidRef.current === null) {
+    try { unpaidRef.current = localStorage.getItem(unpaidKey) != null; }
+    catch (_e) { unpaidRef.current = false; }
+  }
+
   const persist = React.useCallback((v) => {
     /* What goes to disk is not the floor. Measured 2026-08-15: during a
        transient helper's 30-second grace, this wrote the RAW roster —
@@ -209,7 +240,14 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
         body: JSON.stringify(out),
       }).then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        /* Paid. The note comes off, so the next boot adopts the file
+           normally instead of paying a redundant PUT forever. */
+        try { localStorage.removeItem(lsKey + '::unpaid'); } catch (_e) {}
       }).catch(err => {
+        /* The bytes did not land, and localStorage is now the ONLY copy of
+           this edit. Write the note before the toast — the toast dies with
+           the page, the note is what the next mount reads. */
+        try { localStorage.setItem(lsKey + '::unpaid', '1'); } catch (_e) {}
         console.warn('[cafresohq] file save failed for', fileScope + '/' + fileName, err);
         try { window.dispatchEvent(new CustomEvent('cafresohq:storage-error', { detail: { key: lsKey, error: err, target: 'file' } })); } catch (_e) {}
       });
@@ -247,12 +285,22 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
       pendingRef.current = null;
       clearTimeout(writeRef.current);
       clearTimeout(paidRef.current);
+      /* Pessimistic on purpose, and the one place in this file that is.
+         The document is going away; the response usually never gets back to
+         a handler that still exists, so "did it land?" is unanswerable here.
+         Assume NOT, and let the next boot decide with evidence it can
+         actually read. A wrong guess costs one redundant PUT of byte-
+         identical content; the other direction costs the boss's last action,
+         which is the loss this whole note exists to stop. */
+      try { localStorage.setItem(lsKey + '::unpaid', '1'); } catch (_e) {}
       try {
         fetch(`${window._API_BASE || ''}/hq/${p.scope}/${p.name}`, {
           method: 'PUT',
           headers: { 'content-type': 'application/json' },
           body: p.body,
           keepalive: true,
+        }).then(r => {
+          if (r && r.ok) { try { localStorage.removeItem(lsKey + '::unpaid'); } catch (_e) {} }
         }).catch(() => {});
       } catch (_e) {}
     };
@@ -267,7 +315,7 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
       if (w) w.removeEventListener('pagehide', flush);
       if (d) d.removeEventListener('visibilitychange', onHidden);
     };
-  }, [sensitive]);
+  }, [sensitive, lsKey]);
 
   useEffectA(() => {
     if (sensitive) return;
@@ -314,6 +362,21 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
            session on a different browser/device never sees it. */
         if (dirtyRef.current && !untouched && !mergeOnDirty) persist(valRef.current);
         if (dirtyRef.current && !untouched && !mergeOnDirty) return;   // a real edit, no safe merge — keep theirs
+        /* #408 — the SECOND way local can be ahead of the file, and the one
+           the two lines above cannot see. They test `dirtyRef`, which is a
+           fact about THIS page: did someone edit since it loaded. The debt
+           outlives the page. An edit an EARLIER page made whose PUT was
+           refused (office restarting, disk full, laptop asleep) lives only
+           in localStorage, and a freshly reloaded tab is `untouched` and
+           not `dirty` by construction — so without the unpaid note that
+           edit is indistinguishable from "this browser knows nothing" and
+           the stale file wins, then gets mirrored back over it at 331.
+
+           A separate statement rather than a wider condition on those two
+           on purpose: seven suites (#177's, #232's, #379's) string-match
+           them verbatim as the wiring they guard, and the flush-then-return
+           shape is theirs. This adds a case; it does not restate one. */
+        if (unpaidRef.current && !mergeOnDirty) { persist(valRef.current); return; }
         const merged = transform ? transform(data) : data;
         valRef.current = merged;
         setVal(merged);
@@ -358,6 +421,11 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
            write. `merged`, not valRef.current — the union is what state and
            localStorage now hold, so it is what disk should hold too. */
         if (dirtyRef.current && !untouched) persist(merged);
+        /* #408, the mergeOnDirty half. The union already rescued the refused
+           edit into state and localStorage above — but disk was never
+           healed, so the loss just moved to the next browser. `else if`, so
+           a store that is both dirty and unpaid pays exactly one PUT. */
+        else if (unpaidRef.current) persist(merged);
         /* A file written by a session that died mid-grace (or by a build
            before the write filter existed) can hold what persist would now
            never write — a transient helper listed as staff. Adopting it

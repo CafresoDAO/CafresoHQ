@@ -43726,3 +43726,139 @@ fourth its number moved, and every `#407` in `serve.py`, `drivers/hermes.py`
 and
 `scripts/test_an_error_the_boss_meets_is_a_sentence_not_a_stack.py` moved
 with it.
+## 408. the office let go of the one copy it had left
+
+*(Renumber note: three hunts appended concurrently. Every reference this
+entry owns is greppable as `#408` — in `app/storage.jsx` and in
+`scripts/test_an_edit_made_while_the_office_was_down_is_not_deleted.py`.)*
+
+The brief was a question nobody here has ever answered by measurement: **what
+does a beta tester lose when the office restarts?** Not "what does the code
+suggest they lose" — what came back on the screen.
+
+So the hook was driven. `test_durability_retry.py` says, in its own header,
+that `useFileStored` "cannot be driven headlessly"; that is now false. The
+real function is lifted out of `app/storage.jsx` under node against a real
+`python3 serve.py`, with a `localStorage` that a "reload" carries across and
+a "fresh origin" does not. Thirteen file-backed stores, three events each.
+
+### The durability map — measured, not derived
+
+`hq-state/` is gitignored, so `git status --short hq-state/` is vacuous and
+proves nothing. These are round trips: write it, cause the event, read it
+back.
+
+| what the office holds | where it lives | (a) reload | (b) `serve.py` restart | (c) fresh origin / cleared data |
+|---|---|---|---|---|
+| tasks, missions, workflows, projects, meetings, pins, receipts, experience, messages, activity, open windows | localStorage **+** `hq-state/*.json` | survives | survives | survives |
+| the roster (agents), office memory (context) | localStorage **+** `hq-state/memory/*.json` | survives | survives | survives |
+| the Library (vault notes, uploads, exports) | `hq-state/vault/` on disk | survives | survives | survives |
+| **the conversation (`chat`)** | localStorage **only** | survives | survives | **LOST** |
+| **saved workspaces / active workspace** | localStorage **only** | survives | survives | **LOST** |
+| theme, density, rail, scanlines, sound, windows-on, chat window geometry | localStorage only | survives | survives | lost (a preference, correctly) |
+| read-marks: notifSeenAt, notifClearedAt, lastStandup, lastSeen, payoutSeen, walletBaseline | localStorage only | survives | survives | lost (re-derivable) |
+| onboarding: tourSeen, gettingStartedDone, firstDeliverySeen, coachSeen | localStorage, container-scoped (`ks`) | survives | survives | lost (deliberate — `ks` exists so a NEW container re-runs the guide) |
+| **the half-typed message in the composer** | React state, `ui/chat.jsx:90` | **LOST** | **LOST** | **LOST** |
+| pending/resolved approvals, install jobs, night-run locks, market cache, PTY sessions | server memory | survives | **LOST — correct** | survives |
+
+The last row is the "deliberate" verdict with the measurement behind it: each
+of those is a handle on a process that the restart also killed. An approval
+card that outlived the run it gates would be a button that cannot do
+anything. The transient toast and the desk-screen stream are the same shape.
+
+### What was actually broken
+
+Column (b) looked clean and was not, and it took driving a real restart to
+see it. Reproduced twice against a live server, then made hermetic:
+
+```
+file on disk   [{"id":"old","title":"yesterday"}]
+boss adds      {"id":"new","title":"the thing I just did"}   ← while serve.py restarts
+warns          [cafresohq] file save failed for state/tasks fetch failed
+localStorage   holds BOTH tasks
+                                    ...office comes back, boss reloads...
+afterReload    [{"id":"old","title":"yesterday"}]
+fileAfter      [{"id":"old","title":"yesterday"}]
+```
+
+The 1500ms PUT fired into a dead port. `localStorage` was then the only copy
+of the edit in the world — and the reload **deleted it**. A freshly reloaded
+tab is `untouched` and not `dirty` by construction, so the mount fetch
+adopted the stale file, mirrored it back over `localStorage` at 331, and the
+next write pushed it to disk. Gone from both halves.
+
+The whole remedy for a failed PUT was a toast, and **a toast cannot survive
+the reload it is warning you about**. The office noticed the failure, said so
+on a surface that had seconds to live, and then spent the reload actively
+destroying the copy that still had the work. This is `## 401.`'s shape one
+turn later: not a door that files an empty husk, but a door that files
+nothing and then a *recovery path* that mistakes silence for consent.
+
+`## 232.` and `## 379.` are the near misses. Both taught this file that a
+pre-hydration edit must be replayed — but both keyed the replay on
+`dirtyRef`, which is a fact about **this page**. The debt outlives the page.
+
+### The fix
+
+A note in the same store as the value: `<lsKey>::unpaid`. A failed PUT writes
+it before the toast; a successful PUT clears it; the mount fetch reads it as
+"local is ahead of the file" (`localAhead`), heals disk from `localStorage`,
+and the heal's own 200 spends it. Because the note and the value share an
+origin they are cleared together and can never disagree — a cleared-site-data
+browser has neither, which is exactly right.
+
+The `pagehide` flush marks pessimistically, and that is the one deliberate
+guess in the file: the document is going away, the keepalive response
+usually never reaches a handler that still exists, so "did it land?" is
+unanswerable there. A wrong guess costs one redundant PUT of byte-identical
+content. The other direction costs the boss's last action.
+
+`mergeOnDirty` stores (`messages`, `activity`) kept the edit in state even
+before this — their union transform rescued it — but disk was never healed,
+so the loss simply moved to the next browser. The test asserts both halves
+separately, and the fire test showed exactly that split.
+
+### Fire test
+
+`localAhead`'s `|| unpaidRef.current` removed in place: 5 FAILED, three runs
+running, identical output. Restored; `md5 657332769360341fe3f754b481c0e073`
+byte-identical; green three runs running. The new test also runs from the
+MAIN checkout, where it correctly fails with the bug's own signature —
+proving the path resolution, which has bitten twice.
+
+### EXPOSED — measured, not fixed
+
+1. **The conversation is localStorage-only.** `app.jsx:189` is `useStored`,
+   not `useFileStored`; there is no `hq-state/chat.json` and never has been.
+   Measured `freshKept: false`. Every other collection the office calls its
+   own is file-backed. A tester who clears site data, opens a second browser,
+   or picks up a different device keeps their tasks, their roster, their
+   Library and their message registry — and loses **every conversation they
+   have ever had with their coworkers**. That is the single largest
+   unmeasured gap on this map, and it is the surface a tester would name
+   first if asked what "my work" means. Left alone here for one reason and it
+   is not a good one: `app.jsx` is held by two concurrent hunts this session
+   and chat is the highest-frequency store in the office (a token stream at
+   1.5s PUTs), so the change wants its own hunt with its own restart
+   measurement rather than a drive-by one-liner. **This is the next hunt's
+   first job.** The call is `useFileStored(k('chat'), 'state', 'chat',
+   HQ.INITIAL_CHAT, chatOnLoad, { persistTransform: persistableChat })` —
+   note the swap: `useStored` takes the write filter third and the load scrub
+   fourth, `useFileStored` takes the load scrub fifth and the write filter in
+   options. Getting that backwards writes `__CUT__` onto live replies.
+2. **Saved workspaces are localStorage-only** (`app.jsx:619-620`). Same
+   verdict, smaller blast radius: a named window layout the boss deliberately
+   saved is not recoverable from anything else.
+3. **The composer draft is plain React state** (`ui/chat.jsx:90`,
+   `useState('')`). A reload eats a half-written prompt. Conventional, and
+   the cheapest of the three to fix — one `useStored` keyed per thread — but
+   it is in a file a concurrent hunt holds.
+
+### Human-only gate
+
+None found on the II / canister side, and the Motoko heap→stable-memory
+question was explicitly not this hunt's. Worth writing down against it: the
+map above is **entirely local**. Nothing a beta tester types is on chain, so
+`cafresohq_state` hitting zero cycles again cannot take their tasks with it —
+but nothing above is backed up either. `hq-state/` on one laptop, with no
+export-all and no restore, is the durability story in full.

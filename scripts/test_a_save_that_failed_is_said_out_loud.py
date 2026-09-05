@@ -103,10 +103,27 @@ def main():
           'the regression itself',
           'localStorage.setItem(lsKey, JSON.stringify(merged)); } catch (_e) {}'
           not in storage_src)
-    check('there is no `localStorage.setItem` left in this file whose catch '
-          'is a bare swallow (the whole point: three siblings, one shape)',
+    # #408 added one setItem that MUST swallow: the `<key>::unpaid` note, a
+    # marker rather than a value. It is written from inside the handler that
+    # is already dispatching about the failure it marks, and read only as a
+    # hint that local is ahead of the file — a second toast saying "we also
+    # could not write the note about the write that failed" is noise on top
+    # of the real report, and the value write on the same path already
+    # dispatches. Exempted by name, not by loosening the shape: every
+    # setItem that carries the boss's actual DATA is still covered.
+    _value_writes = [ln for ln in storage_src.split('\n') if '::unpaid' not in ln]
+    check('there is no `localStorage.setItem` of a VALUE left in this file '
+          'whose catch is a bare swallow (the whole point: three siblings, '
+          "one shape; #408's ::unpaid marker is exempt and named)",
           not re.search(r"localStorage\.setItem\([^\n]*\);\s*\}\s*catch\s*\(_e\)\s*\{\s*\}",
-                        storage_src))
+                        '\n'.join(_value_writes)))
+    check('...and the exemption is exactly one marker, not a new habit — '
+          'every ::unpaid write is a bare setItem of the literal 1, never a '
+          "value, and removeItem is its only other verb",
+          all(re.search(r"localStorage\.(setItem\([^,]*::unpaid[^,]*, '1'\)|removeItem\([^)]*::unpaid[^)]*\))", ln)
+              for ln in storage_src.split('\n') if 'localStorage' in ln and '::unpaid' in ln),
+          [ln.strip() for ln in storage_src.split('\n')
+           if 'localStorage' in ln and '::unpaid' in ln])
     check('every write path in this file that can fail now dispatches '
           'cafresohq:storage-error — useStored\'s setItem, persist\'s '
           'setItem, the debounced file PUT, and (this fix) the adoption '
@@ -149,6 +166,10 @@ def main():
           // The collaborators the lifted body closes over, handed in explicitly.
           const hydratedRef = { current: false };
           const dirtyRef = { current: false };
+          // #408: the cross-reload "this browser owes disk a write" note.
+          // False here — this harness is about the adoption mirror's own
+          // failure reporting, on an office that has nothing outstanding.
+          const unpaidRef = { current: false };
           const valRef = { current: { agents: [] } };
           const seedRef = { current: JSON.stringify({ agents: [] }) };
           const mergeOnDirty = false;
