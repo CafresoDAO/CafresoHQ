@@ -176,7 +176,8 @@ class CodexDriver(Driver):
         # normalize the PATH key casing, and clear OPENAI_BASE_URL (codex uses
         # OpenAI directly; a leftover override breaks it).
         env = dict(os.environ)
-        path_key = next((k for k in env if k.lower() == 'path'), 'Path')
+        path_key = next((k for k in env if k.lower() == 'path'),
+                        'Path' if sys.platform == 'win32' else 'PATH')
         path_value = env.get(path_key, '')
         for d in _GIT_BASH_DIRS:
             if os.path.isdir(d) and d not in path_value:
@@ -186,7 +187,13 @@ class CodexDriver(Driver):
             if p and r'\.codex\tmp\arg0' not in p.lower())
         for k in [k for k in list(env) if k.lower() == 'path']:
             env.pop(k, None)
-        env['Path'] = path_value
+        # Write the key back under the name the parent actually used. Windows
+        # env vars are case-insensitive so hardcoding 'Path' was harmless
+        # there, but POSIX env vars are NOT: on macOS/Linux that deleted PATH
+        # and handed codex a child env with only 'Path' set, so every shell
+        # tool call it made ("git status", "npm test") died with
+        # "command not found" while the run still reported success.
+        env[path_key] = path_value
         env.pop('OPENAI_BASE_URL', None)
 
         try:

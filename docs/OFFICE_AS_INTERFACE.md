@@ -32657,3 +32657,90 @@ covers only `pty_server.py`, the one new test file, and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any
 kind was run.
+
+---
+
+## 273. The codex coworker was handed an environment with no PATH
+
+**The wreck.** Ask the Codex coworker to do anything that touches a shell —
+"run the tests", "what does `git status` say?", "`npm run build`" — and on
+this Mac (and on every Linux host) it came back saying the command didn't
+exist. Not an error event, not a failed turn: codex itself launched fine,
+streamed a perfectly calm explanation of why it couldn't find `git`, and the
+run ended in `done`. The office looked like it had a coworker who simply
+couldn't work, rather than one we had crippled on the way out the door.
+
+`drivers/codex.py:start_task` rebuilds the child's PATH before spawning
+`codex exec`: prepend the Git Bash dirs on Windows, drop the
+self-referential `\.codex\tmp\arg0` entries codex leaves behind, hand the
+result back. It read the parent's key case-insensitively — correct, because
+Windows environment variables are case-insensitive and the key genuinely
+arrives as both `Path` and `PATH` there:
+
+```python
+path_key = next((k for k in env if k.lower() == 'path'), 'Path')
+path_value = env.get(path_key, '')
+...
+for k in [k for k in list(env) if k.lower() == 'path']:
+    env.pop(k, None)
+env['Path'] = path_value
+```
+
+Read the last three lines on macOS. Every case variant is popped — which on
+POSIX means `PATH` itself — and the value is written back under the
+hardcoded Windows spelling. POSIX environment variables are **case-sensitive**.
+The child got a variable called `Path` that nothing on earth reads, and no
+`PATH` at all. Driven against a stub binary that prints its own path-ish
+keys, the old code yields exactly `['Path']`, with `PATH` returning `None`.
+
+codex still spawned because we exec an absolute binary path and `Popen`
+never needed to search. So nothing failed loudly; the failure was pushed one
+level down, into every shell command the agent ran inside its own
+workspace-write sandbox.
+
+**The fix.** Write the key back under the name the parent actually used, and
+default to the platform's spelling when the parent had none:
+
+```python
+path_key = next((k for k in env if k.lower() == 'path'),
+                'Path' if sys.platform == 'win32' else 'PATH')
+...
+env[path_key] = path_value
+```
+
+One line each. Windows behaviour is unchanged — the parent's key there *is*
+`Path`, and the env is case-insensitive regardless. `pty_server.py`'s copy of
+the same block (the interactive terminal's codex spawn, the "two sources,
+one rule" shape this log keeps catching) carried the identical bug and got
+the identical fix.
+
+**The proof.**
+`scripts/test_the_codex_child_keeps_its_path.py` builds a stub `codex` that
+prints its own path-ish environment keys as one `agent_message` JSON line,
+runs it through the real `CodexDriver.start_task`/`events`, and asserts on
+what the child actually saw: a `PATH` key exists, it is non-empty, it still
+carries the parent's dirs, the `arg0` scrub still happened, and no stray
+`Path` is left behind on POSIX. A sixth check reads `pty_server.py` so the
+terminal copy can't drift back. It skips on Windows, where the premise
+doesn't hold.
+
+Fire-tested: copied the fixed `drivers/codex.py` and `pty_server.py` to
+`/tmp`, reverted both hunks in place with the editor (never
+`git checkout -- <file>`) — 5 of 6 checks failed, exit 1, with the child's
+key set coming back as `['Path']` and its `PATH` as `''`. Restored from the
+`/tmp` copies, confirmed byte-identical by `md5`
+(`0cface6ff0dea5924869fc3003918ff6` for `drivers/codex.py`,
+`d1db54199f971438812b4b9b918e144a` for `pty_server.py`), reran — 6 of 6
+passed, exit 0.
+
+`npm run build` was run once up front so `dist-ui/manifest.json` exists in a
+fresh worktree; no frontend source was touched.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the `moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on
+a file a foreign session owns and this change never touches). This change
+covers only `drivers/codex.py`, `pty_server.py`, the one new test file, and
+this entry; `src/cafresohq_state/main.mo` was never staged or edited, no II
+or `derivationOrigin` value was read or written, and no dfx/IC action of any
+kind was run.

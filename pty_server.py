@@ -830,7 +830,8 @@ def _terminal_stream(self):
         bin_ = self._codex_resolve()
         if not bin_:
             return self._send_json(503, {'error': 'codex CLI not found — npm i -g @openai/codex or set CAFRESOHQ_CODEX_BIN'})
-        path_key = next((k for k in agent_env.keys() if k.lower() == 'path'), 'Path')
+        path_key = next((k for k in agent_env.keys() if k.lower() == 'path'),
+                        'Path' if sys.platform == 'win32' else 'PATH')
         path_value = agent_env.get(path_key, '')
         path_value = os.pathsep.join(
             p for p in path_value.split(os.pathsep)
@@ -838,7 +839,9 @@ def _terminal_stream(self):
         )
         for _k in [k for k in list(agent_env.keys()) if k.lower() == 'path']:
             agent_env.pop(_k, None)
-        agent_env['Path'] = path_value
+        # Same POSIX case-sensitivity trap as drivers/codex.py: hardcoding
+        # 'Path' erased PATH for the codex child on macOS/Linux.
+        agent_env[path_key] = path_value
         agent_env.pop('OPENAI_BASE_URL', None)
 
         if byok_codex and not agent_env.get('OPENAI_API_KEY', '').strip():
