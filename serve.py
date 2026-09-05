@@ -4168,6 +4168,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     _fs_json_body = fs_routes._fs_json_body
     _fs_mkdir   = fs_routes._fs_mkdir
     _fs_rename  = fs_routes._fs_rename
+    _fs_rename_unclaim = fs_routes._fs_rename_unclaim
     _fs_delete  = fs_routes._fs_delete
 
     # ---- Project Terminal (extracted to pty_server.py) -------------------

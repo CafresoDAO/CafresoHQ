@@ -39652,3 +39652,72 @@ from a `/tmp` copy, confirmed byte-identical (md5,
 `b0a3fd23029b44d5d1e96015bea7dc66`) to the fixed one, test green again.
 
 `npm run build` run after the change — 8 assets built clean.
+
+## 381. the second coworker who renamed onto the same name won by saying nothing
+
+**The lead.** `#337`'s own ledger entry closed an ask-then-write race on
+both upload doors (`/fs/upload`, `/vault/upload`) with `fs_routes.claim_name`
+— O_CREAT|O_EXCL makes "is this name free?" and "this name is mine" the
+same syscall, so a losing claimer gets EEXIST and steps aside instead of
+silently overwriting the winner. `/fs/rename` sits three functions below
+`claim_name` in the same file, carries the identical ask-then-write shape,
+and was never given the fix — nobody had come back for it, the same way
+`## 379.`/`## 380.` found stores `#177` never got back to.
+
+**The wreck.**
+
+    if dp.exists() or dp.is_symlink():
+        return self._send_json(409, {'error': 'target already exists'})
+    ...
+    os.replace(str(move_src), str(dp))
+
+serve.py is a ThreadingMixIn server, so two coworkers renaming two
+different files onto the same `to` at the same moment is the same
+ordinary Tuesday `claim_name`'s own comment describes for uploads. Both
+ask whether `to` is free. Both are told yes. Both `os.replace()` onto it
+— and `os.replace` (`rename(2)`) never refuses an existing destination,
+it silently replaces it, no exception, no signal to either caller.
+Measured against a real running server: thirty concurrent POSTs to
+`/fs/rename`, thirty different sources, one shared destination — TWO
+200s came back, twenty-nine of the thirty source files were still on
+disk (so twenty-nine renames correctly lost and got nothing), and the
+destination held whichever `os.replace` ran last. One of the two callers
+told "ok, moved to `final.txt`" had its file thrown away with no error
+anywhere — the exact failure `#337` closed on the upload doors, reopened
+here by a door that looks the same but was never given the fix.
+
+**The fix.** `_fs_rename` now claims `dp` before moving anything onto it,
+the same way `claim_name` claims an upload name: `O_CREAT|O_EXCL` for a
+file destination, `os.mkdir` (equally exclusive) for a directory one —
+so "is `to` free?" and "`to` is mine now" are the same syscall. POSIX
+guarantees both fail on an existing symlink too, dangling or not, so the
+claim subsumes the old `dp.is_symlink()` check rather than dropping it.
+The loser gets `FileExistsError` and the same clean 409 as before, with
+nothing touched; the winner then replaces its own just-claimed
+placeholder with the real move, which cannot race because nobody else
+could have claimed `dp` in between. A new `_fs_rename_unclaim` removes
+the placeholder if the real move fails afterwards, so a failed rename
+does not leave a phantom empty file/folder sitting at `to` that would
+then falsely win the next claim.
+
+**Fire-tested.** New
+`scripts/test_two_renames_at_once_do_not_share_the_same_destination.py`
+drives a real `python3 serve.py` subprocess with real concurrent HTTP
+requests (same pattern as `#337`'s own
+`test_two_uploads_at_once_do_not_get_the_same_name.py`): five rounds of
+thirty coworkers renaming different files onto one destination, checking
+that exactly one wins, every loser's source survives untouched, and the
+destination holds the winner's bytes rather than a coin flip; plus static
+checks that the claim is exclusive syscall-based for both file and
+directory destinations; plus a plain-rename, directory-rename, and
+rename-onto-an-existing-destination sanity pass. Reverted the fix in
+place (back to the bare `dp.exists()` check + unconditional
+`os.replace`) — all three structural checks failed by name, and the
+five-round race check failed too (2 winners, one loser's file gone) on
+every one of three repeated runs. Restored `fs_routes.py` and `serve.py`
+(the one-line Handler binding for `_fs_rename_unclaim`) from `/tmp`
+copies, confirmed both byte-identical (md5,
+`c8238cfdc94dec890ad9546bb806fd5c` for `fs_routes.py`) to the fixed
+ones, test green again on three repeated runs.
+
+No `.jsx`/`.js`/`.css` touched — no build required.

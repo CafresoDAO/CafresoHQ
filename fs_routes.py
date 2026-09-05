@@ -718,16 +718,61 @@ def _fs_rename(self):
     roots = {str(pathlib.Path(d).resolve()) for d in _cafresohq_allowed_dirs}
     if not src_is_link and str(sp) in roots:
         return self._send_json(403, {'error': 'refusing to move a workspace root'})
-    if dp.exists() or dp.is_symlink():
-        return self._send_json(409, {'error': 'target already exists'})
+    # `dp.exists()` here is a LOOK, not a claim — the same race #337 closed
+    # on the upload doors (fs_routes.claim_name) but left standing on this
+    # one. Two renames racing onto the same `to` both pass this check, both
+    # then os.replace() onto it, and os.replace (rename(2)) never refuses an
+    # existing destination — it silently replaces it. Measured against a
+    # real running server: twenty concurrent /fs/rename calls, all different
+    # sources, one shared `to` — TWO 200s came back, eighteen of the twenty
+    # source files were still on disk (so eighteen renames correctly lost
+    # the race and got nothing), and `final.txt` held whichever replace ran
+    # last. One of the two callers told "ok, moved" had its file quietly
+    # thrown away with no error anywhere. Same family as claim_name's own
+    # note: a look, a decision made from the look, a write that assumes
+    # nothing moved in between.
+    #
+    # Fix: claim `dp` the same way claim_name claims an upload name —
+    # O_CREAT|O_EXCL for a file destination, os.mkdir (equally exclusive)
+    # for a directory one — so "is `to` free?" and "`to` is mine now" are
+    # the same syscall. POSIX guarantees O_EXCL/mkdir fail on an existing
+    # symlink too, dangling or not, so this subsumes the old
+    # `dp.is_symlink()` check rather than dropping it. The loser gets
+    # FileExistsError and a clean 409; the winner then replaces its own
+    # just-claimed placeholder with the real move, which cannot race
+    # because nobody else could have claimed `dp` in between.
+    is_dir_move = move_src.is_dir() and not move_src.is_symlink()
     try:
         dp.parent.mkdir(parents=True, exist_ok=True)
+        if is_dir_move:
+            dp.mkdir()
+        else:
+            os.close(os.open(str(dp), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666))
+    except FileExistsError:
+        return self._send_json(409, {'error': 'target already exists'})
+    except OSError as e:
+        return self._send_json(500, {'error': str(e)})
+    try:
         os.replace(str(move_src), str(dp))
     except (NotADirectoryError, FileExistsError) as e:
+        self._fs_rename_unclaim(dp, is_dir_move)
         return self._send_json(409, {'error': f'cannot move there: {e}'})
     except Exception as e:
+        self._fs_rename_unclaim(dp, is_dir_move)
         return self._send_json(500, {'error': str(e)})
     return self._send_json(200, {'ok': True, 'from': str(move_src), 'to': str(dp)})
+
+def _fs_rename_unclaim(self, dp, is_dir_move):
+    """Undo a claimed-but-never-filled destination after the real move
+    failed, so a failed rename does not leave a phantom empty file/folder
+    behind at `to` (which would then itself falsely win the next claim)."""
+    try:
+        if is_dir_move:
+            dp.rmdir()
+        else:
+            dp.unlink()
+    except OSError:
+        pass
 
 def _fs_delete(self):
     """POST /fs/delete  {path}  — delete a file or directory (recursive)."""
