@@ -39585,3 +39585,70 @@ above. Restored `app.jsx` from a `/tmp` copy, confirmed byte-identical
 again.
 
 `npm run build` run after the change — 8 assets built clean.
+
+## 380. the résumé that forgot everything before breakfast
+
+**The lead.** The hydration hunt `#177`/`#232`/`#379` left standing on
+purpose: every `useFileStored` call site in `app.jsx`/`app/storage.jsx`/
+`modals/settings.jsx`, checked one at a time for the same shape — a store
+with no merge transform, or one with a transform but no `mergeOnDirty`, AND
+a plausible writer that could fire in the ~100-300ms mount-fetch window.
+Thirteen call sites; twelve came back clean, most because nothing writes
+them except a boss's own click (agents, openWindows, pins, missions,
+workflows, projects, meetings, memory) or they're already wired
+(`messages`, `activity`, `receipts`). One did not.
+
+**The wreck.** `experience` — the append-only job ledger behind §5's
+Phase B→C résumé bridge, `xpStats`' whole source of Jobs/Snags/Streak/
+Affinity for the roster card and the Performance-review panel — carried
+**no merge transform at all**:
+
+    const [experience, setExperience] = useFileStored(k('experience'), 'state', 'experience', []);
+
+Worse than `#379`'s gap: `receipts` at least had a union transform sitting
+unreachable behind a missing flag. `experience` had nothing to fall back
+on, so the guard's early return didn't just skip a merge — there was no
+merge to skip. And the writer that lands in the boot window is not a rare
+click, it's a poller: the Night Shift board effect a few hundred lines up
+calls `poll()` synchronously on mount and awaits two same-origin fetches
+(`/missions/scheduled`, `/missions/runs`) before its first `recordXp` call
+for any run that finished before the page loaded — routinely faster than
+`experience`'s own mount-fetch of `hq-state/experience.json` round-trip.
+Land that `recordXp` first, and the guard discards the ENTIRE fetched
+ledger: every job any coworker had ever logged before this reload, gone
+from state and then from disk the moment the next completion's debounced
+PUT fires. The roster card's Jobs/Streak/Affinity numbers reset under a
+coworker who had done nothing wrong except finish an overnight mission at
+the wrong moment.
+
+**The fix.** A plain union transform — this store has no CLEAR ALL action
+to disambiguate against (unlike `receipts`), so there's nothing standing
+in the way of just merging — wired with `{ mergeOnDirty: true }`. De-duped
+on the full JSON-serialized entry rather than an id (this ledger has none)
+or `taskId` alone (`xpRecord` itself lets a `'snag'` and a later `'done'`
+legitimately share one `taskId` when a task is retried — keying on
+`taskId` would collapse two real jobs into one and erase the retry's own
+success), then re-sorted ascending by `at`, since `xpStats`' streak walk
+reads the ledger newest-last. `experienceRef` already existed for an
+unrelated reason (the poller's own dedup-by-`taskId` check) and moved up a
+few lines so the transform's closure could read it.
+
+**Fire-tested.** New
+`scripts/test_a_job_recorded_before_hydration_did_not_wipe_the_resume_ledger.py`
+lifts the REAL mount-fetch `.then(data => {...})` body out of
+`app/storage.jsx` and the REAL experience transform + its `mergeOnDirty`
+wiring out of `app.jsx` by brace-balanced extraction, then runs both under
+Node: the bug reproduced with no transform at all (an early job means the
+fetched 2-entry résumé never enters state); the fix as wired (all 3
+entries present, the historical snag and the early job both survive,
+sorted ascending by `at`); a retried job (the same `taskId`'s original
+snag and its later done both survive the merge rather than collapsing);
+and a clean mount (file adopted whole, unchanged). Reverted the fix in
+place (dropped the transform and the `mergeOnDirty` option, back to the
+bare `useFileStored` call) — the extraction helper that locates the
+transform in `app.jsx` raised `AssertionError` and the test exited
+non-zero, exactly as expected with the wiring gone. Restored `app.jsx`
+from a `/tmp` copy, confirmed byte-identical (md5,
+`b0a3fd23029b44d5d1e96015bea7dc66`) to the fixed one, test green again.
+
+`npm run build` run after the change — 8 assets built clean.

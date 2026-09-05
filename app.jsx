@@ -1005,10 +1005,42 @@ function App() {
   const [tasks, setTasks] = useFileStored(k('tasks'), 'state', 'tasks', SEED_TASKS, tasksOnLoad);
   /* Experience ledger (OFFICE_AS_INTERFACE §5) — append-only job history,
      the Phase B→C résumé bridge. xpRecord enforces append-only + one 'done'
-     per job; nothing else writes this. */
-  const [experience, setExperience] = useFileStored(k('experience'), 'state', 'experience', []);
-  const recordXp = (entry) => setExperience(prev => xpRecord(prev, entry));
+     per job; nothing else writes this.
+
+     Same #177/#232/#379 hydration race, on a fourth store: the Night Shift
+     poller a few hundred lines up calls `poll()` synchronously on mount and
+     awaits two same-origin fetches before its first `recordXp` — routinely
+     faster than this store's own mount-fetch of hq-state/experience.json.
+     A run that finished before the page loaded lands recordXp inside that
+     window, flips dirtyRef, and — with no merge transform at all — the
+     guard in app/storage.jsx threw the ENTIRE fetched ledger away rather
+     than merely skipping `mergeOnDirty`: every job this coworker (or any
+     other) had ever logged before this reload, gone from state and then
+     from disk the moment the next completion's debounced PUT fires. No
+     clear-all action exists for this store (unlike `receipts`), so a plain
+     union merge is the whole fix — nothing to disambiguate against. Keyed
+     on the full entry rather than an id (this ledger has none): the only
+     way two array elements collide is if they are the identical event, so
+     an exact-value de-dup can never merge away two real jobs that merely
+     share a taskId (xpRecord itself allows a 'snag' and a later 'done' to
+     coexist for one taskId), and re-sorted ascending by `at` because
+     xpStats' streak walk reads the ledger newest-last. */
   const experienceRef = useRefA([]);
+  const [experience, setExperience] = useFileStored(k('experience'), 'state', 'experience', [],
+    (fetched) => {
+      const seen = new Set();
+      const out = [];
+      for (const e of [...(Array.isArray(fetched) ? fetched : []),
+                       ...(Array.isArray(experienceRef.current) ? experienceRef.current : [])]) {
+        if (!e) continue;
+        const key = JSON.stringify(e);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(e);
+      }
+      return out.sort((a, b) => (a.at || 0) - (b.at || 0));
+    }, { mergeOnDirty: true });
+  const recordXp = (entry) => setExperience(prev => xpRecord(prev, entry));
   useEffectA(() => { experienceRef.current = experience; }, [experience]);
   /* `ks('memory')`, not `k('memory')` — CONTAINER-scoped, like coachSeen a
      few lines down. hq.cafreso.com serves every office from ONE origin,
