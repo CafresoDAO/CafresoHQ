@@ -110,6 +110,24 @@ ROUTES = {
 # Gateway host/port, key handling, and ALL config.yaml/.env plumbing live in
 # drivers/hermes.py (DRIVER_CONTRACT §5: Hermes is one driver among peers).
 
+# What the office says when there is no brain anywhere on this machine — the
+# state a beta tester's very first message lands in, since nothing ships one
+# (docs/BETA_READINESS.md, "What a beta tester CANNOT self-serve"). Two fields,
+# both written for the person, not the log: `message` is the honest sentence,
+# `hint` is the way forward, and the client relays them in that order (#399).
+# The room named here is real and mounted — modals/settings.jsx's
+# ConnectionsPanel, with ON THIS MACHINE and CLOUD KEYS in it; the rule
+# test_the_room_the_warning_names.py exists to keep.
+_NO_BRAIN_MESSAGE = (
+    'This office has no brain yet — nothing on this machine is answering as a '
+    'model, so there is nowhere for that message to go.'
+)
+_NO_BRAIN_HINT = (
+    'Open Settings → Connections and give the office one: paste a cloud key '
+    'under CLOUD KEYS, or start LM Studio or Ollama and pick a model '
+    'under ON THIS MACHINE.'
+)
+
 # ── Idle tracking (powers fleet reap-idle → stop idle containers, free A1 pool) ─
 # Single-slot list so the request handler can mutate it without `global`.
 # /idle, /health, and /idle's own polls do NOT count as activity.
@@ -6188,6 +6206,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 headers['Authorization'] = client_auth
 
         principal = (self.headers.get('X-User-Principal') or '').strip() or 'local'
+        # #399: ask BEFORE paying the retry budget below whether a gateway could
+        # ever answer. On a machine with no hermes installed the ten 1.5s retries
+        # are fifteen seconds of silence in front of a refusal that cannot change
+        # — and the browser retries the 5xx three times, so a beta tester's first
+        # message sits for ~47s before it says anything at all. The office knows
+        # the answer the moment the request arrives; say it then. 501 rather than
+        # 502 on purpose: 501 is the one 5xx defined as a stable property of the
+        # server, and the client (_retryableStatus) reads it as final.
+        if not _drivers.hermes.gateway_can_appear():
+            return self._send_json(501, {
+                'error': 'no_brain',
+                'message': _NO_BRAIN_MESSAGE,
+                'hint': _NO_BRAIN_HINT,
+            })
         # The gateway is briefly unavailable right after a restart (key / model /
         # capability change replaces the running singleton). Retry the upstream
         # CONNECT a few times so the user sees a short delay instead of a transient
@@ -6204,6 +6236,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             try:
                 conn.request(method, upstream_path, body=body, headers=headers)
                 resp = conn.getresponse()
+                # A gateway that answered once is a gateway worth waiting for
+                # next time, however it was started (#399).
+                _drivers.hermes.note_gateway_alive()
                 break
             except (ConnectionRefusedError, ConnectionResetError,
                     http.client.RemoteDisconnected) as e:

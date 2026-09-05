@@ -122,6 +122,30 @@ def gateway_running():
     except OSError:
         return False
 
+# Latched True the first time this process gets an answer out of the gateway.
+# The proxy's connect-RETRY budget (serve.py _hermes_proxy) exists for the
+# ~10-15s window after gateway_restart() replaces the running singleton — it is
+# only ever worth paying when a gateway exists to come back to. See #399.
+_gateway_seen_alive = False
+
+def note_gateway_alive():
+    """Record that the gateway answered us. THE latch for gateway_can_appear();
+    the proxy calls it the moment getresponse() returns."""
+    global _gateway_seen_alive
+    _gateway_seen_alive = True
+
+def gateway_can_appear(binary_override=''):
+    """Could a gateway plausibly answer within the proxy's retry budget?
+
+    True when the CLI is on this machine (a `hermes gateway` can be running,
+    starting, or mid-restart — the fleet container installs the `hermes-agent`
+    wheel, so its console script always resolves there) or when one has already
+    answered us in this process. False is the fresh-machine answer: there is no
+    hermes here and there never has been, so a connection refusal is a settled
+    fact rather than a passing one, and sitting through ten retries only buys
+    silence. See #399."""
+    return _gateway_seen_alive or bool(resolve(binary_override))
+
 def gateway_restart(reason=''):
     """Best-effort `hermes gateway restart` (replaces the running singleton;
     the proxy keeps serving until the new gateway binds, ~10s). Returns

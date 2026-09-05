@@ -1,5 +1,67 @@
 # Beta readiness — re-audit
 
+## 2026-09-05 (follow-up to the fourth pass) — the silence, measured
+
+The fourth pass below names one item "the largest single beta-blocker on the
+path" and calls it a product decision. It is two things, and only one of them
+is. This note records what the second one actually measured and what `## 399.`
+did about it. Nothing else in this document is re-audited here.
+
+**The number was wrong, and low.** The fourth pass, and rough edge 5 before it,
+say *fifteen seconds of silence*. Driven on a genuine cold start — `git archive
+HEAD | tar -x`, a temp `HOME` with no `~/.hermes`, a `PATH` with no `hermes` on
+it, the gateway port pointed at a dead port — a first message took **46,467ms**
+(46467 / 46993 / 46875 across three runs) to fail. The fifteen is `_hermes_proxy`
+retrying the upstream connect ten times at 1.5s, measured on the wire at
+15,104ms. The other two thirds are the browser: 502 is a retryable status to
+`fetchStreamHead`, which tries the whole request three times. Both halves were
+written down in this document already; nobody multiplied them.
+
+**The answer that landed was a payload, not a sentence.** Raw JSON in the chat
+bubble, a Unix errno inside it, and its only advice — *retry in ~15s* — false on
+that machine specifically, because nothing was going to start.
+
+**All four browser first-message paths shared it**: the boss chat and coworker
+chat (`hq-runtime.jsx`), the terminal (`views/terminal.jsx`), and the mission
+runner (`agent_runner.jsx`) all funnel through `CafresoHQClient.stream()`, whose
+provider in a brand-new office is `'hermes'`. So did the client's own liveness
+probe — asking *whether* there was a brain cost 15,069ms. `night_runner.py` is
+the one sender that does not share it.
+
+### What is now handled
+
+- **The failure is fast.** `drivers/hermes.py` can now tell "the gateway is
+  restarting" from "there is no hermes on this machine and never has been", and
+  `_hermes_proxy` asks before it waits. **46,467ms → 25ms**, end to end through
+  the browser's own send path against a real cold `serve.py`.
+- **The failure is legible, and it points somewhere real.** The tester now
+  reads: *"This office has no brain yet — nothing on this machine is answering
+  as a model, so there is nowhere for that message to go. Open Settings →
+  Connections and give the office one: paste a cloud key under CLOUD KEYS, or
+  start LM Studio or Ollama and pick a model under ON THIS MACHINE."* That room
+  is mounted and both of those panel headings are in it; the test asserts it
+  rather than trusting it.
+- **The restart window is intact.** A machine that *has* a gateway still sits
+  out the full retry budget, verified against a cold tree with a `hermes` on
+  `PATH`. The fleet container `pip install`s `hermes-agent`, so its console
+  script resolves there and nothing about the hosted path changes.
+
+### What is still a product decision
+
+**Which brain the beta ships with.** Unchanged, and unchangeable from code. The
+office still has none: no bundled model, no trial key, no first-run screen that
+hands one over. A tester who does nothing after reading that sentence still
+cannot send a message. `## 399.` makes the office honest about its own state in
+25ms instead of dishonest about it in 46 seconds — that is a first impression
+fixed, not a working brain delivered. Item 1 of "What a beta tester CANNOT
+self-serve" below stands exactly as written, minus its last five words.
+
+The fourth pass's closing line — that the two cheap fixes before the invitation
+goes out are the LAN URL and the fifteen seconds of silence — is now one item
+plus the sentence in the invitation naming which brain to install.
+
+---
+
 ## 2026-09-05 (fourth pass) — the first-run path, actually walked
 
 Scope note first, because it matters for how much of this document it moves:
@@ -50,10 +112,13 @@ same tree again with the bundle built. No mainnet call of any kind was made.
    `test_a_first_run_on_your_own_machine_is_not_told_its_session_expired.py`),
    and this pass found no new empty-collection fault to add to them.
 5. **The first message needs a brain, and the tester has none.** On a machine
-   with no `hermes` CLI, `/hermes/*` is the fifteen seconds of silence already
-   written up as rough edge 5 below. This pass did not improve it and did not
-   re-measure it; a real fresh machine gets connection-refused, not the 401
-   my temp-`HOME` run saw from this developer's own already-running gateway.
+   with no `hermes` CLI, `/hermes/*` was the fifteen seconds of silence written
+   up as rough edge 5 below. This pass did not improve it and did not re-measure
+   it; a real fresh machine gets connection-refused, not the 401 my temp-`HOME`
+   run saw from this developer's own already-running gateway.
+   > **Re-measured and fixed by `## 399.`** It was not fifteen seconds, it was
+   > **46.5**, and the tester's brain is still missing — see the follow-up at
+   > the top of this document.
 6. **Peripherals fail politely.** `/gap/status` and `/news/status` answer a
    5-second `502` naming the exact compose command that starts the standalone
    search worker.
@@ -87,10 +152,13 @@ human for, and they should go in the invitation rather than be discovered.
    trial key, and no first-run screen that hands the tester one. They must
    either install the `hermes` CLI and let it start a gateway, or run LM
    Studio / Ollama locally, or bring their own API key. Until one of those is
-   true, every message fails — after fifteen seconds of silence. **This is the
-   largest single beta-blocker on the path and it is a product decision, not a
-   bug.** Whoever sends the invitation has to answer "what do I type my first
-   message *to*" in the invitation itself.
+   true, every message fails. **This is the largest single beta-blocker on the
+   path and it is a product decision, not a bug.** Whoever sends the invitation
+   has to answer "what do I type my first message *to*" in the invitation
+   itself. (The trailing clause here used to read "— after fifteen seconds of
+   silence." `## 399.` measured that at 46.5 seconds, made it 25ms, and gave it
+   a sentence that names Settings → Connections. The brain is still missing;
+   only the wait and the wording were ever fixable in code.)
 2. **Node.js 18+ and Python 3.** Neither is bundled or checked for before the
    fact; `Start-CafresoHQ.sh` explains a missing `npm`, but a tester on a
    machine with neither has a prerequisites problem no page in the product can
@@ -440,7 +508,15 @@ the way the activity log always did.
 Worth a browser-side reproduction before anyone changes code. Not worth holding
 a beta for.
 
-### 5. A missing brain costs fifteen silent seconds before the error
+### 5. A missing brain costs fifteen silent seconds before the error — ✅ FIXED
+
+> **Resolved by `## 399.`, and the number below is an undercount.** The browser
+> retries a 502 three times, so the tester's real wait was **46.5s**, not 15s.
+> `_hermes_proxy` now distinguishes a gateway that is restarting from a machine
+> that has no hermes at all and answers the second case in 25ms with a written
+> sentence naming Settings → Connections. The finding below is kept as the
+> record of what was measured then; its closing line ("the residue is the
+> fifteen seconds of silence") no longer holds.
 
 `_hermes_proxy` retries the upstream connect ten times at 1.5s apart before
 answering. Measured with the gateway port pointed at a dead port:
@@ -631,5 +707,10 @@ What is left is seven annoyances, and the two worth fixing before the invitation
 goes out are the cheap ones: the LAN URL the banner promises and cannot deliver,
 and the fifteen seconds of silence before a missing brain says so. Neither costs
 a tester anything but patience, and neither needs a decision — only an hour.
+
+> **The second of those two is closed (`## 399.`)** — it was 46.5 seconds, not
+> fifteen, and it is now 25ms with a sentence that names the room. The LAN URL
+> stands. And "costs a tester nothing but patience" was the wrong reading of it:
+> what the missing brain cost was the whole first impression.
 
 Send the invitation.

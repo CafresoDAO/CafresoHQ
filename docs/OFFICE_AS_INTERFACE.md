@@ -41897,3 +41897,149 @@ it already exists).*
 - The external-approvals poll (6167) — self-reschedules from the END of
   each poll rather than on a `setInterval`, so a slow server cannot stack
   two of them. Its own comment says why.
+## 399. the first message waited forty-six seconds to say nothing useful
+
+`## 396.` got the office booting for a stranger, hit the next thing on that
+path, and classified it correctly: **no brain ships with the office.** No
+bundled model, no trial key, no first-run screen that hands one over. Which
+brain to bundle is a product decision for whoever writes the invitation, and it
+is not mine. But the sentence that entry wrote next has two halves —
+
+> every message fails **after fifteen seconds of silence**
+
+— and only the first half is a product decision. A beta tester typing hello
+into a brand-new office and watching nothing happen is a bug, and it is a
+bigger one than fifteen seconds.
+
+**It is forty-six seconds.** Driven, not read: `git archive HEAD | tar -x` into
+an empty directory, a temp `HOME` with no `~/.hermes`, a `PATH` with no
+`hermes` on it (which is what a tester's laptop has, and is also the rail that
+kept this session away from the developer's own live gateway), and the gateway
+port pointed at a port nothing is listening on. Then `fetchStreamHead` lifted
+verbatim out of `claude-client.jsx` and called the way the browser calls it:
+
+```
+ms: 46467   status: 502
+{"error": "hermes: [Errno 61] Connection refused",
+ "hint": "the agent gateway is restarting or down — retry in ~15s"}
+```
+
+46467, 46993, 46875 across three runs.
+
+**Where the time goes, and why the count was wrong.** `_hermes_proxy` retries
+the upstream connect ten times at 1.5s — that is the fifteen, and it is real
+(measured on the wire at 15104ms). But 502 is a *retryable* status to
+`fetchStreamHead`, which tries the whole request three times with a backoff in
+between. Three fifteens plus two backoffs. `docs/BETA_READINESS.md` had both
+facts and never multiplied them: its rough-edge 5 measures the server's fifteen
+and then, three lines later, says the tester "watches nothing happen for fifteen
+seconds, **three times**". Nobody wrote down the product.
+
+**And the answer that finally lands is wrong twice over.** It is a raw JSON
+object rendered straight into the chat bubble (`streamOpenAICompat` throws
+`` `${label} ${res.status}: ${t.slice(0, 400)}` ``), it names a Unix errno, and
+its only advice — *retry in ~15s* — is false on this machine specifically.
+Nothing is going to start. The one true thing about this tester's situation,
+that they have no brain and there is a room in this product where they can pick
+one, is the one thing nobody says.
+
+**Every browser-side first message shares it.** The boss chat and the coworker
+chat (`hq-runtime.jsx:4247, 4527`), the terminal (`views/terminal.jsx:523`) and
+the mission runner (`agent_runner.jsx:93`) all funnel through
+`CafresoHQClient.stream()`, whose provider for a brand-new office is the
+default `'hermes'` — so all four land on `streamHermes` → `/hermes/v1`. One
+path, four surfaces. The client's own liveness probe pays it too:
+`hermesStatus()` GETs `/hermes/v1/models` through the same `_hermes_proxy`, so
+merely *asking whether there is a brain* cost 15069ms. `night_runner.py` is the
+one sender that does not share this — it resolves its backend from
+`config.yaml` itself and has its own honest sentence — the `brain_cause()`
+classifier from *"A brain failure reached the boss as a stack trace"*.
+
+**The distinction the code was missing.** The retry budget exists for the
+~10-15s window after `gateway_restart()` replaces the running singleton, and
+that is a good reason. But a gateway that is *restarting* and a gateway that
+was *never installed* are different conditions, and `_hermes_proxy` could not
+tell them apart — it only ever saw `ConnectionRefusedError`. The information to
+separate them was already in the building: `/health` reports
+`hermes: bool(self._hermes_resolve())`, and it says `false` on a fresh machine
+before the tester has typed anything.
+
+**The fix**, one branch and one latch rather than a split (`## 395.`'s shape,
+which broke nothing, rather than `## 389.`–`## 393.`'s):
+
+- `drivers/hermes.py` grows `gateway_can_appear()` — is the CLI on this
+  machine, or has a gateway already answered us this process? — plus
+  `note_gateway_alive()`, the latch, set the moment `getresponse()` returns.
+  The predicate lives in the driver because `DRIVER_CONTRACT §5` says gateway
+  knowledge does. The fleet container `pip install`s `hermes-agent`, whose
+  console script lands on PATH, so **the fleet's retry budget is untouched**.
+- `_hermes_proxy` asks it *before* the loop, and answers **501** with
+  `_NO_BRAIN_MESSAGE` and `_NO_BRAIN_HINT`. 501 rather than another 502 on
+  purpose: it is the one 5xx the RFC defines as a stable property of the server
+  rather than a passing mood — cacheable by default — which is exactly the
+  claim being made.
+- `_retryableStatus` (`claude-client.jsx`) reads 501 as final. Without this the
+  browser would multiply the new fast answer by three as happily as it
+  multiplied the old slow one.
+- `streamOpenAICompat` relays a refusal body's **prose** — `message`, then
+  `hint` — as the error instead of printing the JSON around it. Deliberately
+  not `error`: that field is the machine's word for the fault (`no_brain`,
+  `trial_limit`, an errno) and is no more readable than the braces. Scoped to
+  the `!res.ok` branch; the mid-stream SSE reader still reads `j.error`, which
+  is a different shape for a different thing.
+
+What the tester now gets, measured end to end through the browser's own send
+path against a real cold `serve.py`, **25ms**:
+
+> This office has no brain yet — nothing on this machine is answering as a
+> model, so there is nowhere for that message to go. Open Settings →
+> Connections and give the office one: paste a cloud key under CLOUD KEYS, or
+> start LM Studio or Ollama and pick a model under ON THIS MACHINE.
+
+46467ms → 25ms, and a sentence instead of a payload. The room it names is real
+and mounted — `modals/settings.jsx`'s `ConnectionsPanel`, with both of those
+headings in it — and the test asserts that as a property rather than trusting
+it, because `test_the_room_the_warning_names.py` exists for exactly the failure
+where it is not.
+
+**Test.** New `scripts/test_an_office_with_no_brain_says_so_before_the_tester_
+gives_up.py`. Round 1 structural, and the load-bearing one is an *ordering*
+check: the predicate must be read before `time.sleep(1.5)`, because a check
+after the loop has already cost the tester the silence. Round 2 boots a real
+`serve.py` from a real cold tree — three separate ways of being a fresh
+machine: an empty `PATH`, an empty `HOME`, a dead gateway port — and drives
+`streamOpenAICompat`, `fetchStreamHead`, `parseSSE` and `_retryableStatus`
+lifted verbatim from `claude-client.jsx` (plus `headTimeoutMs` from
+`app/patience.jsx`) against it over the wire. The assertions on the sentence
+are **properties, not strings**, in `## 396.`'s pattern: under two seconds, no
+HTTP status code in it, no errno, no JSON brace, says "brain", names a room,
+and never tells this tester to wait and try again. Any rewrite that keeps the
+office honest keeps all seven. Round 3 is the only way this fix could do harm —
+the same cold tree with a `hermes` stub on `PATH` must **still** sit out the
+restart window and still answer the retryable 502, because a gateway that is
+merely restarting is not a gateway that is absent.
+
+Fire-tested: reverted in place (md5 `62d1065cb9794e1ba69a71b1fb26e60f`,
+`ed7167e1a07b278f8d1d6d1fc85afe07`, `118833f5b6e1bfe83112558eacf87622`), **22**
+checks failed reliably across 3 runs, with `46332ms / 47098ms / 47223ms` and
+the raw `Hermes 502: {"error": "hermes: [Errno 61] Connection refused"…}`
+printed as the evidence; restored byte-identical, green on 3 repeated runs.
+
+**Fallout: none.** Twelve suites in `scripts/` name `_hermes_proxy`,
+`_retryableStatus`, `streamOpenAICompat`, `fetchStreamHead`, `gateway_running`,
+`gateway_restart` or the hermes driver, and ten more cover the brain surfaces
+around them (`test_a_brain_failure_is_not_a_stack_trace`,
+`test_an_empty_office_never_promises_a_brain_this_machine_lacks`,
+`test_the_room_the_warning_names`, `test_cast`, `## 396.`'s own first-run pair,
+and the rest). All twenty-two were run standalone and all twenty-two pass. Adding a branch and a latch costs nothing to a test that lifts the
+function whole, which is `## 395.`'s point and worth restating.
+
+`npm run build` succeeds. No mainnet call, no II value touched, and
+`ps aux | grep 'hermes gateway restart'` is empty after every run in this
+session — the empty `PATH` on each boot is what guarantees it.
+
+**What this does NOT do, and the entry is only honest if it says so.** The
+tester still has no brain. Nothing here bundles one, and nothing here can:
+which model ships in the invitation is a product call. `docs/BETA_READINESS.md`
+is updated to draw that line where it actually falls — the failure is now fast
+and legible, and the brain is still missing.

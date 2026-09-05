@@ -450,6 +450,13 @@ const _STREAM_RETRY_CAP_MS = 8000;
 function _retryableStatus(status) {
   // 429 = rate limited; 5xx = upstream trouble. Everything else (401 bad key,
   // 400 bad request) will fail identically on retry, so fail fast instead.
+  /* 501 is the exception inside 5xx, and the RFC is why: every other 5xx is a
+     passing mood, while Not Implemented is a stable property of the server —
+     it is the one 5xx cacheable by default. serve.py answers it when this
+     machine has no brain wired at all (#399), and asking again three times,
+     with a backoff between each, only makes the same settled answer arrive a
+     minute later. Anything the backend states as permanent belongs here. */
+  if (status === 501) return false;
   return status === 429 || (status >= 500 && status <= 599);
 }
 
@@ -668,6 +675,21 @@ async function streamOpenAICompat({ base, label, system, messages, model, temper
   }, headTimeoutMs({ local, url: root }));
   if (!res.ok) {
     const t = await res.text();
+    /* A backend that answered with a written sentence has already said the
+       useful thing; `Hermes 501: {"error":"no_brain","message":…}` buries it
+       in braces and puts a status code where §7 wants one honest line. So when
+       the body carries prose — `message`, then `hint` — that prose IS the
+       error. Deliberately NOT `error`: that field is the machine's word for
+       the fault ('no_brain', 'trial_limit', 'hermes: [Errno 61] Connection
+       refused') and is no more readable than the JSON around it. Falls through
+       unchanged for every backend that answers plain text or a bare code. #399 */
+    let said = '';
+    try {
+      const j = JSON.parse(t);
+      said = [j && j.message, j && j.hint]
+        .filter(x => typeof x === 'string' && x.trim()).join(' ').trim();
+    } catch (_e) {}
+    if (said) throw new Error(said);
     throw new Error(`${label} ${res.status}: ${t.slice(0, 400)}`);
   }
   /* Reasoning models (nemotron, deepseek-r1, gemma-4, etc.) emit thinking
