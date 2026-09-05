@@ -43360,3 +43360,195 @@ lands as a different number, every `## 405.` and `` `## 405.` `` marker in
 `search_worker_service/README.md`, `worker.env.example`,
 `worker-standalone.env.example`, `docs/BETA_READINESS.md` and the three test
 files above moves with it. They are all spelled that way for grep.
+
+---
+
+## 406. a severed answer arrived byte-identical to a finished one
+
+`## 402` measured the client's real `catch` denominator with a
+`@babel/parser` walk — 399 catch clauses, 181 empty — and left one file
+EXPOSED with a note that it wanted a hunt of its own:
+**`claude-client.jsx`, 45 empty catches, the largest single concentration in
+the client**. It is also the funnel every browser sender goes through:
+`hq-runtime.jsx:4247`, `hq-runtime.jsx:4527`, `views/terminal.jsx:523` and
+`agent_runner.jsx:93` all reach the model through `CafresoHQClient.stream()`.
+This is that hunt, with `## 402`'s table as the denominator.
+
+The worst thing in the file is not a swallowed exception at all. It is a
+failure that is **not spelled as a failure anywhere on the wire**.
+
+### The measurement, before anything was changed
+
+Every provider ends a stream by saying WHY it stopped. No reader looked.
+`grep -rn 'finish_reason\|stop_reason'` over the whole repo returned zero
+hits outside a comment. Driven on the three real brace-lifted reader bodies
+under node, against a stub SSE wire — a complete answer and a truncated one:
+
+```
+LM Studio / Ollama / Hermes  complete   {"text":"Deploy with dfx deploy.","threw":null,"warned":false}
+                             TRUNCATED  {"text":"Deploy with dfx deploy.","threw":null,"warned":false}   identical=True
+Anthropic                    complete   {"text":"Deploy with dfx deploy.","threw":null,"warned":false}
+                             TRUNCATED  {"text":"Deploy with dfx deploy.","threw":null,"warned":false}   identical=True
+Google                       complete   {"text":"Deploy with dfx deploy.","threw":null,"warned":false}
+                             TRUNCATED  {"text":"Deploy with dfx deploy.","threw":null,"warned":false}   identical=True
+```
+
+`identical=True` on all three. A truncated stream closes as cleanly as a
+finished one — 200, data frames, clean EOF. `parseSSE`'s guard fires only
+when a stream sends NO data, and a truncated stream sends plenty. `## 397`'s
+`streamError` read finds nothing, because there is no error frame. The turn
+resolved, the office recorded a completed answer, and the boss read a plan
+that stops mid-step with nothing on screen to say it was cut. **The boss
+could not tell a short answer from a severed one — this was the shape.**
+
+The three spellings, all previously unread:
+
+| reader | field | truncated value |
+|---|---|---|
+| `streamOpenAICompat` (LM Studio, Ollama, Hermes, anything OpenAI-shaped) | `choices[0].finish_reason` | `"length"` |
+| `streamAnthropic` | `message_delta.delta.stop_reason` | `"max_tokens"` |
+| `streamGoogle` | `candidates[0].finishReason` | `"MAX_TOKENS"` |
+
+Not exotic, either: `DEFAULTS.maxTokens` is **1024** output tokens and
+`agent_runner.jsx:88` pins exactly 1024, so hitting the ceiling is the
+routine case, not the edge one.
+
+Google carries a **second** spelling of the same shape. `finishReason` is
+also how a refusal arrives — `SAFETY`, `RECITATION`, `PROHIBITED_CONTENT`
+come back as a clean 200 with an EMPTY candidate and no error frame
+anywhere. Measured: `{"text":"","threw":null,"warned":false}`. An empty
+bubble on a refusal, with no cause on screen — `## 395`'s Library-graph
+shape, on the boss's own conversation.
+
+### Fixed
+
+Three reads and three branches, one per reader, following `## 395`'s
+precedent of ADDING state rather than splitting a function — every existing
+lift harness still runs with no new free variable. Written **inline in each
+reader**, deliberately not factored into a shared helper, for `## 258`'s
+reason recorded a few lines above them: several tests lift these functions
+by name into a bare scope where a module-level callee is a ReferenceError,
+swallowed by the very `catch (_e) {}` this fix exists to see past. A
+structural check pins that (`no shared truncation helper was introduced`).
+
+- Text arrived, then the ceiling: keep the text, mark where it stopped —
+  `⚠ cut off at the length limit — this answer is incomplete. Ask them to
+  carry on, or raise Max tokens in Settings.`
+- Nothing arrived and the ceiling was hit: the turn FAILED and throws, so
+  the floor reports it rather than filing an empty bubble.
+- A real upstream error **outranks** the ceiling in all three. A backend
+  that failed has a real cause; the ceiling would be a guess. Pinned
+  structurally (`the ceiling is ranked below a real upstream error`) and
+  behaviourally.
+- `## 397`'s all-monologue-no-answer line still fires alone on a
+  reasoning-only stream; the truncation note does not double up on it.
+- Google's non-`STOP`, non-`MAX_TOKENS` finish reasons are named:
+  `⚠ Google stopped early (RECITATION)` with text, a thrown
+  `Google ended the turn without an answer (SAFETY)` without.
+
+Two spellings of `finish_reason` placement are covered: backends that stamp
+it on a trailing empty frame and backends that stamp it on the last content
+frame. The Anthropic read sits OUTSIDE the existing `else if` chain on
+purpose — `message_delta` carries `stop_reason` and `usage` in the same
+frame and that arm is keyed on `j.usage`; a structural check pins it there.
+
+**The working path costs zero.** A clean stream is byte-for-byte untouched
+on all three readers, checked explicitly.
+
+### Fire-tested
+
+New `scripts/test_a_truncated_answer_is_not_a_finished_one.py` — 31 checks,
+7 structural and 24 behavioural, the latter driven on the three REAL
+brace-lifted reader bodies under `node --input-type=module` against stub SSE
+wires in each backend's own spelling. Reverted the three detection reads IN
+PLACE with an editor (md5 `b754bb8972c6457eac4a5ecce7c543e6`): **14 checks
+failed reliably across 3 runs**, with the evidence printed — the truncated
+row coming back identical to the clean one, `cut:false warned:false
+threw:null`, and Google's refusal as `text:"" threw:null`. Restored
+byte-identical (same md5), green on 3 repeated runs. The sibling
+`test_a_stream_that_dies_after_the_200_is_not_an_answer.py` still passes
+unchanged. Run from the MAIN CHECKOUT as well as the worktree and from a
+foreign cwd: it resolves and lifts the checkout it sits in, no path or glob
+defect. `npm run build` succeeds; eslint clean on `claude-client.jsx`.
+
+**Full suite: 578 suites, 576 passed.** The two failures are the two known
+ones and neither is ours — `test_worker_payout_sweep_does_not_wipe_mid_sweep_
+accrual.py` (moc M0219 on the foreign `main.mo`) and
+`test_two_note_writes_at_once_do_not_splice_two_bodies.py` (flaky under
+concurrent load). No test needed repairing.
+
+### The rest of `claude-client.jsx`, classified
+
+`## 402`'s tool re-run on this file alone: 87 catch clauses, 45 empty, 1
+console-only, 2 surfaced, 39 other. `MODE=inert` — the shape `## 397` found
+in `runCmd`, a synchronous `try/catch` around an unawaited async call —
+returns **nothing** for this file. That is a measurement, not an assumption:
+the same pass run against `views/vault.jsx` in the same session still prints
+its one known hit (`views/vault.jsx:450 … enclosingAsync=false`), so the
+pass was live and the file is genuinely clean of it. `MODE=state` is
+inapplicable — this file holds no React hooks.
+
+SAFE-with-measurement, the 45 empty catches by group:
+
+- **27, 47, 88, 92, 95, 100, 125** — the `_API_BASE` / framing-origin
+  bootstrap. Every one guards a `URL`/`URLSearchParams` parse or a
+  `console.warn`, and each sets the SAFE value on the failing branch
+  (`okOrigin = false`, `return false`, `injected = null`). A throw here
+  means the input is untrusted, which is the answer the code wants.
+- **143, 484, 491, 512, 541, 545** — `ctrl.abort()` and
+  `add/removeEventListener` on an AbortController. These are the second
+  abort in a `catch`, or teardown in a `finally`. Nothing to report: the
+  outcome the caller sees is decided elsewhere.
+- **160, 165, 176** — `dispatchEvent` / `postMessage` on the session-expiry
+  path. Best-effort notification of a shell that may not exist; the 401 is
+  already the caller's answer.
+- **293, 303** — `localStorage` read and the settings listener fan-out. The
+  read returns `{...DEFAULTS}` and the WRITE side (`saveSettings`) already
+  console-warns AND dispatches `cafresohq:storage-error`, which is the
+  surfaced path.
+- **355, 358, 629, 691, 949, 1294, 1391, 1619, 1650, 1690, 1720, 2140,
+  2207, 2233, 2537** — feature detection, per-frame JSON parses whose
+  outcome is decided by state read after the loop, model-list probes whose
+  empty result IS the honest answer ("that runtime is not on this machine"),
+  and best-effort key decrypts. In each the empty catch is a branch, not a
+  silence.
+- **505, 531, 533** — the retry machinery. `## 399` corrected this once
+  already and it holds: `_retryableStatus` fails fast on 401/400 and on 501
+  (the one cacheable 5xx), 429/5xx retry with `Retry-After` honoured, the
+  body is DRAINED before each retry so the socket is reusable, a user abort
+  during the backoff surfaces AS an `AbortError` rather than as the last
+  network error, and the final attempt RETURNS the response so the caller
+  reports it. **A retry that gives up silently was the thing to look for
+  here and it is not present**: every exit from that loop either returns a
+  response, throws the abort, or throws `lastErr`.
+- **1165, 1204, 1244** — `readCliDelta` per frame. Guarded by
+  `state.driverError`, which the caller returns.
+- **2049, 2068, 2052** — keychain hydration. 2052 console-warns and the
+  device-local keys are the documented fallback.
+- **2480** — `/* fall through to the preview link */`, a documented and
+  correct degrade.
+
+### Left EXPOSED, with the decision made explicitly
+
+**`views/projects.jsx:231` and `:1054` — the pre-write conflict stat.**
+`## 402` handed this forward asking for a decision rather than a reflex.
+The decision, argued: **it should stay fail-open, and it should stop being
+silent.** Making the stat fail-CLOSED would refuse the save exactly when the
+office is unreachable — which is the moment the boss most needs their work
+to land, and it would trade a rare silent clobber for a routine refused
+save. That is the worse trade. But fail-open inside `catch (_e) {}` also
+tells the boss the conflict check RAN when it did not, which is `## 401`'s
+shape: the save reports the same success either way. The right fix is a save
+that proceeds AND says `saved — couldn't check for a coworker's changes
+first`, i.e. `## 402`'s own `officeCause` pattern one function over.
+**Not taken here** for one reason and it is not a mechanism argument: that
+file was edited by `## 402` in this same integration window, four hunts are
+appending concurrently, and a second hand in it invites exactly the
+shared-worktree contention the briefs now warn about. It is a one-branch
+change and it is fully specified above.
+
+Four other hunts were appending concurrently, so this number may collide and
+be renumbered at integration. Every `#406` in `claude-client.jsx` and
+`scripts/test_a_truncated_answer_is_not_a_finished_one.py` moves with it.
+The bare numbers in the inventory above (27, 143, 505, 1024, 4247…) are LINE
+and TOKEN numbers, not entry numbers, and must not be renumbered.

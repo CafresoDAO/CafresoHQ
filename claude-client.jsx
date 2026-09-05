@@ -606,6 +606,7 @@ async function streamAnthropic({ system, messages, model, temperature, maxTokens
   let outputTokens = 0;
   let sawText = false;
   let streamError = '';
+  let truncated = false;
   await parseSSE(res, (event, data) => {
     try {
       const j = JSON.parse(data);
@@ -613,6 +614,10 @@ async function streamAnthropic({ system, messages, model, temperature, maxTokens
         const e = (j && j.error !== undefined) ? j.error : (j && j.type === 'error' ? j : null);
         if (e) streamError = String(typeof e === 'string' ? e : (e.message || e.type || '')).trim();
       }
+      /* Read OUTSIDE the else-if chain below: a `message_delta` carries the
+         stop reason and the usage in the same frame, and the chain's arm is
+         keyed on `j.usage`. #406 */
+      if (j && j.delta && j.delta.stop_reason === 'max_tokens') truncated = true;
       if (event === 'content_block_delta' && j.delta && j.delta.type === 'text_delta' && j.delta.text) {
         sawText = true;
         onToken(j.delta.text);
@@ -637,6 +642,25 @@ async function streamAnthropic({ system, messages, model, temperature, maxTokens
   if (streamError) {
     if (sawText) onToken(`\n⚠ Anthropic: ${streamError}`);
     else throw new Error(`Anthropic: ${streamError}`);
+  }
+  /* The model did not FINISH — it hit the output ceiling and was cut off
+     mid-sentence. Nothing about that is an error on the wire: `stop_reason`
+     is "max_tokens" instead of "end_turn" and the stream closes cleanly, so
+     a truncated answer arrived byte-identical to a complete one and the boss
+     had no way to tell a short answer from a severed one. The default
+     ceiling is 1024 output tokens (DEFAULTS.maxTokens) and agent_runner
+     pins exactly that, so this is routine, not exotic. Say it, and say what
+     to do about it. Ranked below streamError on purpose: a backend that
+     failed has a real cause, and the ceiling would be a guess. #406
+
+     Written INLINE here and again in the other two readers rather than
+     factored into a helper, for #258's reason: several tests lift these
+     functions out of this file by name into a bare scope, where a
+     module-level callee is a ReferenceError — swallowed by the very
+     `catch (_e) {}` above. */
+  if (truncated && !streamError) {
+    if (sawText) onToken('\n⚠ cut off at the length limit — this answer is incomplete. Ask them to carry on, or raise Max tokens in Settings.');
+    else throw new Error('Anthropic hit the length limit before saying anything — raise Max tokens in Settings');
   }
 }
 
@@ -713,6 +737,7 @@ async function streamOpenAICompat({ base, label, system, messages, model, temper
   let inReasoning = false;
   let sawContent = false, sawReasoning = false;
   let streamError = '';
+  let truncated = false;
   await parseSSE(res, (_event, data) => {
     if (!data || data === '[DONE]') return;
     try {
@@ -721,6 +746,10 @@ async function streamOpenAICompat({ base, label, system, messages, model, temper
         const e = (j && j.error !== undefined) ? j.error : (j && j.type === 'error' ? j : null);
         if (e) streamError = String(typeof e === 'string' ? e : (e.message || e.type || '')).trim();
       }
+      /* `finish_reason` sits on the CHOICE, not the delta, and backends
+         differ on whether it rides the last content frame or a trailing
+         empty one — so read it every frame. "length" means cut off. #406 */
+      if (j.choices && j.choices[0] && j.choices[0].finish_reason === 'length') truncated = true;
       const delta = j.choices && j.choices[0] && j.choices[0].delta;
       if (delta) {
         if (delta.reasoning_content) sawReasoning = true;
@@ -758,6 +787,18 @@ async function streamOpenAICompat({ base, label, system, messages, model, temper
   }
   if (!sawContent && sawReasoning) {
     onToken('(thought it through but ran out of room before answering — ask again, or give them a shorter question)');
+  }
+  /* Cut off at the ceiling, not broken. `finish_reason: "length"` closes the
+     stream as cleanly as `"stop"` does, so a severed answer reached the boss
+     byte-identical to a finished one — the shape #406 was sent to find, and
+     the worst instance of it in the product, because every browser sender
+     funnels through here (LM Studio, Ollama, Hermes, and anything
+     OpenAI-shaped behind them). Below streamError for the same reason as in
+     streamAnthropic; and skipped when the monologue line above already
+     explained an empty answer. Inline for #258's lift rule. */
+  if (truncated && !streamError) {
+    if (sawContent) onToken('\n⚠ cut off at the length limit — this answer is incomplete. Ask them to carry on, or raise Max tokens in Settings.');
+    else if (!sawReasoning) throw new Error(`${label} hit the length limit before saying anything — raise Max tokens in Settings`);
   }
 }
 
@@ -1363,9 +1404,17 @@ async function streamGoogle({ system, messages, model, temperature, maxTokens, o
 
   let inputTokens = 0;
   let outputTokens = 0;
+  let sawText = false;
+  let finish = '';
   await parseSSE(res, (event, data) => {
     try {
       const j = JSON.parse(data);
+      /* Why the answer stopped. Gemini closes a truncated, a safety-blocked
+         and a finished stream identically — 200, clean EOF, no error frame —
+         so the only thing that tells them apart is this field, and nothing
+         read it. First one wins; STOP is the ordinary case. #406 */
+      const fr = j.candidates && j.candidates[0] && j.candidates[0].finishReason;
+      if (fr && !finish) finish = String(fr);
       /* A candidate's parts[] can hold MORE than one entry in a single
          chunk — e.g. a code-block part followed by an explanation part,
          or (on thinking-capable models like gemini-2.5-pro /
@@ -1378,7 +1427,7 @@ async function streamGoogle({ system, messages, model, temperature, maxTokens, o
       const parts = j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts;
       if (parts) {
         const text = parts.filter(p => p && !p.thought && p.text).map(p => p.text).join('');
-        if (text) onToken(text);
+        if (text) { sawText = true; onToken(text); }
       }
       /* Record only — report once, below. Gemini stamps usageMetadata on
          streamed chunks with CUMULATIVE counts, and the ceoTokens meter ADDS
@@ -1392,6 +1441,23 @@ async function streamGoogle({ system, messages, model, temperature, maxTokens, o
   });
   if (onUsage && (inputTokens || outputTokens)) {
     onUsage({ input: inputTokens, output: outputTokens, total: inputTokens + outputTokens });
+  }
+  /* Anything but STOP means the answer the boss is reading is not the answer
+     the model meant to give. MAX_TOKENS is the ceiling; SAFETY / RECITATION /
+     PROHIBITED_CONTENT are refusals that arrive as a clean 200 with an EMPTY
+     candidate and no error frame anywhere — measured: an empty bubble, no
+     throw, no cause on screen. With text already delivered we keep it and
+     mark where it stopped; with nothing delivered the turn failed and has to
+     be heard as a failure. Inline for #258's lift rule. #406 */
+  if (finish && finish !== 'STOP') {
+    if (finish === 'MAX_TOKENS') {
+      if (sawText) onToken('\n⚠ cut off at the length limit — this answer is incomplete. Ask them to carry on, or raise Max tokens in Settings.');
+      else throw new Error('Google hit the length limit before saying anything — raise Max tokens in Settings');
+    } else if (sawText) {
+      onToken(`\n⚠ Google stopped early (${finish}) — this answer is incomplete.`);
+    } else {
+      throw new Error(`Google ended the turn without an answer (${finish})`);
+    }
   }
 }
 
