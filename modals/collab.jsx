@@ -479,7 +479,75 @@ const TERMINAL_STATES = new Set(
    somebody notices it has none. */
 const FILTER_PILLS = ['active', 'blocked', ...TERMINAL_STATES, 'all'];
 
-function InboxModal({ open, onClose, onResend = null }) {
+/* What the inbox says when it is showing nothing.
+
+   One sentence covered three different situations, and on the office that
+   reaches this room first it was wrong in every clause. 📬 INBOX is a
+   topbar button rendered from the first page load, so a brand-new boss
+   opens it before a single message exists. The registry answers `[]`, every
+   chip above reads 0, the header says `0 threads · 0 messages total` — and
+   the panel underneath said:
+
+       No messages match this filter.
+       Try widening the state filter, or @-mention a coworker to start a
+       thread.
+
+   Nothing was being filtered. The word "match" asserts that there are
+   messages and that this filter is what is keeping them off screen, which
+   is the one thing the counts directly beside it deny; and the way out it
+   named — widen the filter — will show the identical nothing however far it
+   is widened, because ALL is already 0. This file has been here before, in
+   its own words about the `cancelled` records that no chip could reach:
+   "the empty state told them to 'try widening the state filter' — a
+   widening the chips could not do". That was fixed by giving the state a
+   chip. The case where there is no state to reach at all was left standing.
+
+   The second route was the same shape one level down: "@-mention a
+   coworker" on an office that has not hired one. Same rule as
+   `noCrewNote(agents)` on the missions form — a room can only offer a door
+   the boss can actually walk through, so this reads the roster and says
+   which door that is.
+
+   §7: state the reason AND the route. Pure and module-level so
+   scripts/test_an_empty_inbox_does_not_blame_the_filter.py runs it verbatim
+   under node. */
+function inboxEmptyNote(total, filtered, agents) {
+  const n = Number(total) || 0;
+  const crew = Array.isArray(agents) ? agents.length : 0;
+  const held = `${n} message${n === 1 ? '' : 's'}`;
+  if (n === 0) {
+    return {
+      title: 'Nothing has been handed off yet.',
+      sub: 'This is the record of work passed between your coworkers — who asked, '
+        + 'who took it, and how it ended. Nothing has been through it, so no filter '
+        + 'here is hiding anything. '
+        + (crew === 0
+            ? 'You have not hired anyone yet; hire your first coworker from the front '
+              + 'desk and their first hand-off opens the first thread.'
+            : 'Hand a job to a coworker — drop a task on their desk, or @-mention them '
+              + 'in chat — and the first thread opens here.'),
+    };
+  }
+  /* Unfiltered and still empty is not a state the panel can be in — a
+     thread is a group of the very messages being counted — so if it ever
+     happens, say what is actually known rather than blaming a filter that
+     is not on. */
+  if (!filtered) {
+    return {
+      title: 'Nothing to show.',
+      sub: `The registry holds ${held} with no filter on, and none of them could be `
+        + 'grouped into a thread. That is a fault in this office, not something you '
+        + 'did — reload, and if it survives that, the records are in the office export.',
+    };
+  }
+  return {
+    title: 'No messages match this filter.',
+    sub: `${held} ${n === 1 ? 'is' : 'are'} in here. Try widening the state filter, `
+      + 'or set the coworker filter back to everyone.',
+  };
+}
+
+function InboxModal({ open, onClose, onResend = null, agents = [] }) {
   // Pick up an initial filter from sessionStorage when the modal is
   // opened via the palette commands `Show blockers` / `Show failed` etc.
   // Cleared after read so a manual nav-button open defaults back to 'active'.
@@ -789,12 +857,15 @@ function InboxModal({ open, onClose, onResend = null }) {
           {agentList.map(a => <option key={a} value={a}>{a === 'all' ? 'everyone' : a}</option>)}
         </select>
       </div>
-      {visibleThreads.length === 0 ? (
-        <div className="empty-state">
-          <div className="empty-title">No messages match this filter.</div>
-          <div className="empty-sub">Try widening the state filter, or @-mention a coworker to start a thread.</div>
-        </div>
-      ) : (
+      {visibleThreads.length === 0 ? (() => {
+        const note = inboxEmptyNote(all.length, isFiltered, agents);
+        return (
+          <div className="empty-state">
+            <div className="empty-title">{note.title}</div>
+            <div className="empty-sub">{note.sub}</div>
+          </div>
+        );
+      })() : (
         <div style={{display:'flex',flexDirection:'column',gap:10}}>
           {/* Above the list, not below it, because the dropped ones are the
               OLDEST and the list runs newest-first — the top is where the

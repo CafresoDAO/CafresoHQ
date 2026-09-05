@@ -7512,7 +7512,10 @@ ${d.text}` : d.text,
       <MorningReportModal report={gazette} onClose={()=>setGazette(null)} onGoToOffice={()=>navTo('visual')} />
       <ReceiptsModal open={receiptsOpen} onClose={()=>setReceiptsOpen(false)} receipts={receipts} onClear={onClearReceipts}
         onPin={(r) => onPin({ kind:'receipt', text:`${r.decision === 'approved' ? '✓' : '✕'} ${r.title}`, sourceId: r.id })}/>
-      <InboxModal open={inboxOpen} onClose={()=>setInboxOpen(false)} onResend={resendMessage}/>
+      {/* The roster, so the empty room can name a door the boss can walk
+          through: on an office with nobody hired, "@-mention a coworker"
+          was advice about a population that does not exist. */}
+      <InboxModal open={inboxOpen} onClose={()=>setInboxOpen(false)} onResend={resendMessage} agents={agents}/>
       <NotificationCenter
         open={notifOpen}
         onClose={() => { setNotifOpen(false); markNotifsSeen(); }}

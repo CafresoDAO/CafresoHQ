@@ -243,9 +243,17 @@ def main():
           'view', not liars, liars)
 
     # --- §3: the premise ------------------------------------------------
+    # The ASSERTION is unchanged; only where it looks. #303 split the empty
+    # state into three situations, because on an empty registry this
+    # sentence was blaming a filter that was not on, and moved the wording
+    # into the module-level `inboxEmptyNote` beside the component. The
+    # sentence still has to exist and still has to be what a FILTERED empty
+    # panel says — that is what this header agrees with — so the check now
+    # reads the room the empty state actually lives in.
+    empty_room = component(collab, 'inboxEmptyNote') + inbox
     check('the empty state still sends the reader to the filter — which is '
           'the sentence the header has to agree with',
-          'Try widening the state filter' in inbox,
+          'Try widening the state filter' in empty_room,
           'modals/collab.jsx: the empty-state copy has changed')
     check('the per-thread "N here" badge this borrows its wording from is '
           'still there',

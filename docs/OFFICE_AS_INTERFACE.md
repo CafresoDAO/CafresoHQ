@@ -35013,3 +35013,51 @@ this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any kind
 was run.
+
+---
+
+## 306. the empty inbox told a brand-new boss their filter was hiding things
+
+`📬 INBOX` is a topbar button rendered from the first page load, sitting in
+the status strip beside ⌗ ROOMS. A tester who has hired nobody and sent
+nothing opens it long before the message registry can hold anything —
+`MessageRegistry.list()` answers `[]`, every filter chip across the top
+reads 0, and the header reads `0 threads · 0 messages total`. Under all of
+that, the panel said:
+
+> No messages match this filter.
+> Try widening the state filter, or @-mention a coworker to start a thread.
+
+Nothing was being filtered. "match" is a claim that messages exist and that
+this filter is what keeps them off screen, and the counts three inches above
+it deny exactly that. Then the route: widening the filter shows the same
+nothing however far it is widened, because ALL is already 0 — the boss is
+sent to a control that cannot change the thing it is being blamed for. This
+file had already been caught in the same place once: its own comment about
+the `cancelled` records no chip could reach ends "the empty state told them
+to 'try widening the state filter' — a widening the chips could not do."
+That was answered by giving the state a chip. The case where there is no
+state to reach at all was left standing, and it is the case every new office
+sees first.
+
+The second half failed one level down. "@-mention a coworker" is advice
+about a population that, on a first run, is empty — the shape
+`noCrewNote(agents)` was written for on the missions form in `#299`. The
+inbox was never handed the roster, so it could not have known; it now is,
+from `app.jsx`, and says "hire your first coworker from the front desk" to
+an office with nobody and keeps the @-mention for an office that has
+somebody to mention.
+
+`inboxEmptyNote(total, filtered, agents)` splits what one sentence had been
+covering: an empty registry (say so, and say plainly that no filter here is
+hiding anything), a real registry behind a real filter (the old sentence,
+which was right all along in the one situation it was written for, now
+carrying the count it is standing in front of — "7 messages are in here"),
+and the state the panel should never be in, which reports what is known
+rather than inventing a filter that is switched off.
+
+The test drives the helper under node against all three, and it is careful
+about the roster: an ABSENT roster and an empty one mean the same thing here
+— there is nobody to @-mention — which is a different rule from the one
+`cast.jsx` keeps about reach, where absent must never render as nothing. The
+difference is that this sentence is advice, not a claim about a coworker.
