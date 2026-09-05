@@ -317,7 +317,21 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
         const merged = transform ? transform(data) : data;
         valRef.current = merged;
         setVal(merged);
-        try { localStorage.setItem(lsKey, JSON.stringify(merged)); } catch (_e) {}
+        /* The adoption mirror. #397: this was the ONE setItem in this file
+           that swallowed — three lines from persist()'s (174) and thirteen
+           from useStored's (84), both of which dispatch. What it fails to
+           mirror is the file's own content, so the value itself survives
+           (the next mount fetches it again) — but the FAILURE is the
+           boss's to know about, and this is the earliest moment anything
+           can tell them. A restricted or full quota throws on every write,
+           and a session that only reads never reaches persist() at all:
+           the office would look perfectly healthy right up until the first
+           edit of the day quietly failed to survive a reload. Same event,
+           same wording, as its two siblings. */
+        try { localStorage.setItem(lsKey, JSON.stringify(merged)); } catch (err) {
+          console.warn('[cafresohq] localStorage save failed for', lsKey, err);
+          try { window.dispatchEvent(new CustomEvent('cafresohq:storage-error', { detail: { key: lsKey, error: err } })); } catch (_e) {}
+        }
         /* The held-write flush, for the OTHER half of the same edit.
            #232 taught the keep-theirs branch above to replay a pre-hydration
            edit — persist() had bailed on the PUT while hydratedRef was still

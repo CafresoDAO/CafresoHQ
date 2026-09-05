@@ -471,7 +471,30 @@ function CommandPaletteProvider({ children }) {
     close();
     /* Defer the run() so the palette closes/blurs first — avoids weird
        focus issues when the command opens another modal. */
-    setTimeout(() => { try { cmd.run && cmd.run(); } catch (e) { console.error(e); } }, 30);
+    /* #397: `close()` has already run, so a command that dies is
+       indistinguishable from one that did its job — and this went to the
+       console. `## 395` left it alone reasoning that every registered
+       command is a navigation call or a modal toggle. Enumerated: it is
+       not. TWO of the commands in app/commands.jsx are `run: async` and do
+       real work behind a dialog — `ws.del.<id>` (await hqConfirm, then
+       delete a workspace) and `comms.who-can` (await hqPrompt, then
+       whoCan/grantedTools/HQ.capabilityFacts over the whole roster). For
+       exactly those two the try/catch below was INERT: an async function
+       throws by returning a rejected promise, which a synchronous catch
+       never sees, so the boss got not even the console line — just an
+       unhandledrejection and a palette that closed on nothing. Catch both
+       shapes, and say it on the surface the palette itself lives on. */
+    setTimeout(() => {
+      const failed = (e) => {
+        console.error(e);
+        const t = window.cafresohqToast;
+        t && t.error(`"${cmd.label || cmd.id}" didn't run — ${String((e && e.message) || e)}`);
+      };
+      try {
+        const r = cmd.run && cmd.run();
+        if (r && typeof r.then === 'function') r.then(null, failed);
+      } catch (e) { failed(e); }
+    }, 30);
   }, [close]);
 
   const runById = React.useCallback((id) => {

@@ -41441,3 +41441,162 @@ tasks, zero receipts and zero projects produce no red console and no
 `/gap/status` and `/news/status` fail with a 502 that names the compose
 command. `docs/BETA_READINESS.md` gets the first-run walkthrough this hunt
 produced, including the steps a tester genuinely cannot self-serve.
+
+## 397. the office saved nothing, said nothing, and looked fine
+
+`## 395` swept the client for work that never reaches the boss and fixed
+the worst of it. It left three EXPOSED items diagnosed and unfixed, named
+"so the next hunt need not re-derive". This is that hunt. All three are
+closed, and one of them was closed for a reason `## 395` did not have.
+
+### 1. The adoption mirror — app/storage.jsx
+
+`useFileStored`'s mount fetch adopts the file, sets state, and mirrors the
+adopted value back into localStorage:
+
+```
+try { localStorage.setItem(lsKey, JSON.stringify(merged)); } catch (_e) {}
+```
+
+Three lines above it, `persist()`'s identical write dispatches
+`cafresohq:storage-error`. Thirteen lines further up, `useStored`'s does
+too. So does the debounced file PUT. app.jsx's listener toasts all of
+them. The right mechanism existed, was wired, was used by its immediate
+neighbours, and this one call did not use it — the only bare swallow among
+four writes of the same shape in one file.
+
+**Driven, not read.** `## 395` named `app.jsx:1695` as the surface without
+driving it, and this series has repeatedly caught agents trusting a cited
+mechanism they never ran. So the harness lifts BOTH real bodies — the
+mount-fetch adoption block out of app/storage.jsx and the storage-error
+listener out of app.jsx — hands the second whatever the first dispatched,
+and asserts on the toast text. It is real: a `QuotaExceededError` out of
+the mirror write now produces exactly one toast, kind `STORAGE`, reading
+"⚠ Local storage full — recent changes may not persist", because the
+listener branches on `error.name` to say *storage full* rather than the
+generic *save failed*. Pre-fix the same run produced `events: []` and
+`toasts: []` — the boss's experience as a record: the save failed, the
+office said nothing, and nothing on screen changed.
+
+The stakes are lower than the file write's, and `## 395` was right that
+they are: what failed to mirror is the file's OWN content, so the next
+mount fetches it again. What is at stake is the boss being **told**, and
+this is the earliest moment anything can tell them. A restricted or
+full-quota browser throws on every write, and a session that only reads —
+opens the office, looks at the library, reads a thread — never reaches
+`persist()` at all. Without this the office looks perfectly healthy right
+up until the first edit of the day quietly fails to survive a reload.
+Pinned: the adoption itself still happens on the failure path, because
+reporting a failed mirror must not cost the boss the file they came back
+for.
+
+### 2. `hq night` read a refusal as an empty night — views/terminal.jsx
+
+`const j = (p, o) => fetch(base + p, …).then(r => r.json())`, the shared
+helper behind every `hq night` subcommand, with no `res.ok` check anywhere
+on it. `## 395` asked what actually happens. Measured, on the real pre-fix
+helper, three responses:
+
+- **500 with an HTML body** — `.json()` throws, and hqsh prints
+  `err Unexpected token '<', "<!DOCTYPE ht"... is not valid JSON`. The
+  transcript blames the JSON. Nothing in it says the office answered 500.
+  serve.py's `send_error()` is a plain `BaseHTTPRequestHandler` error page,
+  so this is what a 404/405/500 on any `/missions/*` route looks like.
+- **200 with an HTML body** — the same parse complaint, and this one is not
+  hypothetical: `runLine` explicitly exempts `night` from the "not inside
+  the shell" gate, so `hq night` is *designed* to be run at
+  ai.cafreso.com, where `backendBase()` is empty and `/missions/runs` is
+  the asset host's SPA fallback. The office is not there at all and the
+  transcript blames a token.
+- **4xx with a JSON body** — **no throw at all.** `const { runs } = await
+  j('/missions/runs')` destructures `undefined` off `{ error: … }`, and
+  `hq night runs` prints `(no night runs yet)`. `hq night` prints
+  `(no night schedules — hq night schedule <agentId> <topic>)`. `hq night
+  cancel <id>` prints `no schedule <id>`. Three different flavours of
+  "there is nothing here" over a request the office refused.
+
+**The fix**, in the file's own idiom: `j` reads the body once as text,
+parses it if it can, throws on `!r.ok` carrying the server's own `error`
+(or `detail`) when there is one and `HTTP <status> <statusText>` when
+there is not, and throws a plain sentence when the answer is not JSON at
+all. `runLine` already catches and `print('err', …)`s into the transcript
+— `## 395`'s own inventory names that as hqsh's surface — so nothing new
+had to be built to receive it. The 403 case now reads `err
+/missions/runs — night shifts are off in this office`.
+
+### 3. `runCmd` — ui/feedback.jsx. `## 395`'s reasoning does not hold.
+
+`## 395` left the ⌘K palette's `try { cmd.run && cmd.run(); } catch (e) {
+console.error(e); }` unfixed on IMPACT, reasoning that "every command
+registered in `app/commands.jsx` is a navigation call or a modal toggle,
+so a throw is rare rather than routine". The brief for this hunt said to
+check that reasoning rather than inherit it. Enumerated:
+
+`app/commands.jsx` is the only registrar — `useCommands` is called from
+exactly one place outside ui/feedback.jsx's own docstrings, and the test
+pins that, so a second registrar makes the enumeration fail rather than
+silently go stale. It registers ~45 commands, and **two are `run: async`
+and do real work behind a dialog**: `ws.del.<id>` (`await hqConfirm`, then
+delete a workspace) and `comms.who-can` (`await hqPrompt`, then
+`whoCan(agents, q, a => grantedTools(a.tools, HQ.capabilityFacts(a)))`
+over the whole roster). Neither is a navigation call or a modal toggle.
+
+And for exactly those two, **the existing try/catch was inert.** An async
+function does not throw — it returns a rejected promise, which a
+synchronous `catch` never sees. Driven on the real pre-fix body: the
+sync-throwing command reached `console.error`; the async one produced
+`UnhandledPromiseRejectionWarning: capabilityFacts is not a function` and
+nothing else. In a browser that is an `unhandledrejection` with no
+listener. The palette had already closed. The boss got not even the
+console line the shape was supposed to guarantee.
+
+Fixed both shapes at once — capture the return, and if it is a thenable
+attach the same handler — and reported on the surface the palette itself
+lives on: `window.cafresohqToast.error('"<label>" didn't run — <message>')`.
+The `console.error` stays; it is now the developer's copy rather than the
+only copy.
+
+### Fire-tested
+
+New `scripts/test_a_save_that_failed_is_said_out_loud.py`. Structural: the
+three swallows are gone by their exact old shape, the file's setItem
+dispatch count is four where it was three, the adoption mirror does NOT
+tag `target: 'file'` (localStorage is what failed, and app.jsx has
+separate and differently-worded copy for a disk write), `j` is `async` and
+throws on `!r.ok`, `runLine`'s transcript catch is untouched,
+app/commands.jsx is still the only registrar, and `runCmd` handles a
+thenable. Behavioural, on three REAL brace-lifted bodies driven under
+node — the adoption block chained into app.jsx's real listener, `j`
+against four responses, and `runCmd` against a sync throw, an async
+rejection, a healthy command and a handler-less one.
+
+Reverted all three in place (md5 `82a3b30f07b8535a3619c0809fdc1c98`,
+`0f038ace93e4050460809538f9832815`, `c8b8511e823cdb8e600788698a9c9dd7`) —
+**13 checks failed reliably across 3 runs**, including the three pieces of
+real evidence above. Restored byte-identical on all three, green on 3
+repeated runs. `npm run build` succeeds.
+
+**No fallout.** All 73 existing tests that name app/storage.jsx,
+views/terminal.jsx, ui/feedback.jsx or lift `useFileStored` / `runCmd` /
+`HQSH_COMMANDS` / `cafresohqPalette` were run standalone and every one
+passes, `test_file_persist_reports_failure_instead_of_silent_drop.py` (the
+sibling whose event this fix reuses) and `test_night_says_what_it_cannot_
+do.py` included. Same reason as `## 395`: all three fixes add a branch
+rather than split a function, so no lifted harness gained a new free
+variable.
+
+### The one correction to `## 395`'s inventory
+
+`nodeCount` / `setNodeCount` (views/graph.jsx 111/247) was reported at
+integration as *entirely dead — the setter appears never to be called*.
+It is not: `setNodeCount(g.nodes.length)` runs at 247, inside `mountData`,
+on every load. `## 395`'s original classification — **write-only**, the
+one instance in 122 pairs — was correct. Deleted as a separate commit;
+it cost the whole `GraphView` a render per load for a number nothing has
+ever read.
+
+A concurrent hunt is also appending, so this number may collide and be
+renumbered at integration. Every `#397` in the code comments and in
+`scripts/test_a_save_that_failed_is_said_out_loud.py` moves with it. The
+bare line numbers in those comments (84, 174, 247…) are LINE numbers, not
+entry numbers, and must not be renumbered.

@@ -1134,7 +1134,27 @@ const HQSH_COMMANDS = {
     help: 'night [list | schedule <agentId> <topic…> | cancel <id> | runs | chain] — container night shift',
     run: async (_chain, args) => {
       const base = (CafresoHQClient && CafresoHQClient.backendBase()) || '';
-      const j = (p, o) => fetch(base + p, { credentials: 'include', ...(o || {}) }).then(r => r.json());
+      /* #397: this was `.then(r => r.json())` with no status check anywhere.
+         Two ways that lied. A 500 out of serve.py answers with an HTML error
+         page, so `.json()` threw and hqsh printed the BROWSER's parse
+         complaint ("Unexpected token '<'…") instead of the office's — the
+         transcript blamed the JSON, not the server. And a 4xx that answers
+         in JSON never threw at all: `hq night runs` read `{ error: … }` as
+         `runs === undefined` and printed "(no night runs yet)", `hq night`
+         printed "(no night schedules…)", and `hq night cancel` printed
+         "no schedule <id>" — three different flavours of "nothing here",
+         over a request the office refused. Check the status, and put the
+         office's own words in the transcript, which is hqsh's surface. */
+      const j = async (p, o) => {
+        const r = await fetch(base + p, { credentials: 'include', ...(o || {}) });
+        const raw = await r.text();
+        let parsed = null;
+        try { parsed = JSON.parse(raw); } catch (_e) {}
+        const complaint = parsed && (parsed.error || parsed.detail);
+        if (!r.ok) throw new Error(`${p} — ${complaint || 'HTTP ' + r.status + ' ' + (r.statusText || '')}`.trim());
+        if (parsed == null) throw new Error(`${p} — the office answered with something that is not JSON (HTTP ${r.status})`);
+        return parsed;
+      };
       const fmtT = (ms) => ms ? new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
       if (args[0] === 'chain') {
         // MVP-2 wake mirror — the state canister's copy, used only to wake
