@@ -37380,3 +37380,60 @@ note it could not see. Same species: a look, a decision made from the look,
 and a write that assumes the world held still in between. `## 329.` lost
 what two writers wrote to one name. This one lost what two writers wrote
 because they were **given** one name.
+
+---
+
+## 338. the office had a floor below the floor, and the meeting door was on it
+
+**The wreck.** `.px-scene` is the office's one scroll container, and it asks
+for `height: 100%` of `.pxhq`, which is `overflow: hidden`. On a desktop
+that is exact arithmetic: every other child of `.pxhq` — sky, stars, canopy,
+every HUD — is absolutely positioned, so the scene *is* the box.
+
+The phone block breaks the assumption it never knew it was making. To stop
+the Situation Wall floating over the tower on a 375px screen, `@media
+(max-width: 768px)` gives `.pxhq .px-hud.sit-wall` `position: relative` and
+lays it out as a strip above the building. That is a good change and it is
+the only one of its kind — one HUD, out of absolute, into the flow. It also
+takes about 46px of `.pxhq`'s content height with it, and `.px-scene` went
+on asking for the whole 100%.
+
+Measured live at 375×812: `.pxhq` ran 285.1 → **756.0**, `.px-scene` ran
+331.7 → **802.5**. Those 46.5px of scroll viewport are outside the clipping
+frame — never painted, never hit-tested. Not a strip of scenery: a strip of
+the *scrollable area*, at the bottom, where a bottom-aligned building
+(`.px-building`'s `margin-top: auto`) parks its last floor.
+
+Its last floor is the lobby, and the lobby is where the meeting door lives.
+At `scrollTop === scrollHeight - clientHeight` — the end of the scroll, all
+the way down, nothing left to try — `.px-meetdoor` sat at y 754.7 → 788.7,
+and `document.elementFromPoint` at its centre returned `BUTTON.mtab`. Not
+the door. The same answer at every scroll position I probed: 0, 50, 100,
+150, 200, 250, 267. The one control on the floor that seats the team could
+not be touched on a phone.
+
+The office said so, too, and I did not believe it at first. `.pxhq.has-more`
+paints a "there is more office below" hint, and the class was still on the
+element at maximum scroll. It was not a stale flag. It was the literal
+truth: there was more office below, and the scroll had already ended.
+
+**The fix.** `.pxhq` becomes a flex column on the phone and `.px-scene`
+takes `flex: 1; min-height: 0; height: auto` instead of `height: 100%`, so
+the scene gets exactly the room the wall left over and its bottom edge is
+`.pxhq`'s bottom edge. `height: auto` is load-bearing, not tidiness — a
+definite `height` beats `flex: 1`, so leaving the base rule to cascade in
+would have re-hung the scene past the frame with the flexbox looking on.
+Nothing outside the media query moves; desktop keeps its exact 100%.
+
+Re-measured on the same floor: scene bottom **756.0**, equal to `.pxhq`'s;
+the door at 708.2 → 742.2, clear of the tab bar's 742.0; `elementFromPoint`
+at its centre returning `DIV.px-sp px-meetdoor clickable`; and a click
+dispatched at that point opening `.meeting-modal-body`.
+
+**Whose twin.** The four tab-bar clearance fixes (`## 320.` and its
+siblings) all found a view whose bottom was under something fixed. This one
+is a floor lower: the bottom was under *nothing*. It was inside the
+container's own scroll box and outside the container, which is a place a
+screenshot cannot show you and a `getBoundingClientRect` will — the scene's
+bottom and its parent's bottom were 46.5px apart in a file where they had
+been the same number since the day it was written.

@@ -11370,7 +11370,20 @@ body.night .px-lobby .px-int, body.night .px-lobby { filter: brightness(0.85); }
   /* The rooftop lamp is the single "is my business working right now"
      signal — it belongs on the phone more than anywhere else. */
   .px-livelamp { right: 6px; bottom: 8px; font-size: 7px; }
-  .px-scene { align-items: stretch; }
+  /* Pulling the Situation Wall into the flow (just above) cost .pxhq's box
+     ~46px of vertical room, but `.px-scene` still asked for `height: 100%`
+     of .pxhq — so the scroll viewport hung that far past .pxhq's
+     `overflow: hidden` edge. That strip is never painted and never
+     hit-tested: content that comes to rest in it at maximum scroll is
+     gone. The office bottom-aligns its building (`.px-building`'s
+     `margin-top: auto`), so what landed there was the LOBBY — the meeting
+     door with it, the one control on the floor that seats the team. The
+     "there is more office below" hint stayed lit at scrollTop === max,
+     which is exactly what it was: more office, and no way down to it.
+     Flex column instead, so the scene takes the room the wall left over
+     and its own bottom edge is .pxhq's bottom edge. */
+  .pxhq { display: flex; flex-direction: column; }
+  .px-scene { align-items: stretch; height: auto; flex: 1; min-height: 0; }
   .px-building { width: 100%; }
   .px-rooftop { height: 54px; }
   .px-floor { flex-direction: column; padding: 0 6px; }
