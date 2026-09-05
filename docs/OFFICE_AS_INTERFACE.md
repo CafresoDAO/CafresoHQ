@@ -39976,3 +39976,75 @@ runs. Restored from a `/tmp` copy, confirmed byte-identical (md5
 on two repeated runs.
 
 No `.jsx`/`.js`/`.css` touched — no build required.
+
+## 385. a second rename erased the first one's backlink
+
+**The hunt.** A systematic sweep for the remaining bare
+`open(path, 'w')`/`write_text`/`write_bytes` writers and check-then-write
+gaps across serve.py, fs_routes.py, exporters.py, night_runner.py,
+kg_builder.py, pty_server.py, and drivers/*.py, following the five prior
+fixes in this family (#337, #381, #382, #383, #384). Most remaining hits
+were confirmed already safe: server-boot-only TLS cert/key generation
+(single process, no concurrency); `/graph/publish`'s snapshot write
+(fresh random `secrets.token_hex(6)` filename every call, never shared);
+`_write_agents_md`'s markdown summary (best-effort, fully regenerated
+from the just-saved JSON on every call, regenerable); the FS backend's
+upload/rename doors (`fs_routes.claim_name`, already fixed); image-blob
+PUT (client-chosen id, no read-modify-write); the image-generation
+exporters' `out_path.write_bytes(...)` (single full-body write per call,
+no derived read). One was real: `_vault_rewrite_wikilinks` (serve.py),
+called once per renamed file from `/vault/rename` to follow the move
+through every inbound `[[wikilink]]` in the vault.
+
+**The bug.** For a note that links to SEVERAL renamed files, each
+`/vault/rename` call independently reads the note's current text, derives
+a new body with only its own link rewritten, and writes it back — a
+classic read-modify-write with no lock. serve.py is a ThreadingMixIn
+server, so several renames racing at once (an ordinary bulk cleanup, or
+two coworkers each renaming a few files around the same moment) can all
+read the SAME pre-race snapshot before any of them writes; whichever
+write lands last overwrites the file with its own single-link patch of
+that stale snapshot, silently discarding every other writer's
+already-applied rewrite underneath it. Every rename still answers 200
+with `linksRewritten: 1`, and the note is never flagged `stranded`,
+because each caller's own read-modify-write genuinely succeeded from
+where it was standing — there is no error anywhere to catch this.
+
+Reproduced empirically: ten concurrent `/vault/rename` calls, one shared
+note linking to all ten targets — all ten renames reported success, but
+only three of the ten backlinks actually still pointed at the new name
+afterward; the other seven silently reverted to the old, now-broken
+target.
+
+**The fix.** A single shared `_vault_write_lock` (renamed from the
+append-only `_vault_append_lock`, which already existed for exactly this
+kind of race in `_vault_append_local` — now it covers every writer that
+mutates a note's bytes in place). Before writing, `_vault_rewrite_wikilinks`
+re-reads the note and re-applies its own substitution against those FRESH
+bytes while holding the lock, then writes via `_vault_write_local`
+(mkstemp + fsync + os.replace, #382's fix, reused rather than reinvented)
+still inside the same locked section — so no other writer's read can land
+between this call's fresh read and its write, and this call's write can't
+land in the middle of a plain `/vault/note` write or append either (both
+now take the same lock). Each rewrite only touches its own src/dst, so
+serializing them is enough: whichever runs second re-derives from a body
+that already carries the first one's change and simply adds its own on
+top, instead of clobbering it.
+
+**Fire-tested.** New
+`scripts/test_two_renames_at_once_do_not_erase_each_others_backlinks.py`:
+structural checks that the write goes through the shared lock, re-reads
+fresh bytes, and lands through the atomic helper rather than a bare
+`write_text`; a race check — 5 rounds of 10 concurrent `/vault/rename`
+calls against one shared, several-megabyte backlinked note, checking
+every round that all ten renames report success AND all ten backlinks
+are actually present afterward (never a stale link left behind); plus a
+plain single rename with one backlink and a plain single `/vault/note`
+write, confirming the new lock doesn't change ordinary behavior. Reverted
+the fix in place (md5 `fd9b08f36a669ac494b3c8575e9c7216`, the pre-fix
+serve.py) — the race check failed on all three repeated runs (as few as
+2 of 10 backlinks surviving in some rounds), alongside every structural
+check. Restored (md5 `e7003cc777e6f74a649146a44871df66`), green again on
+two repeated runs.
+
+No `.jsx`/`.js`/`.css` touched — no build required.

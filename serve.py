@@ -1739,7 +1739,12 @@ def _vault_resolve_dir(rel: str) -> pathlib.Path:
     return candidate
 
 
-_vault_append_lock = threading.Lock()
+_vault_write_lock = threading.Lock()   # every writer that mutates a note's
+                                        # bytes in place (append, whole-body
+                                        # write, wikilink backlink rewrite)
+                                        # takes this same lock — see
+                                        # _vault_rewrite_wikilinks for why a
+                                        # tmp-file swap alone isn't enough.
 
 
 def _vault_append_local(target: pathlib.Path, body) -> None:
@@ -1765,7 +1770,7 @@ def _vault_append_local(target: pathlib.Path, body) -> None:
     fsync because the whole point of a note is that it survives.
     """
     data = body.encode('utf-8') if isinstance(body, str) else (body or b'')
-    with _vault_append_lock:
+    with _vault_write_lock:
         with open(target, 'a+b') as fh:
             fh.seek(0, os.SEEK_END)
             size = fh.tell()
@@ -1928,14 +1933,50 @@ def _vault_rewrite_wikilinks(src: str, dst: str, stranded=None):
             if lossy:
                 stranded.append(rel_p)
                 continue
-            try:
-                p.write_text(out, encoding='utf-8')
-            except Exception:
-                # Read-only, locked, out of space — the link stays pointed
-                # at a name that no longer exists, and saying nothing here
-                # is what made that invisible.
-                stranded.append(rel_p)
-                continue
+            # Re-derive against the FRESHEST bytes, under the shared
+            # _vault_write_lock, rather than writing back `out` — which
+            # was computed from the `text` read moments ago, outside any
+            # lock, above. Two renames whose backlinks both land in this
+            # same note (or this note's own autosave via /vault/note)
+            # each read that same unlocked snapshot independently; without
+            # a fresh re-read INSIDE the lock, whichever writer's
+            # p.write_text(out) landed last simply overwrote the file
+            # with ITS OWN stale-derived `out`, silently discarding every
+            # other writer's already-applied change underneath it — both
+            # sides get a 200 and `linksRewritten: 1`, and only one link
+            # actually followed the move. Reproduced empirically: 10
+            # renames fired at once against one shared note, only 3 of the
+            # 10 backlinks survived, with no error surfaced anywhere.
+            # A bare write_text was also never crash-safe (#382's family)
+            # — folded into the same fix via _vault_write_local's
+            # mkstemp+fsync+os.replace, so a reader never observes a
+            # half-written file either.
+            with _vault_write_lock:
+                try:
+                    fresh_bytes = p.read_bytes()
+                except Exception:
+                    stranded.append(rel_p)
+                    continue
+                try:
+                    fresh_text = fresh_bytes.decode('utf-8')
+                except UnicodeDecodeError:
+                    # Turned lossy since our first look (someone else
+                    # rewrote it with different bytes) — same rule as
+                    # above: see it, don't touch it.
+                    stranded.append(rel_p)
+                    continue
+                hits[0] = 0
+                fresh_out = epat.sub(_esub, pat.sub(_sub, fresh_text))
+                if not hits[0] or fresh_out == fresh_text:
+                    # A writer we serialized behind already carried our
+                    # change along (or the link is simply gone now) —
+                    # nothing left for us to do.
+                    continue
+                try:
+                    _vault_write_local(p, fresh_out)
+                except Exception:
+                    stranded.append(rel_p)
+                    continue
             links += hits[0]
             files += 1
     return (links, files)
@@ -5273,7 +5314,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     # with it.
                     _vault_append_local(target, body)
                 else:
-                    _vault_write_local(target, body)
+                    # Shares _vault_write_lock with _vault_append_local and
+                    # _vault_rewrite_wikilinks's re-derive step: a plain
+                    # whole-body PUT has no read to race, but it still must
+                    # not land its write in the middle of a rename's
+                    # read-fresh-then-write pair on the SAME note — see the
+                    # comment in _vault_rewrite_wikilinks for the corruption
+                    # that gap produced.
+                    with _vault_write_lock:
+                        _vault_write_local(target, body)
             except Exception as e:
                 return self._send_json(500, {'error': str(e)})
             return self._send_json(200, {'path': rel, 'mode': mode, 'size': target.stat().st_size})
