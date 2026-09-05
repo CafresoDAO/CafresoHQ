@@ -730,11 +730,84 @@ def _trial_check_and_bump(principal):
 
 def _night_log_run(run):
     """Upsert a run record (called progressively so a crash keeps partial log)."""
+    # When this row was last touched. The docstring above promises a crash
+    # keeps the partial log; the partial log is the only evidence of how far
+    # a killed night got, and until now it carried no timestamp of its own
+    # past `startedAt` — so the reconcile below had nothing but the start to
+    # date an interrupted run by. Stamped on every upsert, including the
+    # final one, so it is always the last moment we KNOW the run was alive.
+    run['progressAt'] = int(time.time() * 1000)
     with _night_lock:
         runs = [r for r in _night_load('mission-runs.json', [])
                 if r.get('id') != run.get('id')]
         runs.append(run)
         _night_save('mission-runs.json', runs[-MAX_NIGHT_RUNS_KEPT:])
+
+
+# The sentence an interrupted night gets. §7: name the cause, say what
+# survived, and leave a way forward. Nothing compares against this text —
+# `interruptedByRestart` is the flag — so it stays free to be reworded.
+# The first clause has to stand alone: missions.jsx renders `lastError`
+# cut to 60 characters on the run row, and the hover carries the rest.
+NIGHT_RESTART_NOTE = ('the office restarted before this night finished — '
+                      'the rounds it had already done are on the record, '
+                      'the rest of the night did not run')
+
+
+def _night_reconcile_interrupted_runs():
+    """Close out runs whose process died with the last server.
+
+    `run_mission` creates its record with `finishedAt: 0` and only stamps a
+    real timestamp after the iteration loop exits, and `_night_log_run` is
+    called PROGRESSIVELY (that is the point — a crash keeps the partial
+    log). So a night that was underway when the box was rebooted, the
+    laptop shut, or serve.py restarted leaves a row on disk that says
+    finishedAt 0 forever. Nothing ever revisits it.
+
+    Reproduced 2026-09-05 against a temp state dir: seed one row from
+    yesterday (`iterations: 6`, three notes filed, `finishedAt: 0`), start
+    the server, GET /missions/runs. `_night_running` is empty — the server
+    itself knows nothing is in flight — and the row comes back exactly as
+    written. The Night Shift board's `inFlight = !r.finishedAt` renders
+    "▶ … 6 rounds · 3 notes · still running", and it will say that
+    tomorrow and next week too: the boss opens the office the morning
+    after and is told a mission is running that no process anywhere is
+    running. Meanwhile the two surfaces that DO gate on `finishedAt > 0`
+    stay silent about it — the Gazette never leads with the night, and
+    app.jsx's XP loop never records it, so the coworker who actually filed
+    those three notes gets no line on their record, permanently, because
+    that ledger is append-only and the gate never opens.
+
+    A fresh process cannot have inherited a run: `_night_running` is empty
+    by construction here, at import, before the scheduler thread starts.
+    So every unfinished row on disk is definitionally orphaned, and this
+    can never close a run that is genuinely alive.
+
+    `progressAt` (or `startedAt`), never `now`: this run stopped whenever
+    the server died, which could have been last night, and filing it at
+    boot time would date the whole night to whenever the boss next
+    happened to start the app — the same lie `missionsOnLoad` refuses to
+    tell on the browser side. The last progress upsert is the last moment
+    we know it was alive.
+
+    Recorded as prose with no error COUNT behind it, which is the shape
+    app.jsx already reads as "ended for a reason that is on neither side of
+    the ledger" (the boss-cancelled shape). A power cut is not the
+    coworker's snag."""
+    now_ms = int(time.time() * 1000)
+    with _night_lock:
+        runs = _night_load('mission-runs.json', [])
+        changed = False
+        for r in runs:
+            if not isinstance(r, dict) or r.get('finishedAt'):
+                continue
+            r['finishedAt'] = int(r.get('progressAt') or r.get('startedAt') or now_ms)
+            r['interruptedByRestart'] = True
+            if not r.get('lastError'):
+                r['lastError'] = NIGHT_RESTART_NOTE
+            changed = True
+        if changed:
+            _night_save('mission-runs.json', runs)
 
 
 def _night_browser_active():
@@ -882,6 +955,13 @@ def _night_loop():
         except Exception as e:
             print('[night] scan error:', e)
 
+
+# Before the scheduler thread, not after: the first scan can start a new run
+# and log it, and this must only ever see rows written by a PREVIOUS process.
+try:
+    _night_reconcile_interrupted_runs()
+except Exception as _e:      # a bad run log must never stop the server booting
+    print('[night] reconcile error:', _e)
 
 threading.Thread(target=_night_loop, daemon=True, name='night-shift').start()
 

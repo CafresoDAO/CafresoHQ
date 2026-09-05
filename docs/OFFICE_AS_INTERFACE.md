@@ -36811,3 +36811,66 @@ Pure `.py` change — no `npm run build` needed for it.
 
 **Whose twin.** `## 140.`, which built the general mechanism and wired it to
 the two doors that were in front of it.
+
+---
+
+## 328. the night that was still running in the morning
+
+**The wreck.** The tester does the thing the Night Shift was built for. They
+schedule an overnight mission — "close the laptop, work continues" — and they
+close the laptop. Overnight the box reboots, or the container restarts, or
+`serve.py` is bounced by whatever bounces it. The next morning they open the
+office to see what got done.
+
+The board tells them the mission is still running.
+
+`run_mission` creates its record with `finishedAt: 0` and only stamps a real
+timestamp once the iteration loop exits. `_night_log_run` writes that record
+*progressively*, on purpose — its own docstring says "a crash keeps partial
+log". So the killed night leaves a row on disk holding six completed rounds,
+three notes filed in the vault, and `finishedAt: 0`. Nothing ever went back to
+it. `missions.jsx` computes `inFlight = !r.finishedAt` and renders
+
+    ▶ 02:00 · Pip · overnight competitor sweep · 6 rounds · 3 notes · still running
+
+the morning after, and the morning after that, and next week. The server is
+not confused about this — `_night_running` is empty in a fresh process and
+`GET /missions/scheduled` answers `running: []`. Two endpoints of the same
+server, disagreeing about the same mission, and the one the boss reads is the
+one that is wrong.
+
+The quieter half is worse, because it is permanent. The Gazette's lead-story
+filter is `(x.finishedAt || 0) > prevSeen`, and app.jsx's XP loop opens with
+`if (!(r.finishedAt > 0)) continue`. Both gate on the field the interrupted run
+never gets. So the night never leads the Gazette, and Pip — who really did file
+those three notes while the boss slept — gets no line on their record at all.
+The experience ledger is append-only and that gate never opens again, so the
+work is not late to the résumé, it is absent from it. §5 says a mission that
+ran its schedule is a job. This one ran, and the office forgot.
+
+**The fix.** `_night_reconcile_interrupted_runs()`, called once at import,
+above the line that starts the scheduler thread. A fresh process cannot have
+inherited a run, so every unfinished row on disk at that moment is
+definitionally orphaned and this can never close a mission that is genuinely
+alive. Each one is closed at the last moment we *know* it was breathing:
+`progressAt`, a stamp `_night_log_run` now writes on every upsert, falling back
+to `startedAt`. Never `now` — filing the night at boot time would date it to
+whenever the boss next happened to open the app, which is the same lie
+`missionsOnLoad` already refuses to tell on the browser side.
+
+What it is closed *with* matters as much as when. The row gets
+`interruptedByRestart` and a sentence — "the office restarted before this night
+finished — the rounds it had already done are on the record, the rest of the
+night did not run" — and no error *count*. That shape is not new: it is exactly
+what app.jsx already reads as an ending that belongs on neither side of the
+ledger, the one the boss's own STOP produces. A power cut is not the coworker's
+snag, and it is not their job either. What it is, now, is something the office
+can say out loud.
+
+**Whose twin.** `missionsOnLoad` (§ the load-scrub in app.jsx), which learned
+that a `running` mission at load time is a run that died with the tab and must
+land in `paused` rather than pretend. That fix was written for the browser
+half, where the process dying is the page closing. The server half has the same
+premise — a run lives in a process — and had no equivalent, so the half of the
+Night Shift that exists precisely because the browser is *not* running was the
+half that could never notice it had stopped.
