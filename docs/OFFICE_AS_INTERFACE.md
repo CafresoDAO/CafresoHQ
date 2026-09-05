@@ -2519,6 +2519,20 @@ should extend that boundary, not blur it.
   > what is broken is wrong in the safer direction, but it is still wrong —
   > it invites a fix for a non-bug and quietly writes off a feature that
   > works.
+  >
+  > ↩️ **REVERSED 2026-09-05 by `## 360.`** — the two paragraphs above were
+  > right about the code and wrong about the tradeoff. An unrestricted
+  > server-side write is a bigger hole than the convenience it bought: a
+  > scheduled Night Shift mission could file into the boss's Library on
+  > behalf of a coworker the boss never ticked "read your Library" for,
+  > with no gate anywhere in the path. `## 360.` closes it —
+  > `may_write_to_vault(ctx.agent_tools)`, resolved per dispatch off the
+  > Roster, refuses both a coworker who was not granted the Library and one
+  > the Roster can no longer find at all. The two mission paths still do
+  > not share ONE mechanism — Research's gate stays client-side against
+  > `canDoMode()`, the Night Shift's stays server-side — but they now
+  > enforce the same underlying grant. `test_mission_tool_gate.py`'s pin was
+  > updated to check for the gate's presence instead of its absence.
 - **The office floor is not touch-sized — but "coffee" always had another door.**
   MEASURED 2026-08-12 at 375×812, the first mobile pass of this codebase.
   Of the **15 controls inside `.px-scene`, 14 are under the 44px touch

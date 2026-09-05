@@ -59,6 +59,11 @@ def read(rel):
 
 class FakeCtx(object):
     brave_key = ''
+    # Granted on purpose: this file exercises write ACCOUNTING
+    # (what lands, what's reported), not the #360 permission gate —
+    # a fake that failed may_write_to_vault would fail every test
+    # here for a reason none of them are about.
+    agent_tools = ['vault']
 
 
 def drive(replies, vault_statuses):

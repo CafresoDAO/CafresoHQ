@@ -33,9 +33,13 @@ The gate itself is correct and must stay. In-tab Research runs on the
 BROWSER's per-agent tool registry, so an ungated run silently delivers
 nothing — `missions.jsx` records the measurement: a 15-minute mission on
 Llama reached round 4, claimed "Wrote 1" in its own transcript, and left
-`writes: null` and no Research/ directory. (The Night Shift is different: it
-runs server-side in night_runner.py, which grants the vault write without
-consulting `agent.tools` at all. Do not "unify" these.)
+`writes: null` and no Research/ directory. (The Night Shift runs server-side
+in night_runner.py and used to grant the vault write without consulting
+`agent.tools` at all, on the theory that unifying the two gates would take
+the overnight feature away from every front-desk hire. #360 reversed that:
+an unrestricted server-side write is the bigger hole, and the two paths now
+enforce the SAME roster grant through two different, non-unified mechanisms
+— see the section below.)
 
 Runs the REAL helpers by extracting them from missions.jsx and evaluating
 them under node, rather than restating their logic here.
@@ -189,21 +193,31 @@ console.log(JSON.stringify(R));
           "they need {names}" in text and "it needs {names}" not in text,
           'missions.jsx: §2 casts these as coworkers')
 
-    # ── The Night Shift must NOT be dragged into this gate ──────────────
+    # ── The Night Shift's grant is REVERSED as of #360 ──────────────────
+    #
+    # Everything above this line still holds: the two mission paths run in
+    # different places (browser vs. server) and must not share ONE gating
+    # mechanism. What changed is whether the server-side runner may ignore
+    # the Roster at all. It used to, on purpose — this file said so, twice,
+    # and a prior attempt to add a gate here was reverted for exactly the
+    # reason quoted below. #360 reversed that call: a scheduled mission
+    # writing into the boss's Library on behalf of a coworker the boss never
+    # ticked "read your Library" for is a bigger hole than the convenience
+    # it was buying front-desk hires, and it is now closed. See #360 in
+    # docs/OFFICE_AS_INTERFACE.md for the full account, including why the
+    # gate is fail-closed on an agent the roster can no longer find.
     night = (ROOT / 'night_runner.py').read_text(encoding='utf-8')
-    branches = re.findall(r"^\s*if name in \('VAULT_APPEND', 'VAULT_NEW'\)(.*)$",
-                          night, re.M)
-    check('the Night Shift grants vault writes with NO extra condition',
-          len(branches) > 0 and all(tail.strip() == ':' for tail in branches),
-          f'night_runner.py: {[t.strip() for t in branches]!r} — every one of these '
-          'must be a bare `:`. The two mission paths do not share a toolset and '
-          'must not be "unified": the server-side runner ignoring agent.tools is '
-          'exactly why a web-only front-desk hire can still use the overnight '
-          'feature. Adding a tools gate here would silently take that away.')
-    check('...and nothing in the runner reads an agent tool list',
-          re.search(r"agent[_.]tools|\.get\(['\"]tools['\"]\)", night) is None,
-          'night_runner.py: same reason — a tools allowlist here is a regression, '
-          'not a hardening')
+    check('the Night Shift now DOES consult what the boss granted',
+          re.search(r"may_write_to_vault\(ctx\.agent_tools\)", night) is not None,
+          'night_runner.py: #360 gates VAULT_APPEND/VAULT_NEW on the '
+          'dispatched coworker\'s real grants — a web-only front-desk hire '
+          'now gets the same overnight-vault refusal a boss would see from '
+          'them by day, instead of a silent bypass')
+    check('...and a missing grant reads as a refusal the ledger cannot mistake for a note',
+          re.search(r"_VAULT_FAIL_PREFIX,\s*\n?\s*NIGHT_VAULT_FORBIDDEN", night) is not None,
+          'night_runner.py: the refusal must be shaped as a vault_write_status '
+          'failure, or run_iteration counts a None as a landed note and the '
+          'morning report names a write the Library never saw')
 
     print()
     if FAILS:
