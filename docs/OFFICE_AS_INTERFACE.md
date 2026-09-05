@@ -34693,3 +34693,106 @@ The test is a real cold start on a free ephemeral port with stdout redirected
 to a file, read back while the process is still serving. Grepping the source
 for `flush` would have passed on a banner that still reached nobody, which is
 the failure this entry is about.
+
+## 302. the coworker said it saved a note two sentences too early
+
+**The wreck.** The boss wakes up, opens RECENT NIGHT RUNS, and reads a clean
+night: 4 iterations, 0 errors, no last error. The Gazette's summary line for
+the last one says "Next iteration could explore competitor tiers." The vault
+folder is empty. Somewhere in that night the coworker wrote, in full:
+
+> Checked what is already filed. `[VAULT_SEARCH: pricing]` I saved the note to
+> `Research/Night/pricing.md`.
+
+There is no such note. There was never a `VAULT_NEW` call. Nothing on any of
+the four surfaces that show a night error says so, because as far as
+`run_iteration` was concerned, that sentence was never spoken.
+
+**What was actually happening.** `run_iteration` closes each iteration with one
+if/elif chain of honesty checks, three of which read the coworker's own prose.
+Two of them read every hop's reply. One read exactly one:
+
+```python
+all_replies = mask_reasoning('\n'.join(replies))
+last_reply  = mask_reasoning(reply or '')
+reached = find_unsupported_tool(all_replies)
+...
+elif _CLAIMS_A_PUBLISH_RE.search(all_replies):
+elif not writes and _CLAIMS_A_WRITE_RE.search(last_reply):
+```
+
+The publish branch immediately above carries the reason for its own scope, in
+the file, in so many words: *every hop's reply, not just the last, for the same
+reason the marker scan above reads them all — a hop that lied and a hop that
+reached are equally absent from a final status line.* That sentence is exactly
+as true of a write claim. It just never walked one branch down.
+
+The hole is not a corner case; it is most of the surface. The hop loop stops on
+the first reply that carries **no** tool marker, so a reply that carries one is
+by construction never `reply`. Every sentence a coworker says while it is still
+using tools — which is where a research agent does nearly all of its talking —
+was outside the only check that would have caught a fabricated write. And the
+transcript that proves it is the same transcript, one verb apart. Measured
+against the real `run_iteration` with the network unplugged:
+
+```
+[VAULT_SEARCH: pricing] I saved the note to Research/Night/pricing.md.
+  → writes [], errors 0, lastError ''        (a clean night)
+
+[VAULT_SEARCH: pricing] I published the pricing page update.
+  → 'said it published, but nothing went live'
+```
+
+Same hop, same ledger, same closing line. One is caught and one is not, and the
+only difference is which variable the branch happened to read.
+
+`#205` is where the twin got away. That entry found the two honesty checks
+reading raw text while both tool detectors read through `mask_reasoning`, and
+fixed both — "`all_replies` is now joined through `mask_reasoning` … and the
+write-claim check reads a masked `last_reply` instead of the raw final reply."
+It stood at the exact line, changed it, and carried the narrower scope across
+untouched, because the property it was hunting that night was the mask. The
+spelling it left behind was then pinned by its own test, which is how a scope
+that nobody had ever decided on became a scope the suite defended.
+
+**The fix.** One word: the write check reads `all_replies`. `last_reply` had no
+other reader, so it goes. The wider scope is safe because this branch, unlike
+the publish branch, is gated on evidence — `not writes` is the whole
+iteration's ledger, so a coworker that claims the note in hop 1 and genuinely
+files it in hop 3 is still silent, and a write the vault *refused* is still
+caught by the `refused` branch above, which outranks both claim checks and
+blames the office's shut door rather than the coworker. The masking `#205`
+added is untouched: `all_replies` is the masked join it built.
+
+**The test.**
+`scripts/test_a_write_claimed_in_an_early_hop_is_still_a_lie.py` drives the real
+`run_iteration` under the canned-brain harness `#205`'s test introduced: the
+early-hop claim must now be an error, in the same wording; its publish twin must
+still be caught, proving the two branches agree on scope; the honest chains must
+stay quiet — a hop that claimed and then really wrote, a claim drafted only
+inside `<think>`, a vendor who published a report in 2024, and a plain quiet
+night. The source pins strip comments before matching, so this entry's own
+quotation of the old spelling cannot answer for the code.
+
+**One existing test was changed, and it must be said plainly.**
+`scripts/test_a_claim_made_only_in_thought_is_not_a_lie.py` pinned the seam as
+`_CLAIMS_A_WRITE_RE.search(last_reply)`. That single string pinned two
+properties at once — the mask, which is what that file is about, and the
+final-hop-only scope, which is the defect above. The pin now reads
+`_CLAIMS_A_WRITE_RE.search(all_replies)` plus the masked join, so the mask is
+still defended and only the scope claim is dropped. The test was not weakened:
+it still runs the same six behavioural checks, unchanged, and they all pass.
+
+Fire-tested: copied the fixed `night_runner.py` to `/tmp`, reverted the branch
+in place with the editor (never `git checkout -- <file>`) — 3 of 13 checks
+failed, exit 1, with the early-hop write claim coming back `error: None`.
+Restored from the `/tmp` copy, confirmed byte-identical by `md5`, reran — 13 of
+13 passed, exit 0.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 toolchain mismatch on a file a foreign session owns and this change
+never touches). This change covers only `night_runner.py`, the one new test, the
+one source pin in `#205`'s test, and this entry; `src/cafresohq_state/main.mo`
+was never staged or edited, no II or `derivationOrigin` value was read or
+written, and no dfx/IC action of any kind was run.

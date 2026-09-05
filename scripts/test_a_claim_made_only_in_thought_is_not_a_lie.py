@@ -112,9 +112,16 @@ def main():
     src = (ROOT / 'night_runner.py').read_text(encoding='utf-8')
     check('run_iteration joins the replies through mask_reasoning',
           "mask_reasoning('\\n'.join(replies))" in src)
-    check('the write-claim check reads the masked last reply',
-          '_CLAIMS_A_WRITE_RE.search(last_reply)' in src
-          and "last_reply = mask_reasoning(reply or '')" in src)
+    # This pin used to read `_CLAIMS_A_WRITE_RE.search(last_reply)` and
+    # `last_reply = mask_reasoning(reply or '')`. That spelling pinned TWO
+    # properties at once: the mask (which is what this file is about) and
+    # the SCOPE — final reply only — which turned out to be the bug #302
+    # fixed: a write claim made in a non-final hop was never checked at
+    # all, while the publish check one branch up reads every hop. The mask
+    # is still pinned, over the joined replies the check now reads.
+    check('the write-claim check reads the masked replies',
+          '_CLAIMS_A_WRITE_RE.search(all_replies)' in src
+          and "all_replies = mask_reasoning('\\n'.join(replies))" in src)
 
     print()
     if FAILS:

@@ -1039,7 +1039,6 @@ def run_iteration(ctx, sched, iteration, total_iters):
     # exact accusation shape the REASONING_TAGS block above condemns, on
     # the two readers that never got the mask.
     all_replies = mask_reasoning('\n'.join(replies))
-    last_reply = mask_reasoning(reply or '')
     reached = find_unsupported_tool(all_replies)
     if refused is not None:
         # First, and ahead of the reach check that used to hold this spot,
@@ -1067,7 +1066,22 @@ def run_iteration(ctx, sched, iteration, total_iters):
         # above reads them all: a hop that lied and a hop that reached are
         # equally absent from a final status line.
         error = 'said it published, but nothing went live'
-    elif not writes and _CLAIMS_A_WRITE_RE.search(last_reply):
+    elif not writes and _CLAIMS_A_WRITE_RE.search(all_replies):
+        # Every hop's reply, not just the last — the same scope the reach
+        # scan and the publish check above already use, and for the same
+        # reason they give: a hop that lied is as absent from a final
+        # status line as a hop that reached. This check alone read only
+        # `reply`, so a coworker that said "I saved the note to
+        # Research/Night/pricing.md" in the hop that carried a
+        # [VAULT_SEARCH] marker, and then closed the next hop with a
+        # blameless "Next iteration could explore…", was recorded as a
+        # clean night: writes [], errors 0, lastError ''. Reproduced
+        # against the real run_iteration; the identical transcript with
+        # "I published the pricing page update" in place of the write
+        # sentence WAS caught, one branch up, because that branch reads
+        # all_replies. The ledger gate is what makes the wider scope safe:
+        # `not writes` means a hop that claimed early and genuinely wrote
+        # later still passes silently.
         # The prompt's own closing rule demands a status line like "Wrote
         # X." -- and a model that skips the actual VAULT_NEW/VAULT_APPEND
         # call but still produces that sentence has written a LIE, not a
