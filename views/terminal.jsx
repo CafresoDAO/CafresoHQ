@@ -1313,6 +1313,8 @@ function ProjectTerminal({ project, visible }) {
     setAddMenuOpen(false);
   };
 
+  const purgeRef = React.useRef([]);
+
   const closeSession = (id) => {
     // Closing the LAST tab is allowed — the sessions.length===0 effect above
     // respawns a fresh default session, which is what "close" means there.
@@ -1336,15 +1338,34 @@ function ProjectTerminal({ project, visible }) {
         .catch(() => {});
     }
     /* Clear this session's persistent state so localStorage doesn't bloat over
-       time. msgs can be hundreds of KB after a long conversation. */
-    if (closing && pid) {
-      try {
-        ['mode', 'msgs', 'model', 'auth'].forEach(suffix => {
-          localStorage.removeItem(`cafresohq_terminal:${suffix}:${pid}:${closing.sessionId}`);
-        });
-      } catch (_e) {}
-    }
+       time. msgs can be hundreds of KB after a long conversation.
+       QUEUED, not removed here: this used to be a synchronous
+       localStorage.removeItem() right in the click handler, and it never
+       survived the render it triggered. setSessions() unmounts the closed
+       TerminalSession moments later, and useStoredV's unmount flush
+       (views/core.jsx — added so switching projects mid-stream can't drop the
+       boss's typing) writes mode/msgs/model/auth straight back under the very
+       keys just deleted. So "× End session" freed nothing, ever: every closed
+       tab left its whole conversation in localStorage under a uuid nothing can
+       reach again, and once the shared quota filled, useStored's setItem began
+       throwing into a swallowed catch office-wide — live chats, tasks and
+       memory quietly stopped persisting with no error shown anywhere. */
+    if (closing && closing.sessionId) purgeRef.current.push(closing.sessionId);
   };
+
+  /* React flushes a deleted subtree's cleanup before the surviving tree's
+     effects, so purging here (rather than in the handler) makes the removal
+     the last word instead of the first. */
+  React.useEffect(() => {
+    if (!pid || !purgeRef.current.length) return;
+    const ids = purgeRef.current;
+    purgeRef.current = [];
+    try {
+      ids.forEach(sid => ['mode', 'msgs', 'model', 'auth'].forEach(suffix => {
+        localStorage.removeItem(`cafresohq_terminal:${suffix}:${pid}:${sid}`);
+      }));
+    } catch (_e) {}
+  }, [sessions, pid]);
 
   const cliName = (cli) => cli === 'hermes' ? 'Hermes' : cli === 'claude' ? 'Claude' : cli === 'gemini' ? 'Gemini' : cli === 'hqsh' ? 'hqsh' : 'Codex';
   const cliIcon = (cli) => cli === 'hermes' ? '☼' : cli === 'claude' ? '✦' : cli === 'gemini' ? '✧' : cli === 'hqsh' ? '⛓' : '◈';

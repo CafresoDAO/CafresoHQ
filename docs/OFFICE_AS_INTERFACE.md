@@ -32833,3 +32833,97 @@ a foreign session owns and this change never touches). This change covers only
 `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any kind
 was run.
+
+## 275. Closing a terminal tab kept the whole conversation forever
+
+The standalone Terminal (`views/misc.jsx`'s `TerminalView`) prints its own
+contract in the header — *"+ to add session · × to close tab"* — and every
+Projects terminal shares the same machinery, `views/terminal.jsx`'s
+`ProjectTerminal`. Its `closeSession()` ended with a tidy-up block whose
+comment said exactly the right thing:
+
+> *"Clear this session's persistent state so localStorage doesn't bloat over
+> time. msgs can be hundreds of KB after a long conversation."*
+
+It deleted the tab's four keys — `cafresohq_terminal:{mode,msgs,model,auth}:
+<pid>:<sessionId>` — and then lost the argument to a fix from an earlier
+sprint.
+
+`closeSession()` calls `setSessions(next)` first, and the `removeItem()` loop
+ran synchronously, in the click handler, *before* React committed anything.
+React then unmounted the closed `TerminalSession` — and `views/core.jsx`'s
+`useStoredV` has an unmount flush, added deliberately so switching projects
+mid-stream can't drop the boss's typing:
+
+```js
+React.useEffect(() => () => {
+  const s = latest.current;
+  if (!s || !s.key) return;
+  try { localStorage.setItem(s.key, JSON.stringify(...)); } catch (_e) {}
+}, []);
+```
+
+So the close handler removed four keys and the unmount that same click caused
+wrote all four straight back, with the latest values. Not a race — a fixed
+order. The handler runs before the commit, the flush runs during it, and the
+flush is the last writer, every single time.
+
+Which means **"× End session" freed nothing, ever.** Every closed terminal tab
+left its entire transcript in `localStorage` under a session uuid that nothing
+in the app can ever address again — no tab, no list, no menu. And
+`localStorage` is one shared ~5MB quota for the whole office. When it fills,
+`setItem` throws, and both `useStoredV` and app.jsx's `useStored` swallow it:
+
+```js
+catch (_e) { /* quota exceeded, etc */ }
+```
+
+The office does not go down. It just stops remembering. Live terminal chats,
+tasks, memory — everything written through that path silently stops surviving
+a reload, and nothing anywhere says why. A control that claims to clean up,
+doesn't, and the eventual bill is paid by data nobody chose to throw away.
+
+**The fix.** Stop fighting the flush; queue behind it. `closeSession()` now
+pushes the closed session id onto a ref, and a `useEffect` keyed on `sessions`
+does the removal:
+
+```js
+if (closing && closing.sessionId) purgeRef.current.push(closing.sessionId);
+```
+
+React flushes a deleted subtree's cleanup before running the surviving tree's
+effects, so the purge is now the last word instead of the first. Same four
+suffixes, same key shape, same intent — thirty milliseconds later in the
+lifecycle, which is the only part that was ever wrong.
+
+**The test.**
+`scripts/test_closing_a_terminal_tab_actually_frees_its_saved_chat.py` lifts
+the real `useStoredV` out of `views/core.jsx` and runs it in Node under a small
+React shim (`useState`/`useRef`/`useEffect`, cleanups run before a re-render,
+as React does) against a `localStorage` stand-in. It plays the same close twice
+— once removing the key before the unmount, once after — and measures which
+ordering actually frees it: before leaves 200+ bytes of transcript behind,
+after leaves nothing. Then it measures the real `ProjectTerminal`: no inline
+`removeItem` in `closeSession()` (comments stripped first, so prose about the
+old code can't pass the check for it), a queue push, a `useEffect` that does
+the removal, all four suffixes still purged, keyed on `sessions`, building the
+same key string `useStoredV` writes.
+
+Fire-tested: copied the fixed `views/terminal.jsx` to `/tmp`, reverted the
+queue-and-effect back to the inline `removeItem` in place with the editor
+(never `git checkout -- <file>`) — 3 of 12 checks failed, exit 1, with the
+mechanism checks still passing to show the premise held. Restored from the
+`/tmp` copy, confirmed byte-identical by `md5`
+(`7bdc40c5e622478cba5dc102e72a9962`), reran — 12 of 12 passed, exit 0.
+
+`npm run build` was run once up front so `dist-ui/manifest.json` exists in a
+fresh worktree, and again after the `.jsx` edit.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file
+a foreign session owns and this change never touches). This change covers only
+`views/terminal.jsx`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any kind
+was run.
