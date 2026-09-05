@@ -549,6 +549,60 @@ function handoffHint(agents, C) {
     : ` ${names} are still working, though — @mention one of them and they can pick this up.`;
 }
 
+/* The name the boss typed that nobody answered to, said out loud.
+
+   The direct thread learned this twice already — ui/chat.jsx prints
+   "(unknown teammate: @X)" when some other mention matched, and the stray
+   note "(nobody here is called @X … Sending this to CafresoHQ instead.)"
+   when none did. A ROOM has the same routing and had neither: its recipient
+   list is `activeRoom.participants.filter(…mentioned…)`, and every name that
+   survives the filter is asked while every name that does not is dropped
+   without a word.
+
+   Measured 2026-09-05 on a real `python3 serve.py` with three hired
+   coworkers on a real local brain. Meeting "Migration sync", attendees Kip
+   and Plato, Dax hired and idle at his desk. The boss typed
+
+     @Kip @Dax in one word, is the migration risky?
+
+   and the room the office had just told them to "@-mention specific people"
+   in produced exactly two records: the boss's own line, relabelled
+   `→ @Kip`, and Kip's answer. Dax — a real colleague, addressed by name,
+   sitting one desk away — was never asked and never mentioned again.
+
+   Two endings because there are two, and they need different routes out: a
+   coworker who exists but is not in this room can be invited, and a name
+   nobody answers to cannot. `recipients` is named in both because "who DID
+   get this" is the fact that makes the omission legible.
+
+   Returns '' when nothing was dropped, so the caller can emit blindly. */
+function roomStrayNote(targetNames, recipients, roster, kind) {
+  const typed = Array.isArray(targetNames) ? targetNames.filter(Boolean) : [];
+  const asked = (Array.isArray(recipients) ? recipients : []).filter(a => a && a.name);
+  const team = (Array.isArray(roster) ? roster : []).filter(a => a && a.name);
+  const holds = (list, n) => list.some(a =>
+    String((a && a.name) || '').toLowerCase() === String(n).toLowerCase());
+  const dropped = typed.filter(n => !holds(asked, n));
+  if (!dropped.length) return '';
+  const offRoom = dropped.filter(n => holds(team, n));
+  const unknown = dropped.filter(n => !holds(team, n));
+  const room = kind === 'project' ? 'project room' : 'meeting';
+  const at = (ns) => nameList(ns.map(n => '@' + n));
+  const parts = [];
+  if (offRoom.length) {
+    parts.push(`${at(offRoom)} ${offRoom.length === 1 ? "isn't" : "aren't"} in this ${room}`);
+  }
+  if (unknown.length) parts.push(`nobody here is called ${at(unknown)}`);
+  const askedNames = at(asked.map(a => a.name));
+  const who = askedNames
+    ? ` — only ${askedNames} ${asked.length === 1 ? 'was' : 'were'} asked.`
+    : ' — nobody was asked.';
+  const route = offRoom.length
+    ? ` Invite them to the ${room}, or ask in the DIRECT thread.`
+    : '';
+  return `(${parts.join(', and ')}${who}${route})`;
+}
+
 /* §7 wants every failure to end in a way FORWARD, and "pick another
    coworker" is only one of them — it is the one that stops existing exactly
    when the office is emptiest.
@@ -648,4 +702,4 @@ function withRouteOut(text, candidates, C, roster) {
   return out + tail;
 }
 
-export { agentBrainReady, brainName, candidateBrain, CANDIDATE_BRAINS, canDoPhrase, CAN_DO, CAN_DO_NEEDS, CAN_DO_UNLOCK, CAN_USE_OFF_TIP, CAN_USE_TIP, CAST_CLASSES, CAST_DEFAULT, EFFORT_TIP, grantedTools, handoffHint, memoryLabel, memoryNotes, memoryRoot, nameList, officeHasBrain, OFFICE_EFFORT_TIP, payrollLabel, poweredBy, specialtyTag, routeOut, statBars, withHandoff, withRouteOut };
+export { agentBrainReady, brainName, candidateBrain, CANDIDATE_BRAINS, canDoPhrase, CAN_DO, CAN_DO_NEEDS, CAN_DO_UNLOCK, CAN_USE_OFF_TIP, CAN_USE_TIP, CAST_CLASSES, CAST_DEFAULT, EFFORT_TIP, grantedTools, handoffHint, memoryLabel, memoryNotes, memoryRoot, nameList, officeHasBrain, OFFICE_EFFORT_TIP, payrollLabel, poweredBy, roomStrayNote, specialtyTag, routeOut, statBars, withHandoff, withRouteOut };

@@ -37946,3 +37946,84 @@ happens to hit leaves the two a reviewer will trust. Nothing here changes
 behaviour — the suite is run precisely to prove that — which is the point.
 A tester decides whether it is safe to run this from the prose, and the prose
 had been describing a machine we stopped shipping in `## 315.`
+
+---
+
+## 350. the colleague who was named and never asked
+
+**The wreck.** The multi-agent room, which is the one surface this whole
+product is named after. Three coworkers hired on a real local brain, a meeting
+called *Migration sync* with Kip and Plato seated in it, Dax idle at his desk
+one row away. The room's own empty state says how to work it — *"Type below to
+send to all attendees, or @-mention specific people."* So the boss does:
+
+    @Kip @Dax in one word, is the migration risky?
+
+Measured 2026-09-05 against a real `python3 serve.py` and
+`ollama:llama3.1`. The room's entire record of that turn:
+
+    {"from": "user",  "name": "You", "target": "@Kip",
+     "text": "@Kip @Dax in one word, is the migration risky?"}
+    {"from": "agent", "name": "Kip · Deep Research", "text": "KIP The migration
+     is not inherently risky, …"}
+
+Two entries. Dax was addressed by name, exists, is hired, is idle — and was
+never asked, never mentioned, never accounted for. The only tell is a relabel
+on the boss's own bubble from what they typed to `→ @Kip`, which reads as a
+formatting flourish, not as a colleague being dropped.
+
+The mechanism is one line. A room's recipient list is
+`activeRoom.participants.filter(a => explicit.targetNames.some(…))` — every
+name that survives the filter is dispatched to, and every name that does not
+simply falls off the end of an expression. The DIRECT thread had already
+learned this lesson twice on its own: it prints `(unknown teammate: @X)` when
+some other mention matched, and a stray note naming the whole roster when none
+did — and the comment on the second says out loud that it exists because the
+first "only ever ran when some OTHER mention had matched", so the case where
+the boss most needs telling said nothing. The room is that same case, one
+surface over, and it had neither guard. What the direct thread fixed for a
+name that matches NOBODY, the room still did for a name that matches a real
+person.
+
+**The fix.** `roomStrayNote` in app/cast.jsx, beside `handoffHint` and
+`routeOut` where the office's other routing sentences live — import-free, so
+the suite runs the shipped source verbatim under node. Two endings, because
+there are two and they need different routes out: a coworker who exists but is
+not in this room can be invited, and a name nobody answers to cannot.
+
+    (@Dax isn't in this meeting, and nobody here is called @Zed — only @Kip
+     was asked. Invite them to the meeting, or ask in the DIRECT thread.)
+
+Who DID get it is in the sentence, because an omission is only legible beside
+the delivery. It is screen-only, deliberately: the body handed to the room has
+the mentions stripped off it, so nobody in the meeting is being told about a
+colleague who is not there — this is the boss's own routing narrated back to
+them, not a fact the attendees need. And it returns `''` when nothing was
+dropped, so the caller emits blindly and a clean turn stays quiet.
+
+The mention is now parsed against the WHOLE team rather than the attendee
+list. That argument only ever decided which names read as one token — it is
+what makes a coworker called **Local Brain** addressable at all, the whole
+reason `extractAllMentions` grew a roster — and handing over just the
+attendees meant *"@Local Brain"* in a room he is not
+seated in parsed as *"@Local"*, so the new note would have reported a stray by
+half a name. Widening the PARSE is not widening the DELIVERY: the
+`participants.filter` on the next line is still the only thing that decides
+who is dispatched to, and the suite pins both halves so a later edit cannot
+quietly turn a report into a send.
+
+**One existing test changed, and only on length.**
+`scripts/test_meeting_thread_takes_turns.py` locates the room branch with
+`[\s\S]{0,6000}?` before its terminator. That bound is a lazy quantifier's
+leash, not an assertion — the branch grew past it and every behavioural check
+downstream started failing for want of a body to read. The leash is now 9000;
+the anchor, the terminator and all seven claims below it are untouched, and
+none was weakened to let this fix through.
+
+**Whose twin.** `## 348.`, the reply the page outlived. Same shape: a fact the
+office knew, held in a variable, thrown away by an expression that had no
+place to put it — there a `streaming` flag dropped on the way to storage, here
+a name dropped on the way out of a filter. Both end with the boss reading a
+thread that is *complete* and *wrong*, with nothing on screen admitting a gap.
+A blank bubble at least shows you the silence. A colleague who was never asked
+does not even leave a hole where they should have been.

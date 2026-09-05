@@ -2,7 +2,7 @@ import { Ico } from './primitives.jsx';
 import { HQ } from '../hq-runtime.jsx';
 import { Sprite } from '../sprites.jsx';
 import { attachVisit, snagCause, snagOpener, snagSentence } from '../app/floor.jsx';
-import { withHandoff, withRouteOut } from '../app/cast.jsx';
+import { roomStrayNote, withHandoff, withRouteOut } from '../app/cast.jsx';
 import { CafresoHQClient } from '../claude-client.jsx';
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, createContext, useContext } = React;
 const THREADS = [
@@ -402,7 +402,15 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
        via extractAllMentions and respect the active thread). */
     if (activeRoom && activeRoom.participants.length) {
       // Explicit @mentions inside a room override the default "send to all"
-      const explicit = HQ.extractAllMentions(text, activeRoom.participants.map(a => a.name));
+      /* Parsed against the WHOLE team, not just the attendees. The roster
+         argument only decides which names can be read as one token — a
+         coworker called "Local Brain" is unaddressable without it — and a
+         boss who names somebody outside the room has still named somebody.
+         Handing over only the attendees made "@Local Brain" in a room he is
+         not in parse as "@Local", so the note below would have reported a
+         stray by half a name. The filter on the next line is what keeps the
+         room's membership authoritative; the parse never was. */
+      const explicit = HQ.extractAllMentions(text, agents.map(a => a.name));
       const recipients = explicit
         ? activeRoom.participants.filter(a => explicit.targetNames.some(n => n.toLowerCase() === a.name.toLowerCase()))
         : activeRoom.participants;
@@ -414,6 +422,18 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
           id: HQ.uid('m'), from: 'user', name: 'You',
           text, target: targetLabel, thread: activeThread,
         }]);
+        /* A name that survived the filter is asked; a name that did not was
+           dropped in silence until now — see roomStrayNote. Screen-only, and
+           deliberately: `body` has the mentions stripped off it, so nobody in
+           the room is being told about a colleague who is not here. This is
+           the boss's own routing being narrated back to them. */
+        const strayRoomNote = explicit
+          ? roomStrayNote(explicit.targetNames, recipients, agents, activeRoom.kind)
+          : '';
+        if (strayRoomNote) {
+          setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
+            text: strayRoomNote, thread: activeThread }]);
+        }
         emitDoorNote(activeThread);
         setStreaming(true);
         /* `userText` existed for exactly this and no caller ever set it, so

@@ -72,7 +72,13 @@ check('the seating modal still promises attendees hear each other',
       '— if it was removed on purpose, retire these checks on purpose too')
 
 # ── 2. a meeting is sequential ──────────────────────────────────────────
-room = re.search(r"if \(activeRoom && activeRoom\.participants\.length\) \{[\s\S]{0,6000}?\n    \}", chat)
+# #350 broke this pin on LENGTH only. The bound is a lazy quantifier's leash,
+# not a claim about the branch — and the branch grew by ~1.3k when the room
+# path learned to say which named coworker it did NOT ask (roomStrayNote).
+# The anchor and the terminator are untouched, so what this locates is still
+# exactly the activeRoom send path; only the leash is longer. Every
+# behavioural check below reads the same body and none of them is relaxed.
+room = re.search(r"if \(activeRoom && activeRoom\.participants\.length\) \{[\s\S]{0,9000}?\n    \}", chat)
 check('the room send path is still where it was', bool(room),
       'ui/chat.jsx: could not find the activeRoom branch')
 body = room.group(0) if room else ''
