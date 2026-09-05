@@ -138,11 +138,38 @@ class OpenAICompatDriver(Driver):
         handle.private['resp'] = resp
         return handle
 
+    @staticmethod
+    def _frame_error(chunk):
+        """The message out of an in-band SSE error frame, '' if it isn't one.
+
+        Three wire spellings, same as the browser reader handles (#258):
+          {"error":{"message":"upstream connect error","type":"server_error"}}
+          {"error":{"message":"Failed to load model","code":"model_not_found"}}
+          {"error":"model requires more system memory than is available"}
+        """
+        e = chunk.get('error')
+        if isinstance(e, dict):
+            return str(e.get('message') or e.get('code') or e)[:300]
+        if isinstance(e, str) and e.strip():
+            return e.strip()[:300]
+        return ''
+
     def events(self, handle):
         resp = handle.private['resp']
         yield ev_status('starting')
         in_tok = out_tok = 0
         emitted = False
+        # Every OpenAI-compatible backend opens with a 200 and then fails
+        # LATER, in-band — that is what SSE is for. This loop only ever asked
+        # for `choices` and `usage`, so an error frame matched nothing and was
+        # dropped: a stream that died after a few tokens ended `emitted=True`
+        # and terminated with ev_done(), i.e. the host filed a reply that
+        # stops mid-sentence as a finished turn (night_runner's
+        # run_task_text() returns the truncated text with no exception at
+        # all). The socket-drop handler had the mirror of the same bug — it
+        # yielded ev_error and then ev_done anyway. `err` latches the cause so
+        # the terminal event below is a failure, not a certificate.
+        err = ''
         try:
             for raw in resp:
                 if handle.cancelled.is_set():
@@ -157,6 +184,10 @@ class OpenAICompatDriver(Driver):
                     chunk = json.loads(payload)
                 except json.JSONDecodeError:
                     continue
+                if isinstance(chunk, dict):
+                    err = self._frame_error(chunk)
+                    if err:
+                        break
                 for choice in (chunk.get('choices') or []):
                     text = (choice.get('delta') or {}).get('content') or ''
                     if text:
@@ -167,7 +198,7 @@ class OpenAICompatDriver(Driver):
                     in_tok = u.get('prompt_tokens', in_tok)
                     out_tok = u.get('completion_tokens', out_tok)
         except (TimeoutError, OSError) as e:
-            yield ev_error(f'stream dropped: {e}', recoverable=True)
+            err = f'stream dropped: {e}'
         finally:
             try:
                 resp.close()
@@ -175,7 +206,15 @@ class OpenAICompatDriver(Driver):
                 pass
         if in_tok or out_tok:
             yield ev_usage(in_tok, out_tok, self.MANIFEST['costHint'])
-        if emitted:
+        if err:
+            # Name the backend: "provider returned no content" sent a boss
+            # looking at the wrong machine when the real line was
+            # "Failed to load model" or a rate limit. recoverable=True when
+            # some text already reached the screen — the tokens already
+            # yielded stand, this only marks where the reply stops.
+            yield ev_error(f"{self.MANIFEST['displayName']}: {err}",
+                           recoverable=bool(emitted))
+        elif emitted:
             yield ev_done()
         else:
             yield ev_error('provider returned no content')

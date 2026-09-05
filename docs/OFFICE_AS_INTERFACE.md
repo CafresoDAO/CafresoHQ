@@ -33399,3 +33399,103 @@ foreign session owns and this change never touches). This change covers only
 `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any kind
 was run.
+
+---
+
+## 282. a reply that stopped mid-sentence was filed as finished work
+
+**The wreck.** The night shift is pointed at a local brain. In the morning the
+deliverable is there, the card is green, and the answer reads
+
+> Here is the plan: we start by
+
+and nothing more. No warning, no cause, no mark anywhere on screen that the
+model ever stopped short — because as far as the office was concerned, it
+didn't. The turn ended with `done`.
+
+**What was actually happening.** Every OpenAI-compatible backend opens with a
+200 and then fails LATER, in-band; that is the whole point of SSE. `#258`
+fixed the browser reader for exactly this, teaching `streamOpenAICompat` the
+three wire spellings an error frame arrives in:
+
+```
+{"error":{"message":"upstream connect error","type":"server_error"}}   OpenAI, vLLM
+{"error":{"message":"Failed to load model","code":"model_not_found"}}  LM Studio
+{"error":"model requires more system memory than is available"}        Ollama
+```
+
+The Python driver behind `POST /agent/stream` — the *same* LM Studio, Ollama,
+OpenRouter, Groq and Gemini backends, and the one night_runner runs with
+nobody watching — never learned it. `OpenAICompatDriver.events()` asked each
+chunk for `choices` and `usage`, and nothing else. An error frame matched no
+branch, so it was skipped like a keepalive; the provider then closed the
+socket; the loop fell out of the bottom into
+
+```py
+if emitted:
+    yield ev_done()
+```
+
+and `emitted` was `True`, because two tokens *had* arrived. A failed stream
+terminated with the success event. Before any text, the same path produced
+`provider returned no content` — a sentence that names neither the backend nor
+the reason, sending a boss to check a model that had in fact said "Failed to
+load model" out loud.
+
+The socket-drop handler had the mirror of it. It yielded `ev_error(...,
+recoverable=True)` and then fell into the very same `if emitted:` and yielded
+`done` after it, so anything keyed on the last event — which is what
+"terminates with either `ev_done` or `ev_error`" in `base.py`'s own docstring
+invites you to do — read the drop as a clean finish.
+
+And `base.run_task_text()`, the unattended entry point, raised only when the
+text was *empty*:
+
+```py
+if not text and err:
+    raise DriverError(err, status=502)
+return text, usage
+```
+
+A half-answer plus a recorded failure took the second line. night_runner got a
+clean return value carrying no trace of the error at all, and filed it.
+
+**The fix.** `_frame_error()` reads the three spellings out of a chunk; the
+loop breaks on one and latches the cause in `err`, which the drop handler now
+sets instead of yielding. The terminal block leads with `err` — one
+`ev_error`, naming the backend (`LM Studio: Failed to load model`), marked
+`recoverable` only when some text already reached the screen — before the
+existing `done` / no-content branches, which are otherwise untouched. In
+`run_task_text`, a failure after some text can't raise without throwing that
+text away, so it marks where the text stops instead: `⚠ stopped early: …`, the
+same shape the browser uses for a truncated turn.
+
+**The test.**
+`scripts/test_a_half_written_reply_is_not_a_finished_turn.py` feeds the real
+`events()` a canned wire through a fake response object — all three error
+spellings, before and after text, plus a socket that dies mid-iteration — and
+runs the real `run_task_text` over the real driver with only `start_task`
+stubbed. The turn must fail, name the backend and the cause, keep the words
+that arrived, and emit exactly one error with no `done` chasing it. Half the
+checks are the regressions: a clean stream still ends in `done`, still carries
+its usage, gains no warning, and the silent-provider line still says
+`no content`.
+
+Fire-tested: copied the fixed `drivers/local_http.py` and `drivers/base.py` to
+`/tmp`, reverted all three hunks in place with the editor (never `git checkout
+-- <file>`) — 11 of 23 checks failed, exit 1, the truncated stream terminating
+`{'event': 'done'}`. Restored from the `/tmp` copies, confirmed byte-identical
+by `md5` (`7c521bac3834bb536c6dc8bec1810178` and
+`f37868a098f27294c74d002ffaa4334f`), reran — 23 of 23 passed, exit 0.
+
+`npm run build` was run once up front so `dist-ui/manifest.json` exists in a
+fresh worktree; nothing under `dist-ui/` is part of this change.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file
+a foreign session owns and this change never touches). This change covers only
+`drivers/local_http.py`, `drivers/base.py`, the one new test file, and this
+entry; `src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any kind
+was run.

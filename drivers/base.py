@@ -185,4 +185,12 @@ def run_task_text(driver, task):
     text = ''.join(parts)
     if not text and err:
         raise DriverError(err, status=502)
+    if err:
+        # A stream that failed AFTER some text is the dangerous case: this
+        # returned the half-answer with no exception and no mark, so an
+        # unattended caller (night_runner) filed a reply that stops
+        # mid-sentence as the finished deliverable. Raising would throw the
+        # text away, so mark where it stops instead — same shape the browser
+        # reader uses for a truncated turn.
+        text = text.rstrip() + f'\n\n⚠ stopped early: {err}'
     return text, usage
