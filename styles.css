@@ -8292,6 +8292,37 @@ body.night .bn-item.active { background: rgba(0,212,181,0.15); color: var(--acce
        already inside .status-pinned's right edge) = 152px. */
   .topbar .status-pinned { padding-right: 152px; }
 
+  /* `.mobile-hidden` is also declared at ≤640px. That breakpoint is the odd
+     one out: the mobile SHELL — tab bar, wrapped topbar, 44px tap targets —
+     all switch on at ≤768px, and the comment beside this class's biggest
+     user (the ⌗ ROOMS pill, app.jsx ~7250) says in as many words that on
+     ≤768px the pill "floated ON TOP of whatever view sat below it". It did,
+     and it still did between 641 and 768 — which is every phone held
+     sideways. Measured at 667x375 before this line: the whole `.status`
+     strip painted [10, 56, 657, 100], a 48px band at z-index 350 across the
+     top of every view, and the offline banner's Retry and Hide buttons
+     (centres at y 90.3) hit-tested as `DIV.status` on all four content tabs.
+     Same breakpoint as the shell, so the class hides where the shell is. */
+  .mobile-hidden { display: none !important; }
+
+  /* The topbar is told to WRAP three lines below, but `.main` gives it a
+     hard 52px row, so the lines it cannot fit are painted outside its own
+     box — at z-index 350, over the top of whatever view is underneath.
+     `overflow` is `visible` here on purpose (the Apps dropdown hangs out of
+     the bar), so clipping is not the answer; the row has to admit how tall
+     the bar really is. Measured in portrait before this line: the pinned ⚠
+     alarm chip sat at [10, 38.5, 145.7, 82.5] — 30.5px below a bar that
+     claimed to end at 52 — and covered the centre of the Projects
+     workspace mode toggle at 375x667 and 320x568.
+
+     `auto` and not a bigger constant: with the line above, the second line
+     is empty in landscape, so the bar stays 63px at 667x375 instead of the
+     107px a fixed two-line height would have cost. That difference is the
+     whole reason this pairs with the rule above — a 107px topbar pushed the
+     Team tab's "Hire a new coworker" and the Projects CTA down under the
+     mobile tab bar, trading one covered control for two. */
+  .main { grid-template-rows: auto minmax(0, 1fr) auto; }
+
   /* Topbar: collapse the dense status row, keep the title compact */
   .topbar { padding: 8px 12px; flex-wrap: wrap; gap: 8px; }
   .topbar .brand-title { font-size: 12px; }

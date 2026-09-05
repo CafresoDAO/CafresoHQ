@@ -38702,3 +38702,74 @@ the office at **rest** rather than after scrolling. That last part matters:
 the first draft of the overhang check scrolled the column before measuring,
 which pulled `.pxhq`'s bottom back inside the container and made a box 215px
 too tall report as though it fit. It did not fit. It had been dragged.
+
+---
+
+## 363. the bar that was taller than it said it was
+
+The topbar is 52px tall. The topbar paints 95px of itself.
+
+`.main` hands the topbar a hard 52px grid row. On a phone (`≤768px`) the bar
+is told `flex-wrap: wrap`, and `.topbar .status` is given `flex-basis: 100%`
+so the chip strip drops to its own line. Two or three lines of content, one
+line of box. The leftovers are not clipped — `overflow` is `visible` there on
+purpose, so the Apps dropdown can hang out of the bar — so they are simply
+painted below it, on top of whatever view is underneath, and the bar carries
+`z-index: 350`, so every one of those pixels wins the hit test.
+
+  375x812  .status-pinned  [10, 38.5, 297.7, 82.5]   30.5px below the bar
+  375x667  .status-pinned  [10, 38.5, 297.7, 82.5]   30.5px below the bar
+  320x568  .status-pinned  [10, 38.5, 297.7, 82.5]   30.5px below the bar
+  667x375  .status         [10, 56.0, 657.0, 100.0]  48.0px below the bar
+
+What that band sat on: the Projects workspace mode toggle, box
+[13, 59, 95.8, 103], whose centre (54.4, 81) hit-tested as
+`BUTTON.chip.chip-warn` — the pinned ⚠ alarm — at 375x667 and 320x568. And in
+landscape, the offline banner's **Retry** and **Hide**, centres at y 90.3,
+which hit-tested as `DIV.status` on all four content tabs. Tapping Retry on a
+phone held sideways did nothing at all, on every tab, every time.
+
+The landscape half has a name, and the repo already wrote it down. The
+comment beside the ⌗ ROOMS pill (app.jsx ~7250) says that on ≤768px the pill
+"floated ON TOP of whatever view sat below it (measured over the Library's
+Files tab at 375px)", and the fix was to give it `.mobile-hidden`. But
+`.mobile-hidden` is declared at `≤640px`, and every other piece of the mobile
+shell — tab bar, wrapped topbar, 44px tap targets — switches on at `≤768px`.
+So between 641 and 768 the app wore the mobile shell and kept the desktop
+chips. 667 is where an iPhone SE lands when you turn it sideways. The fix
+named the right breakpoint in prose and reached for a class that hid at a
+different one.
+
+Two rules, and they only work as a pair. `.mobile-hidden` now also hides at
+≤768px, so the chips leave the bar where the shell says mobile. And the
+topbar's grid row goes from `52px` to `auto`, so the box admits how tall the
+bar really is.
+
+Growing the row alone was tried first and rejected: with the chips still
+there the bar went to **107px** at 667x375, which pushed the Team tab's "Hire
+a new coworker" and the Projects CTA down under the mobile tab bar — one
+covered control traded for two. With the chips gone the second line is empty
+in landscape and the bar costs **63px** there, and 95.5px in portrait, which
+it was already painting and merely denying. Hiding the now-empty `.status`
+container as well was measured too and changed nothing: the wrap is
+`.status-pinned`'s, not the strip's.
+
+Measured after, at all four sizes and all five mobile tabs: nothing inside
+`.topbar` extends below `.topbar`, and no control anywhere hit-tests as
+something belonging to the bar.
+
+The sweep that found it walked every `button`, `a`, `input`, `select`,
+`[role=button]` and `.clickable` on screen and asked whether
+`elementsFromPoint` at the control's own centre returned that control. Most
+of what came back was honest noise and was thrown away: the swipe-reveal
+actions parked behind chat bubbles, everything under the Tools drawer's own
+modal overlay, and — the one worth naming — anything scrolled out from under
+a clipping ancestor, which looks exactly like a cover until you intersect the
+box with every overflow-hidden parent on the way up. The new suite does that
+intersection, which is why it can afford to ask the blunt question.
+
+Left alone, and named here so the next sweep does not think it is new: at
+667x375 the Library's "↻ Try again" and the Projects "Create your first
+project" still have their centres under the mobile tab bar. Those are
+bottom-anchored empty states with no clearance of their own, they were
+already like that before this change, and they are a different bug.
