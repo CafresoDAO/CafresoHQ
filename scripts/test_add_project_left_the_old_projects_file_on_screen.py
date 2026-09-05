@@ -160,6 +160,11 @@ const setErr = (v) => calls.setErr.push(v);
 const setConflict = (v) => calls.setConflict.push(v);
 const pulseTimers = { current: { '/a/b.txt': 1, '/a/c.txt': 2 } };
 const idleTimer = { current: 3 };
+/* #409 — clearing the deck SEEDS the pane's one editor buffer, so the commit
+   step claims a number the way every other seed there does (a read still in
+   flight from the old project must not land in the new one). Not this test's
+   subject; the lift just needs the name. */
+const openSeqRef = { current: 0 };
 const clearTimeout = () => { calls.timersCleared++; };
 const commitProject = async ({ name, path, source }) => {
 %(body)s

@@ -102,6 +102,11 @@ let timersCleared = 0;
 const clearTimeout = () => { timersCleared++; };
 const pulseTimers = { current: { '/a/b.txt': 1, '/a/c.txt': 2 } };
 const idleTimer = { current: 3 };
+/* #409 — clearing the deck SEEDS the pane's one editor buffer, so switchProject
+   claims a number: a read still in flight from the OLD project must not land
+   in the new one (measured there: `bufferAfterSwitch: "/old/slow.js"`). Not
+   this test's subject; the lift just needs the name. */
+const openSeqRef = { current: 0 };
 const calls = {
   setOpenFile: [], setLedger: [], setAgentStatus: [], setPulse: [],
   setErr: [], setConflict: [], setSelectedId: [], confirmAsked: false,

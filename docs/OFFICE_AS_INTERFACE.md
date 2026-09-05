@@ -43862,3 +43862,217 @@ map above is **entirely local**. Nothing a beta tester types is on chain, so
 `cafresohq_state` hitting zero cycles again cannot take their tasks with it —
 but nothing above is backed up either. `hq-state/` on one laptop, with no
 export-all and no restore, is the durability story in full.
+
+## 409. the deck opened the file you stopped asking for
+
+`## 404` carried the stale-observation class — an observation made BEFORE an
+`await`, acted upon AFTER it, when the observed thing can change during the
+wait — out of `app.jsx`/`hq-runtime.jsx` and into `views/`, fixed three doors
+in `views/vault.jsx`, and named ONE lead it had not driven:
+`views/projects.jsx` `openPath`. This is that lead, driven. It was live, and
+it had four siblings.
+
+Counted the same way (comments and string literals stripped, bare `await`
+tokens counted; the counter reproduces `## 398`'s `app.jsx` 52 and
+`hq-runtime.jsx` 33 exactly, which is what says it is counting the same
+things), at this entry's tip:
+
+| file | suspend points | state |
+| --- | --- | --- |
+| `app.jsx` | 52 | swept `## 398` / `## 400` |
+| `hq-runtime.jsx` | 33 | swept `## 398` / `## 400` |
+| `views/vault.jsx` | 48 | swept `## 404` (47 + 1 its own fix added) |
+| `modals/settings.jsx` | 48 | **unexamined** |
+| `views/terminal.jsx` | 38 | 6 read here, 32 **unexamined** |
+| `views/projects.jsx` | 30 | swept HERE (29 + 1 this fix added) |
+| `modals/providers.jsx` | 20 | **unexamined** |
+| `views/graph.jsx` | 13 | 5 read here, 8 **unexamined** |
+| `ui/chat.jsx` | 13 | **unexamined** |
+| `ui/office.jsx` | 9 | **unexamined** |
+| `modals/hire.jsx` | 5 | **unexamined** |
+| `app/artifacts.jsx` | 4 | **unexamined** (`## 404` recorded 1; it is 4 — 616, 635, 644, 647, plus one inside a comment) |
+| `ui/onboarding.jsx` | 2 | SAFE `## 404` |
+| `modals/delivery.jsx` | 2 | **unexamined** |
+| `app/commands.jsx` | 2 | SAFE `## 404` |
+| `views/core.jsx` | 1 | **unexamined** |
+| `modals/collab.jsx` | 1 | **unexamined** |
+| **total** | **321** | **~163 still unread for this class** |
+
+### One buffer, five doors, and a coworker who needs no mouse
+
+`views/projects.jsx` is the office's OTHER editor, and it keeps ONE buffer,
+`openFile` / `openFileRef`. Three things write to it: the boss's tree clicks,
+the boss's typing, and the coworker runtime's `cafresohq:agentTool` **window
+event** — which is not a DOM click, so no modal backdrop is anywhere in its
+path. That event calls BOTH reading doors: `reloadOpen` for a clean buffer,
+`openPath(arg, { auto: true })` for Follow along.
+
+And the pane is never frozen while it reads. `busy` is wired to exactly one
+thing here — `disabled={busy}` on the Save button — so `LocalTree` stays
+clickable and the `IDEEditor` textarea keeps taking keystrokes through every
+round trip. `save`, twenty lines below `openPath`, already says this about
+its own three trips ("the textarea stays live through this save's three round
+trips"); nothing above it had drawn the conclusion for the read.
+
+Everything below was measured through new
+`scripts/harness_projects_openpath_race.mjs`, which lifts the REAL `openPath`,
+`save`, `reloadOpen`, `switchProject` and Classic's `readFile` /
+`renameEntry` / `deleteEntry` out of the committed source by brace-balanced
+extraction — nothing under test is re-implemented.
+
+**1. `openPath` (192 → 206), EXPOSED, FIXED.** `const cur =
+openFileRef.current` decides "is there anything to lose", then a discard
+confirm on the user arm, then `await C.fsReadText(path)`, then an
+unconditional `setOpenFile({ path, content: r.content, dirty: false })`. Both
+halves of that answer expire in the gap:
+
+- A **later open wins by landing, not by being asked for**:
+  `bufferAfterBothLanded: "/p/slow.js"` for a boss whose last click was
+  `/p/fast.js`. And a superseded read that FAILED painted its refusal over
+  the file that did open — `errShown: "Not a file: /p/gone.js"` while
+  `/p/fast.js` sat on screen, which reads as that file being broken.
+- A **keystroke during the read is destroyed**, silently:
+  `typedTextStillInBuffer: false, typedTextOnDisk: false, said: []`. That
+  happens on the boss's own click, and it happens with no gesture from them
+  at all — Follow along's `auto` arm checks `dirty` BEFORE the read and then
+  writes over whatever the boss typed while it was in flight. "Never silently
+  drop unsaved edits" is that door's own comment, five lines up.
+
+**2. `reloadOpen` (250), EXPOSED, FIXED.** The agent bus picks between the
+conflict BANNER and a silent reload on one observation — `cur.dirty` — and
+the write on the far side tested only the path. Type during the read and you
+land in the branch you were never routed to: `bufferContentAfter: "COWORKER
+BODY", typedTextStillInBuffer: false, conflictBannerRaised: false` — a
+coworker's file on top of a paragraph that was never saved anywhere, with the
+banner that exists for exactly this never raised.
+
+**3. `switchProject` (98) and the add-project commit (135), EXPOSED, FIXED.**
+Clearing the deck SEEDS the same buffer. A read started in the OLD project
+landed after the switch: `bufferAfterSwitch: "/old/slow.js"`, absolute path,
+Save wired to it, inside a project whose toolbar, tree and env label all said
+something else.
+
+**4. Classic's `renameEntry` (1265) and `deleteEntry` (1288), EXPOSED,
+FIXED.** `ProjectsView` — the Classic mode of the same screen — has no ref at
+all: both doors read the RENDER value `openFile` across a prompt/confirm AND
+a server call, and the rename **spread it back whole**. Measured: with a
+click on another file still loading, the deck ended up showing
+`/p/renamed.md` holding `"A BODY"` — the content of the file the boss had
+LEFT, at the new path, and the file they actually opened gone
+(`theFileTheyOpenedSurvived: false`). The delete blanked a deck holding
+`/p/b.md` because `/p/a.md` had been open when the handler was made.
+
+### The fix, which is this file's own shape twice over
+
+- `openPath` claims `openSeqRef` — the ref `## 404` added to `views/vault.jsx`
+  for this, in this shape — BEFORE its first suspend, and re-checks it after
+  the confirm, after the read, and after the flush (the flush is itself a
+  suspend). A Follow-along bail happens BEFORE the claim: an auto open that
+  declines to run has superseded nothing, and claiming on the way out
+  cancelled the boss's own open instead — caught by measurement, not by
+  reading.
+- On the far side it re-derives the LIVE buffer and **files** typing that
+  landed during the read (`typedTextOnDisk: true`) rather than dropping it,
+  saying so once and naming both files. A flush that could not land keeps the
+  boss where their typing is and says which file that is. An `auto` open never
+  saves on the boss's behalf: it bails, the way its own dirty-check bails. An
+  accepted **Discard** is still a discard — the far side does not quietly save
+  what the boss just threw away (`discardWasHonoured: true`).
+- `reloadOpen` re-derives and routes a buffer that went dirty to the BANNER,
+  which is the branch that was true when it mattered.
+- Both seeds claim a number; both Classic doors decide inside the updater,
+  where `o` is the buffer as it stands.
+
+`save` is the convention all of this copies, and it is DRIVEN here so that
+claim is a measurement too: `wroteToDisk: "INDEX BODY ONE"`,
+`bufferContentAfter: "INDEX BODY ONE TWO"`, `stillDirtyBecauseNewerKeystrokes:
+true`.
+
+### The rest of the file, and the two others I read
+
+**SAFE — with the specific reason.**
+
+- `views/projects.jsx` `renameEntry` (516) / `deleteEntry` (523), the
+  Workspace pair — both re-read `openFileRef.current` after their own await
+  and test it against `entry`, an immutable argument.
+- `views/projects.jsx` `save` (226) — re-stats before writing and stamps
+  `dirty` against the content it actually sent. Driven, above.
+- `views/projects.jsx` `flipMode` (79) / `switchProject` (98) confirm gap —
+  `## 404` flagged this as its weakest SAFE verdict (two reasons). Driven
+  here: the confirm only exists when the buffer is dirty, and a dirty buffer
+  is exactly what makes the agent bus raise the banner instead of touching
+  the buffer and what makes Follow along bail
+  (`followAlongBailedOnTheDirtyBuffer: true`,
+  `endedWhereTheBossAsked: true`). The buffer cannot become a DIFFERENT file
+  inside that gap. `## 404`'s verdict survives, now with a measurement.
+- `views/terminal.jsx` `send` (475) — `sendRunningRef` is claimed
+  synchronously before anything is read (`## 388`–`## 391`'s own fix).
+- `views/terminal.jsx` `launchTerminal` (564) — `cli` and `project.path` are
+  render consts of one click; the sentence names the CLI that was launched.
+- `views/graph.jsx` `loadConceptDocs` (201) — reads `scopeRef.current` AFTER
+  its first await, which is the correct order.
+
+**EXPOSED — real, unfixed, named precisely and NOT measured.** Leads, not
+findings, in this ledger's sense:
+
+- `views/projects.jsx` Classic `readFile` (1125) — the same unconditional
+  `setOpenFile({ path, content: r.content, … })` after a read, and Classic has
+  no discard check at ALL, not even a stale one. That makes it a bigger
+  repair than this class (a missing observation, not an expired one), so it is
+  named rather than fixed.
+- `views/graph.jsx` `window.CafresoHQGraph.refresh` (271) — two refreshes in
+  flight (vault fires one after every note write) re-mount on whichever
+  `loadData` lands last, with no seq. The map is derived and re-derivable, so
+  the cost is a stale picture, not a lost file.
+- `views/terminal.jsx` `saveKey` (574) / `clearKey` (583) — `setKeyInput('')`
+  and `setKeyPanel(false)` are unconditional after the round trip, so a
+  provider switched (or a value typed) during it is wiped. Not driven: this
+  path handles real credentials and I did not want a harness anywhere near
+  it.
+
+**My weakest verdict, flagged as `## 404` flagged its own.** The SAFE on
+`flipMode`/`switchProject` above still rests on an enumeration — "these are
+the only writers that can reach the buffer under a modal" — and an
+enumeration is only as good as the list. I drove the two writers I could name
+(the agent bus's two branches); I did not prove there is no third. If a
+discard confirm in Projects ever ends up on the wrong file, start there.
+
+### Fire-tested
+
+New `scripts/test_the_deck_opened_the_file_you_stopped_asking_for.py`: 54
+checks — structural (the claim before the first suspend and before the
+Follow-along bail, each gap re-checked, the live buffer read from the ref, the
+flush and its re-check, the displacement said exactly once, the discard
+honoured, every early return clearing `busy`, both seeds claiming, both
+Classic doors deciding inside the updater), the load-bearing negatives (no
+`await` between any re-read and the act it guards; the read, the write and the
+sandbox sentence untouched; `save`'s convention pinned so it cannot quietly
+go), the MECHANISM pinned as properties (`busy` reaching the Save button and
+neither the tree nor the editor, `onEdit` pinned verbatim because the harness
+copies that line, the agent bus being a window event), and thirteen
+behavioural scenarios through the new harness including four negatives that
+must pass BOTH sides of the fix.
+
+Reverted in place (md5 `0a17b7cb4e5fd0719d5c9cde50b21519` fixed,
+`11f46977c99a3baaf7fe69a1c0ee546e` reverted): **34** checks failed reliably
+across 3 repeated runs, no crash, every pinned negative still passing.
+Restored byte-identical, green on three repeated runs, and run from the MAIN
+CHECKOUT against its pre-fix source — the same 34, so no path or glob defect.
+`npm run build` succeeds; `npx eslint views/projects.jsx` is clean.
+
+**Fallout, repaired here.** Three tests, all of them mine to fix. Two lift a
+door I edited into an isolated Node namespace and hand it its dependencies by
+name, so the new seed threw `ReferenceError: openSeqRef is not defined` —
+`test_a_refused_add_project_leaves_no_folder_behind.py` and
+`test_workspace_project_switch_clears_the_old_projects_state.py`, both given
+the dependency with a comment citing this entry. The third,
+`test_workspace_follow.py`, pins the Follow-along dirty-buffer bail as
+`if (opts && opts.auto) return;`, which this fix splits into a `mustAsk` bail
+before the claim; the check now pins the new shape AND the far-side bail that
+`## 409` added, which is the same promise held one round trip later. Repaired,
+not relaxed. Full suite 578/579 after that; the one failure is the known
+foreign moc M0219 on `src/cafresohq_state/main.mo`.
+
+*(Four other hunts were appending to this ledger at the same time; this entry
+took `## 409` from the brief. Every reference above is greppable as `#409` if
+the coordinator renumbers it.)*

@@ -99,6 +99,12 @@ function WorkspaceView({ projects, setProjects, agents = [], onSwitchView }) {
     Object.values(pulseTimers.current).forEach(clearTimeout);
     pulseTimers.current = {};
     clearTimeout(idleTimer.current);
+    /* Clearing the deck SEEDS the one buffer, so it claims a number too
+       (#409) — otherwise a read started in the OLD project lands after the
+       switch and hangs that project's file (absolute path, Save wired to it)
+       inside the new one, under a toolbar and a tree that both say something
+       else. Measured pre-fix: `bufferAfterSwitch: "/old/slow.js"`. */
+    openSeqRef.current++;
     setOpenFile(null);
     setLedger([]);
     setAgentStatus('idle');
@@ -135,6 +141,12 @@ function WorkspaceView({ projects, setProjects, agents = [], onSwitchView }) {
     Object.values(pulseTimers.current).forEach(clearTimeout);
     pulseTimers.current = {};
     clearTimeout(idleTimer.current);
+    /* Clearing the deck SEEDS the one buffer, so it claims a number too
+       (#409) — otherwise a read started in the OLD project lands after the
+       switch and hangs that project's file (absolute path, Save wired to it)
+       inside the new one, under a toolbar and a tree that both say something
+       else. Measured pre-fix: `bufferAfterSwitch: "/old/slow.js"`. */
+    openSeqRef.current++;
     setOpenFile(null);
     setLedger([]);
     setAgentStatus('idle');
@@ -187,16 +199,42 @@ function WorkspaceView({ projects, setProjects, agents = [], onSwitchView }) {
   const projectRef = React.useRef(null); React.useEffect(() => { projectRef.current = project; }, [project && project.id, project && project.path]);
   const pulseTimers = React.useRef({});
   const idleTimer = React.useRef(null);
+  /* #409 — every door that SEEDS this pane's one buffer claims a number
+     before its first suspend, so a read still in flight cannot land on top
+     of a newer one. Same ref, same reason, same shape as `openSeqRef` in
+     views/vault.jsx (#404): the buffer is one slot and the reads that fill
+     it are round trips, so "last read to LAND" is not "last file clicked". */
+  const openSeqRef = React.useRef(0);
+  /* openPath's far side flushes a buffer that went dirty during its read, and
+     `save` is declared below it — the same forward reference `saveNoteRef`
+     solves in views/vault.jsx. */
+  const saveRef = React.useRef(null);
 
   /* ── open a file into the deck (full content + conflict metadata) ── */
   const openPath = async (path, opts) => {
     const cur = openFileRef.current;
     // Never silently drop unsaved edits when switching files. Auto-opens
     // (Follow along) skip; user-initiated opens confirm first.
-    if (cur && cur.dirty && cur.path !== path) {
-      if (opts && opts.auto) return;
+    const mustAsk = !!(cur && cur.dirty && cur.path !== path);
+    /* The `auto` bail happens BEFORE the claim below: a Follow-along open
+       that declines to run has not superseded anything, and claiming a
+       number on the way out would cancel the boss's own open instead (#409 —
+       measured: the boss's read dropped and the deck left on the old file
+       while a coworker wrote an unrelated file under the dialog). */
+    if (mustAsk && opts && opts.auto) return;
+    /* Claimed BEFORE the first suspend below — the discard confirm is one
+       too. A CANCELLED confirm keeps its number on purpose: "stay where I
+       am" is also an answer, and a read still in flight from a click the
+       boss then thought better of does not get to land on top of it. #409 */
+    const seq = ++openSeqRef.current;
+    let discarded = null;
+    if (mustAsk) {
       if (!(await window.hqConfirm('Discard unsaved changes to ' + baseName(cur.path) + '?', { okLabel: 'Discard', danger: true }))) return;
+      /* The boss said DISCARD, about this file, just now. The far side owes
+         that answer the same respect it owes typing nobody asked about. */
+      discarded = cur.path;
     }
+    if (openSeqRef.current !== seq) return;   // superseded while the dialog was up
     setErr(null); setConflict(false);
     const kind = previewKind(path);
     const binary = kind === 'image' || kind === 'pdf';
@@ -204,6 +242,49 @@ function WorkspaceView({ projects, setProjects, agents = [], onSwitchView }) {
     setBusy(true);
     try {
       const r = await C.fsReadText(path);
+      /* The far side of the read, where BOTH halves of the observation above
+         have expired (#409, the class of #394 / #398 / #400 / #404):
+
+         — A LATER open supersedes this one. The tree is never disabled during
+           a read (`busy` is wired to exactly one thing in this pane, the Save
+           button), so two clicks in a slow project used to end on whichever
+           read LANDED last. Measured pre-fix through
+           scripts/harness_projects_openpath_race.mjs:
+           `bufferAfterBothLanded: "/p/slow.js"` for a boss whose last click
+           was /p/fast.js — and a superseded read that FAILED painted its
+           refusal over the file that did open (`errShown: "Not a file:
+           /p/gone.js"`).
+         — A KEYSTROKE lands while the read runs. The IDEEditor textarea stays
+           live through it — the same fact `save` below states about its own
+           three round trips — so the unconditional write dropped typing that
+           was never saved: `typedTextStillInBuffer: false, typedTextOnDisk:
+           false, said: []`, from Follow along as well as from the boss's own
+           click. "Never silently drop unsaved edits" is this door's own
+           contract, five lines up.
+
+         Re-derive rather than trust. The boss still gets the file they asked
+         for — their typing is FILED first, and only a flush that could not
+         land keeps us here (the shape `flushBeforeLeave` uses in vault.jsx).
+         An `auto` open is the OFFICE's gesture, not the boss's: it bails the
+         way its own dirty-check above bails, and never saves on their
+         behalf. */
+      if (openSeqRef.current !== seq) { setBusy(false); return; }
+      const live = openFileRef.current;
+      if (live && live.dirty && live.path !== path && live.path !== discarded) {
+        if (opts && opts.auto) { setBusy(false); return; }
+        if (saveRef.current) await saveRef.current(false);
+        if (openSeqRef.current !== seq) { setBusy(false); return; }
+        const still = openFileRef.current;
+        if (still && still.dirty && still.path !== path) {
+          /* The flush did not land — a coworker's edit raised the conflict
+             banner, or the write failed and `save` already said why. Keeping
+             the typing is worth more than the swap, so say which file we are
+             still on rather than opening the other one over it. */
+          toast('warn', `Still on ${baseName(still.path)} — your changes there aren't filed yet, so ${baseName(path)} stayed shut.`);
+          setBusy(false); return;
+        }
+        toast('info', `Filed your changes to ${baseName(live.path)} before opening ${baseName(path)}.`);
+      }
       setOpenFile({ path, content: r.content, mtime: r.mtime, hash: r.hash, dirty: false, binary: false });
       setPreviewMode(false);
     } catch (e) {
@@ -211,6 +292,10 @@ function WorkspaceView({ projects, setProjects, agents = [], onSwitchView }) {
          can still point outside the sandbox — the raw refusal names an env
          var at the boss. One honest sentence with the way out instead. */
       const m = (e && e.message) || String(e);
+      /* A refusal belongs to the open it came from. A superseded read that
+         failed used to paint its message over whichever file DID open, which
+         reads as that file being broken (#409). */
+      if (openSeqRef.current !== seq) { setBusy(false); return; }
       /* Matches the server's sandbox refusal without spelling the env var —
          that name is pinned out of this file's boss-facing text (see
          test_add_project_speaks_plainly). */
@@ -247,8 +332,25 @@ function WorkspaceView({ projects, setProjects, agents = [], onSwitchView }) {
     } catch (e) { setErr(e.message || String(e)); snag("Couldn't save that file", e); }
     setBusy(false);
   };
+  saveRef.current = save;
+  /* The agent bus picks between the conflict BANNER and this silent reload on
+     one observation — "is the buffer dirty?" — made before the read starts,
+     and this write used to test only the path. A keystroke during the read
+     put the boss in the branch they were never routed to: measured pre-fix
+     through scripts/harness_projects_openpath_race.mjs,
+     `bufferContentAfter: "COWORKER BODY", typedTextStillInBuffer: false,
+     conflictBannerRaised: false` — the coworker's file silently on top of a
+     paragraph that was never saved anywhere. Re-derive on the far side and
+     route to the branch that was true when it mattered: the banner, which is
+     what a dirty buffer earns and which offers Reload and Keep mine. #409 */
   const reloadOpen = async (path) => {
-    try { const r = await C.fsReadText(path); setOpenFile(o => (o && o.path === path) ? { ...o, content: r.content, mtime: r.mtime, hash: r.hash, dirty: false } : o); setPreviewNonce(n => n + 1); } catch (_e) {}
+    try {
+      const r = await C.fsReadText(path);
+      const live = openFileRef.current;
+      if (live && live.path === path && live.dirty) { setConflict(true); return; }
+      setOpenFile(o => (o && o.path === path && !o.dirty) ? { ...o, content: r.content, mtime: r.mtime, hash: r.hash, dirty: false } : o);
+      setPreviewNonce(n => n + 1);
+    } catch (_e) {}
   };
 
   /* ── live presence / ledger / status pip helpers ── */
@@ -1172,12 +1274,21 @@ function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
     try {
       await fsClient().fsRename(entry.path, to);
       setTreeNonce(n => n + 1);
-      // Keep the editor's path live — including when a *folder* with the open
-      // file inside it was renamed (else the next Save writes a ghost copy at
-      // the old path). Rebase the open file's path prefix onto the new name.
-      if (openFile && openFile.path && isUnder(openFile.path, entry.path)) {
-        setOpenFile({ ...openFile, path: to + openFile.path.slice(entry.path.length) });
-      }
+      /* Keep the editor's path live — including when a *folder* with the open
+         file inside it was renamed (else the next Save writes a ghost copy at
+         the old path). Rebase the open file's path prefix onto the new name.
+
+         Classic has no `openFileRef`: `openFile` here is the RENDER value,
+         read before a prompt and a rename — two suspends — and it used to be
+         SPREAD BACK WHOLE. Measured pre-fix (#409, harness scenario
+         `classic-rename-restores-the-file-you-left`): with a click on another
+         file still loading, the deck ended up showing `/p/renamed.md` holding
+         `"A BODY"` — the content of the file the boss had LEFT, at the new
+         path, with the file they actually opened gone. Decide and rebase
+         inside the updater, where `o` is the buffer as it stands. */
+      setOpenFile(o => (o && o.path && isUnder(o.path, entry.path))
+        ? { ...o, path: to + o.path.slice(entry.path.length) }
+        : o);
       toast('success', `Renamed to "${next}"`);
     } catch (e) { setErr(e.message || String(e)); snag("Couldn't rename that", e); }
     setBusy(false);
@@ -1192,7 +1303,13 @@ function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
     try {
       await fsClient().fsDelete(entry.path);
       setTreeNonce(n => n + 1);
-      if (openFile && openFile.path && isUnder(openFile.path, entry.path)) setOpenFile(null);
+      /* Same stale render read as renameEntry above, pointed at the close:
+         measured pre-fix, a deck holding the file the boss had just clicked
+         was blanked because the file the CONFIRM was about had been open when
+         the handler was made (`bufferAfter: null` for a boss looking at
+         /p/b.md). The deleted path is what decides, and `o` is the only thing
+         that knows what is open now. #409 */
+      setOpenFile(o => (o && o.path && isUnder(o.path, entry.path)) ? null : o);
       toast('success', `Deleted "${entry.name}"`);
     } catch (e) { setErr(e.message || String(e)); snag("Couldn't delete that", e); }
     setBusy(false);

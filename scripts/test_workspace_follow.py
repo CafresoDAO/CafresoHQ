@@ -150,12 +150,23 @@ if handler:
 op = re.search(r'const openPath = async \(path, opts\) => \{(.*?)\n  \};', src, re.S)
 check(op, "openPath is gone from views/projects.jsx.")
 if op:
+    body = op.group(1)
     check(
-        re.search(r'if \(opts && opts\.auto\) return;', op.group(1)),
+        re.search(r'const mustAsk = !!\(cur && cur\.dirty && cur\.path !== path\);', body)
+        and re.search(r'if \(mustAsk && opts && opts\.auto\) return;', body),
         "openPath must still bail out of an AUTO open when the current "
         "buffer is dirty — this is the guard that makes ungated Follow along "
         "safe. Lose it and a coworker's write yanks the boss off their own "
         "unsaved edits.",
+    )
+    # #409 — that guard is made BEFORE the read, and the read is a round trip
+    # the boss can type through. The far side has to bail the same way, or the
+    # guard above only covers typing that had already happened.
+    check(
+        re.search(r'if \(opts && opts\.auto\) \{ setBusy\(false\); return; \}', body),
+        "an AUTO open must also bail when the buffer went dirty DURING its "
+        "read — measured in #409: Follow along landed on a paragraph that was "
+        "never saved anywhere.",
     )
 
 # The label the code has to live up to.

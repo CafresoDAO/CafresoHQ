@@ -89,6 +89,11 @@ const C = CafresoHQClient;
 const setProjects = (fn) => { calls.filed = fn(calls.filed); };
 const pulseTimers = { current: {} };
 const idleTimer = { current: null };
+/* #409 — clearing the deck SEEDS the one editor buffer, so the commit step
+   claims a number the way every other seed in this pane does (a read still in
+   flight from the old project must not land in the new one). Nothing in THIS
+   test's subject touches it; it is here because the lift needs the name. */
+const openSeqRef = { current: 0 };
 const setSelectedId = () => {};
 const setSelected = () => {};
 const setOpenFile = () => {};
