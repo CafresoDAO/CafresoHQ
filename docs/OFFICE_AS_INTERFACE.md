@@ -37724,3 +37724,45 @@ Three tab-bar-clearance entries have now been fixed by adding a name to a
 list, and this is the first where the missing name did not look like the
 others. A list you extend by pattern-matching its existing members will keep
 the one member that does not match the pattern.
+
+---
+
+## 346. the backlink the rename declined to move, and declined to mention
+
+**The wreck.** `## 325.` taught `/vault/rename` to walk the vault after a
+move and make every inbound `[[wikilink]]` follow the file, and the Library
+says so in as many words: *"Moved — 2 links in 2 notes followed the
+rename."* The walk read each note with a strict
+`p.read_text(encoding='utf-8')` and answered anything it could not read —
+or, further down, could not write — with a bare `continue`. A `.md` whose
+bytes are not utf-8 (one exported from Word, an old latin-1 archive; the
+Library's own upload door takes both without comment) was stepped over in
+silence. So was a read-only one. The receipt then said `linksRewritten: 1`,
+which is the same sentence a vault gets when only one note ever linked
+there.
+
+The office had already shown the boss that link. `kg_builder`'s
+`_build_graph_fs` reads the same note with `errors='replace'` and draws its
+edge, so the Graph and the *⇐ linked from* row both list a backlink that the
+rename then quietly refuses to move. Driven live against a real `serve.py`:
+three notes linked one note, `/vault/graph` returned three edges, the rename
+answered `200 {"linksRewritten": 1}`, and two notes were left pointing at a
+file that no longer exists — no toast, no field, nothing anywhere.
+
+**The fix.** The pass now carries an out-list. A note it cannot open goes on
+it, because an unopenable note cannot be ruled out. A note whose bytes will
+not decode is decoded the graph builder's way — `errors='replace'` — purely
+to *see* whether the link is in there, and then left byte-for-byte alone:
+writing that decoding back would trade the boss's accents for `U+FFFD` to
+fix a link, which is a worse bargain than a dead link. A note that will not
+write goes on the list too. Both rename arms — file and folder — share one
+list, `_vault_link_trouble` folds it into the body as `linksStranded` (plus
+`linksError` for a pass that falls over outright), and both arms are empty
+on a clean rename, so a healthy move's receipt is unchanged. The Library
+reads them and warns which notes still point at the old name, alongside —
+never inside — the success line.
+
+**Whose sibling.** `## 335.`, `## 319.`, `## 339.`: a read half swallowed,
+and the count that survived became the whole truth. The tell here is that
+the number was not wrong. `1` really was how many links followed. It was
+just the only number the boss got, and the office knew a second one.

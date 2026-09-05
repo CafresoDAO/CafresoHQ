@@ -88,7 +88,11 @@ def main():
           and links2 == 2, text2)
 
     check('the rename route still calls the rewriter',
-          '_vault_rewrite_wikilinks(src, dst)' in serve)
+          # #347 added a third argument — the out-list of links that could
+          # NOT follow — so the call spans two lines now. The check is that
+          # the route still calls the rewriter on (src, dst), not how the
+          # call is punctuated.
+          re.search(r'_vault_rewrite_wikilinks\(\s*src, dst[,)]', serve))
 
     print()
     if FAILS:

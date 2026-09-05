@@ -487,6 +487,27 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     say(`${what} — ${officeCause((err && err.message) || String(err))}`, 'error');
   };
 
+  /* A rename moves the file and then walks the vault making inbound
+     [[links]] follow it. Notes it can't rewrite — bytes that aren't
+     utf-8, a read-only file — used to be skipped in silence, so a move
+     that stranded a link looked exactly like a move with no links to
+     follow, while the graph kept drawing the backlink it had just
+     declined to move (#347). The server names them now; say them. */
+  const sayStranded = (res) => {
+    const list = (res && res.linksStranded) || [];
+    if (list.length) {
+      const shown = list.slice(0, 3).join(', ');
+      say(`${list.length} note${list.length === 1 ? '' : 's'} still point`
+          + `${list.length === 1 ? 's' : ''} at the old name — ${shown}`
+          + `${list.length > 3 ? `, +${list.length - 3} more` : ''}`
+          + '. Open and relink by hand.', 'warn');
+    }
+    if (res && res.linksError) {
+      say(`Moved, but the pass that follows [[links]] failed — ${res.linksError}`
+          + ' Links to the old name may still be out there.', 'warn');
+    }
+  };
+
   /* A standing search must not go stale behind a refresh: hit rows kept
      pre-move paths after a drag (a click opened nothing) and a matching
      new file never appeared. Re-run the SAME query the hits were made
@@ -1156,6 +1177,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
         : 'Moved to ';
       say(what + (destFolder || 'the Library root')
           + (links > 0 ? ` — ${links} link${links === 1 ? '' : 's'} followed.` : '.'));
+      sayStranded(res);
       await refresh();
     } catch (e) { snag(isFolder ? "Couldn't move that folder" : "Couldn't move that file", e); }
   };
@@ -1314,6 +1336,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       if (res && res.linksRewritten > 0) {
         say(`Moved — ${res.linksRewritten} link${res.linksRewritten === 1 ? '' : 's'} in ${res.filesTouched} note${res.filesTouched === 1 ? '' : 's'} followed the rename.`);
       }
+      sayStranded(res);
       await refresh();
     } catch (e) { snag("Couldn't move that note", e); }
   };

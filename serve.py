@@ -1583,7 +1583,7 @@ def _vault_append_local(target: pathlib.Path, body) -> None:
             os.fsync(fh.fileno())
 
 
-def _vault_rewrite_wikilinks(src: str, dst: str):
+def _vault_rewrite_wikilinks(src: str, dst: str, stranded=None):
     """After a rename src→dst (fs backend), rewrite inbound [[wikilinks]]
     across every .md in the vault so links follow the file. Handles
     [[target]], [[target|alias]] and [[target#heading]] where target is the
@@ -1591,9 +1591,21 @@ def _vault_rewrite_wikilinks(src: str, dst: str):
     replacement keeps each link's own style: a path link gets the new path,
     a basename link gets the new basename. ![alt](src) embeds follow too,
     matched by exact vault-relative src (how the preview resolves them).
-    Returns (links_rewritten, files_touched) counting both kinds."""
+    Returns (links_rewritten, files_touched) counting both kinds.
+
+    `stranded`, when a list is passed, collects the vault-relative path of
+    every note that holds an inbound link this pass could NOT follow —
+    bytes that aren't utf-8, a note that won't open, a note that won't
+    write. Those used to be a bare `continue`: the note kept a link to a
+    file that no longer exists, the count in the receipt simply didn't
+    mention it, and 'linksRewritten: 1' reads exactly like a vault where
+    only one note ever linked here. The graph builder reads the same notes
+    with errors='replace' and DOES draw their edges, so the office shows
+    the boss a backlink it then silently declines to move (#347)."""
     if not _vault_root:
         return (0, 0)
+    if stranded is None:
+        stranded = []
     root = pathlib.Path(_vault_root).resolve()
 
     def _variants(rel):
@@ -1632,9 +1644,27 @@ def _vault_rewrite_wikilinks(src: str, dst: str):
     links = files = 0
     for p in root.rglob('*.md'):
         try:
-            text = p.read_text(encoding='utf-8')
+            rel_p = p.relative_to(root).as_posix()
+        except ValueError:
+            rel_p = str(p)
+        lossy = False
+        try:
+            raw_bytes = p.read_bytes()
         except Exception:
+            # It can't be opened, so it can't be ruled out either: an
+            # unreadable note may be holding the link we came to move.
+            stranded.append(rel_p)
             continue
+        try:
+            text = raw_bytes.decode('utf-8')
+        except UnicodeDecodeError:
+            # A .md exported from Word or an old latin-1 archive. Decode
+            # the graph builder's way to SEE whether the link is in there
+            # — but never write that decoding back: it would swap every
+            # undecodable byte for U+FFFD and quietly rewrite the boss's
+            # accents. Detected here, reported below, left untouched.
+            text = raw_bytes.decode('utf-8', 'replace')
+            lossy = True
         hits = [0]
 
         def _sub(m):
@@ -1661,13 +1691,36 @@ def _vault_rewrite_wikilinks(src: str, dst: str):
         # variants but rewrites to the identical text. Don't churn the
         # file's mtime — or the receipt's count — for a no-op.
         if hits[0] and out != text:
+            if lossy:
+                stranded.append(rel_p)
+                continue
             try:
                 p.write_text(out, encoding='utf-8')
             except Exception:
+                # Read-only, locked, out of space — the link stays pointed
+                # at a name that no longer exists, and saying nothing here
+                # is what made that invisible.
+                stranded.append(rel_p)
                 continue
             links += hits[0]
             files += 1
     return (links, files)
+
+
+def _vault_link_trouble(stranded, error=''):
+    """The part of a rename receipt that says what did NOT follow.
+
+    Empty when nothing went wrong, so a clean rename's body is unchanged.
+    `linksStranded` names the notes still pointing at the old name;
+    `linksError` carries a rewrite pass that fell over outright, which the
+    caller cannot attribute to any one note."""
+    out = {}
+    seen = sorted(set(stranded or []))
+    if seen:
+        out['linksStranded'] = seen[:50]
+    if error:
+        out['linksError'] = str(error)[:300]
+    return out
 
 
 # ---- Obsidian Local REST API client -----------------------------------------
@@ -5113,6 +5166,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             # the replacement keeps the link's own style (path links stay
             # path links, basename links stay basenames).
             rewritten = files_touched = 0
+            # Every note that still points at the old name after this pass.
+            # The move is done and stands; a link that could not follow it
+            # is the boss's to fix, so it is named, not swallowed (#347).
+            stranded = []
+            link_error = ''
             if d_path.is_dir():
                 # A whole drawer moved: every file inside changed its vault
                 # path at once, so the rewrite runs once per moved file —
@@ -5129,22 +5187,29 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     moved += 1
                     try:
                         r2, t2 = _vault_rewrite_wikilinks(
-                            s_rel + '/' + tail, d_rel + '/' + tail)
+                            s_rel + '/' + tail, d_rel + '/' + tail, stranded)
                         rewritten += r2
                         files_touched += t2
-                    except Exception:
-                        pass  # best-effort: the move itself already succeeded
+                    except Exception as e:
+                        # the move itself already succeeded — but the pass
+                        # that keeps links pointing at it did not
+                        link_error = str(e)
                 return self._send_json(200, {'from': src, 'to': dst,
                                              'folder': True, 'moved': moved,
                                              'linksRewritten': rewritten,
-                                             'filesTouched': files_touched})
+                                             'filesTouched': files_touched,
+                                             **_vault_link_trouble(stranded,
+                                                                   link_error)})
             try:
-                rewritten, files_touched = _vault_rewrite_wikilinks(src, dst)
-            except Exception:
-                pass  # best-effort: the move itself already succeeded
+                rewritten, files_touched = _vault_rewrite_wikilinks(
+                    src, dst, stranded)
+            except Exception as e:
+                link_error = str(e)
             return self._send_json(200, {'from': src, 'to': dst,
                                          'linksRewritten': rewritten,
-                                         'filesTouched': files_touched})
+                                         'filesTouched': files_touched,
+                                         **_vault_link_trouble(stranded,
+                                                               link_error)})
 
         # ---------- Upload (multipart) ----------
         # The browser-side file picker / drag-drop lands here. Filenames are

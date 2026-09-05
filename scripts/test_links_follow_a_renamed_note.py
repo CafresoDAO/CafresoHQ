@@ -50,7 +50,11 @@ def main():
 
     # ── structure: the route calls the rewriter and reports the counts ──
     check('the fs rename calls the rewriter',
-          '_vault_rewrite_wikilinks(src, dst)' in serve)
+          # #347 added a third argument — the out-list of links that could
+          # NOT follow — so the call spans two lines now. The check is that
+          # the route still calls the rewriter on (src, dst), not how the
+          # call is punctuated.
+          re.search(r'_vault_rewrite_wikilinks\(\s*src, dst[,)]', serve))
     check('...best-effort, after the move already succeeded',
           # the folder arm (test_a_folder_moves_as_one_drawer) now sits
           # between the move and the single-file rewrite — window widened
