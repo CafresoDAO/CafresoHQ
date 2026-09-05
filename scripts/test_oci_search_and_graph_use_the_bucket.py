@@ -127,7 +127,7 @@ def main():
           '_build_graph_oci_cached()' in graph_handler, graph_handler)
 
     check('kg_builder shares its parsing between fs and oci',
-          '_build_graph_from_raw(raw)' in KG_RAW
+          '_build_graph_from_raw(raw' in KG_RAW
           and KG_RAW.count('def _build_graph_from_raw') == 1,
           '— one function both _build_graph_fs and _build_graph_oci feed '
           'into; a second hand-written wikilink/tag extractor for oci is '
@@ -204,10 +204,21 @@ def main():
             oci_bucket=lambda: 'bucket', oci_prefix=lambda: 'pre')
 
         graph = kg_builder._build_graph_oci()
+        # 'markdownvault' covers notes AND artifacts since #278 taught this
+        # arm what the Library holds; split them so the two claims below stay
+        # about the notes the builder actually reads.
+        note_ids = sorted(n['id'] for n in graph['nodes']
+                          if n.get('source') == 'markdownvault'
+                          and n.get('type') != 'artifact')
         node_ids = sorted(n['id'] for n in graph['nodes']
                            if n.get('source') == 'markdownvault')
         check('graph built vault nodes from the bucket',
-              node_ids == ['linker.md', 'other.md', 'vendor-summary.md'],
+              note_ids == ['linker.md', 'other.md', 'vendor-summary.md'],
+              note_ids)
+        check('...and the filed deck rides along as an artifact node',
+              'deck.pptx' in node_ids
+              and next(n for n in graph['nodes']
+                       if n['id'] == 'deck.pptx')['type'] == 'artifact',
               node_ids)
         check('...resolved the wikilink into a real edge',
               ('linker.md', 'vendor-summary.md') in
@@ -217,8 +228,9 @@ def main():
               any(n['id'] == 'linker.md' and 'research' in n['tags']
                   for n in graph['nodes']),
               [n for n in graph['nodes'] if n['id'] == 'linker.md'])
-        check('...excluded the hidden note and the non-markdown object',
-              'secret.md' not in node_ids and 'deck.pptx' not in node_ids,
+        check('...excluded the hidden note, and never fetched the deck',
+              'secret.md' not in node_ids
+              and 'deck.pptx' not in note_ids,
               node_ids)
         check('...never touched the decoy local vault',
               not any('DECOY' in n.get('title', '') for n in graph['nodes']),

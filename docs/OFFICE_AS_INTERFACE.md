@@ -32995,3 +32995,88 @@ a foreign session owns and this change never touches). This change covers only
 `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any kind
 was run.
+
+---
+
+## 277. the bucket office filed a deck and got a map that had never heard of it
+
+**The wreck.** A boss whose Library lives in an Object Storage bucket files
+`q3-deck.pptx`. The tree shows it. Search finds it by name. One click opens it.
+Then the boss opens the Graph — the panel the whole product points at when it
+says "one office where all your AIs work together" — and the deck is not there.
+Neither is the chart, nor the PDF, nor the spreadsheet. A note that says
+`[[q3-deck.pptx]]` has an arrow going nowhere; a note that shows
+`![](chart.png)` has no arrow at all. The analytics mix reads **0 artifacts**
+for a Library that is full of them. Nothing errors. The map simply answers a
+smaller question than the one it was asked, in the same confident voice.
+
+**What was actually happening.** `#0dc7e2e` taught `_build_graph_fs` that the
+Library holds more than markdown: non-note files became stat-only `artifact`
+nodes, wikilinks resolved to them, `![](embed)` became an `embeds` edge, and the
+cache signature statted every file so filing one invalidated the map. Its commit
+message ends *"OCI/REST builders unchanged."* Nobody came back for OCI.
+
+So `_build_graph_oci` — landed twelve days earlier, and described in its own
+docstring as "the OCI-backend twin of `_build_graph_fs`" — kept the old answer,
+in one line:
+
+```python
+if not rel or rel.endswith('/') or not rel.endswith('.md'):
+    continue
+```
+
+Every non-note object was thrown away before `_build_graph_from_raw` ever saw
+it, and the `artifacts=` argument that function has taken since was never
+passed. The same single-suffix test also dropped `.markdown` notes outright,
+which the fs builder reads.
+
+The signature had the matching hole. `_oci_vault_graph_signature` skipped
+non-`.md` objects too, so uploading or deleting a deck never moved the
+fingerprint the cache keys on — even once the builder learned about artifacts,
+the boss would keep being handed the cached map from *before* the upload until
+some unrelated note happened to change.
+
+That is the shape of drift this file keeps naming. `_build_graph_from_raw`
+exists precisely so "a bug fixed for one backend is fixed for all of them" —
+its own docstring says so. The shared half was shared; the *feeding* of it was
+not, and the second feeder quietly aged out.
+
+**The fix.** `_build_graph_oci` now sorts the listing the way the fs walk does:
+notes are fetched and parsed, everything else is appended to `artifacts` from
+the listing metadata alone — never `get_object`'d, so a bucket full of decks
+costs no extra bytes — and both halves go to the shared builder. The signature
+folds every listed object, not just the notes.
+
+**The test.**
+`scripts/test_the_bucket_office_map_holds_the_librarys_artifacts_too.py` drives
+a fake Object Storage client (no account, no network) whose `get_object` records
+every key it is asked for. Eleven checks: the deck and chart are `artifact`
+nodes, a `.markdown` file is still a note, a dotted folder stays off the map,
+`[[q3-deck.pptx]]` resolves by exact path and `[[chart]]` by stem, `![](embed)`
+makes an `embeds` edge, the artifact carries the listing size, inlinks count
+both arrivals, **only the two notes were ever fetched**, and filing *or*
+deleting an artifact moves the cache signature.
+
+`scripts/test_oci_search_and_graph_use_the_bucket.py` carried the pre-artifact
+expectation in three assertions — one of them literally
+`'deck.pptx' not in node_ids`. Those were the old answer written down, so they
+were updated to split notes from artifacts and to claim the deck rides along
+*without* being read.
+
+Fire-tested: copied the fixed `kg_builder.py` to `/tmp`, reverted both the
+builder's artifact branch and the signature's every-object fold in place with
+the editor (never `git checkout -- <file>`) — 10 of 11 checks failed, exit 1.
+Restored from the `/tmp` copy, confirmed byte-identical by `md5`
+(`f5934d993a6b2b0d03a82815ed262edf`), reran — 11 of 11 passed, exit 0.
+
+`npm run build` was run once up front so `dist-ui/manifest.json` exists in a
+fresh worktree; no `.jsx` was touched.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file
+a foreign session owns and this change never touches). This change covers only
+`kg_builder.py`, one new test file, three assertions in the OCI test, and this
+entry; `src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any kind
+was run.

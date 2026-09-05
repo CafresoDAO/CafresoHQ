@@ -605,11 +605,24 @@ def _build_graph_oci() -> dict:
         _cfg['oci_namespace'](), _cfg['oci_bucket'](),
         prefix=prefix, fields='name,size,timeModified', limit=1000)
     raw = []
+    artifacts = []
     for obj in resp.data.objects:
         rel = obj.name[len(prefix):] if prefix else obj.name
-        if not rel or rel.endswith('/') or not rel.endswith('.md'):
+        if not rel or rel.endswith('/'):
             continue
         if any(part.startswith('.') for part in rel.split('/')):
+            continue
+        mtime = obj.time_modified.timestamp() if obj.time_modified else 0
+        # Everything the Library holds that ISN'T a note rides along as a
+        # stat-only 'artifact' node — never get_object'd — exactly as the fs
+        # builder does. This arm was written before artifacts existed on the
+        # map and was left behind when they landed, so a bucket-backed office
+        # filed a deck, saw it in the tree and in search, and got a map that
+        # had never heard of it: [[q3.pptx]] resolved to nothing, ![](chart.png)
+        # made no edge, and the analytics mix read "0 artifacts" for a Library
+        # full of them. `.markdown` was dropped by the same one-suffix test.
+        if pathlib.PurePosixPath(rel).suffix.lower() not in ('.md', '.markdown'):
+            artifacts.append((rel, pathlib.PurePosixPath(rel).stem, mtime, obj.size or 0))
             continue
         try:
             content = cli.get_object(
@@ -617,9 +630,8 @@ def _build_graph_oci() -> dict:
         except Exception:
             continue  # listed but unreadable (e.g. raced a delete) — skip it, don't fail the whole graph
         text = content.decode('utf-8', 'replace')
-        mtime = obj.time_modified.timestamp() if obj.time_modified else 0
         raw.append((rel, pathlib.PurePosixPath(rel).stem, text, mtime, obj.size or 0))
-    return _build_graph_from_raw(raw)
+    return _build_graph_from_raw(raw, artifacts=artifacts)
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -718,7 +730,8 @@ def _build_graph_fs_cached() -> dict:
 
 def _oci_vault_graph_signature() -> str:
     """Cheap fingerprint of everything _build_graph_oci reads: ONE
-    list_objects call's (name, size, timeModified) per markdown object — no
+    list_objects call's (name, size, timeModified) per object — notes AND
+    artifacts, since both are nodes now — no
     content fetched, same 'stat, don't read' shape as the fs signature —
     plus the same hq-state contribution every backend's cache uses."""
     if not (_cfg['oci_namespace']() and _cfg['oci_bucket']()):
@@ -731,8 +744,11 @@ def _oci_vault_graph_signature() -> str:
             _cfg['oci_namespace'](), _cfg['oci_bucket'](),
             prefix=prefix, fields='name,size,timeModified', limit=1000)
         for obj in sorted(resp.data.objects, key=lambda o: o.name):
-            if not obj.name.endswith('.md'):
-                continue
+            # Every object, not just the .md ones: artifacts are nodes now, so
+            # filing or deleting a deck has to move the fingerprint the cache
+            # keys on. Gating this on '.md' meant the graph the boss got back
+            # after uploading a chart was the cached one from before it — the
+            # same staleness the fs signature avoids by statting every file.
             tm = obj.time_modified.timestamp() if obj.time_modified else 0
             h.update(('%s|%d|%d\n' % (obj.name, int(tm), obj.size or 0)).encode('utf-8'))
     except Exception:
