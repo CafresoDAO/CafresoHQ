@@ -96,8 +96,10 @@ def main():
           'features.jsx: without this there is no way to wire in a seat-'
           'someone action from app.jsx')
     check('MeetingRoom computes the not-yet-seated agents',
-          'available = agents.filter(a => !participants.some(p => p.id === a.id))' in room_body,
-          'features.jsx: the add tile needs to know who is left to seat')
+          'available = agents.filter(a => !liveParticipants.some(p => p.id === a.id))' in room_body,
+          'features.jsx: the add tile needs to know who is left to seat — '
+          '#378 renamed the seated-roster read to liveParticipants (a live '
+          're-lookup of the same ids), so this must match that name')
     check('MeetingRoom renders a "+ Seat someone" tile that calls onAdd',
           bool(re.search(r'seat-add[\s\S]*?onAdd\(a\.id\)', room_body)),
           "features.jsx: the tile must actually be wired to add the "
