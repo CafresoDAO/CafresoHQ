@@ -798,6 +798,10 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
 
   const openByPath = async (path) => {
     if (!path) return;
+    /* Claimed BEFORE the first suspend, so anything that supersedes this
+       open — a second tree click, the graph popout, a seeded new note —
+       is visible to the write on the far side of the read below (#404). */
+    const seq = ++openSeqRef.current;
     // Files the text editor can't open — decks, PDFs, images, archives.
     const fileMeta = files.find(f => f.path === path);
     if (fileMeta?.isBinary) {
@@ -834,6 +838,29 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       } else {
         text = await CafresoHQClient.vaultRead(path);
       }
+      /* The far side of the read. `flushBeforeLeave` answered "nothing to
+         lose" BEFORE this trip, and both halves of that answer can expire
+         while it is in flight:
+
+         — A LATER open supersedes this one. Two tree clicks in a slow
+           Library, or one click in the graph POPOUT: that is a separate
+           browser window posting on BroadcastChannel('cafresohq-graph'), so
+           the modal `.backdrop` this window puts up covers nothing of it.
+           Last read to LAND used to win, which is not the last note clicked.
+         — A KEYSTROKE lands in the buffer while the read runs. The flush
+           above already filed a clean verdict on a buffer that has since
+           gone dirty, so the write below drops typing that was never saved.
+
+         Measured pre-fix through scripts/harness_vault_note_race.mjs:
+         `bufferAfterBothLanded: "Research/slow.md"` for a boss whose last
+         click was Inbox/fast.md, and `typedTextSurvived: false` /
+         `typedTextOnDisk: false` in both scenarios. Re-derive rather than
+         trust, the same shape moveByDrag uses on this same buffer. */
+      if (openSeqRef.current !== seq) { setBusy(false); return; }
+      if (openNoteRef.current && openNoteRef.current.dirty) {
+        if (!(await flushBeforeLeave())) { setBusy(false); return; }
+        if (openSeqRef.current !== seq) { setBusy(false); return; }
+      }
       setOpenNote({ path, id: _pathToId.current[path] || null, content: text, dirty: false });
       /* Only ever OFF, never back on: a boss who unchecked Preview meant it,
          and an empty note is no reason to overrule them in the other
@@ -862,6 +889,12 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
      flush-on-leave below mean typed text can no longer be silently lost. */
   const [saveState, setSaveState] = React.useState('');   // '' | 'saving' | 'saved' | 'error: …'
   const openNoteRef = React.useRef(null);
+  /* Which open request the editor buffer belongs to. Every door that SEEDS
+     or REPLACES the buffer claims the next number before it suspends, and
+     openByPath refuses to write a note whose number has been superseded —
+     the far-side re-check #404 added, in the same shape moveByDrag already
+     used for the same buffer. */
+  const openSeqRef = React.useRef(0);
   // Per-path signature of the last-saved [[wikilink]] set — see saveNote.
   const lastLinkSigRef = React.useRef({});
   openNoteRef.current = openNote;
@@ -1262,6 +1295,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     // preview note can be dirty (task checkboxes toggle in place), so it
     // flushes first like every other leave, and a failed flush stays.
     if (!(await flushBeforeLeave())) return;
+    openSeqRef.current++;   // this seed supersedes any read still in flight (#404)
     setOpenNote({ path: norm, id: null, content: '', dirty: true });
     if (_isMobileV) setVaultTab('editor');
   };
@@ -1328,7 +1362,28 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     if (n.dirty) await saveNoteRef.current({ quiet: true });
     try {
       const res = await CafresoHQClient.vaultRename(n.path, to.trim());
-      setOpenNote(o => o ? { ...o, path: to.trim() } : o);
+      /* `n` was read before the prompt and the rename — two awaits — and
+         this retarget used to fire on WHATEVER is open now. Swap the buffer
+         inside that gap (the graph popout is a separate window and the modal
+         backdrop does not reach it) and the note on screen is relabelled
+         with the renamed note's new path: the next keystroke's autosave then
+         writes THAT note's body over the file just renamed, and the renamed
+         note's content is gone from the Library entirely. Measured pre-fix
+         through scripts/harness_vault_note_race.mjs:
+         `renamedNoteBody: "IDEA BODY EDITED"`,
+         `quarterlyBodySurvivesSomewhere: false`, zero lines said.
+
+         Keyed on the note the dialog was actually about, which is the exact
+         re-derivation moveByDrag does thirty lines up (`const o0 =
+         openNoteRef.current; if (o0 && inside(o0.path))`). The boss still
+         gets the move they asked for — they asked for it — and the
+         displacement is said out loud rather than performed on the buffer. */
+      const nowOpen = openNoteRef.current;
+      setOpenNote(o => (o && o.path === n.path) ? { ...o, path: to.trim() } : o);
+      if (!nowOpen || nowOpen.path !== n.path) {
+        say(`Moved "${n.path}" to "${to.trim()}" — the editor had already moved on`
+            + (nowOpen ? ` to "${nowOpen.path}"` : '') + ', so it stayed where it is.', 'info');
+      }
       /* The server rewrites inbound [[wikilinks]] so links follow the
          file (fs backend). Say so — a silent rename leaves the boss
          wondering whether their links just died, because everywhere
@@ -1361,8 +1416,24 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     if (!(await window.hqConfirm(confirmMsg, { danger: true }))) return;
     try {
       await CafresoHQClient.vaultDelete(n.path);
-      setSaveState('');
-      setOpenNote(null);
+      /* Same gap, same buffer, pointed the other way: `n` was read before the
+         confirm and the DELETE, and the close used to be unconditional. A
+         buffer that changed hands during the dialog was blanked — with its
+         unsaved typing, because nothing on this path flushes — and
+         `setSaveState('')` wiped the '⚠ Retry save' chip that knew better,
+         which is verbatim the failure flushBeforeLeave's own docstring was
+         written to close. Measured pre-fix through
+         scripts/harness_vault_note_race.mjs: `bufferAfter: null`,
+         `typedTextStillInBuffer: false`, `typedTextOnDisk: false`. The
+         deletion the boss asked for still happens; only the close is keyed
+         to the note the dialog named. */
+      const nowOpen = openNoteRef.current;
+      if (!nowOpen || nowOpen.path === n.path) {
+        setSaveState('');
+        setOpenNote(null);
+      } else {
+        say(`Deleted "${n.path}" — you'd moved on to "${nowOpen.path}", so that one stays open.`, 'info');
+      }
       await refresh();
     } catch (e) { snag("Couldn't delete that note", e); }
   };
@@ -1390,6 +1461,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     // Same leave rule as openByPath: the fresh buffer replaces whatever
     // note is open now, so a dirty one flushes first — or holds the door.
     if (!(await flushBeforeLeave())) return;
+    openSeqRef.current++;   // this seed supersedes any read still in flight (#404)
     // id is null for new notes — saveNote() will call bridge.create()
     setOpenNote({ path: norm, id: null, content: '', dirty: true });
     // Same rule as openByPath: a note the office just asked you to name is

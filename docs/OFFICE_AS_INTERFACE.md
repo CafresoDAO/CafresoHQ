@@ -42966,3 +42966,227 @@ at the same time; if this landed second, its number moved and every `#403` in
 `serve.py`, `drivers/hermes.py`, `modals/providers.jsx` and
 `scripts/test_a_library_that_could_not_look_does_not_say_it_found_nothing.py`
 moved with it.
+## 404. the Library renamed the note you had moved on from
+
+`## 398` swept **85** suspend points for the class `## 394` opened — an
+observation made BEFORE an `await`, acted upon AFTER it, when the observed
+thing can change during the wait — and `## 400` finished that inventory.
+Both stopped at `app.jsx` + `hq-runtime.jsx`. Counted the same way here
+(every `await` token after comments and string literals are stripped; the
+counter reproduces `## 398`'s 52/33 exactly, which is what says it is
+counting the same things), the view and modal layers hold **230 more**:
+`views/vault.jsx` 47, `views/terminal.jsx` 37, `views/projects.jsx` 29,
+`views/graph.jsx` 13, `views/core.jsx` 1 — 127 in `views/`; `ui/chat.jsx`
+14, `ui/office.jsx` 9, `ui/onboarding.jsx` 2 — 25 in `ui/`; and 78 more in
+`modals/` + `app/`, almost none of it swept at all. The single most important
+data surface in the product is in there, and it had three of these doors.
+
+### The buffer, and the three doors that write it back
+
+`views/vault.jsx` keeps ONE editor buffer, `openNote` / `openNoteRef`.
+Three doors read it, suspend, and then write it back unconditionally:
+
+    renameNote  const n = openNoteRef.current
+                await window.hqPrompt('Rename / move to …')
+                await CafresoHQClient.vaultRename(n.path, to)
+                setOpenNote(o => o ? { ...o, path: to.trim() } : o)
+
+    deleteNote  const n = openNoteRef.current
+                await window.hqConfirm(`Delete "${n.path}"? …`)
+                await CafresoHQClient.vaultDelete(n.path)
+                setSaveState(''); setOpenNote(null)
+
+    openByPath  await flushBeforeLeave()          // "nothing to lose"
+                text = await CafresoHQClient.vaultRead(path)
+                setOpenNote({ path, content: text, dirty: false })
+
+**Why the buffer moves while a modal is up, with no bad luck.** The graph
+POPOUT (`?popout=graph`, `app.jsx`'s `GraphPopout`) is a SEPARATE BROWSER
+WINDOW. A node click there posts `{type:'open-note'}` on
+`BroadcastChannel('cafresohq-graph')`; the main window answers with
+`goTo('vault')` and a `cafresohq:openNote` CustomEvent, which
+`views/vault.jsx` hands straight to `openByPath`. The modal `.backdrop`
+(`ui/feedback.jsx`) is a DOM overlay — it stops clicks in ITS document and
+in no other. A boss who pops the graph out to navigate a big Library and
+drives the editor from it is the ordinary user of that feature, not an
+edge case. `openByPath`'s own race needs no modal at all: two tree clicks
+in a slow Library.
+
+**1. The rename, and it is the worst thing in this series so far.** The
+retarget fires on whatever is open NOW. Swap the buffer inside the gap and
+the note on screen is relabelled with the RENAMED note's new path; the
+next keystroke's 2.5s quiet autosave then writes that note's body over the
+file just renamed. Reproduced 2026-09-05 by new
+`scripts/harness_vault_note_race.mjs`, lifting the REAL `renameNote`,
+`deleteNote`, `openByPath`, `saveNote` and `flushBeforeLeave`
+(brace-balanced extraction of committed source, no re-implementation) and
+driving the popout path: `bufferSwappedDuringDialog: true`,
+`renamedNoteBody: "IDEA BODY EDITED"`, **`quarterlyBodySurvivesSomewhere:
+false`** — the renamed note's content is gone from the Library entirely —
+`displacementReported: []`. Not a lost stream and not a wrong count: a
+destroyed file, silently, with the office reporting success.
+
+**2. The delete, the same gap pointed the other way.** `setOpenNote(null)`
+and `setSaveState('')` are unconditional. A buffer that changed hands
+during the confirm is blanked WITH its unsaved typing — nothing on this
+path flushes — and the `⚠ Retry save` chip is wiped with it, which is
+verbatim the failure `flushBeforeLeave`'s own docstring was written to
+close ("the '⚠ Retry save' chip that knew better was wiped by openByPath's
+own setSaveState('')"). Measured pre-fix: `bufferAfter: null`,
+`typedTextStillInBuffer: false`, `typedTextOnDisk: false`, `said: []`.
+
+**3. The read that lands last.** `flushBeforeLeave` answers "nothing to
+lose" BEFORE the trip, and both halves of that answer expire during it. A
+later open supersedes this one — last read to LAND won, which is not the
+last note clicked: `bufferAfterBothLanded: "Research/slow.md"` for a boss
+whose last click was `Inbox/fast.md`, `typedTextSurvived: false`. And with
+no second click at all, a keystroke during the read makes the replacement
+a clobber: `typedTextSurvived: false, typedTextOnDisk: false`.
+
+### The fix, which is this file's own shape and not an invention
+
+`moveByDrag` sits THIRTY LINES above `renameNote`, calls the same
+`vaultRename`, and already re-derives on the far side — `const o0 =
+openNoteRef.current; if (o0 && inside(o0.path))`. Driven here too, so the
+claim about it is a measurement and not a reading:
+`movebydrag-already-re-derives` → `bufferNotRetargeted: true`.
+
+- `renameNote` keys the retarget on the note the dialog was about
+  (`setOpenNote(o => (o && o.path === n.path) ? … : o)`) and, when the
+  buffer had moved on, says so once, naming both notes. The boss still
+  gets the move — they asked for it. `if (n.dirty) await
+  saveNoteRef.current(…)` above the rename deliberately keeps its pre-ask
+  read: that flush IS about the note the dialog named.
+- `deleteNote` gates the close and the `setSaveState('')` on the deleted
+  path, and says which note actually went. The confirm keeps its pre-ask
+  inbound-link count, pinned that way for `## 400`'s reason: the dialog is
+  a question about now.
+- `openByPath` claims `openSeqRef` — a ref declared beside `openNoteRef`,
+  the same two lines `agentsRef` and `tasksRef` are — BEFORE its first
+  suspend, and on the far side drops a superseded read and flushes a
+  buffer that went dirty (re-checking the number after that flush, because
+  the flush is itself a suspend point). `newNote` and `openWikilink`,
+  the other two doors that SEED the buffer, claim a number too, so a read
+  in flight cannot land on top of a seed.
+
+Post-fix, same harness: the renamed note holds `"QUARTERLY BODY"`, the
+note the boss moved on to keeps its own path AND its own edit, the typed
+paragraph survives the delete, the last-clicked note is the one you end up
+on, and a keystroke during a read is FILED (`typedTextOnDisk: true`)
+rather than dropped.
+
+### The inventory
+
+The denominator for the next hunt. `views/vault.jsx`'s 47 are enumerated;
+the other files are given with the verdict I can defend, and where I
+cannot defend one the entry says **unexamined**, not safe — `## 391`'s
+worst verdicts were the confident ones.
+
+**EXPOSED — fixed here.** `views/vault.jsx` `renameNote` (1347 → 1381),
+`deleteNote` (1398 → 1430), `openByPath` (799 → 841).
+
+**EXPOSED — real, unfixed, named precisely and NOT measured.**
+
+- `views/projects.jsx` `openPath` (198 → 206) — byte-for-byte the same
+  shape as door 3: a discard confirm and/or `await C.fsReadText(path)`,
+  then an unconditional `setOpenFile({ path, content: r.content, … })`.
+  The mechanism differs (Follow-along's `opts.auto` opens are
+  office-initiated and bail only when the CURRENT file is dirty), so the
+  two arms need deriving separately. `save` twenty lines below has
+  ALREADY been hardened against this exact class in this exact file ("the
+  textarea stays live through this save's three round trips"), which is
+  the strongest available evidence that `openPath` is live. Not driven
+  here — so this is a lead, not a finding, and the next hunt should treat
+  it as one.
+
+**SAFE — with the specific reason.**
+
+*Re-checked on the far side (where the pattern already lives).*
+
+- `views/vault.jsx` `moveByDrag` (1179) — `const o0 =
+  openNoteRef.current` after the rename lands. Driven above.
+- `views/vault.jsx` `flushBeforeLeave` (787) — reads the buffer, awaits
+  the save, and re-reads (`const still = openNoteRef.current`) precisely
+  to answer "is it STILL dirty". The correct pattern, in the same file,
+  ten lines from door 3.
+- `views/projects.jsx` `renameEntry` (416) and `deleteEntry` (423) — both
+  re-read `openFileRef.current` after their own await and test it against
+  `entry`, which is an immutable argument.
+- `views/projects.jsx` `save` (226) — re-stats before writing and stamps
+  `dirty` against the content it actually sent, by its own comment.
+
+*Nothing that can change is read across the await.*
+
+- `views/vault.jsx` `saveNote` (887-902) — `note` is captured once; every
+  write is a functional `setOpenNote(n => n && n.path === note.path && …)`
+  keyed on the path AND the content it filed.
+- `views/vault.jsx` `_refreshHits` (519), `refresh` (539-606), `_pollRef`
+  (601-606), `uploadFiles` (952), `newFolder`/`uploadTo`/drop handlers
+  (967, 999, 1040) — all read server listings and write them whole; the
+  observed thing IS the thing awaited.
+- `views/vault.jsx` `refreshGraph` (1134), `openWikilink`'s resolve
+  (1247), `onPreviewClick` (1310), `openInObsidian` (1502) — each reads
+  immutable locals of one click.
+- `views/projects.jsx` `flipMode` (84) and `switchProject` (98) — `cur` is
+  read before the confirm and NOT used after it; the confirm only appears
+  when `cur.dirty`, and a dirty current file is exactly what makes
+  Follow-along's `opts.auto` open bail. Two reasons, which per this
+  ledger's own meta-rule is a flag — recorded as the weakest SAFE verdict
+  in this entry and the first thing to drive if these doors misbehave.
+- `ui/onboarding.jsx` (712) — `onClear` takes no observation across its
+  confirm.
+- `app/commands.jsx` (147, 217) — the workspace-delete confirm hands
+  `w.id` (immutable) to the callback; the who-can prompt reads nothing.
+
+*Unexamined — a real denominator, honestly labelled.*
+
+- `views/terminal.jsx` (37), `views/graph.jsx` (13), `ui/chat.jsx` (14),
+  `ui/office.jsx` (9), `views/core.jsx` (1), `app/artifacts.jsx` (1), and
+  all 75 in `modals/` (`settings.jsx` 47, `providers.jsx` 20, `hire.jsx`
+  5, `delivery.jsx` 2, `collab.jsx` 1) — **150 suspend points nobody has
+  read for this class.** `ui/chat.jsx`'s six `Promise.all` fan-outs and
+  `modals/settings.jsx`'s 47 (the room where backends are swapped, which
+  `## 400` already found is when a vault probe is in flight) are the two
+  richest-looking veins.
+
+### Fire-tested
+
+New `scripts/test_the_library_renamed_the_note_you_moved_on_from.py`: 45
+checks — structural (each retarget keyed on the note its dialog named, the
+live buffer read from the ref rather than this render, the displacement
+reported exactly once, the seq claimed before the first suspend and
+re-checked on both far sides, `setSaveState('')` inside the gate rather
+than above it, every early return clearing `busy` so a return inside the
+`try` cannot leave the room spinning, both other seeds claiming a number),
+the load-bearing negatives (no `await` between either re-read and the acts
+on it; the `vaultRename` / `vaultDelete` markers and the pre-ask flush and
+link-count untouched; `moveByDrag`'s re-derivation pinned as the
+convention these fixes copy), the MECHANISM pinned as a property (the
+popout's broadcast, the main window's CustomEvent, vault's listener, and
+the backdrop being a DOM overlay), and ten behavioural scenarios through
+the new harness including a declined rename, a declined delete, an
+untouched buffer still following its own rename in silence, an ordinary
+open with nothing racing it, and `moveByDrag` driven.
+
+Reverted in place (md5 `8a56ceb1059551bfcc59bc002cea1036` fixed,
+`9e3269364fc6618c9c294a5c197434f8` reverted): **24** checks failed reliably
+across 3 repeated runs, including all ten live ones, while every pinned
+negative kept passing. Restored byte-identical, green on three repeated
+runs, and run from the MAIN CHECKOUT as well against its pre-fix source —
+the same 24, so no path or glob defect of the kind `## 397` shipped.
+`npm run build` succeeds.
+
+**The revert is also how one test bug surfaced**, and it is worth writing
+down: two checks used `str.index()` on markers the reverted source does
+not contain, so the pre-fix run raised `ValueError` and reported NOTHING
+about the other forty-two. A fire test that crashes proves nothing. Both
+now go through a `between()`/`no_await_between()` helper that returns
+`None` on a missing marker, which is a FAILED check.
+
+**Fallout, repaired here.** Fifty-four tests name `views/vault.jsx`; one broke,
+the usual way — `test_the_library_never_files_what_it_cannot_show.py` lifts
+`newNote` and `renameNote` into an isolated Node namespace and hands them
+their dependencies by name, so the new seed threw `ReferenceError:
+openSeqRef is not defined`. Given the dependency with a comment citing this
+entry. Full suite 576/577; the one failure is the known foreign moc M0219
+on `src/cafresohq_state/main.mo`.

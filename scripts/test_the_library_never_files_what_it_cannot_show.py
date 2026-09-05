@@ -129,6 +129,11 @@ const openByPath = async (p) => opened.push({ openedExisting: p });
 // harness runs the real newNote and a stubbed helper would let the real
 // body call something the app no longer has.
 const setPreview = () => {};
+// #404: every door that SEEDS or REPLACES the editor buffer claims the next
+// open number so an openByPath read still in flight cannot land on top of the
+// seed. newNote and renameNote both touch it; the race it closes is owned by
+// test_the_library_renamed_the_note_you_moved_on_from.py.
+const openSeqRef = { current: 0 };
 globalThis.window = globalThis;
 """
 
