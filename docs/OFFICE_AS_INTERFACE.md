@@ -32557,3 +32557,103 @@ a foreign session owns and this change never touches). This change covers only
 `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any kind
 was run.
+
+---
+
+## 272. A slow vault lookup typed your API key into the terminal
+
+**The wreck.** Open a Terminal tab on a project. The pane comes up, the CLI
+draws its welcome screen, and then — on screen, at the prompt, in the agent's
+own scrollback — a line appears reading
+
+```
+{"type":"init","anthropic_key":"sk-ant-api03-…","openai_key":"sk-…"}
+```
+
+The office keeps those keys encrypted in the vault. It handed them to the
+terminal as keystrokes.
+
+The office's terminal hands the CLI its keys through the PTY socket's very
+first frame. `views/terminal.jsx` sends it from `ws.onopen`:
+
+```js
+ws.onopen = async () => {
+  ak = await oc.getAgentKey('anthropic');   // three vault lookups
+  ok = await oc.getAgentKey('openai');
+  gk = await oc.getAgentKey('google');
+  ws.send(JSON.stringify({ type: 'init', anthropic_key: ak, ... }));
+};
+```
+
+and `pty_server.py` reads it *before* spawning the child, so the keys can go
+into the child's environment. That read is fenced:
+
+```python
+client_sock.settimeout(2.0)
+_init_opcode, _init_payload = _ws_recv_frame(client_sock)
+```
+
+Two seconds is a guess about how long three awaited vault lookups take. It is
+a good guess most of the time and a wrong one exactly when the office is
+least ready: a cold ICP bridge, a vault the boss has to unlock, a phone
+resuming a backgrounded tab. The server gives up, spawns the CLI without the
+keys, and moves on.
+
+The frame is not lost. It arrives a moment later — into the ordinary
+keystroke loop, which had one shape for everything:
+
+```python
+try:
+    msg = json.loads(payload)
+    if isinstance(msg, dict) and msg.get('type') == 'resize':
+        ...
+        continue
+except (ValueError, TypeError):
+    pass
+os.write(sess['master_fd'], payload)      # ← the keys, typed
+```
+
+`init` is not `resize`, so it fell out of the bottom, and the bottom of that
+loop is *the keyboard*. The whole JSON blob went to the child's stdin: echoed
+into the pane, kept in the CLI's scrollback, and offered to whatever history
+the CLI keeps. A secret the office encrypted at rest ends up on screen
+because a lookup ran three seconds instead of one. Nothing warned anybody;
+the terminal looked like the boss had pasted something.
+
+**The fix.** One classifier, `_pty_control_frame()`, shared by the Windows
+and POSIX loops, that names `init` a control frame alongside `resize`.
+Control frames are acted on and then swallowed — they can never reach the
+write. A late `init` carries keys that can no longer be applied (the child's
+environment was fixed at spawn), so the only honest handling is to recognise
+it and drop it. The resize apply moved inside its own `try`, so a malformed
+`cols` can no longer fall through into the keyboard either.
+
+**The proof.**
+`scripts/test_a_late_init_frame_never_types_your_api_key_into_the_terminal.py`
+imports `pty_server.py` and calls the classifier directly. 12 checks: an
+`init` frame carrying `sk-ant-DO-NOT-TYPE-ME-…` must be classified as a
+control frame; the keyless `{"type":"init"}` the browser always sends must be
+too; `resize` must still work and still carry its `cols`; and the
+regressions — `ls -la\r`, a bare `42` at the prompt (which `json.loads`
+happily parses as an int), a `{"type":"hello"}`, a JSON array, and invalid
+UTF-8 — must all stay keystrokes. Two source checks confirm both platform
+loops route through it before their PTY write, and that a recognised control
+frame always `continue`s.
+
+Fire-tested: copied the fixed `pty_server.py` to `/tmp`, reverted both loops
+and the helper in place with the editor (never `git checkout -- <file>`) —
+the classifier was gone, 1 check failed, exit 1. Restored from the `/tmp`
+copy, confirmed byte-identical by `md5`
+(`eaf27f85e11285deacabc813c499255a`), reran — 12 of 12 passed, exit 0.
+
+`npm run build` was run once up front so `dist-ui/manifest.json` exists in a
+fresh worktree; no `.jsx` was edited.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the `moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on
+a file a foreign session owns and this change never touches). This change
+covers only `pty_server.py`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any
+kind was run.

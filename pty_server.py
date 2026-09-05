@@ -66,6 +66,34 @@ def _pty_reaper():
 threading.Thread(target=_pty_reaper, daemon=True).start()
 
 
+# Browser→server control frames that must NEVER be forwarded to the PTY.
+def _pty_control_frame(payload):
+    """Classify one browser→server WS frame: return the parsed control dict
+    for a JSON control message, or None when the frame is keystroke data
+    destined for the PTY.
+
+    'resize' has always been a control frame. 'init' now is too, and that is
+    the point of this helper: the pre-spawn reader above only waits 2 s for
+    the init frame, while the browser (views/terminal.jsx) sends it from
+    ws.onopen *after* awaiting up to three CafresoHQClient.getAgentKey()
+    vault lookups. When those run long — a cold ICP bridge, a locked vault —
+    the frame misses that window and arrives in the ordinary keystroke loop
+    instead. Before this, the loop parsed it, saw a type it didn't recognise,
+    and wrote the raw payload to the PTY: the user's plaintext
+    ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY typed straight into
+    the running CLI, echoed on screen and captured in the agent's own
+    scrollback and shell history. The keys can't be applied retroactively
+    (the child's env was fixed at spawn), so the only safe handling is to
+    recognise the frame and drop it.
+    """
+    try:
+        msg = json.loads(payload)
+    except (ValueError, TypeError):
+        return None
+    if isinstance(msg, dict) and msg.get('type') in ('resize', 'init'):
+        return msg
+    return None
+
 
 # ---- Project Terminal (Claude Code / Codex CLI runner) ---------------
 def _terminal_spawn(self):
@@ -546,15 +574,19 @@ def _terminal_pty_ws(self):
                     except OSError: break
                     continue
                 if opcode in (0x1, 0x2) and payload:
-                    try:
-                        msg = json.loads(payload)
+                    msg = _pty_control_frame(payload)
+                    if msg is not None:
+                        # Control frame — acted on, then swallowed. A late
+                        # 'init' carries API keys and must never be typed
+                        # into the CLI; see _pty_control_frame.
                         if isinstance(msg, dict) and msg.get('type') == 'resize':
-                            c = max(10, min(500, int(msg.get('cols', cols))))
-                            r = max(5,  min(200, int(msg.get('rows', rows))))
-                            sess['pty_proc'].setwinsize(r, c)
-                            continue
-                    except (ValueError, TypeError):
-                        pass
+                            try:
+                                c = max(10, min(500, int(msg.get('cols', cols))))
+                                r = max(5,  min(200, int(msg.get('rows', rows))))
+                                sess['pty_proc'].setwinsize(r, c)
+                            except (ValueError, TypeError, OSError):
+                                pass
+                        continue
                     try:
                         sess['pty_proc'].write(payload.decode('utf-8', errors='replace'))
                     except Exception:
@@ -582,16 +614,20 @@ def _terminal_pty_ws(self):
                     except OSError: break
                     continue
                 if opcode in (0x1, 0x2) and payload:
-                    try:
-                        msg = json.loads(payload)
+                    msg = _pty_control_frame(payload)
+                    if msg is not None:
+                        # Control frame — acted on, then swallowed. A late
+                        # 'init' carries API keys and must never be typed
+                        # into the CLI; see _pty_control_frame.
                         if isinstance(msg, dict) and msg.get('type') == 'resize':
-                            c = max(10, min(500, int(msg.get('cols', cols))))
-                            r = max(5,  min(200, int(msg.get('rows', rows))))
-                            _fcntl2.ioctl(sess['master_fd'], _termios2.TIOCSWINSZ,
-                                          _struct3.pack('HHHH', r, c, 0, 0))
-                            continue
-                    except (ValueError, TypeError):
-                        pass
+                            try:
+                                c = max(10, min(500, int(msg.get('cols', cols))))
+                                r = max(5,  min(200, int(msg.get('rows', rows))))
+                                _fcntl2.ioctl(sess['master_fd'], _termios2.TIOCSWINSZ,
+                                              _struct3.pack('HHHH', r, c, 0, 0))
+                            except (ValueError, TypeError, OSError):
+                                pass
+                        continue
                     try:
                         os.write(sess['master_fd'], payload)
                     except OSError:
