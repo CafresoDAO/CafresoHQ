@@ -274,6 +274,16 @@ function renderMarkdown(text, opts) {
      "filename.md  (1234 B)"
      "(empty directory)"  // sentinel
      "…(truncated at 300 entries)"  // sentinel
+
+   Both sentinels are FACTS ABOUT THE LISTING, not entries, so they are not
+   rows — but throwing them away made the tree claim things the server never
+   said. An empty folder and a listing that produced no rows for some other
+   reason both drew the same blank box, and a folder with more than 300
+   children drew its first 300 as if that were all of them: the boss scrolled
+   to the bottom and believed they had seen the whole folder. Report them on
+   the returned array (`.empty`, `.truncated`) so it is still an Array — the
+   sub-listing cache distinguishes "an array" from "an error" by exactly
+   that — and let the tree say the two sentences out loud.
 */
 function parseDirEntries(text, basePath) {
   if (typeof text !== 'string') text = String(text || '');
@@ -283,10 +293,16 @@ function parseDirEntries(text, basePath) {
   const trimEndSep = (s) => s.replace(/[/\\]+$/, '');
 
   const out = [];
+  out.empty = false;
+  out.truncated = false;
   for (const raw of text.split('\n')) {
     const line = raw.trim();
     if (!line) continue;
-    if (line.startsWith('(') || line.startsWith('…')) continue; // sentinels
+    /* Match the sentinels EXACTLY as serve.py writes them, so a real file
+       whose name happens to open with a bracket or an ellipsis still gets a
+       row (its line carries a "  (N B)" suffix, so it can never collide). */
+    if (line === '(empty directory)') { out.empty = true; continue; }
+    if (/^…\(truncated at \d+ entries\)$/.test(line)) { out.truncated = true; continue; }
     const isDir = line.endsWith('/');
     let name, size = 0;
     if (isDir) {
@@ -406,7 +422,27 @@ function LocalTree({ path, onSelectFile, refreshNonce, onRename, onDelete, onUpl
     </span>
   );
 
-  const renderEntries = (list, depth) => list.map(e => {
+  /* The two things the listing says about ITSELF. Without these, an empty
+     folder was a blank box (indistinguishable from a listing that never
+     arrived) and a folder of more than 300 entries showed its first 300 with
+     nothing at the bottom to say the rest existed — a partial answer wearing
+     the shape of a complete one. */
+  const listNotes = (list, depth) => {
+    const notes = [];
+    const pad = 10 + depth * 14 + 14;
+    if (list.length === 0) notes.push(
+      <div key="__empty" style={{paddingLeft: pad, fontSize: 9, opacity: 0.5}}>
+        This folder is empty.
+      </div>);
+    if (list.truncated) notes.push(
+      <div key="__truncated" style={{paddingLeft: pad, fontSize: 9, color: 'var(--warn)'}}
+           title="the office stops listing at 300 entries per folder">
+        Showing the first {list.length} entries — this folder has more.
+      </div>);
+    return notes;
+  };
+
+  const renderRows = (list, depth) => list.map(e => {
     if (e.isDir) {
       const isOpen = expanded.has(e.path);
       const kids = subEntries[e.path];
@@ -444,6 +480,10 @@ function LocalTree({ path, onSelectFile, refreshNonce, onRename, onDelete, onUpl
       </div>
     );
   });
+
+  /* Every listing renders through here — the root pane and every expanded
+     subfolder — so both paths tell the same truth about empty and truncated. */
+  const renderEntries = (list, depth) => [...renderRows(list, depth), ...listNotes(list, depth)];
 
   if (!path) return <div className="proj-empty-msg">No project path set.</div>;
   if (loading) return <div className="proj-empty-msg">Loading…</div>;

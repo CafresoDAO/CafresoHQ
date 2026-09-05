@@ -35061,3 +35061,67 @@ about the roster: an ABSENT roster and an empty one mean the same thing here
 — there is nobody to @-mention — which is a different rule from the one
 `cast.jsx` keeps about reach, where absent must never render as nothing. The
 difference is that this sentence is advice, not a claim about a coworker.
+
+---
+
+## 307. a folder of 400 files showed 300 of them and let the boss believe that was all
+
+`DIR_LIST` does not only answer with entries. serve.py builds two facts about
+the listing itself and puts them in the same text:
+
+    result = '\n'.join(lines) or '(empty directory)'
+    if len(lines) == 300:
+        result += '\n…(truncated at 300 entries)'
+
+The Workspace file tree discarded both on one line —
+
+    if (line.startsWith('(') || line.startsWith('…')) continue; // sentinels
+
+— and drew whatever survived, which is to say it drew the entries and threw
+away everything the office had said about them.
+
+The cheap half was the blank box. Add a project whose folder is empty and the
+FILES pane rendered nothing at all: no rows, no sentence, no seam. There is a
+real difference between "this folder has nothing in it" and "the listing came
+back with nothing in it", and the pane collapsed the two into the same white
+rectangle, leaving the boss to guess which one they were looking at. #303 had
+already fixed the loudest version of that confusion one door down — a
+listing that *failed* now says so — and this was the quiet remainder: the
+listing that succeeded and had nothing to report still looked exactly like a
+listing that had gone wrong.
+
+The expensive half was the truncation, because it was not blank, it was
+wrong. Open a `node_modules`, a photo folder, a downloads directory — any
+folder with more than 300 children — and the tree drew the first 300 rows and
+stopped. There was no marker at the bottom, no count, no ellipsis: nothing on
+the screen distinguished the 300th of 400 from the last file in the folder.
+The boss scrolled to the end and got the ordinary visual proof that a list has
+ended, and the proof was false. The office had actually said "…(truncated at
+300 entries)" — the honest sentence existed, arrived over the wire, and was
+deleted by the client one line before it could be shown. That is the same
+class of defect as #303's unreachable TRY AGAIN screen: the truth was in the
+building and the person never got to it. A gap you can see is a nuisance; a
+partial answer wearing the shape of a complete one is a confident falsehood,
+and the tester takes it away as fact.
+
+The fix keeps the sentinels out of the rows — they were never entries — and
+reports them ON the returned array as `.empty` and `.truncated`, which
+matters because #303 made the sub-listing cache tell a listing from a failure
+with `Array.isArray`. Flags that ride on the array leave that distinction
+exactly as it was. `listNotes()` turns them into the two missing sentences —
+"This folder is empty." and "Showing the first 300 entries — this folder has
+more." — and every listing in the tree now renders through one
+`renderEntries`, so the root pane and an expanded subfolder tell the same
+truth instead of the top level being fixed and the folder one click down
+still lying.
+
+The sentinel match also got tighter on the way past. `startsWith('(')` was
+never a description of the sentinels; it was a guess at their first
+character, and it ate any real file whose name opens with a bracket or an
+ellipsis. Matching the two strings serve.py actually writes costs nothing and
+cannot swallow somebody's file.
+
+The test lifts the real `parseDirEntries` and runs it under node against a
+real empty listing, a real 300-entry truncated listing and an ordinary one,
+the way #303's does. Asserting on the source alone would have passed a parser
+that still silently dropped the marker.
