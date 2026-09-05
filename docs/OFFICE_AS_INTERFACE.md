@@ -35362,3 +35362,79 @@ The same file's `fund()` was checked alongside and is honest — it quotes the
 string it passes to the bridge. The difference is that funding sends what is
 on the screen; payroll sends what is on the chain, and only one of those two
 dialogs was reading from the right place.
+
+---
+
+## 312. the office's on-chain diary overwrote yesterday every evening
+
+The entry that shipped `stripToolEcho` — the one that split *watching* a
+coworker work from *keeping* the memo — closed with a paragraph that reads
+like a law rather than a patch:
+
+> **The office runs on the boss's clock.** The same filing was dated
+> `2026-08-07` at 8pm on the 6th: `toISOString()` stamps UTC. Every other
+> date on the floor is local, so `officeDate()` is too.
+
+It was written because a real delivery, filed at 8pm, put tomorrow's date in
+its own header. `officeDate()` was added to `app/artifacts.jsx` and the
+delivery filename was fixed. The calendar grouping followed. `app.jsx` line
+2215 already stamps the activity row with it, and says so in a comment: *"the
+calendar had the same bug (see officeDate)"*. Three sites, one rule, and by
+every appearance a finished job.
+
+One site never got it. The Morning Report — the HQ GAZETTE that assembles
+itself when the boss comes back after four hours away — also drops a digest
+on-chain, best-effort, and it spelled its own day out longhand:
+
+    const day = new Date().toISOString().slice(0, 10);
+    chain.docs.put(`journal/${day}`, JSON.stringify({ … }));
+
+It is the only remaining `toISOString().slice(0, 10)` in the whole UI.
+
+The reason this one is worse than a wrong header is that the string is not a
+caption, it is the **key**. `putDoc` in `src/cafresohq_state/main.mo` is
+`hqDocs := pOps.put(hqDocs, caller, tOps.put(docs, name, doc))` — a name-keyed
+map, no versions, no history. A second write under a name the office has
+already used is not a duplicate entry. It is a deletion.
+
+So, an office at UTC-6 — which is where this one actually is:
+
+- Boss comes back at 8:30pm on the 5th. The gazette aggregates the day and
+  files it, correctly headed *the 5th* everywhere on screen, as
+  `journal/2026-09-06`.
+- Boss comes back at 9am on the 6th. That gazette is genuinely the 6th's, and
+  it files as `journal/2026-09-06`.
+
+The 5th's digest is gone. Nothing failed, nothing was logged, no row went
+red; the `.catch(() => {})` that keeps a bridge hiccup from blocking the boot
+had nothing to catch, because the write succeeded. And the record it landed
+on is the one place in HQ meant to survive the container: a permanent,
+principal-scoped diary of what the coworkers did, sitting on a canister,
+quietly one evening short for every day the boss worked past dark. Anyone
+west of Greenwich who ever opens HQ in the evening has been losing that day.
+Anyone east of it has the mirror version — a 1am return files under
+*yesterday* and eats the previous day's digest instead.
+
+**The fix.** `officeDate()` is already imported into `app.jsx` for line 2215;
+the journal key now calls it. That is the whole change, and it is the change
+`#the stripToolEcho entry` prescribed — it just never travelled the four
+thousand lines to this call site.
+
+**The proof.**
+`scripts/test_the_on_chain_journal_is_filed_under_the_bosss_own_date.py`
+lifts the real `if (chain && … docs.put)` block out of `app.jsx` by brace
+matching and runs THAT under node — against a stub bridge that records the
+name it is handed, a `Date` subclass pinned to a wall time, and `TZ` set per
+case — so the assertion is on shipped code rather than a paraphrase of it. It
+pins the collision directly (the evening key and the next morning's key must
+differ, which is the property that actually protects the record), both
+directions of the meridian, that a midday gazette where UTC and local agree
+is unchanged, and that the digest body still carries its entries.
+
+Fire-tested: copied the fixed `app.jsx` to `/tmp`, reverted the line in place
+with the editor back to `new Date().toISOString().slice(0, 10)` (never `git
+checkout -- <file>`) — the El Salvador evening filed `journal/2026-09-06` and
+collided with the next morning, 4 checks failed, exit 1. Restored from
+`/tmp`, `md5` byte-identical, reran — all 9 passed, exit 0.
+
+`.jsx` change, so `npm run build` after.

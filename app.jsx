@@ -4316,7 +4316,15 @@ ${d.text}` : d.text,
         try {
           const chain = CafresoHQChain;
           if (chain && chain.isAvailable() && chain.docs && chain.docs.put) {
-            const day = new Date().toISOString().slice(0, 10);
+            /* The office runs on the boss's clock. This key is a DAY, and
+               `officeDate` is how every other day on the floor is spelled —
+               the delivery filename, the calendar grouping, the activity
+               row at line 2215. This one site kept the UTC stamp, so a
+               gazette opened at 8pm anywhere west of Greenwich filed itself
+               under TOMORROW, and the next day's genuine digest then landed
+               on the SAME name — `putDoc` is keyed by name and overwrites,
+               so the evening's record was silently gone. */
+            const day = officeDate();
             chain.docs.put(`journal/${day}`, JSON.stringify({
               since: prevSeen,
               entries: acts.slice(0, 80).map(a => ({ ts: a.ts, agent: a.agentName, action: a.action, text: a.text })),
