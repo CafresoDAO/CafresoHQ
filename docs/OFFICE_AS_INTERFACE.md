@@ -39453,3 +39453,57 @@ snapshot on every field (old brain, old color, `tools: ['web']`,
 the fixed one.
 
 `npm run build` run after the change.
+
+---
+
+## 378. the meeting that kept minuting last week's roster
+
+**The lead.** Same hunt as `#374`–`#377`: something holds a whole object
+where it should hold an id plus a live lookup. `app.jsx` seeds the
+Meeting Room exactly once, at `onOpenMeeting`
+(`setMeetingParticipants(agents.filter(a => ids.includes(a.id)))`), and
+hands that captured array straight to `<MeetingRoom participants={...}
+agents={agents} .../>` in `features.jsx`. `agents` rides along too — but
+`MeetingRoom` never touched it for anything but the "+ Seat" add-list;
+every seat card, every streaming placeholder, and the roster handed to
+`HQ.ceoStream` all read `participants` directly.
+
+**The wreck.** `onUpdateAgent` is immutable (`{ ...a, ...patch }`), so a
+Settings edit made while the room stayed open — rename, recolor, switch
+brain, tick a tool — lands in `agents` as a brand-new object for that id
+and never reaches `participants`, which is never reassigned after the
+room opens. Seat two coworkers, open Settings → Roster in another view,
+rename one and switch their brain, save — the still-open Meeting Room
+kept the old name on the seat card. Worse than a display glitch: the
+stale object doubled as `agentRef` for that coworker's next turn, so
+`HQ.agentStream` streamed against the pre-edit brain and tool grants too
+— the model itself, not just the label, was running last week's
+coworker. `HQ.ceoStream`'s moderator synthesis got the same stale roster
+via `{ agents: participants, ... }`.
+
+**The fix.** One `liveParticipants` derived at the top of `MeetingRoom`:
+`participants.map(p => agents.find(a => a.id === p.id) || p)` — the same
+`agents.find(x => x.id === X.id) || X` shape `FurnishModal` already uses,
+the `|| p` half keeping a since-dismissed attendee's last-known seat on
+screen instead of vanishing them mid-meeting. Every render/turn site that
+previously read `participants` — the seat cards, the "N in the room"
+subtitle, the streaming placeholders/`agentRef`, and the roster handed to
+`HQ.ceoStream` — now reads `liveParticipants` instead. The "+ Seat"
+availability filter (already reading live `agents`) was left alone in
+shape, just re-pointed at `liveParticipants` for consistency.
+
+**Fire-tested.** New
+`scripts/test_meeting_room_seats_read_live_agents_not_a_frozen_snapshot.py`
+extracts the actual `liveParticipants` line from `features.jsx` (not a
+hand-copied duplicate) and runs it under Node against a stale
+`participants` array (one attendee renamed/recolored/rebrained/retooled
+in the live `agents` roster since the meeting opened, one dismissed from
+the roster entirely), confirming the resolved seats carry the freshly
+saved record and the dismissed attendee still gets a fallback seat.
+Reverted the fix in place (`const liveParticipants = participants;`),
+confirmed the same checks now fail on stale name/color/brain/tools,
+restored from a `/tmp` copy, confirmed the restored `features.jsx` is
+byte-identical (md5, `be910509679695be5325ca2cee482811`) to the fixed
+one.
+
+`npm run build` run after the change — 8 assets built clean.

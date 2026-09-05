@@ -534,10 +534,26 @@ function MeetingRoom({ participants, agents, onClose, onRemove, onAdd, onUpdateA
   };
   const logRef = useRF(null);
   useEF(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [msgs]);
+  /* `participants` is app.jsx's `meetingParticipants` — seeded once, at
+     `onOpenMeeting`, by filtering the roster down to the invited ids
+     (`agents.filter(a => ids.includes(a.id))`). That's a snapshot of each
+     attendee's whole record, not just their id, and nothing reassigns it
+     while the room stays open. A Settings edit made mid-meeting — rename,
+     recolor, switch brain, grant tools — lands in `agents` and never
+     reaches this array, so every seat kept describing whoever the
+     coworker was at the moment they sat down: stale name and sprite color
+     on the seat card, and a stale `agentRef` handed to `HQ.agentStream`
+     and `HQ.ceoStream` for the actual turn, meaning even the model's own
+     brain/tools could run against the pre-edit record for the rest of the
+     meeting. Re-resolved here against the live roster on every render,
+     the same `agents.find(x => x.id === X.id) || X` fallback FurnishModal
+     already uses — the `|| p` half keeps a since-dismissed attendee's
+     last-known seat on screen instead of vanishing them mid-room. */
+  const liveParticipants = participants.map(p => agents.find(a => a.id === p.id) || p);
   /* Whoever's left once seated — the "+ Seat" tile below only shows a
      coworker once, and disappears once everyone hired is already in the
      room. */
-  const available = agents.filter(a => !participants.some(p => p.id === a.id));
+  const available = agents.filter(a => !liveParticipants.some(p => p.id === a.id));
 
   const newId = () => 'mtg_' + Math.random().toString(36).slice(2, 8);
 
@@ -569,7 +585,7 @@ function MeetingRoom({ participants, agents, onClose, onRemove, onAdd, onUpdateA
        insisted they were first, because their prompt still held the
        pre-round transcript. Appended after each turn below. */
     let transcript = msgs.map(m => `${m.who}: ${m.text}`).join('\n') + `\nYou: ${you}`;
-    const placeholders = participants.map(a => ({
+    const placeholders = liveParticipants.map(a => ({
       id: newId(), who: a.name, color: a.color, text: '', streaming: true, agentRef: a,
     }));
     const ceoPlaceholder = { id: newId(), who: 'CafresoHQ', color: 'cafresohq', text: '', streaming: true };
@@ -673,7 +689,7 @@ function MeetingRoom({ participants, agents, onClose, onRemove, onAdd, onUpdateA
         await HQ.ceoStream(
           `You are moderating a team meeting. Transcript:\n${transcript}\n\nSynthesize the discussion in 1-2 sentences and state the next action.`,
           tok => { buf += tok; update(buf); },
-          { agents: participants, signal: controller.signal }
+          { agents: liveParticipants, signal: controller.signal }
         );
         /* The CEO's own words reach the boss here, and this set the RAW
            buffer. Same recipe as every other reply path now. */
@@ -696,7 +712,7 @@ function MeetingRoom({ participants, agents, onClose, onRemove, onAdd, onUpdateA
       open={true}
       onClose={onClose}
       title="🪑 MEETING ROOM"
-      subtitle={`${participants.length + 1} in the room · CafresoHQ moderating`}
+      subtitle={`${liveParticipants.length + 1} in the room · CafresoHQ moderating`}
       size="xl"
     >
       <div style={{margin: 'calc(-1 * var(--sp-6))'}}>
@@ -706,7 +722,7 @@ function MeetingRoom({ participants, agents, onClose, onRemove, onAdd, onUpdateA
             <div className="seat-name">CafresoHQ</div>
             <div className="seat-role">Moderator</div>
           </div>
-          {participants.map(p => (
+          {liveParticipants.map(p => (
             <div key={p.id} className="seat">
               <button className="seat-remove" onClick={()=>onRemove(p.id)} title="Excuse from meeting">✕</button>
               <Sprite data={p.color} scale={2}/>
