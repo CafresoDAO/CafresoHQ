@@ -616,6 +616,24 @@ def run_tool(ctx, name, arg, body):
                 return 'SEARCH is unavailable on the night shift (no server-side BRAVE_API_KEY). Use BROWSER_FETCH on a known URL, or work from vault + project files.'
             s, raw = _self_call(ctx, 'GET', '/brave/search?q=' + urllib.parse.quote(arg),
                                 headers={'X-Brave-Key': ctx.brave_key})
+            if s != 200:
+                # The status was read into `s` and never looked at. Every
+                # refusal /brave/search can answer — 429 (the free tier the
+                # night shift runs on, all night, one query per second), 401
+                # for a key that expired since bedtime, 402 for a quota spent
+                # by midnight, 502 for Brave unreachable — comes back as a
+                # JSON error body with no `web.results` in it, so the slice
+                # below produced [] and this branch told the coworker
+                # "No results." A lookup that FAILED was reported as a lookup
+                # that SUCCEEDED and found the web empty. The coworker then
+                # filed exactly the note it was told to file — "no current
+                # sources on <topic>" — and the run recorded errors: 0. Same
+                # defect as the VAULT_READ error body returned as a note's
+                # text, one door over, and worse unattended: nothing
+                # downstream contradicts an empty search the way a shut vault
+                # eventually refuses the write.
+                return 'Search failed (%d): %s' % (
+                    s, raw[:200].decode('utf-8', 'replace'))
             data = json.loads(raw.decode('utf-8', 'replace'))
             results = (data.get('web', {}) or {}).get('results', [])[:6]
             if not results:
@@ -625,6 +643,17 @@ def run_tool(ctx, name, arg, body):
                 for i, r in enumerate(results))
         if name == 'VAULT_SEARCH':
             s, raw = _self_call(ctx, 'GET', '/vault/search?q=%s&limit=8' % urllib.parse.quote(arg))
+            if s != 200:
+                # Same swallowed status, same lie in the other direction: a
+                # 502 from a shut Obsidian or an unreachable OCI bucket has no
+                # `hits` key, so this said "No matches in vault." — the vault
+                # is EMPTY on that subject — to a coworker whose standing
+                # instruction is "Don't re-write notes that already exist".
+                # It duly wrote the note again. Not "Vault write failed", so
+                # vault_write_status can't read a status out of it and this
+                # must never be spelled like one.
+                return 'Vault search failed (%d): %s' % (
+                    s, raw[:200].decode('utf-8', 'replace'))
             hits = json.loads(raw.decode('utf-8', 'replace')).get('hits', [])
             if not hits:
                 return 'No matches in vault.'

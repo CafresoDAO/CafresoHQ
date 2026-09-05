@@ -33774,3 +33774,54 @@ answering exactly this question correctly. The brief now asks it.
 Three sites, one constant, three separate discoveries. The lesson isn't
 about slugs — it's that a fix lands on the call site someone was looking
 at, and the twins keep working until somebody goes looking on purpose.
+
+---
+
+## 287. a search that failed came back as a search that found nothing
+
+Both of the night shift's gather tools read their HTTP status into a variable
+and then never looked at it. `run_tool`'s `SEARCH` arm asked
+`/brave/search`, parsed the body, sliced `web.results`, and — finding none —
+told the coworker `No results.` Its `VAULT_SEARCH` arm asked `/vault/search`,
+sliced `hits`, and said `No matches in vault.` An error body has no
+`web.results` and no `hits`, so every refusal either door can answer arrived
+as a confident, cheerful negative.
+
+The doors refuse often, and at night most of all. `_brave_search` answers 401
+when the key is gone, 502 when Brave is unreachable, and forwards Brave's own
+429 and 402 verbatim — a rate limit and a spent quota, which is what a free
+tier does to something that queries for four hours while the boss sleeps.
+`/vault/search` answers 502 for a shut Obsidian or an unreachable bucket, 400
+for a query it won't take.
+
+What the coworker did with that was file the note it had been ordered to file.
+The write is mandatory; the prompt says the notes ARE the deliverable. So a
+rate-limited hour produced `# Carrier lead time` / "No current sources exist on
+this topic", the vault gained a plausible, well-formatted, entirely fictional
+finding, and the run recorded `errors: 0`. On the vault side the same lie
+pointed the other way: the standing rule is "Don't re-write notes that already
+exist — extend them with VAULT_APPEND instead", and a vault that said it held
+nothing got the same note written into it again, night after night.
+
+This is `#250`'s bug one door over — the vault error page handed back as a
+note's TEXT — and unattended it is the worse of the two. A shut vault is
+eventually caught, because the mandatory write hits the same shut vault and
+`vault_write_status` reads the refusal out of it. A failed search is
+contradicted by nothing. Nobody is watching; the morning report says the night
+was clean, and it was, except for the part that was invented.
+
+Both arms now check the status they already had, and a non-200 is announced as
+a failed lookup in the same `<what> failed (NNN): <body>` spelling the read and
+write doors already use. Neither sentence starts with `Vault write failed`, so
+`vault_write_status` still reads `None` out of them and a rate-limited web
+search is never reported to the boss as a vault outage. A door that is shut has
+to say so — including when what is behind it is an empty shelf.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file
+a foreign session owns and this change never touches). This change covers
+`night_runner.py`, one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any kind
+was run.
