@@ -34647,3 +34647,49 @@ walks ancestors looking for `node_modules`, so a copy inside the repo would
 have resolved `esbuild` from a parent and quietly tested nothing — and reads
 what the tester would see: non-zero exit, `npm install` named, no raw
 `ERR_MODULE_NOT_FOUND` stack.
+
+---
+
+## 301. the server is running and the tester still can't find it
+
+The same beta audit that produced `#296` found the other half of "a tester
+cannot start this": with `mkcert` installed — which `Start-CafresoHQ.sh`
+actively tells them to install — `_ensure_local_tls` provisions a trusted
+localhost cert and the server binds **https**, while the README hands out an
+`http://` address. That mismatch is survivable, because serve.py prints the
+live scheme and port on its first line: `CafresoHQ -> https://localhost:8787/hq.html`.
+
+The banner was a bare `print()`. Python block-buffers stdout in 8 KiB chunks
+the moment it is not a tty, and every launch a tester actually performs is
+exactly that — `sh Start-CafresoHQ.sh > hq.log`, nohup, Electron holding the
+pipe. An idle server never fills 8 KiB, so the line sat in the buffer for
+the life of the process, and the audit's cold-start log did not contain it.
+Worse, the log was not empty: `BaseHTTPRequestHandler` writes the request
+log to *stderr*, so the file filled with traffic and never with the address.
+The server looked alive and unreachable at the same time. The 2026-08-15
+entry had already hit this exact wall with the stale-bundle warning and
+answered it with a
+`flush=True` on that one call, plus a comment explaining the buffering — a
+correct fix to one line of a general defect.
+
+So the fix here is the stream, not the call: `sys.stdout.reconfigure(line_buffering=True)`
+as the first statement of `__main__`. Every startup print — the banner, the
+TLS verdict, the non-loopback bind warning, the proxy table, the
+`/cafresohq/stream` DISABLED line — is covered at once, and so is the next
+one somebody adds without thinking about buffering. Per-print flushing is a
+rule that has to be remembered on every future line; a buffering mode is
+not, and a startup print whose whole purpose is to tell a human what
+happened has no business being one someone can forget.
+
+The second face of the same silence: `mkcert -install` can raise an admin
+password prompt — a keychain dialog on macOS, sudo on Linux — before serve.py
+has produced any output at all, with `capture_output=True` swallowing
+mkcert's own words and a 60-second timeout behind it. A tester sees a dead
+terminal and a mystery password box. The step now announces itself on stderr,
+flushed, immediately before it shells out. Whether it runs is unchanged; only
+whether anyone is told it is running.
+
+The test is a real cold start on a free ephemeral port with stdout redirected
+to a file, read back while the process is still serving. Grepping the source
+for `flush` would have passed on a banner that still reached nobody, which is
+the failure this entry is about.

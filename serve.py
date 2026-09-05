@@ -5388,6 +5388,14 @@ def _ensure_local_tls(state_dir, lan_ip='', allow_selfsigned=True):
             # -install is idempotent; it may prompt for admin the very first time
             # (to add the local CA). Non-fatal if it fails — the cert still works
             # for direct use, just not the trusted embed.
+            #
+            # Say so BEFORE shelling out, and get it out of the buffer: the
+            # prompt is raised by mkcert (a macOS keychain dialog, or sudo on
+            # Linux) with this process producing no output of its own, so an
+            # unannounced -install looks like a hang for up to the 60s timeout.
+            sys.stderr.write('[tls] installing the mkcert local CA (one-time; '
+                             'may ask for your admin password)…\n')
+            sys.stderr.flush()
             subprocess.run([mkcert, '-install'], capture_output=True, text=True, timeout=60)
             r = subprocess.run(
                 [mkcert, '-cert-file', str(cert), '-key-file', str(key), *hosts],
@@ -5475,6 +5483,21 @@ def _ensure_local_tls(state_dir, lan_ip='', allow_selfsigned=True):
 
 
 if __name__ == '__main__':
+    # Line-buffer stdout for the whole run. Python block-buffers stdout in 8 KiB
+    # chunks whenever it is not a tty — `sh Start-CafresoHQ.sh > hq.log`, nohup,
+    # Electron capturing the pipe — so the startup banner (the ONE line that
+    # tells a human which scheme and port to open) sat in a buffer until enough
+    # later output pushed it out, which for an idle server is never. The request
+    # log comes from BaseHTTPRequestHandler on stderr, so a redirected log showed
+    # traffic and no banner at all. Doing it once here beats sprinkling
+    # flush=True on each print: it covers the banner, the TLS/stale/bind
+    # warnings, the route table, and anything printed later, including prints
+    # nobody has written yet.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except (AttributeError, OSError, ValueError):
+        pass   # stdout replaced by a stream without reconfigure() — not fatal.
+
     # When packaged as a PyInstaller exe, static files live next to the exe.
     if getattr(sys, 'frozen', False):
         os.chdir(os.path.dirname(sys.executable))
