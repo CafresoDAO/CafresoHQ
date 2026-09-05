@@ -1820,6 +1820,25 @@ ${d.text}` : d.text,
      and also when the agent is dismissed (handled in onDismiss).  */
   const pendingElevationRef = useRefA(new Set());
 
+  /* onApprove's own single-consumption lock. `setApprovals(prev =>
+     prev.filter(...))` looks like the guard, but it only protects the NEXT
+     render — onApprove closes over this render's `approvals`/`agents`/
+     `tasks`, and a second re-entrant call (a fast double-click, or a
+     duplicate synthetic event from a fast double-tap — the same shape
+     already fixed for resendMessage's one-live-child guard and for
+     _approval_decide's atomic claim server-side) lands before React ever
+     rebinds the button to a closure that would see the card gone. Measured
+     with the real onApprove body lifted out of this file and called twice
+     against one unchanged snapshot: hire-agent hired the recommendation
+     TWICE (two agents, two running budgets), grant-elevation dispatched
+     the "resume with your new tools" nudge TWICE (two real elevated turns),
+     workflow-step re-triggered the same chain step TWICE, and publish
+     called publishSite TWICE (two uploads for one stamp). A ref-backed
+     Set, checked and claimed as the very first thing onApprove does, closes
+     the window regardless of what `approvals` still says in the stale
+     closure. */
+  const approvedIdsRef = useRefA(new Set());
+
   const onDismiss = async (id) => {
     const a = agents.find(x=>x.id===id);
     if (!a) return;
@@ -6285,6 +6304,13 @@ ${d.text}` : d.text,
      so it can resume (or stand down) cleanly. Non-elevated approvals stay
      advisory — agent already finished its turn, no need to re-summon it. */
   const onApprove = (id) => {
+    /* Claim the id SYNCHRONOUSLY, before anything else — see approvedIdsRef
+       above. A second call for an id already claimed (this render's stale
+       `approvals` would otherwise still find it and re-run every side
+       effect below) is a silent no-op, same as a stamp arriving for a card
+       genuinely already gone. */
+    if (approvedIdsRef.current.has(id)) return;
+    approvedIdsRef.current.add(id);
     const ap = approvals.find(p => p.id === id);
     setApprovals(prev => prev.filter(p => p.id !== id));
     clearApprovalNotice(id);
@@ -6570,6 +6596,11 @@ ${d.text}` : d.text,
     say('Approved ✓', 'STAMP');
   };
   const onReject = (id) => {
+    /* Same lock as onApprove, same ref — a card is decided once, whichever
+       way, and a second re-entrant call for an id already claimed (by
+       either handler) must not re-run the decline side effects either. */
+    if (approvedIdsRef.current.has(id)) return;
+    approvedIdsRef.current.add(id);
     const ap = approvals.find(p => p.id === id);
     setApprovals(prev => prev.filter(p => p.id !== id));
     clearApprovalNotice(id);

@@ -40224,3 +40224,75 @@ raising straight out. Restored (md5 `c291af72e4d4e3ead9e603bc36b11d96` /
 `2293941c5024ef6581fb1684d6524105`), green again on two repeated runs.
 
 No `.jsx`/`.js`/`.css` touched — no build required.
+
+## 388. the second click on a stamp did the job twice
+
+The prior hunt into `## 387` left one door explicitly unchecked: `#387`'s
+server-backed external-tool-approval flow (Claude Code's PreToolUse hook
+bridge, `/approvals/external/decide`) was confirmed safe against real
+concurrent HTTP requests — it atomically claims a pending item under a lock
+before executing. Never checked: app.jsx's five CLIENT-LOCAL approval kinds
+— `publish`, `hire-agent`, `hire-assistant`, `grant-elevation`,
+`workflow-step` — which never touch that shared server-side pending list at
+all. They live purely in one browser tab's own React state, seeded by
+`onApprovalRequest` and decided by `onApprove`/`onReject`.
+
+**The bug.** `onApprove(id)` looked self-guarding —
+`setApprovals(prev => prev.filter(p => p.id !== id))` runs before the
+side-effecting branch — but that filter only protects the NEXT render.
+`onApprove` closes over THIS render's `approvals` (and `agents`, and
+`tasks`), and neither `features.jsx`'s `ApprovalTray` button
+(`<button onClick={()=>onApprove(p.id)}>APPROVE</button>`) nor
+`views/core.jsx`'s `AgentInbox` mirror carries a disabled state or a
+debounce. A second call for the same id — a fast double-click, or a
+duplicate synthetic click event off a fast double-tap — landing before
+React has committed the `setApprovals` update and rebound the button to a
+fresh closure sees the SAME stale `approvals` array, with the card still
+"pending," and re-runs every side effect: a second agent hired off one
+hire-agent/hire-assistant proposal (two running budgets from one stamp), a
+second grant-elevation dispatch nudging an agent to redo real elevated
+file/shell work, a second workflow-step trigger re-running an
+already-started chain step (the exact re-run this branch's own comment
+already guards against for a STALE card — just not for a second click on a
+fresh one), a second `publishSite` upload for one stamp. Exactly `## 387`'s
+bug shape one door over: not double-billed tokens, a duplicated
+deliverable.
+
+Reproduced by lifting the REAL `onApprove` function body out of app.jsx —
+brace-balanced text extraction of the actual committed source, not a
+re-implementation — via new `scripts/harness_onapprove_race.mjs`, wiring it
+up with stub dependencies (mocked `onHire`, `onUpdateAgent`,
+`dispatchToAgent`, `triggerChainStep`, `CafresoHQClient.publishSite`, each
+recording every call), and calling it TWICE against one unchanged snapshot
+— the exact shape of a second click landing before any state update from
+the first would have taken effect — once per approval kind. Pre-fix: every
+one of the five real side-effecting calls fired twice.
+
+**The fix.** A new `approvedIdsRef` (a `Set`, same shape as this file's own
+`pendingHiresRef`/`pendingAssistantHiresRef`/`pendingElevationRef`) is
+checked-and-claimed as the very FIRST thing both `onApprove` and `onReject`
+do, synchronously, before `approvals.find` even runs — mirroring
+`resendMessage`'s own one-live-child guard (a live ref check, not a state
+value that only updates on the next render) and the atomic
+claim-before-execute shape `_approval_decide` already uses server-side for
+the sibling external-approval flow. A second re-entrant call for an id
+already claimed no-ops regardless of what the stale `approvals` closure
+still says. Both handlers share the one ref — a card is decided once,
+whichever way, so `onReject` needed the identical lock (a double-reject
+was, e.g., a doubled "elevation DENIED" dispatch to the same agent).
+
+**Fire-tested.** New
+`scripts/test_a_second_click_on_a_stamp_does_not_double_the_action.py`:
+round 1 — structural, confirming `approvedIdsRef` exists and both handlers
+claim it before their own `approvals.find`. Round 2 — the real extracted
+`onApprove` body, called twice per approval kind via the new
+`harness_onapprove_race.mjs`, checking the real side-effecting mock
+(`onHire` / `onUpdateAgent`+`dispatchToAgent` / `triggerChainStep` /
+`publishSite`) fires exactly once for every one of the five kinds. Round 3
+— a plain single approve still hires exactly one agent, confirming the fix
+changes nothing about an ordinary stamp. Reverted the fix in place (md5
+`5c3f9c8fc4902142d998772a3735a988`) — 8 checks failed reliably across 3
+repeated runs, one for every side-effecting call plus grant-elevation's
+extra dispatch check, every one of them the real action firing twice.
+Restored (md5 `5c3f9c8fc4902142d998772a3735a988`, byte-identical), green
+again on two repeated runs. `npm run build` succeeds.
