@@ -7487,7 +7487,9 @@ ${d.text}` : d.text,
       />
       <MeetingPicker open={meetingPickerOpen} agents={agents} onClose={()=>setMeetingPickerOpen(false)} onStart={onStartMeeting}/>
       {meetingOpen && <MeetingRoom participants={meetingParticipants} agents={agents} onClose={()=>setMeetingOpen(false)} onRemove={onRemoveFromMeeting} onAdd={onAddToMeeting} onUpdateAgent={onUpdateAgent}/>}
-      <FocusMode active={focus} onClose={()=>setFocus(false)} chat={chat} setChat={setChat}/>
+      {/* `agents` — the quiet room's CEO was the only one told the office
+          was empty; see FocusMode's send() in features.jsx. */}
+      <FocusMode active={focus} onClose={()=>setFocus(false)} chat={chat} setChat={setChat} agents={agents}/>
       {/* ApprovalTray moved inline into view-area */}
       <ReceiptTray receipts={receipts} onOpen={()=>setReceiptsOpen(true)}/>
       <MorningReportModal report={gazette} onClose={()=>setGazette(null)} onGoToOffice={()=>navTo('visual')} />

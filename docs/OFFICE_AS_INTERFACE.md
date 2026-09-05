@@ -33825,3 +33825,67 @@ a foreign session owns and this change never touches). This change covers
 `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any kind
 was run.
+
+---
+
+## 288. the one room built for talking to your chief of staff never told it who worked here
+
+The office has five places that stream the CEO. Four of them hand it the
+roster: the chat panel sends `agents`, the meeting room sends `participants`,
+the stand-up sends `agents`, the fan-out synthesis sends `agents`. The fifth is
+`FocusMode` — the full-screen overlay whose header reads **1:1 WITH CAFRESOHQ ·
+quiet room · no distractions** — and its `send()` called
+
+    HQ.ceoStream(text, flush, { chat: pending, signal, onHint })
+
+with no roster at all.
+
+That is not a missing nicety. `ceoStream` builds its own system prompt, and the
+second thing in it is `rosterSummary(agents || [])`, which for an empty roster
+is one flat sentence: **"No coworkers hired yet."** So the boss walks into the
+room set aside for thinking out loud with their chief of staff, asks *who
+should take this?* or *what is Vera on?*, and the answer comes back from a CEO
+that has just been told, in its own instructions, that the business has nobody
+in it. It either denies a team the boss can see two feet away on the floor, or
+it makes one up. Both readings are the office lying about the office, on the
+screen furthest from any other signal that could correct it — there is no
+roster rail in the quiet room, no desks, nothing but the bubble.
+
+It survived because `FocusMode` has its own `send()`. That function is by now a
+museum of this exact failure: three comments already inside it record fixes it
+had to be given separately from `ui/chat.jsx` — the append instead of a
+whole-array replace, the `flush.cancel()` on abort, the `visibleReply` +
+`cleanHarmony` pass on the final text. Each of those was a line the sibling
+path already had. This is the fourth, and it was the argument rather than the
+body: the room was carrying the boss's message correctly and describing the
+boss's company wrongly.
+
+Passing the roster is one word, and one word is not the whole fix. Inside
+`ceoStream`, `agents.length` is also the gate that grants `dm_to` and
+`handoff_to` — and those two markers are **host-dispatched**: `ceoStream`
+detects the block, fires `onTool`, and *returns*, on the understanding that
+whoever called it will do the delivering. The quiet room has no dispatcher;
+that is what the Chat tab is for. So handing over the roster and stopping there
+would have traded a lie for a silent drop — a reply that ends mid-thought,
+nobody messaged, and not a word about it. `send()` now passes an `onTool` that
+collects what was routed, and if anything was, appends one sentence through
+`flush.note`: nothing was actually sent, this is a 1:1 room, ask again from the
+Chat tab and it will really go out. §7 — state it, and name the door.
+
+**Test:** `scripts/test_the_quiet_room_told_the_ceo_the_office_was_empty.py`.
+It pins the premise in `hq-runtime.jsx` (the empty-roster sentence, the
+`buildCeoSystem(agents || [])` call, the `dm_to` grant, the host-dispatched
+return), paren-matches the real options object out of `FocusMode` — a lazy
+regex stops halfway, because the object now contains its own `);` — and
+executes it in `node` against a two-coworker roster, asserting the prompt the
+quiet room's CEO would receive names Vera and Kip instead of "No coworkers
+hired yet."
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file
+a foreign session owns and this change never touches). This change covers
+`features.jsx`, the one `<FocusMode>` line in `app.jsx`, the new test and this
+entry; `src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any kind
+was run.

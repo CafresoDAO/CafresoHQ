@@ -762,7 +762,7 @@ function MeetingRoom({ participants, agents, onClose, onRemove, onAdd, onUpdateA
 }
 
 /* ---------------- 1:1 Focus mode ---------------- */
-function FocusMode({ active, onClose, chat, setChat }) {
+function FocusMode({ active, onClose, chat, setChat, agents = [] }) {
   const [input, setInput] = useSF('');
   const [streaming, setStreaming] = useSF(false);
   const ref = useRF(null);
@@ -793,10 +793,42 @@ function FocusMode({ active, onClose, chat, setChat }) {
     const controller = new AbortController();
     abortRef.current = controller;
     const flush = HQ.throttleTokens(setChat, ceoId);
+    /* The roster, which THIS call site alone never sent.
+
+       `ceoStream` builds its system prompt with `buildCeoSystem(agents || [])`,
+       and `rosterSummary([])` is the flat sentence "No coworkers hired yet."
+       Every other caller passes a roster — ui/chat.jsx sends `agents`, the
+       meeting room sends `participants`, the stand-up sends `agents` — and
+       FocusMode's separately-written send() sent none, so the ONE screen
+       titled "1:1 WITH CAFRESOHQ" is the one conversation where the chief of
+       staff is told the office is empty. Ask "who should take this?" or
+       "what is Vera on?" in the quiet room and the answer comes from a CEO
+       that has been informed, in its own system prompt, that the boss has
+       hired nobody — it either denies a team the boss can see two feet away
+       or invents one. §4: the office reports what it knows, and it knew.
+
+       `onTool` rides along because the roster is also what unlocks
+       `dm_to`/`handoff_to` in ceoStream — and once those markers are
+       granted, ceoStream stops streaming and hands the block to the HOST to
+       deliver. The quiet room has no dispatcher (that is what the Chat tab
+       is for), so without this the fix would trade a lie for a silent drop:
+       a truncated reply, nobody messaged, nothing said. Collect what was
+       routed and say so. */
+    const routed = [];
     try {
       await HQ.ceoStream(text, flush,
-        { chat: pending, signal: controller.signal, onHint: flush.note });
+        { chat: pending, agents, signal: controller.signal, onHint: flush.note,
+          onTool: (ev) => {
+            if (ev && (ev.phase === 'dm' || ev.phase === 'handoff')) routed.push(ev.arg);
+          } });
       flush.flushNow();
+      /* §7: state it, and name the door. `note()` is the out-of-band channel
+         built for exactly this — it survives the cancelled throttle by
+         appending to whatever text the caller wrote. */
+      if (routed.length) {
+        const who = [...new Set(routed.map(n => String(n || '').trim()).filter(Boolean))].join(', ');
+        flush.note(`_(nothing was actually sent to ${who || 'them'} — this is a 1:1 room and it has nobody to hand work to. Ask again from the Chat tab and it will really go out.)_`);
+      }
     } catch (err) {
       /* Kill any rAF flush scheduled just before the abort — same fix
          ui/chat.jsx already carries on this exact catch block: without it,
