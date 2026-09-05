@@ -35438,3 +35438,110 @@ collided with the next morning, 4 checks failed, exit 1. Restored from
 `/tmp`, `md5` byte-identical, reran — all 9 passed, exit 0.
 
 `.jsx` change, so `npm run build` after.
+
+---
+
+## 314. the terminal's coworker was killed mid-sentence and the office called it a reply
+
+`#298` — *the flagship coworker's crash was filed as a finished turn* — took
+`#282`'s rule about half-written replies and carried it into
+`drivers/claude_code.py`. It wrote the old predicate down in its own comment,
+so there would be no doubt about what the wrong shape looked like:
+
+> The old test here was `returncode and not emitted and not (in_tok or
+> out_tok)`: a CLI that streamed half a paragraph and then died — OOM,
+> killed, a hook refusal, a dropped API socket — exited non-zero with
+> `emitted` True and terminated with a success event, and usage alone was
+> enough to excuse it even when no text ever arrived, because the first
+> assistant message carries usage.
+
+It also named the family the rule belongs to: *"codex.py and gemini_cli.py
+have always said so"*. And
+`scripts/test_a_crashed_cli_turn_is_not_a_finished_deliverable.py` enforces
+exactly that family — by iterating
+`('claude_code.py', 'codex.py', 'gemini_cli.py', 'local_http.py')`. Four
+files, all under `drivers/`.
+
+There is a fifth reader of the same stream, and it is not under `drivers/`.
+`pty_server.py`'s `/terminal/stream` — the Project Terminal, the tab the boss
+actually types into — has its own copy of the `--output-format stream-json`
+parser, written before the driver layer existed and never folded into it. It
+runs three CLIs through one function, and the two arms it shares with the
+driver family end the way the family does:
+
+    rc = proc.returncode
+    if rc and rc not in (0, None):
+        sse_delta(f'\n⚠ gemini exited {rc}: …', 'error')
+    elif not text_emitted:
+        …
+
+The claude arm ended with a clause neither of its two siblings had:
+
+    if proc.returncode and proc.returncode != 0 and not (in_tokens or out_tokens):
+
+That is `#298`'s old predicate, in a file `#298` never opened, on the surface
+that matters most. And in this copy the suppressor is not an edge case — it is
+the normal case. Claude's `stream-json` puts `usage` on the FIRST assistant
+message; this very function reads it there, ten lines above. So `in_tokens` is
+non-zero for any turn that produced anything at all, and `not (in_tokens or
+out_tokens)` is false for every real session. The error marker was reachable
+only by a turn that died having said literally nothing.
+
+What that costs is the whole point of the marker. `delta.type` is a
+three-value channel — `'text'`, `'tool'`, `'error'` — and `'error'` is the
+only thing the terminal has to tell a failed turn from a delivered one;
+`claude-client.jsx` hands it straight to `onData(delta.content, delta.type)`
+and `hasSubstance(cleanBuf)` reads whatever text arrived as the result. So a
+session that got two paragraphs in and was then OOM-killed, denied by its own
+PreToolUse hook, or dropped by an upstream socket, streamed its two
+paragraphs, exited 137, and stopped. No warning line, no red, nothing. The
+boss reads a reply that ends mid-sentence and has no way to know it is not the
+whole answer — which is the same harm as `#282`, arrived at from the other
+side: there the office invented a verdict, here it withheld one.
+
+The same arm was deaf in a second way. `#298` also taught the driver to read
+the `result` frame's `is_error` and `subtype` — *"the CLI's own verdict, and
+the only place it states one"*, `'error_max_turns'`,
+`'error_during_execution'`. This copy read that frame for `usage` and threw
+the verdict away, so a turn the CLI itself declared failed and then exited 0
+was indistinguishable from a clean finish. And the in-band `type: 'error'`
+frame was printed inline and then forgotten, so nothing downstream of it knew
+the turn had ended badly — the mirror of the fix `#298` applied by latching it.
+
+**The fix.** The claude arm now carries `text_emitted` and a latched `err`,
+spelled the same way as the gemini and codex arms twelve and a hundred lines
+below it, and its tail reaches exactly one verdict: the CLI's own error if it
+gave one, otherwise a non-zero exit however much text preceded it, otherwise
+"returned no content" — the same three-step ladder its siblings have always
+used. The words already streamed are untouched; the office only stops
+pretending they were the end of the sentence.
+
+**The proof.**
+`scripts/test_a_crashed_terminal_turn_is_not_a_finished_reply.py` drives the
+real `pty_server._terminal_stream()` — a fake `claude` on disk with a shebang
+and a mode bit, emitting real `stream-json` on real stdout and exiting with a
+chosen code, spawned by the shipped `subprocess.Popen` — and asserts on the
+SSE frames the function actually writes. The first case is the measured one:
+one assistant message carrying text AND usage, then exit 137. It also pins the
+CLI's own `error_max_turns` verdict on an exit-0 turn, the in-band error
+frame, the printed-nothing case, and — because a guard that cries wolf is its
+own bug — that a clean turn still emits no error and still reports its usage.
+The last two checks are the family rule itself, over comment-stripped source,
+so the next arm added to this function cannot quietly skip it.
+
+Fire-tested: copied the fixed `pty_server.py` to `/tmp`, reverted the tail in
+place with the editor back to `if proc.returncode and proc.returncode != 0 and
+not (in_tokens or out_tokens)` (never `git checkout -- <file>`) — the killed
+turn wrote no error frame at all, 7 checks failed, exit 1. Restored from
+`/tmp`, `md5` byte-identical, reran — all 11 passed, exit 0.
+
+Pure `.py` change — no `npm run build` needed for it, though the worktree's
+`dist-ui/` was built once to run the suite.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`, on a
+file a foreign session owns and this change never touches. This change covers
+`pty_server.py`, one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any kind
+was run.

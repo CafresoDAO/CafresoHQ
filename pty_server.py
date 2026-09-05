@@ -959,6 +959,13 @@ def _terminal_stream(self):
     in_tokens = out_tokens = 0
 
     if cli == 'claude':
+        # The claude branch is the third of three CLIs streamed by this
+        # function, and it was the one that never learned what the other two
+        # know: a turn that ends badly has to SAY so. `text_emitted` and the
+        # latched `err` below are the gemini/codex arms' own two variables,
+        # spelled the same way, so the tail can reach exactly one verdict.
+        text_emitted = False
+        err = ''
         try:
             for line in proc.stdout:
                 line = line.strip()
@@ -975,6 +982,7 @@ def _terminal_stream(self):
                         if btype == 'text':
                             text = block.get('text') or ''
                             if text:
+                                text_emitted = True
                                 ok = sse_delta(text, 'text')
                                 if not ok: break
                         elif btype == 'tool_use':
@@ -982,6 +990,7 @@ def _terminal_stream(self):
                             inp   = block.get('input') or {}
                             inp_s = json.dumps(inp, ensure_ascii=False)
                             if len(inp_s) > 240: inp_s = inp_s[:240] + '…'
+                            text_emitted = True
                             sse_delta(f'\n⚙ {name}: {inp_s}\n', 'tool')
                     u = msg.get('usage')
                     if u:
@@ -991,8 +1000,24 @@ def _terminal_stream(self):
                     u = ev.get('usage') or {}
                     in_tokens  = u.get('input_tokens', in_tokens)
                     out_tokens = u.get('output_tokens', out_tokens)
+                    # The CLI's own verdict, and the only place it states one:
+                    # `subtype` is 'success' on a clean finish and names the
+                    # failure otherwise ('error_max_turns',
+                    # 'error_during_execution'), with `is_error` saying the
+                    # same as a bool. drivers/claude_code.py reads both; this
+                    # copy of the same parser read neither, so a turn the CLI
+                    # itself declared failed reached the tail below looking
+                    # exactly like a finished one.
+                    sub = str(ev.get('subtype') or '')
+                    if ev.get('is_error') or (sub and sub != 'success'):
+                        err = (str(ev.get('result') or '').strip()
+                               or sub or 'the CLI reported a failed turn')
                 elif t == 'error':
-                    sse_delta(f'\n⚠ {ev.get("message") or ev}\n', 'error')
+                    # In-band failure frame. Latched rather than printed
+                    # inline and then forgotten, so the tail below is the one
+                    # place this turn's outcome is decided.
+                    err = str(ev.get('message') or ev)
+                    break
             if in_tokens or out_tokens:
                 write_sse({'choices': [], 'usage': {
                     'prompt_tokens': in_tokens,
@@ -1004,9 +1029,27 @@ def _terminal_stream(self):
             except Exception:
                 try: proc.kill()
                 except Exception: pass
-            if proc.returncode and proc.returncode != 0 and not (in_tokens or out_tokens):
-                err_text = ''.join(stderr_buf)[:600] or f'exit {proc.returncode}'
-                sse_delta(f'\n⚠ claude exited {proc.returncode}: {err_text}\n', 'error')
+            rc = proc.returncode
+            stderr_text = ''.join(stderr_buf).strip()
+            # `and not (in_tokens or out_tokens)` used to sit on the end of
+            # this test, and it is the whole bug: claude's stream-json puts
+            # `usage` on the FIRST assistant message, so in_tokens is set for
+            # any turn that produced anything at all. A turn that streamed
+            # half a paragraph and then died — OOM, a kill, a PreToolUse
+            # refusal, a dropped upstream socket — exited non-zero with usage
+            # already counted and the marker was suppressed. delta.type
+            # 'error' is the ONLY signal the terminal has that a turn failed;
+            # without it the truncated text reads as a delivered reply. Same
+            # test the gemini and codex arms of this function have always
+            # used, and the same one drivers/claude_code.py was corrected to.
+            if err:
+                sse_delta(f'\n⚠ claude: {err[:600]}\n', 'error')
+            elif rc and rc not in (0, None):
+                sse_delta(f'\n⚠ claude exited {rc}: '
+                          f'{stderr_text[:600] or "(no stderr)"}\n', 'error')
+            elif not text_emitted:
+                sse_delta(f'\n⚠ claude returned no content — '
+                          f'{stderr_text[:300] or "the CLI printed nothing"}\n', 'error')
 
     elif cli == 'gemini':
         # Gemini CLI (`--prompt … --yolo`) prints its answer as plain text to
