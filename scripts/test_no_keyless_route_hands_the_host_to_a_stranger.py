@@ -68,15 +68,24 @@ def request(url, origin=None):
 def main():
     port = free_port()
     state_dir = tempfile.mkdtemp(prefix="cafresohq-sectest-")
-    # The decoy must live in $HOME -- _cafresohq_allowed_dirs defaults to $HOME,
-    # and reading it there is the whole point. But the NAME used to be fixed, so
-    # two copies of this suite shared one file: whichever finished first removed
-    # it in its finally block, and the other's /fs/file read came back 404 with
-    # two checks failing for a reason that had nothing to do with the code under
-    # test. The directory is load-bearing; the name is not, so it gets a unique
-    # one per process.
+    # The decoy must live inside the default allowlist -- reading it is the
+    # whole point of section B, which measures the CORS header on a successful
+    # read. That used to mean $HOME, because _cafresohq_allowed_dirs defaulted
+    # to $HOME. #318 narrowed the default to ~/Documents (the old one put
+    # ~/.ssh a single keyless GET away), so the decoy moves with it. NOTE: this
+    # is a change to an existing test, and it is deliberate -- the old location
+    # was not asserting anything about CORS, it was quietly encoding the
+    # too-wide default. Section B's actual assertions are untouched.
+    #
+    # The NAME used to be fixed, so two copies of this suite shared one file:
+    # whichever finished first removed it in its finally block, and the other's
+    # /fs/file read came back 404 with two checks failing for a reason that had
+    # nothing to do with the code under test. The directory is load-bearing;
+    # the name is not, so it gets a unique one per process.
+    _decoy_dir = os.path.join(os.path.expanduser("~"), "Documents")
+    os.makedirs(_decoy_dir, exist_ok=True)
     fd, decoy = tempfile.mkstemp(prefix=".cafresohq-regression-decoy-",
-                                 dir=os.path.expanduser("~"))
+                                 dir=_decoy_dir)
     os.close(fd)
     marker = "DECOY-NOT-A-REAL-SECRET"
     proc = None

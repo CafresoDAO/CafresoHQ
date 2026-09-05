@@ -184,20 +184,44 @@ def _client_path(p):
 # `claude` CLI as /claudecode/stream but tools are ENABLED and constrained
 # by a server-side allowlist (paths and tool names). Both lists are env-
 # only — the client can't widen them by sending a bigger spec. If either
-# allowlist is empty the endpoint refuses requests, so the unconfigured
-# default is safe.
+# allowlist is empty the endpoint refuses requests.
 #
-#   CAFRESOHQ_ALLOWED_DIRS: os.pathsep-separated absolute paths claude can
-#                          read/write. Empty → endpoint disabled.
+# CAFRESOHQ_ALLOWED_DIRS is ALSO the sandbox for the keyless /fs read routes
+# (browse / file / collect / stat / site), which is why its default matters
+# far more than "which directories may the elevated agent touch". #318: the
+# default here used to be $HOME *and* $HOME/Documents, so a stock
+# `python3 serve.py` handed ~/.ssh/id_ed25519 and ~/.hermes/.env to any
+# caller that could reach the port. The default is now $HOME/Documents alone
+# — the same directory _cafresohq_terminal_cwd already defaults to, the same
+# one .env.example has always documented, and the one that actually holds the
+# projects the IDE, the FILES tree and the preview pane open. Dotfile
+# directories in $HOME are not part of the product's job.
+#
+#   CAFRESOHQ_ALLOWED_DIRS: os.pathsep-separated absolute paths claude and
+#                          the /fs routes can read/write.
+#                          Default: $HOME/Documents.
+#                          Empty (`CAFRESOHQ_ALLOWED_DIRS=`) → nothing is
+#                          allowed anywhere: /cafresohq/stream refuses and
+#                          every /fs path check fails closed. Blank means
+#                          LOCKED, never "unrestricted".
+#   CAFRESOHQ_ALLOWED_DIRS_UNRESTRICTED: set to 1/true/yes to turn the path
+#                          sandbox OFF entirely (any readable path). This is
+#                          the one and only opt-out, and it is spelled out in
+#                          full — #318 found the previous opt-out was
+#                          "leave CAFRESOHQ_ALLOWED_DIRS blank", which is
+#                          exactly what a security-conscious operator types
+#                          when they mean the opposite.
 #   CAFRESOHQ_ALLOWED_TOOLS: comma-separated tool names Claude Code accepts
 #                          (Read, Write, Edit, Glob, Grep, Bash, ...).
 #                          Default is read-only ("Read,Glob,Grep") so the
 #                          first-time experience can't mutate the disk
 #                          without an explicit opt-in.
 _ALLOWED_DIRS_EXPLICIT = 'CAFRESOHQ_ALLOWED_DIRS' in os.environ
+_ALLOWED_DIRS_UNRESTRICTED = os.environ.get(
+    'CAFRESOHQ_ALLOWED_DIRS_UNRESTRICTED', '').strip().lower() in (
+        '1', 'true', 'yes', 'on')
 _cafresohq_allowed_dirs = [d.strip() for d in
                           os.environ.get('CAFRESOHQ_ALLOWED_DIRS',
-                              os.path.expanduser('~') + os.pathsep +
                               os.path.join(os.path.expanduser('~'), 'Documents')
                           ).split(os.pathsep)
                           if d.strip()]
@@ -217,10 +241,18 @@ def _within_allowed_dirs(p):
     Uses Path.relative_to (NOT str.startswith, which lets '/data/proj' authorize
     the sibling '/data/proj-secret'). Enforced in EVERY runtime mode — the fs
     read/browse routes are otherwise an unauthenticated arbitrary-read hole in
-    local/BYO deployments. If the allow-list is explicitly emptied, allow (the
-    documented opt-out)."""
-    if not _cafresohq_allowed_dirs:
+    local/BYO deployments.
+
+    An EMPTY allow-list denies everything. It used to return True — "the
+    documented opt-out" — while the block above it, and the startup banner,
+    both said an empty list disables the endpoints. #318: setting
+    `CAFRESOHQ_ALLOWED_DIRS=` printed `DISABLED` and served /etc. The single
+    opt-out is now CAFRESOHQ_ALLOWED_DIRS_UNRESTRICTED, which cannot be
+    reached by leaving a variable blank."""
+    if _ALLOWED_DIRS_UNRESTRICTED:
         return True
+    if not _cafresohq_allowed_dirs:
+        return False
     try:
         rp = pathlib.Path(p).resolve()
     except Exception:
@@ -1969,6 +2001,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._terminal_spawn()
         if self.path.startswith('/terminal/pty'):
             return self._terminal_pty_ws()
+        # #318: the whole /fs family goes through the same loopback-literal
+        # Host gate its sibling /terminal/nonce (nine lines up) already had.
+        # These five are keyless by design and _cafresohq_allowed_dirs is
+        # their only other boundary; without this a page the tester visits
+        # could DNS-rebind onto this port and read every file in the sandbox
+        # as same-origin.
+        if self.path.startswith('/fs/'):
+            if not self._fs_host_gate():
+                return
         if self.path.startswith('/fs/browse'):
             return self._fs_browse()
         if self.path.startswith('/fs/collect'):
@@ -2271,6 +2312,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._missions_schedule()
         if self.path == '/tools/exec':
             return self._tool_exec()
+        # #318: the mutation half of the family. These four ARE in
+        # _KEY_PROTECTED_PREFIXES, but with no CAFRESOHQ_API_KEY configured
+        # that gate degrades to "loopback peers only" — which a rebound page
+        # satisfies, since its fetch() originates on the victim's own
+        # 127.0.0.1. Same Host gate, same reason.
+        if self.path.startswith('/fs/'):
+            if not self._fs_host_gate():
+                return
         if self.path.startswith('/fs/upload'):
             return self._fs_upload()
         if self.path.startswith('/fs/mkdir'):
@@ -3680,6 +3729,61 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if hostname.lower() in _LOOPBACK_HOSTS or f'{scheme}://{host}' in origins:
                 origins.add(f'{scheme}://{host}')
         return origins
+
+    def _host_gate_ok(self):
+        """The DNS-rebinding gate _app_origins describes, applied to a route
+        rather than to an Origin header. True iff the client-supplied Host
+        names something a rebinding attack cannot produce.
+
+        #318: /terminal/nonce consulted _app_origins and refused
+        `Host: evil.example`; the /fs routes four lines below it in the same
+        dispatch table consulted nothing, so the same forged Host got 200 and
+        a body. Withholding Access-Control-Allow-Origin (ledger `## 294.`)
+        does not help there, because under rebinding the attacker's page IS
+        same-origin with this server and needs no ACAO to read the response.
+
+        A Host is trusted when it is:
+          * absent (HTTP/1.0 clients, curl --http1.0) — no browser omits it;
+          * a loopback literal (_LOOPBACK_HOSTS);
+          * ANY bare IP literal. A rebinding attack always arrives carrying
+            the attacker's own *hostname*, because that is what the victim's
+            browser has in the address bar; it can point that name at any
+            address it likes but it cannot make the browser send a literal.
+            So this keeps the LAN/mobile path (`http://10.0.0.131:8787/`)
+            working without reopening the hole;
+          * an origin already in _app_origins() — the production gateway,
+            the canister shells, and anything an operator listed in
+            CAFRESOHQ_ALLOWED_WS_ORIGINS.
+        Anything else gets 403 and no body."""
+        host = (self.headers.get('Host', '') or '').strip()
+        if not host:
+            return True
+        hostname = host.rsplit(':', 1)[0] if not host.startswith('[') \
+                   else host.split(']', 1)[0] + ']'
+        hostname = hostname.strip().lower()
+        if hostname in _LOOPBACK_HOSTS:
+            return True
+        try:
+            import ipaddress
+            ipaddress.ip_address(hostname.strip('[]'))
+            return True
+        except Exception:
+            pass
+        scheme = 'https' if isinstance(self.connection, ssl.SSLSocket) else 'http'
+        return f'{scheme}://{host}' in self._app_origins()
+
+    def _fs_host_gate(self):
+        """Guard for every /fs route. Returns True when the request may
+        proceed; otherwise answers 403 and returns False. Applied to the
+        keyless read routes (browse/collect/site/stat/file) AND to the
+        key-protected mutation routes — the key gate falls back to
+        "loopback callers only" when CAFRESOHQ_API_KEY is unset, and a
+        rebound page's fetch() IS a loopback caller, so the key alone never
+        stopped this."""
+        if self._host_gate_ok():
+            return True
+        self._send_json(403, {'error': 'host not allowed'})
+        return False
 
 
     # ---- Export / generate endpoints (extracted to exporters.py) ---------
@@ -5261,8 +5365,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             sys.stderr.write(f'[hermes] _record error: {e!r}\n')
 
+    # Query strings reach this line verbatim, and _api_key_ok deliberately
+    # accepts CAFRESOHQ_API_KEY as `?k=…` on a WebSocket handshake (the
+    # browser API cannot set a header there) — the comment on that branch
+    # already names "leaks into access logs" as the hazard, and this was the
+    # access log. Every PTY connection wrote the office's own key to stderr,
+    # i.e. into whatever file the operator redirects the server to. Redact
+    # the value, keep the parameter so the request stays recognisable.
+    _LOG_SECRET_RE = _re.compile(r'([?&](?:k|key|token|api_key)=)[^&\s"]+',
+                                 _re.IGNORECASE)
+
     def log_message(self, fmt, *args):
-        sys.stderr.write(f'{self.address_string()} - {fmt % args}\n')
+        line = self._LOG_SECRET_RE.sub(r'\1<redacted>', fmt % args)
+        sys.stderr.write(f'{self.address_string()} - {line}\n')
 
 
 class ThreadedServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
@@ -5598,6 +5713,20 @@ if __name__ == '__main__':
                   f' · dirs={_cafresohq_allowed_dirs}')
         else:
             print('  /cafresohq/stream  DISABLED (set CAFRESOHQ_ALLOWED_DIRS to enable)')
+        # #318: the banner used to describe only /cafresohq/stream, so an
+        # operator who emptied CAFRESOHQ_ALLOWED_DIRS read "DISABLED" and
+        # believed the whole filesystem surface was shut — while the /fs
+        # routes were reading the same variable with the opposite polarity
+        # and serving /etc. Print what the file routes will actually do.
+        if _ALLOWED_DIRS_UNRESTRICTED:
+            print('  /fs/* reads        ⚠  UNRESTRICTED — '
+                  'CAFRESOHQ_ALLOWED_DIRS_UNRESTRICTED is set; any readable '
+                  'path on this host is served')
+        elif _cafresohq_allowed_dirs:
+            print(f'  /fs/* reads        sandboxed to {_cafresohq_allowed_dirs}')
+        else:
+            print('  /fs/* reads        DISABLED (CAFRESOHQ_ALLOWED_DIRS is '
+                  'empty — every path is refused)')
         _codex_found = _drivers.get('codex').resolve()
         if _codex_found and _cafresohq_allowed_dirs:
             print(f'  /codex/stream     CODEX · dirs={_cafresohq_allowed_dirs}')

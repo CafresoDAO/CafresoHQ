@@ -35545,3 +35545,149 @@ file a foreign session owns and this change never touches. This change covers
 `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any kind
 was run.
+
+---
+
+## 315. the office handed a stranger's tab the boss's SSH key
+
+**What a visited page could read.** A beta tester starts the office the way
+the README says — `python3 serve.py`, no configuration — and goes back to
+browsing. Any page they then open could, on its own, read every file in their
+home directory: `~/.ssh/id_ed25519`, `~/.hermes/.env` and the OpenRouter key
+inside it, `.aws/credentials`, the lot. Not a file the tester dragged in. Not
+a directory they added as a project. Everything under `$HOME`, in one request
+each, with no key, no click and nothing on screen.
+
+Three separate things had to be true at once, and all three were.
+
+**One: the default sandbox was `$HOME`.** `CAFRESOHQ_ALLOWED_DIRS` is what
+bounds the `/fs` read routes, and those routes are keyless *on purpose* — the
+preview pane's iframe fetches `/fs/site/<root>/<asset>` with no credential, so
+a key gate would break multi-file previews. That makes the allowlist the only
+boundary they have. It defaulted to `$HOME` **and** `$HOME/Documents`, which
+is just `$HOME`; `.env.example` had been claiming `$HOME/Documents` the whole
+time. `curl '/fs/collect?path=~/.ssh'` came back with the private key,
+base64, in the first response.
+
+**Two: an empty allowlist meant *allow everything*.** The module comment said
+"if either allowlist is empty the endpoint refuses requests, so the
+unconfigured default is safe" and "Empty → endpoint disabled". The startup
+banner said `DISABLED`. Twenty lines below the comment, `_within_allowed_dirs`
+opened with `if not _cafresohq_allowed_dirs: return True` and its own docstring
+called that "the documented opt-out". Two blocks of prose about the same
+variable asserting opposite things, and the permissive one was the code. So
+the *most* security-conscious reading of the banner — set the variable to
+nothing, lock it down — was the one that opened the whole disk. Measured:
+`CAFRESOHQ_ALLOWED_DIRS= python3 serve.py` printed `DISABLED` and then served
+`/etc/hosts` and a listing of `/etc`. The banner was not lying about
+`/cafresohq/stream`, which genuinely does refuse on an empty list; it was
+describing one of two consumers of the variable and the `/fs` routes read the
+same list with the opposite polarity.
+
+**Three: `/fs` was outside the rebinding gate its own sibling sits behind.**
+`_app_origins` carries a careful paragraph about why a client-supplied `Host`
+is not trusted: an attacker-controlled name resolving to `127.0.0.1` arrives
+carrying `Host: evil.example`, and honouring it would authorise the attacker
+for the PTY. `/terminal/nonce` consults that. Four lines further down the same
+dispatch table, `/fs/browse`, `/fs/collect`, `/fs/site/`, `/fs/stat` and
+`/fs/file` consulted nothing at all.
+
+That is the difference between this and `## 294.`, which is otherwise its
+nearest relative. `## 294.` closed the *cross-origin* read: an unknown
+`Origin` now gets no `Access-Control-Allow-Origin`, so a stranger's tab cannot
+read the reply. That fix is correct and still stands. It does not touch this,
+because DNS rebinding does not need it: the attacker points their own domain
+at `127.0.0.1`, and their page is then **same-origin** with the office. A
+same-origin `fetch` needs no ACAO. Loopback binding does not help either — a
+rebound page's request originates on the victim's own machine, which is also
+why `_api_key_ok`'s "no key configured → loopback callers only" fallback never
+stopped it. The one defence that works is refusing the forged `Host`, and that
+was exactly the defence `/fs` did not have.
+
+**The fix.** All three, since any one left standing keeps the door open.
+
+The empty list now denies. The opt-out is a variable named
+`CAFRESOHQ_ALLOWED_DIRS_UNRESTRICTED`, which says what it does and cannot be
+arrived at by leaving something blank — the failure mode above was entirely a
+matter of a dangerous behaviour hiding behind an *absence*.
+
+`_host_gate_ok` applies the rebinding gate `_app_origins` describes, and
+`_fs_host_gate` puts the whole `/fs` family behind it — the keyless reads and
+the four mutation routes (`/fs/upload`, `/fs/mkdir`, `/fs/rename`,
+`/fs/delete`) alike. Those four *are* in `_KEY_PROTECTED_PREFIXES`, but with no
+key configured that gate degrades to loopback-only, which a rebound page
+satisfies, so being key-listed was never protection here. A `Host` passes when
+it is absent, a loopback literal, **any bare IP literal**, or an origin already
+in `_app_origins()`. The IP-literal clause is what keeps the product whole:
+rebinding always arrives carrying the attacker's own *hostname*, because that
+is what is in the victim's address bar, so a literal cannot be forged — and the
+tester who opens `http://10.0.0.131:8787/hq.html` on their phone still gets
+their files.
+
+The default is now `$HOME/Documents` alone. This one was a product decision,
+not a typo, and narrowing further would have been the wrong kind of safe: the
+IDE opens files through `/fs/file`, the FILES tree lists through `/fs/browse`,
+the preview pane streams through `/fs/site/`, and Add Project → Browse starts
+its picker at `_cafresohq_allowed_dirs[0]`. An office that cannot reach a
+project on first run is not a safer office, it is a broken one. `$HOME`
+subsumed `$HOME/Documents` and bought nothing but the dotfiles — which are
+nobody's project — while `$HOME/Documents` is what `.env.example` has always
+documented, what `CAFRESOHQ_TERMINAL_CWD` already defaults to, and where the
+work actually lives. The banner now prints what the file routes will do
+(`sandboxed to […]`, `DISABLED`, or a warned `UNRESTRICTED`) instead of
+describing only the agent endpoint, and `.env.example` describes the new
+polarity rather than the old trap.
+
+One neighbour fixed in passing: `log_message` wrote the request line to stderr
+verbatim, and `_api_key_ok` deliberately accepts `CAFRESOHQ_API_KEY` as `?k=…`
+on a WebSocket handshake because the browser API cannot set a header there.
+The comment on that very branch names "leaks into access logs" as the hazard;
+this was the access log. Every PTY connection wrote the office's own key into
+whatever file the operator redirects the server to. The value is now redacted
+and the parameter kept, so the line still reads.
+
+**The test.**
+`scripts/test_a_blank_allowlist_locks_the_filesystem_and_a_forged_host_gets_no_body.py`
+boots three real `serve.py` instances on free ports and speaks raw
+`http.client` to them — raw, because `urllib` rewrites `Host` from the URL and
+would have turned the whole rebinding half into a no-op. A blank allowlist must
+403 `/etc/hosts`, `/etc` and even a decoy inside `~/Documents`, and leak no
+listing in the refusal body. The unconfigured default must serve a decoy in
+`~/Documents` and refuse one sitting directly in `$HOME`. A forged
+`Host: evil.example` must 403 every read route and carry no file contents,
+while `127.0.0.1`, `localhost` and `[::1]` still read the decoy. And
+`CAFRESOHQ_ALLOWED_DIRS_UNRESTRICTED=1` must reopen `$HOME` — proving the
+opt-out was renamed, not amputated — without the `Host` gate coming off with
+it. Every file it touches is a decoy it writes and deletes; the real `~/.ssh`
+is never read, because the assertion is about the boundary, not the secret.
+
+One existing test changed, and it is worth saying plainly: section B of
+`scripts/test_no_keyless_route_hands_the_host_to_a_stranger.py` writes a decoy
+and reads it back to measure the CORS header on a *successful* read. It put
+that decoy in `$HOME` — not because anything about CORS required `$HOME`, but
+because the default happened to reach there. Its assertions are untouched; only
+the decoy moved to `~/Documents`. That location had been quietly encoding the
+too-wide default, which is exactly the shape of test that lets a default like
+this survive an audit.
+
+Fire-tested: copied the fixed `serve.py` to `/tmp`, reverted all three parts in
+place with the editor (never `git checkout -- <file>`) — the empty-list `return
+True`, the `/fs` gate line, and the `$HOME` half of the default — and watched
+15 of the 24 checks fail, exit 1. Restored from `/tmp`, `md5`
+`baae771f4490a1636f41427034a8514c` byte-identical, reran: all pass, exit 0.
+
+**A loose thread, measured but not pulled.** `/terminal/nonce`'s gate keys off
+`Origin`, not `Host`: a request carrying a forged `Host` and no `Origin` at all
+gets 200 and the nonce. A same-origin fetch from a rebound page sends no
+`Origin` header, so the PTY's own defence has the same shape of gap this entry
+closes for `/fs` — with RCE on the other side of it rather than a file read.
+It wants its own hunt and its own test; widening this change into the terminal
+was not the way to find out.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc` toolchain mismatch on a file a foreign session owns and this change never
+touches). This change covers `serve.py`, `.env.example`, one new test, one
+relocated decoy and this entry; `src/cafresohq_state/main.mo` was never staged
+or edited, no II or `derivationOrigin` value was read or written, and no
+dfx/IC action of any kind was run.
