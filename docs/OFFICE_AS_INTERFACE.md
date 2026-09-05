@@ -34363,3 +34363,31 @@ foreign session owns and this change never touches). This change covers
 `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any kind
 was run.
+
+---
+
+## 296. the first command in the README runs against a directory that isn't there
+
+`#295`'s beta audit fixed the quickstart's missing `npm install` / `npm run
+build` and its `python` → `python3`, but wrote off the three `frontend/`
+references as "a decision, not a typo" and left them. Leaving them was the
+one option that couldn't be right. `frontend/` was deleted in `8dbcc6f` —
+the SvelteKit app moved to the sibling `cafreso-pages` repo — and the very
+first command under **Local development** was:
+
+    npm --prefix frontend install
+
+So a tester reading the file top to bottom hits an ENOENT *before* reaching
+any of the steps `#295` had just corrected, and nothing on the page says the
+directory is gone or where it went. The Deploy block had the same shape:
+`npm --prefix frontend run build` followed by two `dfx deploy` lines, when
+both frontend canisters (`v4tdv` / `dqcmv`) ship together from that repo's
+own `scripts/deploy.sh` — deploying one alone leaves the two sites skewed.
+
+All three sites now point at `../cafreso-pages` and say plainly that the
+directory was deleted here. The test holds the general rule rather than the
+one path: every `cd <dir>` and `npm --prefix <dir>` inside a README fenced
+block must name a directory that exists in this checkout, or reach outside
+it explicitly with `../`. Prose may still mention `frontend/` historically —
+and now does, to explain where it went — because a command block is
+instructions and a paragraph is not.

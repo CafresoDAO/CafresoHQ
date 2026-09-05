@@ -13,7 +13,7 @@ State that *must* be trustless lives on Internet Computer canisters (identity, v
 
 | Subsystem | Lives in | What it is |
 |-----------|----------|------------|
-| **SvelteKit control plane** | `frontend/` | Modern ICP-hosted app (asset canister `cafresohq_frontend`). `(pages)` routes = the consumer site; `(hq)` routes = the SaaS dashboard. Talks to the `cafresohq_keys` canister for vetKeys zero-knowledge vault encryption. |
+| **SvelteKit control plane** | **a separate repo** — `../cafreso-pages` | Modern ICP-hosted app (asset canister `cafresohq_frontend`). `(pages)` routes = the consumer site; `(hq)` routes = the SaaS dashboard. Talks to the `cafresohq_keys` canister for vetKeys zero-knowledge vault encryption. It used to live in `frontend/` here; that directory was deleted in `8dbcc6f` and is **not** in this checkout. |
 | **HQ browser app** | `hq.html` + `*.jsx` (`app.jsx`, `views.jsx`, `ui.jsx`, `modals.jsx`, `missions.jsx`, …) | The agent command center. Bundled by esbuild (`scripts/build_ui_bundle.mjs`); also servable from the `cafresohq_ui` asset canister. |
 | **Backend / proxy** | `serve.py` | Stdlib HTTP server: LLM proxy, vault, PTY/terminal, approvals. Listens on `PORT` (default **8787**). |
 | **Canisters** | `src/` + `dfx.json` | `cafresohq_keys` (vetKeys, Motoko); Phase-2 `cafresohq_state` (on-chain per-user state) on a feature branch. |
@@ -47,10 +47,11 @@ The project has accreted three names — here's the convention:
 
 ## Local development
 
-**SvelteKit frontend**
+**SvelteKit frontend** — *not in this repo.* It lives in the sibling
+`cafreso-pages` checkout; `frontend/` was deleted here in `8dbcc6f`, so these
+commands only work from that repo:
 ```bash
-npm --prefix frontend install
-npm --prefix frontend run dev      # prebuild syncs assets/ → static/assets/
+cd ../cafreso-pages && npm install && npm run dev
 ```
 
 **HQ browser app + backend**
@@ -74,9 +75,9 @@ docker run -d --name cafresohq -p 8787:8787 \
 
 ```bash
 # Frontend → ai.cafreso.com (v4tdv) and cafreso.com (dqcmv)
-npm --prefix frontend run build
-dfx deploy cafresohq_frontend --network ic --identity default
-dfx deploy cafreso_pages      --network ic --identity default
+# Both canisters ship from the SEPARATE cafreso-pages repo, via its own script
+# (it deploys the pair together; deploying one alone leaves the sites skewed):
+cd ../cafreso-pages && ./scripts/deploy.sh
 
 # HQ browser-app assets
 dfx deploy cafresohq_ui --network ic --identity default
