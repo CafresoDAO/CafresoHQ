@@ -735,6 +735,25 @@ def run_tool(ctx, name, arg, body):
             return '\n'.join('%d. %s\n   %s\n   %s' % (
                 i + 1, r.get('title', ''), r.get('url', ''), r.get('description', ''))
                 for i, r in enumerate(results))
+        if name in ('VAULT_SEARCH', 'VAULT_READ'):
+            # The same grant VAULT_APPEND/VAULT_NEW check below, live, and
+            # for the same reason (see NightContext.current_agent_tools()
+            # and ## 371.): a mission dispatched while "read your Library"
+            # was ticked kept reading AND SEARCHING the vault for the rest
+            # of a 4-hour run after a mid-mission revoke, because only the
+            # write branch ever asked. may_write_to_vault's own docstring
+            # asks "Was this coworker granted the Library?" — not "...to
+            # write to it" — and the Roster checkbox it answers for is
+            # literally worded "read your Library" (vault_not_granted_-
+            # sentence, below). A grant that stops a write mid-mission but
+            # not a read is the write half of #371 fixed and the read half
+            # of the same door left open. Checked once, ahead of both
+            # branches, so neither has to duplicate it.
+            live_tools = ctx.current_agent_tools()
+            if not may_write_to_vault(live_tools):
+                return 'Vault %s failed (%d): %s' % (
+                    'search' if name == 'VAULT_SEARCH' else 'read',
+                    NIGHT_VAULT_FORBIDDEN, vault_not_granted_sentence(live_tools))
         if name == 'VAULT_SEARCH':
             s, raw = _self_call(ctx, 'GET', '/vault/search?q=%s&limit=8' % urllib.parse.quote(arg))
             if s != 200:

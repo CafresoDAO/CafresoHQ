@@ -39277,3 +39277,65 @@ restored file is byte-identical (md5) to the fixed one.
 `if (escalate) { … }]);` block by regex for `## 372.` — still passes
 unchanged; the new `setMessages` line sits after that block's closing
 `}]);` and outside the regex it pins.
+
+---
+
+## 375. the revoke that only shut half the Library door
+
+**The wreck.** `## 371.` made a mid-mission Library revoke reach a Night
+Shift `VAULT_APPEND`/`VAULT_NEW` attempt already under way, not just the
+schedule's next dispatch — `run_tool`'s write branch was rewritten to ask
+`ctx.current_agent_tools()` live, on every hop, instead of trusting the
+snapshot `NightContext` was built with hours earlier. It fixed exactly the
+two markers it named. Two doors over in the same function, `VAULT_SEARCH`
+and `VAULT_READ` never asked at all — not the stale snapshot, not the live
+lookup, nothing. `may_write_to_vault`'s own docstring asks "Was this
+coworker granted the Library?", not "...to write to it", and the Roster
+checkbox its refusal sentence sends the boss to is literally worded 'tick
+"read your Library"' — the same one box the daytime office already treats
+as one door, `hq-runtime.jsx`'s `toolsForAgent` putting all four
+`VAULT_*` markers into a coworker's prompt together, behind one
+`claimed.has('vault')`. The night shift, until now, only re-checked half
+of it.
+
+**Measured**, against a real `serve.py` on a scratch `HOME` with a real
+`agents.json`: a coworker granted `web, vault` is dispatched — `ctx`
+built, mission running. The roster is then rewritten to `web` alone, the
+boss's revoke, mid-run, exactly `## 371.`'s own scenario. `run_tool(ctx,
+'VAULT_NEW', …)` on that same `ctx` was already refused (that fix holds).
+But `run_tool(ctx, 'VAULT_SEARCH', …)` and `run_tool(ctx, 'VAULT_READ',
+…)` on the identical `ctx`, in the identical post-revoke moment, both
+reached straight for the wire — a coworker the boss just shut out of the
+Library kept reading and searching it, note by note, for however much of
+its four-hour ceiling remained, because the two branches that could answer
+"no" were never asked the question.
+
+**The fix.** One combined gate, ahead of both branches, reading the same
+`ctx.current_agent_tools()` `## 371.` already wired in — `VAULT_SEARCH`
+and `VAULT_READ` now refuse with the identical 403/Roster shape the write
+branch answers with, before either ever reaches `_self_call`. Neither
+branch had to duplicate the check; both `if name == 'VAULT_SEARCH':` and
+`if name == 'VAULT_READ':` sit unchanged below the new combined `if name
+in ('VAULT_SEARCH', 'VAULT_READ'):` door.
+
+**No collateral.** A still-granted coworker reaches the wire on both reads
+exactly as before — measured against a base URL nothing listens on, which
+neither read branch maps to 503 the way `VAULT_APPEND`/`VAULT_NEW`'s own
+`except Exception` does, so a call that gets past this gate surfaces as
+the pre-existing generic `Tool VAULT_SEARCH/VAULT_READ failed: <connection
+error>`, distinguishable from this gate's 403 without needing a real vault
+backend.
+
+**Fire-tested.** New
+`scripts/test_a_revoked_grant_could_still_read_the_library.py`, built the
+same way `## 371.`'s own test is: import `serve`/`night_runner` for real
+against a scratch `agents.json`, dispatch granted, rewrite the roster to
+revoke, call `run_tool` for `VAULT_SEARCH` and `VAULT_READ` on the
+still-live `ctx` and assert both are refused at 403 naming the Roster.
+Reverted the new gate in place, confirmed both checks fail (the search and
+read reach the wire instead — `Tool VAULT_SEARCH failed: <urlopen error
+[Errno 61] Connection refused>`, the exact shape a live revoke used to
+produce), restored the fix, confirmed the restored `night_runner.py` is
+byte-identical (md5) to the fixed one.
+`scripts/test_a_revoked_grant_reaches_the_run_already_under_way.py` and
+`scripts/test_night_grammar.py` still pass unchanged.

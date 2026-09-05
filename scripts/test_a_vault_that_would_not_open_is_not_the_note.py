@@ -52,6 +52,16 @@ def check(name, cond, detail=''):
 
 class FakeCtx(object):
     brave_key = ''
+    # Granted on purpose: this file exercises VAULT_READ's error-body
+    # handling, not #375's grant gate — a fake that failed
+    # may_write_to_vault would refuse before ever reaching the door
+    # bodies below, for a reason none of these checks are about. Same
+    # rationale as the sibling FakeCtx in
+    # test_a_write_the_vault_never_heard_is_not_a_note.py.
+    agent_tools = ['vault']
+
+    def current_agent_tools(self):
+        return self.agent_tools
 
 
 NOTE_PATH = 'Research/night/lead-time.md'
