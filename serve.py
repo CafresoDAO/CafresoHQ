@@ -125,6 +125,29 @@ def _touch_activity(path):
 HOP_HEADERS = {'host', 'connection', 'keep-alive', 'proxy-authenticate',
                'proxy-authorization', 'te', 'trailers', 'transfer-encoding',
                'upgrade', 'content-length'}
+
+
+def _relayable(name):
+    """Whether an upstream response header may be passed through to the
+    browser. Every proxy loop in this file asks this.
+
+    Hop-by-hop headers are dropped for the usual reason, and content-encoding
+    because the loops re-frame the body. The access-control-* family is
+    dropped for a different one: who may read this office's answers is the
+    OFFICE's decision, made once in _cors from _app_origins and the prefix
+    lists, and an upstream cannot be allowed a vote.
+
+    `#333` withheld ACAO from the proxy prefixes so a visited page could not
+    read the local model roster, and this loop handed the decision straight
+    back. LM Studio and Ollama both answer a browser permissively — measured
+    against a stub that echoes Origin the way they do, `GET /lmstudio/models`
+    from `Origin: https://evil.example` came back `ACAO: https://evil.example`
+    AND `Access-Control-Allow-Credentials: true`: not merely readable, but
+    readable with the office's own cookies attached.
+    """
+    n = name.lower()
+    return not (n in HOP_HEADERS or n == 'content-encoding'
+                or n.startswith('access-control-'))
 # Claude Code (Pro/Max subscription) — invoked as a subprocess so the user's
 # already-authenticated CLI does the auth. Binary resolution + the
 # CAFRESOHQ_CLAUDE_BIN override now live in drivers/claude_code.py.
@@ -5310,7 +5333,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             resp = conn.getresponse()
             self.send_response(resp.status)
             for k, v in resp.getheaders():
-                if k.lower() in HOP_HEADERS or k.lower() == 'content-encoding':
+                if not _relayable(k):
                     continue
                 self.send_header(k, v)
             self.end_headers()
@@ -5349,7 +5372,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             resp = conn.getresponse()
             self.send_response(resp.status)
             for k, v in resp.getheaders():
-                if k.lower() in HOP_HEADERS or k.lower() == 'content-encoding':
+                if not _relayable(k):
                     continue
                 self.send_header(k, v)
             self.send_header('Connection', 'close')
@@ -5721,7 +5744,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         try:
             self.send_response(resp.status)
             for k, v in resp.getheaders():
-                if k.lower() in HOP_HEADERS or k.lower() == 'content-encoding':
+                if not _relayable(k):
                     continue
                 self.send_header(k, v)
             self.send_header('Connection', 'close')

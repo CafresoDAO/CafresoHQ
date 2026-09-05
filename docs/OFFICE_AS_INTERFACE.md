@@ -37495,3 +37495,43 @@ in the file the drivers were extracted OUT of. The durable check is not
 "codex" — it is that the only version probe in the building is the one that
 reads the return code, and that whatever it found reaches the caller. A
 problem is not a version, and the office says which it saw.
+
+---
+
+## 341. the upstream does not get a vote on who reads the reply
+
+`## 333.` withheld `Access-Control-Allow-Origin` from the proxy prefixes so a
+page the boss merely visited could not read the roster of models installed on
+their machine. The beta re-audit went back and measured the same request end
+to end rather than reading the list, and found the fix undone one layer down.
+
+Three loops in this file relay an upstream's response headers to the browser
+— Brave search, the local model proxy, the Hermes gateway — and each dropped
+exactly the hop-by-hop set plus `content-encoding`, passing everything else
+through. LM Studio and Ollama both answer a browser permissively, because
+they expect to be called from a local web app. So the office asked the
+upstream, and the upstream said yes. Measured against a stub echoing `Origin`
+the way they do, `GET /lmstudio/models` from `Origin: https://evil.example`
+came back:
+
+    Access-Control-Allow-Origin: https://evil.example
+    Access-Control-Allow-Credentials: true
+
+Not merely readable. Readable *with the office's own cookies attached* —
+which is the precise thing `_cors`'s credential-less `'*'` fallback exists to
+prevent, arrived at by a route that never consults `_cors` at all.
+
+Who may read this office's answers is the office's decision. It is made once,
+in `_cors`, from `_app_origins` and the prefix lists, and an upstream cannot
+be allowed a vote in it. The three loops now ask `_relayable`, which drops the
+whole `access-control-*` family along with the framing headers it already
+dropped, and keeps everything that makes a proxy worth having — the content
+type, a `Retry-After`, a `WWW-Authenticate`, the request id. Casing is handled
+where the answer is computed rather than at three call sites, since
+`http.client` hands headers back exactly as the server wrote them.
+
+The predicate is the deliverable, not the four header names: a fourth proxy
+added later inherits the answer instead of re-typing a condition and getting
+it slightly wrong. Re-measured after the change: the forged origin gets no
+`ACAO` and no `Allow-Credentials`, the body still relays, and `/health` is
+still public to anyone.
