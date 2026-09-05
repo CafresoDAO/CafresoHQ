@@ -37169,3 +37169,45 @@ office's own picker is untouched — it fetches same-origin, which needs no
 header. Re-measured after the fix: the forged origin gets no `ACAO` header,
 `/health` is still public to anyone, and the same-origin fetch still returns
 the roster.
+
+---
+
+## 334. the first thing a new tester hears is that a session they never had has ended
+
+**The wreck.** Empty state directory, empty localStorage, `python3 serve.py`
+on localhost — a person opening this app for the very first time. The
+checklist's own step 3 says "Chat with your team · say hi to your CEO", so
+they type hello and press Send. The banner that lands at the top of the view
+area, above everything, before they have done anything else, reads:
+
+> 🔑 **Your session expired.** Reopen HQ from ai.cafreso.com → Launch HQ to
+> sign back in — your work here is saved.
+
+Both halves are false for this reader. Nothing expired: on localhost there is
+no `hq_session` cookie and never was one, so the sentence describes the end of
+a thing that never began. And the one control offered is a link out of the
+product they installed ninety seconds ago, into a hosted product that cannot
+reach — let alone sign into — anything running on their machine. §7 asks every
+failure to offer a way forward; this one offered a way *out*.
+
+What actually happened is on the wire. `claude-client.jsx`'s `noteAuthFailure`
+fires `hq:session-expired` off **any** 401 from the API origin. On a
+self-hosted office most 401s are not HQ's session at all — they are an
+upstream the office merely *proxies* refusing for want of its own key.
+Measured: `POST /hermes/v1/chat/completions → 401`, and the response still
+carried `Server: Python/3.11 aiohttp` — the hermes gateway's own refusal,
+relayed verbatim, read by the shell as the boss being logged out.
+
+**The fix.** The offline banner eleven lines below in `app.jsx` already
+learned this exact lesson — "the advice has to match how this boss actually
+runs HQ" — and branches on `runsLocally`. This one now does too. A local
+reader is told that their office is on this computer, that nothing expired,
+and that the brain or gateway it called wants a sign-in of its own; the button
+says **Open Connections** and lands them on Settings → Connections, the page
+that holds the sign-in. The hosted boss keeps the ai.cafreso.com link and the
+Reload button, which for them were always the right door.
+
+**Whose twin.** The offline banner it now sits next to, which was corrected
+for §3.5 for the same reason and left this one standing. Self-hosting is a
+first-class path; a banner that can only help one kind of boss has to know
+which kind it is talking to.

@@ -7227,15 +7227,33 @@ ${d.text}` : d.text,
                 margin:'0 0 10px', padding:'9px 13px', borderRadius:10,
                 background:'rgba(245,210,93,0.12)', border:'1px solid rgba(245,210,93,0.5)',
                 color:'#F5D25D', font:'13px Inter, system-ui, sans-serif' }}>
+                {/* Same lesson the offline banner below already learned, and for
+                    the same reason: this fires off ANY 401 from the API origin,
+                    and on a self-hosted office most of those are an upstream the
+                    office merely proxies (the hermes gateway, a cloud provider)
+                    refusing for want of ITS key — not the boss's hq_session dying.
+                    A brand-new tester on localhost has no hq_session at all, so
+                    "your session expired" is a claim about a thing that never
+                    existed, and its one next step walks them out of the app they
+                    just installed and into a product that cannot fix it. Measured
+                    on an empty state dir: type the first message → 401 from
+                    /hermes/v1/chat/completions → this banner, on run one. Branch
+                    on the address we are actually calling, and give the local
+                    reader the door that does help. */}
                 <span style={{flex:1, minWidth:200, lineHeight:1.45}}>
-                  <b>🔑 Your session expired.</b> Reopen HQ from{' '}
-                  <a href="https://ai.cafreso.com/hq" target="_blank" rel="noopener noreferrer"
-                     style={{color:'#F5D25D', fontWeight:700, textDecoration:'underline'}}>ai.cafreso.com → Launch HQ</a>
-                  {' '}to sign back in — your work here is saved.
+                  {runsLocally
+                    ? <><b>🔑 That was refused as unsigned-in.</b> Your office is on this
+                        computer, so nothing expired — the brain or gateway it called
+                        wants a sign-in of its own. Add one in Settings → Connections,
+                        then try again.</>
+                    : <><b>🔑 Your session expired.</b> Reopen HQ from{' '}
+                        <a href="https://ai.cafreso.com/hq" target="_blank" rel="noopener noreferrer"
+                           style={{color:'#F5D25D', fontWeight:700, textDecoration:'underline'}}>ai.cafreso.com → Launch HQ</a>
+                        {' '}to sign back in — your work here is saved.</>}
                 </span>
-                <button onClick={()=>{ window.location.reload(); }}
+                <button onClick={()=>{ if (runsLocally) { setSessionExpired(false); openSettings('keys'); } else { window.location.reload(); } }}
                   style={{ cursor:'pointer', background:'rgba(245,210,93,0.16)', border:'1px solid rgba(245,210,93,0.6)',
-                    color:'#F5D25D', borderRadius:6, padding:'2px 10px', fontSize:12, fontWeight:700 }}>Reload</button>
+                    color:'#F5D25D', borderRadius:6, padding:'2px 10px', fontSize:12, fontWeight:700 }}>{runsLocally ? 'Open Connections' : 'Reload'}</button>
                 <button onClick={()=>{ setSessionExpired(false); }} title="Hide"
                   style={{ cursor:'pointer', background:'none', border:'1px solid rgba(245,210,93,0.4)',
                     color:'#F5D25D', borderRadius:6, padding:'2px 8px', fontSize:12 }}>✕</button>
