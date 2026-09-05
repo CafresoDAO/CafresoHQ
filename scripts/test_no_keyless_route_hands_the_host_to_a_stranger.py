@@ -68,7 +68,16 @@ def request(url, origin=None):
 def main():
     port = free_port()
     state_dir = tempfile.mkdtemp(prefix="cafresohq-sectest-")
-    decoy = os.path.join(os.path.expanduser("~"), ".cafresohq-regression-decoy")
+    # The decoy must live in $HOME -- _cafresohq_allowed_dirs defaults to $HOME,
+    # and reading it there is the whole point. But the NAME used to be fixed, so
+    # two copies of this suite shared one file: whichever finished first removed
+    # it in its finally block, and the other's /fs/file read came back 404 with
+    # two checks failing for a reason that had nothing to do with the code under
+    # test. The directory is load-bearing; the name is not, so it gets a unique
+    # one per process.
+    fd, decoy = tempfile.mkstemp(prefix=".cafresohq-regression-decoy-",
+                                 dir=os.path.expanduser("~"))
+    os.close(fd)
     marker = "DECOY-NOT-A-REAL-SECRET"
     proc = None
 

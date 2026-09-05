@@ -33590,3 +33590,57 @@ a foreign session owns and this change never touches). This change covers only
 `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any kind
 was run.
+
+---
+
+## 284. two tests fought over one port and one file in the home directory
+
+Three separate sessions hit the same pair of failures inside an hour, and both
+had the shape that trains people to stop reading test output: a 404 on a route
+that was fine, and a `FileNotFoundError` on a temp directory that had just been
+created. Neither reproduced standalone. `scripts/run_tests.py` runs its suites
+one at a time, so the contention was never *inside* a run — it was between
+concurrent runs, which is exactly what happens when more than one session is
+working the repo at once. Two suites reached outside their own process for a
+resource and assumed they were alone.
+
+**The port.** `test_the_night_shift_carries_the_bosss_memory.py` hardcoded
+`port = 9386`. The bind collision by itself would have been honest noise; what
+made it a mystery is what came next. The loser's `serve.py` died on bind, and
+the readiness loop underneath it only asked whether *something* answered on
+9386 — the winner's server did, so the loser adopted it and carried on. Every
+`PUT` then landed in a stranger's state dir, and the run stayed green until the
+corrupt-store-file check, which reaches past HTTP and writes
+`tmp/hq/memory/context.json` on disk directly. That directory is created by the
+server, and this run's server had never lived, so the failure surfaced fifteen
+checks away from its cause. It now takes an OS-assigned port from
+`free_port()`, and the readiness loop polls `srv.poll()` first: our own server
+being gone is a named failure, never an invitation to talk to somebody else's.
+
+**The file.** `test_no_keyless_route_hands_the_host_to_a_stranger.py` wrote its
+decoy to a fixed `~/.cafresohq-regression-decoy`. The *directory* is
+load-bearing — `_cafresohq_allowed_dirs` defaults to `$HOME`, and reading a
+real file there is the entire threat being measured — but the name was not.
+Whichever copy finished first removed the shared file in its `finally`, and the
+other's `/fs/file` read came back 404. The name is now per-process via
+`tempfile.mkstemp(dir=$HOME)`; the property under test is untouched.
+
+Both were reproduced before being fixed, not inferred. The security suite runs
+in ~0.24s, so the window is small: sweeping a second copy across 40 start
+offsets in 10ms steps hit it on the first one, with the same two checks failing
+and the same 404. The night suite reproduced with two copies started flat
+together, ending in the identical `FileNotFoundError` on
+`night-mem-*/hq/memory/context.json`. After the fix the same sweeps ran clean —
+80 concurrent security runs across 40 offsets with no leaked decoy left in
+`$HOME`, and 45 concurrent night runs three at a time.
+
+No retry, no sleep, and nothing serialised. A flaky suite is worse than a red
+one, because a red one still means something.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file
+a foreign session owns and this change never touches). This change covers only
+the two test files and this entry; `src/cafresohq_state/main.mo` was never
+staged or edited, no II or `derivationOrigin` value was read or written, and no
+dfx/IC action of any kind was run.

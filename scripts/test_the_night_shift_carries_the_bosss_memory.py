@@ -28,6 +28,7 @@ import os
 import pathlib
 import re
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -50,6 +51,24 @@ def check(name, cond, detail=''):
                          ('' if cond else ' — ' + str(detail)[:300])))
     if not cond:
         FAILS.append(name)
+
+
+def free_port():
+    """An OS-assigned free port, so two copies of this suite never collide.
+
+    This used to be a hardcoded 9386, and the collision was not merely a
+    noisy bind error: the loser's serve.py died on bind, but the readiness
+    loop below then reached the WINNER's server on the same port and carried
+    on happily against a stranger's state dir. Every PUT landed in the other
+    run's tmp tree, and the corrupt-store-file check — which reaches past
+    HTTP and writes tmp/hq/memory/context.json directly — blew up with a
+    FileNotFoundError, because nothing had ever created that directory here.
+    """
+    s = socket.socket()
+    s.bind(('127.0.0.1', 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
 
 
 def brace_lift(src, header, start=0):
@@ -132,7 +151,7 @@ def main():
     (tmp / 'vault').mkdir()
     (tmp / 'hq').mkdir()
     (tmp / 'work').mkdir()
-    port = 9386
+    port = free_port()
     base = 'http://127.0.0.1:%d' % port
     env = dict(os.environ)
     for k in list(env):
@@ -148,6 +167,13 @@ def main():
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         for _ in range(80):
+            if srv.poll() is not None:
+                # Our own server is gone. Something may still be answering on
+                # this port — another run's — and adopting it silently is how
+                # this suite used to fail three checks deep instead of here.
+                check('our serve.py stayed up', False,
+                      'exited %r during startup' % srv.returncode)
+                return finish()
             try:
                 urllib.request.urlopen(base + '/missions/scheduled', timeout=2)
                 break
