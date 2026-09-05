@@ -92,7 +92,33 @@ function renderMarkdown(text, opts) {
            + '" alt="' + alt.replace(/"/g, '&quot;')
            + '" style="max-width:100%">';
     });
-    s = s.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2">$1</a>');
+    /* The twin of #254's one excuse. That entry closed the .svg preview
+       hole and, sweeping this file for other sinks, wrote off this one:
+       "renderMarkdown is the one allowed source: it entity-escapes before
+       it looks for syntax". True of TEXT. Never true of ATTRIBUTES — `esc`
+       above escapes &, < and > and NOT the quote, which is why every other
+       attribute this function writes (the ![[embed]] src and alt, the
+       [[wikilink]] target, the ![](src) src and alt) carries its own
+       .replace(/"/g, '&quot;'). The link arm was the odd one out: it
+       interpolated the URL straight into href="$2", so a note containing
+       [x](" onmouseover="…) closed the attribute and hung an event handler
+       on the anchor — arbitrary JS in the very origin #254 enumerated (the
+       II session, the BYOK keys, every cafresohq_* key), reached from a
+       .md file on disk in exactly the two places #254 was about: the IDE's
+       FilePreview and the Library's note preview. A javascript:/vbscript:
+       URL is the same hole needing no quote at all, so the scheme is
+       gated here too — the img arm above needs no such gate (an <img src>
+       executes nothing) but does quote-escape, and this arm now matches
+       its neighbours instead of standing alone. */
+    s = s.replace(/\[(.+?)\]\((.+?)\)/g, (_m, label, href) => {
+      /* Browsers strip control characters and whitespace out of a URL
+         attribute before parsing the scheme, so `java\tscript:` is a
+         javascript: URL — test the stripped form, emit the original. */
+      const bare = href.replace(/[\u0000-\u0020]+/g, '').toLowerCase();
+      const safe = /^(?:javascript|vbscript|data):/.test(bare)
+        ? '#' : href.replace(/"/g, '&quot;');
+      return '<a href="' + safe + '">' + label + '</a>';
+    });
     return s;
   };
 
