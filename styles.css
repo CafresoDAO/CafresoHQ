@@ -10663,6 +10663,19 @@ body.night .tip-amount { background: #3a2f18; color: #ffd97a; border-color: #ffd
   background: #141828;
   border-color: var(--px-ink);
   min-height: 0;              /* the 420px floor blocked flex shrink */
+  /* #369. `.pxhq`'s desktop `min-height: 480px` (below) only fits inside
+     this column when the column itself is >= ~710px tall (measured across
+     769-2560px wide). Below that — an ordinary short desktop BROWSER
+     WINDOW, not just an exotic device — the column was `overflow: hidden`
+     with nothing offering a scrollbar, so the bottom of the office was
+     clipped and unreachable by wheel or trackpad, the same shape #354/#361
+     found on a landscape phone and a big phone in landscape. Scrolling the
+     column, unconditionally, fixes it at every width and height rather
+     than adding another height threshold that is only correct until the
+     next screen size: a tall desktop still shows no scrollbar (the office
+     fits), a short one gets one instead of a silently clipped floor. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 /* The office pane must FILL its container and scroll inside .px-scene —
    never grow past it. .hq-desktop is a block with overflow:auto, so

@@ -39135,3 +39135,74 @@ drops it back to 2/6 even though the chat history (and the failure) survived
 the reload. Cosmetic — it costs a returning tester one re-read of a step
 they already completed, never blocks anything — and is a different, smaller
 ticket than this one.
+
+---
+
+## 373. the desktop floor came back at the next screen size
+
+`## 362.` fixed the office floor on a WIDE-but-SHORT viewport — a big phone
+turned sideways, 926x428 — by zeroing `.pxhq`'s desktop `min-height: 480px`
+at `@media (min-width: 769px) and (max-height: 460px)`. It reasoned about the
+width half of that gate at length — why 769px, why it cannot leak onto the
+five portrait sizes the office suites guard — and said nothing at all about
+where it picked 460 for the height half. It was a description of the one
+device it had measured, not a boundary anyone had located.
+
+It was wrong by nearly 250px. Measured at rest — `.pxhq` against
+`.office.pxhq-root`, the column that clips it with `overflow: hidden` —
+the office keeps hanging off the bottom of its own column all the way out
+to somewhere between 690px and 710px of window height, depending on width:
+
+    width   height   over
+    1440    500      125.4px hanging below the column
+    1440    600       90.9px hanging below the column
+    1440    650       40.9px hanging below the column
+    2560    600       94.9px hanging below the column
+     769    690       18.3px hanging below the column
+     769    710       -1.7px (fits)
+
+Every one of those is an ordinary desktop BROWSER WINDOW — not a device
+`## 362.` had no reason to think about, just a laptop whose window is not
+maximized, or one snapped to the top half of a monitor. The column was
+`overflow: hidden` with nothing offering a scrollbar there, so the bottom of
+the office was unreachable by wheel or trackpad for the whole 250px band
+between where the phone fix stopped applying and where the floor happens to
+fit on its own — the same shape `## 361.`/`## 362.` already named twice, at
+a third boundary neither of them had reason to check.
+
+The sweep that found it was the same one that closed `## 362.`'s own
+punch list: `innerWidth`/`innerHeight`/`matchMedia` across every `.jsx`,
+cross-referenced against the nearest `@media` rule, plus a live measurement
+pass at foldable, split-screen, landscape-tablet and ultrawide sizes looking
+for anything painted outside its box or clipped unreachably. Every other JS
+viewport gate in the repo reads `768` and every CSS rule it is paired with
+reads the same number — the mismatch class `## 361.`/`## 363.` found is
+closed everywhere else. This was the one place a **height** gate, not a
+width gate, had the same problem: a number nobody had located, guarding a
+fix nobody had measured past its own test case.
+
+**The fix does not add a fourth height number to eventually be wrong about.**
+`.office.pxhq-root` now scrolls — `overflow-y: auto; overscroll-behavior:
+contain;` — unconditionally, at every width and every height, rather than
+only inside the one band `## 362.` measured. A tall desktop where `.pxhq`
+already fits (`## 362.`'s own control, 1280x800) shows no scrollbar at all;
+that suite runs unchanged and a fresh assertion added here checks the same
+thing directly — `scrollHeight` equals `clientHeight`, so the unconditional
+rule is provably invisible there, not merely untested. A short window gets
+a real scroll affordance instead of a silently clipped floor. Reaching the
+very bottom of the office at these widths costs two scroll gestures rather
+than one — the column, then `.px-scene`'s own internal scroll inside
+`.pxhq` — which is a rougher affordance than the single-scroller ideal
+`## 361.` reached for on a phone, but nothing is clipped away from a wheel
+or a trackpad any more, which is the property that was missing and the one
+this fix and its test both check for.
+
+Measured in
+`scripts/test_a_short_desktop_window_does_not_swallow_the_office_floor.py`,
+which imports `## 352.`'s harness the same way `## 361.`'s and `## 363.`'s
+suites do: boot the app, open the Office tab, walk every scroller from the
+lobby door up to the root to its maximum, and ask whether the door ended up
+inside the root's own box. Fire-tested by reverting the CSS in place: with
+`overflow-y` back to the inherited `hidden`, the suite's "column offers a
+scrollbar instead of clipping" assertion fails at all three short-window
+sizes, and passes once the rule is restored.
