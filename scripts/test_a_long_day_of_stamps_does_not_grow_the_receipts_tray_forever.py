@@ -186,6 +186,9 @@ check('nothing is duplicated on the way out',
 
 // --- and a reload does not re-adopt an old, oversized file ----------------
 // receiptsRef is what the transform reads for "recorded in the first ~1.5s".
+// receiptsClearedRef is #379's disambiguator (real CLEAR ALL vs. untouched);
+// this file exercises the merge/cap path, not the clear path, so it stays false.
+const receiptsClearedRef = { current: false };
 const receiptsRef = { current: [
   { id: 'rc_live', title: 'stamped while the fetch was in flight', decidedAt: 9e12 },
 ] };

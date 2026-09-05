@@ -97,7 +97,10 @@ def main():
     check('receipts remains a separate array from the bell\'s own state, '
           'only cleared independently by onClearReceipts (wired to the '
           'ReceiptsModal tray, not the bell)',
-          'const onClearReceipts = () => setReceipts([]);' in src)
+          # #379 added receiptsClearedRef (disambiguates a real clear from a
+          # not-yet-run merge on the next mount-fetch) alongside the same
+          # setReceipts([]) this check always pinned.
+          'const onClearReceipts = () => { receiptsClearedRef.current = true; setReceipts([]); };' in src)
 
     # Behavioral proof via plain Python (the filter is trivial enough not to
     # need Node — this checks the actual boolean condition extracted above).
