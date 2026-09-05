@@ -4880,6 +4880,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if not msg.is_multipart():
                 return self._send_json(400, {'error': 'bad multipart body'})
             folder = qs.get('dir', [''])[0].strip().strip('/')
+            # The third write door, asking the same question the other two
+            # already ask (#140 wired _vault_hidden_part into /vault/note PUT
+            # and the rename destination). fs_routes.upload_name only ever
+            # sees the FILE name — it refuses a dotted basename — so the
+            # folder half of the destination reached every backend unasked,
+            # and a drop into "dir=.archive" was written, counted in
+            # `uploaded`, and then skipped by /vault/list on every backend.
+            hidden = _vault_hidden_part(folder)
+            if hidden:
+                return self._send_json(400, {
+                    'error': 'hidden folders are not accepted — the Library '
+                             f'never lists anything under "{hidden}", so the '
+                             'files would vanish the moment they were filed. '
+                             'Drop the leading dot.'})
             saved, errors = [], []
             for part in msg.get_payload():
                 # Not part.get_filename() — see fs_routes.part_filename for the

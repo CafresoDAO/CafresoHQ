@@ -36749,3 +36749,65 @@ kind of failure.
 
 **Whose twin.** `## 315.`, which established the rule and applied it to four
 names. The fifth was in the same URL as the first.
+
+---
+
+## 327. the Library's third write door never asked whether the folder existed to be seen
+
+`## 140.` — "the Library never files what it cannot show" — ended a real
+disappearance. A note filed at `.drafts/q3-plan.md` was written, said
+"Saved", and then never appeared in any list the product keeps: every
+backend's listing drops a path with a dotted part, the fs and oci branches
+by an outright `part.startswith('.')` filter and the REST walk by skipping
+dot-entries at every level. That fix built a general helper for it,
+`_vault_hidden_part(rel)`, whose docstring states the family rule in its own
+words: *"The write doors ask this before touching any backend."*
+
+It was wired into two of them. `PUT /vault/note` and the destination half of
+`POST /vault/rename`. There is a third: `POST /vault/upload`.
+
+That door asked half the question. `fs_routes.upload_name()` refuses a
+dotted basename out loud — a picked file called `.env` comes back with
+"hidden files are not accepted", which is why the door *looked* covered. But
+the destination it actually writes is `dir + '/' + name`, and `upload_name`
+takes `str(raw).split('/')[-1]`: it structurally cannot see the folder half.
+The `dir` query parameter went straight to `_vault_resolve` on the fs
+backend, to `_oci_obj_key` on oci, and into the REST PUT path, unasked.
+
+Reproduced against the running server, with the fix lifted out:
+
+    POST /vault/upload?dir=.archive   (q3-plan.md, deck.txt)
+    → 200 {"uploaded": [{"path": ".archive/q3-plan.md", "size": 5},
+                        {"path": ".archive/deck.txt",   "size": 7}],
+           "count": 2}
+    GET  /vault/list  → neither file, on any backend
+
+Two files on disk, a receipt counting both, a toast saying they were filed,
+and nothing in the Library ever again. That is `## 140.`'s ticket verbatim,
+arriving through the one door `## 140.` did not touch. `notes/.drafts` and
+the backslashed `.archive\win` got in the same way, since the helper is the
+only thing in this file that normalises separators before splitting.
+
+**The fix.** The folder meets the same helper the other two doors meet,
+before the loop and before any backend, and the refusal is the whole request
+rather than a per-part failure: `dir` is one destination for every part, so
+one sentence is the honest answer. The rescue direction stays open exactly
+as `## 140.` left it — a file already in the dark can still be read, renamed
+out and deleted, and the suite pins that too.
+
+No client-side twin is needed here. `## 140.` refused in `views/vault.jsx`
+as well because the editor's 2.5-second autosave files an open buffer with
+nobody pressing anything; an upload is an explicit act that already gets a
+receipt, and the receipt now carries the refusal.
+
+**Test:** `scripts/test_the_upload_door_asks_the_hidden_question_the_other_write_doors_ask.py`
+— boots `serve.py` on a scratch vault and posts real multipart bodies at the
+real route. It opens on the premise, not the fix: if `/vault/list` ever
+stops hiding dotted paths, the check fails and says so, because then this
+refusal is guarding a rule that no longer exists and `## 140.` wants
+re-deciding rather than extending.
+
+Pure `.py` change — no `npm run build` needed for it.
+
+**Whose twin.** `## 140.`, which built the general mechanism and wired it to
+the two doors that were in front of it.
