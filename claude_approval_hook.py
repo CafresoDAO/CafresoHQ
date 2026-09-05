@@ -40,8 +40,32 @@ import urllib.error
 import urllib.request
 
 
+def _int_env(name: str, default: int) -> int:
+    """A numeric env knob that can never take the approval gate down with it.
+
+    Same rule #237 established for this file and then applied only to the two
+    JSON decodes: an uncaught exception here does not DENY the tool call, it
+    silently lets it run (Claude Code hook contract — only exit code 2 blocks;
+    every other nonzero exit is "non-blocking error by default"). A crash
+    BEFORE `main()` is the same bypass with none of the evidence: no tray row,
+    no decision on stdout, and the tool proceeds unapproved.
+
+    Every other numeric env read in this repo already guards the empty string
+    (`serve.py` PORT and _TRIAL_DAILY_CAP; worker.py's budgets, caps and
+    intervals; drivers/hermes.py HERMES_PORT — all spelled `or <default>`).
+    This one, the only one whose failure is a security boundary, did not:
+    `CAFRESOHQ_HQ_TIMEOUT=` (exported empty) or a human spelling like `30m`
+    raised ValueError at import time. Falling back to the documented default
+    is the honest answer — a mistyped knob is not a reason to stop asking.
+    """
+    try:
+        return int(str(os.environ.get(name, '') or default).strip())
+    except (TypeError, ValueError):
+        return default
+
+
 HQ_URL    = os.environ.get('CAFRESOHQ_HQ_URL', 'http://127.0.0.1:8787').rstrip('/')
-TIMEOUT_S = int(os.environ.get('CAFRESOHQ_HQ_TIMEOUT', '1800'))
+TIMEOUT_S = _int_env('CAFRESOHQ_HQ_TIMEOUT', 1800)
 FAIL_OPEN = os.environ.get('CAFRESOHQ_HQ_FAILOPEN', '0') == '1'
 POLL_S    = 25  # per long-poll round; server caps at 55
 

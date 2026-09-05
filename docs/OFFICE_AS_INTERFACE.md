@@ -35240,3 +35240,74 @@ blank, whitespace, unset, typed, padded — and reads the button out of the
 source to prove the disabled state and the visible hint come from the same
 sentence, because a helper nothing consumes would have passed a screen that
 still swallowed the click.
+
+---
+
+## 310. one mistyped env var and every tool call ran unapproved
+
+`#237` found that `claude_approval_hook.py` — the PreToolUse gate between
+Claude Code and the HQ ApprovalTray — could be crashed out of its own
+fail-closed promise, and it stated the reason in a form that generalises
+past the two lines it went on to fix. Confirmed against Claude Code's hook
+contract (code.claude.com/docs/hooks.md, "Exit Codes & Output"): only exit
+code 2 hard-blocks a PreToolUse call; every other nonzero exit is
+"non-blocking error by default — action proceeds". So an uncaught exception
+in this file does not deny a tool call, it silently allows one. `#237` drew
+the conclusion — "never crash without emitting a decision" is a hard
+security requirement for this file, not a style nicety — and then applied it
+to `json.JSONDecodeError` inside `main()`, at the two call sites someone
+happened to be looking at.
+
+The module body, eleven lines above, never got the rule:
+
+    TIMEOUT_S = int(os.environ.get('CAFRESOHQ_HQ_TIMEOUT', '1800'))
+
+A crash *there* is the same bypass with none of the evidence. `main()` never
+runs, so nothing is submitted, no row appears in the tray, nothing is
+printed on stdout, and the tool proceeds. The boss watching the tray sees a
+quiet afternoon; the difference between "nobody asked for anything" and
+"nothing was ever asked" is invisible from that chair.
+
+`CAFRESOHQ_HQ_TIMEOUT` is not an internal constant — this file's own
+docstring advertises it as one of three env knobs. `os.environ.get` returns
+the default only when the name is ABSENT: `export CAFRESOHQ_HQ_TIMEOUT=`, or
+a `settings.json` env block with `""` in it, hands `int()` an empty string.
+So does every human spelling of a duration — `30m`, `1800s`, `1800.0`. Each
+one is a `ValueError` at import, and each one turns the whole approval gate
+off for the session without ever saying so.
+
+It is the odd one out. Fifteen numeric env reads exist in this repo and
+fourteen of them already guard exactly this: `serve.py`'s `PORT` and
+`_TRIAL_DAILY_CAP`, `drivers/hermes.py`'s `HERMES_PORT`, and eleven budgets,
+caps and intervals in `search_worker_service/worker.py` — all spelled
+`int(os.environ.get(NAME, '') or <default>)`. The one that skipped the guard
+is the one whose failure is a security boundary rather than a slow crawl or
+a small bill.
+
+**The fix.** `_int_env(name, default)` reads the knob, tolerates surrounding
+whitespace, and falls back to the documented default for anything that is
+not an integer. A mistyped knob now costs the boss their custom timeout and
+nothing else: the gate still asks, still waits, and still denies when HQ is
+unreachable. Widening the `except` rather than only guarding `''` is
+deliberate — `#237`'s rule is about crashes, not about one spelling of one
+bad value, and the guard the other fourteen use would still have died on
+`30m`.
+
+**The proof.**
+`scripts/test_a_mistyped_timeout_knob_never_waves_a_tool_call_through.py`
+imports the real file under `mock.patch.dict(os.environ, …)` for each bad
+spelling — the import itself is the thing under test, so a raise is a
+result rather than a test error — and then drives the real `main()` against
+an unreachable HQ for each one, asserting a `hookSpecificOutput` `deny`
+reaches stdout. It also pins the two things the fix must not break: an unset
+knob is still 1800, and a real `900` (with or without stray whitespace) is
+still honoured, so the knob is not quietly turned into a decoration.
+
+Fire-tested: copied the fixed `claude_approval_hook.py` to `/tmp`, reverted
+`TIMEOUT_S` in place with the editor back to the bare `int(...)` (never `git
+checkout -- <file>`) — 5 of the import checks failed, each with the
+`ValueError` the hook would have died on, exit 1. Restored from the `/tmp`
+copy, confirmed byte-identical by `md5`, reran — all checks passed, exit 0.
+
+Pure `.py` change — no `npm run build` needed for it, though the worktree's
+`dist-ui/` was built once to run the suite.
