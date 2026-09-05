@@ -38229,3 +38229,37 @@ reopened and genuinely finished again credits the second run. The toast came
 along, because it was the same claim one surface louder: a re-mention now says
 the job *was already finished* instead of announcing a completion that did not
 happen.
+
+---
+
+## 355. the guard that measured somebody else's server
+
+`#342`'s test boots a real serve.py and asks it, with a stranger's `Origin`,
+whether the search quota ledger is readable. It hardcoded port 18893, and
+that made it lie under load.
+
+Two sessions running the suite at once is ordinary on this machine. The
+second server cannot bind, the readiness probe gets a cheerful `/health`
+from the FIRST session's server, and every assertion after that is measured
+against a process with a different HOME and a different configuration. It
+failed that way twice — once against a reviewer's own dev server, once in
+suite 43 — and both times it passed the moment it was re-run alone. A guard
+that reports another process's answers is worse than no guard: it is a
+security check that can go green while the thing it guards is open, and red
+while it is closed.
+
+Every other live-server test in this repo already binds port 0 and takes
+what the OS gives it. This one was the lone outlier, and the outlier was
+mine. It now does the same.
+
+Two further checks, because a free port is not the whole of the problem.
+The readiness probe used to accept "something answered": measured, a plain
+`python3 -m http.server` squatting on the port replies 404 to `/health`
+instantly, and the old probe took that as ready and went on to make six
+assertions about the squatter. It now requires a 200 carrying JSON, which
+is what serve.py's `/health` is and what a squatter is not. And the loop
+watches the child: if serve.py exited, the thing answering is not ours, so
+it stops rather than measuring it. Fire-tested against a real squatter on
+18893 — the suite now fails with `serve.py exited with 1`, the true reason,
+instead of six assertion failures about someone else's process.
+

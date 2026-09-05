@@ -15,15 +15,38 @@ So this test measures too: it boots a real server and asks with a stranger's
 Origin, rather than asserting on the tuple's contents.
 """
 import http.client
+import json
 import os
 import pathlib
+import socket
 import subprocess
 import sys
 import tempfile
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-PORT = 18893
+
+
+def _free_port():
+    """A port nobody is on, asked for rather than assumed.
+
+    This test used to hardcode 18893, and that made it lie under load. Two
+    sessions running the suite at once is normal on this machine: the second
+    server fails to bind, the readiness probe below gets a cheerful /health
+    from the FIRST session's server, and every assertion after that is
+    measured against a process with a different HOME and a different config.
+    It failed twice that way — once against a reviewer's own dev server —
+    and a guard that reports the wrong process's answers is worse than no
+    guard. Bind 0, let the OS name a free one, hand it straight over."""
+    s = socket.socket()
+    try:
+        s.bind(('127.0.0.1', 0))
+        return s.getsockname()[1]
+    finally:
+        s.close()
+
+
+PORT = _free_port()
 fails = []
 
 
@@ -47,6 +70,24 @@ def get(path, origin=None):
         c.close()
 
 
+def _is_our_health():
+    """True only for a 200 /health carrying JSON — i.e. serve.py, not a
+    squatter. Raises OSError while nothing is listening yet."""
+    c = http.client.HTTPConnection('127.0.0.1', PORT, timeout=10)
+    try:
+        c.request('GET', '/health')
+        r = c.getresponse()
+        body = r.read()
+        if r.status != 200:
+            return False
+        json.loads(body.decode('utf-8', 'replace'))
+        return True
+    except ValueError:
+        return False
+    finally:
+        c.close()
+
+
 home = tempfile.mkdtemp(prefix='gapstatus-')
 env = dict(os.environ, PORT=str(PORT), HOME=home)
 env.pop('CAFRESOHQ_API_KEY', None)          # a real first run has no key
@@ -55,11 +96,25 @@ proc = subprocess.Popen([sys.executable, 'serve.py'], cwd=str(ROOT), env=env,
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 try:
     for _ in range(80):
+        # A dead child means the port answering us is somebody else's, so
+        # stop rather than measure the wrong process.
+        if proc.poll() is not None:
+            print('  FAIL  the server came up',
+                  ' — serve.py exited with', proc.returncode)
+            print('\nFAILED: server never answered')
+            sys.exit(1)
+        # And "something answered" is not "our server answered". Measured:
+        # a plain `python3 -m http.server` squatting on the port replies 404
+        # to /health instantly, the probe below used to accept that, and
+        # every assertion after it was made against the squatter. serve.py's
+        # /health is a 200 carrying JSON, so ask for that much before
+        # believing the port.
         try:
-            get('/health')
-            break
+            if _is_our_health():
+                break
         except OSError:
-            time.sleep(0.25)
+            pass
+        time.sleep(0.25)
     else:
         print('  FAIL  the server came up')
         print('\nFAILED: server never answered')
