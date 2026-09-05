@@ -32744,3 +32744,92 @@ covers only `drivers/codex.py`, `pty_server.py`, the one new test file, and
 this entry; `src/cafresohq_state/main.mo` was never staged or edited, no II
 or `derivationOrigin` value was read or written, and no dfx/IC action of any
 kind was run.
+
+---
+
+## 274. The delete dialog opened with the boss's finger already on Delete
+
+**The wreck.** A task is gone. Its result — a coworker's finished work — is
+gone with it. The boss remembers pressing Enter, does not remember reading a
+question, and is fairly sure no dialog was ever on screen. There is no undo,
+and the office has no record of anything having gone wrong: as far as it is
+concerned, the boss was asked and the boss said yes.
+
+**What was actually happening.** `DialogHost` in `ui/feedback.jsx` moves focus
+30ms after a dialog mounts:
+
+```js
+if (req.kind === 'prompt' && inputRef.current) { …focus(); …select(); }
+else if (okRef.current) okRef.current.focus();
+```
+
+`okRef` is the OK button. When the caller passes `{ danger: true }`, that
+button is not labelled "OK" — it is labelled **Delete**, or **Stop all**, or
+**Clear all**. So the destructive action arrived already focused, and the very
+next Enter or Space fired it.
+
+That next keystroke is not exotic; it is the *same* keystroke that opened the
+dialog. Every one of these confirms is raised by a key press, or by a click a
+key press can repeat:
+
+- `Delete "${t.title}"? Your coworker's work on it will be lost.`
+- `${who} is working on "…" right now.\n\nDelete it and stop them?`
+- `STOP ALL? … stop N coworkers mid-reply and pause M running missions`
+- `Clear all receipts? Audit trail is lost.`
+- `Delete workspace "…"?` — run 30ms *after* Enter picked it in the palette
+
+Enter on a focused Delete control opens the dialog. Keyboard auto-repeat then
+fires roughly thirty times a second, and a merely double-tapped Enter is
+commoner still. Either way the second Enter lands well after the 30ms timer has
+put focus on the dialog's Delete button, activates it, and the work is
+destroyed before the dialog has been on screen long enough to read a word of
+it. The boss never saw the question they answered.
+
+**Why this is not `#219`.** `#219` was about where an Enter keydown was
+*routed* once focus had already reached Cancel — the unconditional
+`req.kind === 'confirm'` arm in `onKey` resolved TRUE from anywhere in the
+dialog, so the keyboard path to *declining* performed the deletion. That fix
+made Enter-on-Cancel honest. It did not put anyone on Cancel. This is the
+other half: where focus **lands**, not where the key **goes**.
+
+**The fix.** A `cancelRef` on the Cancel button, and for a danger dialog focus
+that instead of OK:
+
+```js
+else if (req.opts.danger && cancelRef.current) cancelRef.current.focus();
+else if (okRef.current) okRef.current.focus();
+```
+
+A stray Enter now cancels — through the Cancel button's own `onClick`, exactly
+the path `#219` unblocked — and reaching Delete costs a deliberate Tab or a
+deliberate click, which is the whole point of asking. Prompts still focus and
+select their text input. `opts.hideCancel` dialogs have no Cancel button at
+all, so they keep focusing OK: they have no other way out, and they are
+informational, not destructive.
+
+**The test.** `scripts/test_a_danger_dialog_does_not_open_under_the_delete_button.py`
+lifts the real 30ms autofocus callback out of `ui/feedback.jsx` and executes it
+under Node against ref stand-ins that record what got focused — the extracted
+code genuinely runs rather than being pattern-matched. Four scenarios: a danger
+confirm must land on Cancel, a plain confirm must still land on OK, a danger
+dialog with `hideCancel` must still land on OK, and a prompt must still land on
+its input.
+
+Fire-tested: copied the fixed `ui/feedback.jsx` to `/tmp`, reverted both the
+autofocus arm and the `ref={cancelRef}` in place with the editor (never
+`git checkout -- <file>`) — 2 of 7 checks failed, exit 1, with the danger
+confirm focusing `DELETE`. Restored from the `/tmp` copy, confirmed
+byte-identical by `md5` (`75ec03727af26203cbd49dfd75e4c30b`), reran — 7 of 7
+passed, exit 0.
+
+`npm run build` was run once up front so `dist-ui/manifest.json` exists in a
+fresh worktree, and again after the `.jsx` edit.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file
+a foreign session owns and this change never touches). This change covers only
+`ui/feedback.jsx`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any kind
+was run.

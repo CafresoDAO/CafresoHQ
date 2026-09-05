@@ -210,6 +210,7 @@ function DialogHost() {
   const [draft, setDraft] = useState('');
   const inputRef = useRef(null);
   const okRef = useRef(null);
+  const cancelRef = useRef(null);
 
   useEffect(() => {
     const ask = (kind, message, opts) => new Promise(resolve => {
@@ -224,8 +225,21 @@ function DialogHost() {
 
   useEffect(() => {
     if (!req) return;
+    /* A danger dialog must NOT open with the destructive button under the
+       boss's finger. Autofocus landed on okRef unconditionally — and okRef
+       IS the "Delete" / "Stop all" / "Clear all" button when opts.danger is
+       set. Every one of those confirms is raised BY a keypress (Enter on a
+       Delete control, a shortcut, a palette command that runs 30ms after
+       Enter picked it), so a held or double-tapped Enter — key auto-repeat
+       fires ~30/s — lands on the freshly focused Delete and performs the
+       destruction before the dialog has been on screen long enough to read.
+       The work is gone and the boss never saw the question. Focus the safe
+       way out instead; Enter there cancels (the button's own onClick), and
+       reaching Delete now costs a deliberate Tab or a click. Falls back to
+       okRef when the dialog has no Cancel (opts.hideCancel). */
     const t = setTimeout(() => {
       if (req.kind === 'prompt' && inputRef.current) { inputRef.current.focus(); inputRef.current.select(); }
+      else if (req.opts.danger && cancelRef.current) cancelRef.current.focus();
       else if (okRef.current) okRef.current.focus();
     }, 30);
     return () => clearTimeout(t);
@@ -266,7 +280,7 @@ function DialogHost() {
               that mean the same thing. Escape and the backdrop still
               resolve, so nothing becomes untrappable. */}
           {!req.opts.hideCancel && (
-            <button className="px-btn secondary" onClick={() => done(cancelValue)}>{req.opts.cancelLabel || 'Cancel'}</button>
+            <button className="px-btn secondary" ref={cancelRef} onClick={() => done(cancelValue)}>{req.opts.cancelLabel || 'Cancel'}</button>
           )}
           <button ref={okRef} className={'px-btn ' + (danger ? 'danger' : 'primary')} onClick={() => done(okValue())}>
             {req.opts.okLabel || (danger ? 'Delete' : 'OK')}
