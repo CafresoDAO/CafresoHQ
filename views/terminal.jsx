@@ -2,11 +2,26 @@ import { CafresoHQChain } from '../claude-client.jsx';
 import { useStoredV } from './core.jsx';
 import { CafresoHQClient } from '../claude-client.jsx';
 const { useState: useSV, useMemo: useMV, useRef: useRV } = React;
-function EmbeddedTerminal({ project, cli, sessionId, visible }) {
+function EmbeddedTerminal({ project, cli, sessionId, visible, authMethod }) {
   const containerRef = React.useRef(null);
   const termRef      = React.useRef(null);
   const wsRef        = React.useRef(null);
   const fitRef       = React.useRef(null);
+
+  /* The ⚡Subscription / 🔑API Key selector is a promise about WHOSE money
+     runs this session. Chat kept it (terminalStream sends authMethod, and
+     /terminal/stream pops ANTHROPIC_API_KEY/GEMINI_API_KEY for
+     'subscription'), but the PTY never did: its init frame shipped every
+     stored BYOK key on every connect and never named an auth_method — so
+     pty_server's `if _pty_auth == 'subscription'` branch was unreachable
+     and a boss who picked "⚡ Subscription" still got ANTHROPIC_API_KEY in
+     the shell env. Claude Code prefers the key, so the PTY silently billed
+     the metered API account instead of the Pro/Max login the toolbar said
+     it was using. A ref, not the effect closure, because the selector lives
+     in the Chat tab and the PTY stays mounted across the switch — the
+     value at CONNECT time is the one that matters. */
+  const authRef = React.useRef(authMethod);
+  authRef.current = authMethod;
 
   /* Copy/paste + URL capture. The CLIs (claude/codex/gemini login) print OAuth
      URLs the user must open in a browser — before this, nothing in the PTY was
@@ -172,14 +187,21 @@ function EmbeddedTerminal({ project, cli, sessionId, visible }) {
       ws.onopen = async () => {
         attempt = 0;                       // connected — start the ladder over
         const oc = CafresoHQClient;
+        // Same default as TerminalSession's selector: claude/gemini log in,
+        // codex uses a key. Only THIS session's CLI is gated by the choice —
+        // an unrelated provider's key is still fine to pass through.
+        const _auth = authRef.current ||
+          ((cli === 'claude' || cli === 'gemini') ? 'subscription' : 'apikey');
+        const _sub = _auth === 'subscription';
         let ak = '', ok = '', gk = '';
         if (oc?.getAgentKey) {
-          ak = await oc.getAgentKey('anthropic').catch(() => '');
+          if (!(_sub && cli === 'claude')) ak = await oc.getAgentKey('anthropic').catch(() => '');
           ok = await oc.getAgentKey('openai').catch(() => '');
-          gk = await oc.getAgentKey('google').catch(() => '');   // Gemini CLI
+          if (!(_sub && cli === 'gemini')) gk = await oc.getAgentKey('google').catch(() => '');   // Gemini CLI
         }
         ws.send(JSON.stringify({
           type: 'init',
+          auth_method: _auth,
           ...(ak ? { anthropic_key: ak } : {}),
           ...(ok ? { openai_key:    ok } : {}),
           ...(gk ? { gemini_key:    gk } : {}),
@@ -841,7 +863,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
           instead of reconnecting from scratch. */}
       <div style={{ display: termMode === 'chat' ? 'none' : 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
           {ptyEverOpened && (ptySupported ? (
-            <EmbeddedTerminal project={project} cli={cli} sessionId={sessionId} visible={visible && termMode === 'spawn'} />
+            <EmbeddedTerminal project={project} cli={cli} sessionId={sessionId} visible={visible && termMode === 'spawn'} authMethod={authMethod} />
           ) : (
             /* Fallback: launch button */
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 16, background: 'var(--paper)' }}>

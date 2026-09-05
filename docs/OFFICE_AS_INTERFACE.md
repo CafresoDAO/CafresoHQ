@@ -32486,3 +32486,74 @@ covers only `modals/delivery.jsx`, the one new test file, and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any
 kind was run.
+
+---
+
+## 271. the in-app terminal spent the metered account while the toolbar said "subscription"
+
+The Terminal's auth selector is not a preference, it's a promise about whose
+money runs the session. `⚡ Subscription` means "use Claude Code's own Pro/Max
+login" (or the `gemini` CLI's Google login); `🔑 API Key` means "use my stored
+BYOK key, and bill me per token". It is the *default* for both of those CLIs,
+and its own tooltip says so out loud: *Using Claude Pro/Max subscription via
+CLI login*.
+
+The Chat tab kept the promise. `terminalStream()` in `claude-client.jsx`
+sends `authMethod: 'subscription'` and deliberately withholds the key, and
+`/terminal/stream` in `pty_server.py` then pops `ANTHROPIC_API_KEY` (and
+`GEMINI_API_KEY`/`GOOGLE_API_KEY`) out of the child environment so the CLI
+falls through to its OAuth credentials.
+
+The PTY tab did not. `EmbeddedTerminal`'s `ws.onopen` built its init frame the
+same way on every connect, for every CLI, with no reference to the selector at
+all: fetch all three stored keys, ship whichever exist. The server end of that
+frame has read `_init_msg.get('auth_method')` since it was written — and
+because nothing in the app ever sent the field, its
+`if _pty_auth == 'subscription': agent_env.pop('ANTHROPIC_API_KEY')` branch was
+unreachable. The `elif` beneath it ran instead. `ANTHROPIC_API_KEY` went into
+the shell env, `claude` prefers the key over the login, and the boss's Pro/Max
+plan sat idle while the API account was metered — with the toolbar two inches
+above the cursor saying the opposite. Nothing in the UI ever contradicted it;
+you would find out from a bill.
+
+The fix is the wiring that was missing. `TerminalSession` already owns and
+persists `authMethod`, so it hands it down; `EmbeddedTerminal` mirrors it into
+a ref and reads that ref inside `onopen`, because the selector lives in the
+Chat tab while the PTY stays mounted across the switch — the value at *connect*
+time is the one the shell inherits, not the value at mount. The frame now names
+`auth_method`, and on `subscription` this session's own provider key is not
+even decrypted, let alone sent. An unrelated provider's key still passes
+through untouched: a codex tab is BYOK by default and must keep working.
+
+Two lines that look like symmetry but aren't: the guard is `_sub && cli ===
+'claude'`, not `_sub` alone. A `subscription` gemini session should not lose
+its `openai_key`, and the selector only ever spoke for the CLI in front of it.
+
+**Test:** `scripts/test_the_pty_spends_the_account_the_toolbar_says_it_will.py`
+— brace-balanced extraction of `EmbeddedTerminal`, `TerminalSession` and
+`ws.onopen` out of the real `views/terminal.jsx`, then the invariant in
+pieces: the prop is destructured, the parent passes it, the init frame carries
+`auth_method`, the value comes from the ref rather than the mount-time closure,
+each of the two subscription-gated key fetches sits behind a condition naming
+both `_sub` and its own `cli`, and the openai fetch stays unconditional. It
+also asserts the premise it depends on — that `pty_server.py` still reads
+`auth_method` and still strips the key for `'subscription'` — so the test fails
+loudly if the server half ever moves rather than passing vacuously.
+
+Fire-tested: copied the fixed `views/terminal.jsx` to `/tmp`, reverted the prop,
+the ref and the guarded fetches in place with the editor (never
+`git checkout -- <file>`) — 7 of 16 checks failed, exit 1. Restored from the
+`/tmp` copy, confirmed byte-identical by `md5`
+(`b0d1b925e6c63993061ec3ae49d42802`), reran — 16 of 16 passed, exit 0.
+
+`npm run build` was run once up front so `dist-ui/manifest.json` exists in a
+fresh worktree, and again after the `.jsx` edit.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file
+a foreign session owns and this change never touches). This change covers only
+`views/terminal.jsx`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any kind
+was run.
