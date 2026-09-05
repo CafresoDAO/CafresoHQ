@@ -40397,3 +40397,80 @@ no synchronous claim) and found not exposed the same way:
   this handler; flagged as worth its own harness pass in a future hunt
   since the eviction-based safety net is closer to `## 389`'s than to
   `## 388`'s.
+
+## 390. the door `## 389` deferred had the eviction arriving late, not safe
+
+`## 389`'s own sweep judged `onTaskDropOnAgent` "not independently guarded,
+but bounded — a double-drop is caught by `beginAgentRun`'s own eviction
+(second dispatch aborts the first's controller before real work happens)
+rather than any guard in the handler itself" — and explicitly deferred a
+real harness-based check to a future hunt. This hunt built that harness,
+and the claim did not survive it: the eviction is real, but it arrives
+after the first real dispatch has already gone out, not before.
+
+**The bug.** `displacedTask` (hq-runtime.jsx) deliberately excludes the
+task's OWN id (`t.id !== taskId`) from "is this coworker already working on
+something a new start would displace" — the exclusion exists so a chain's
+own hand-off (the finishing step's `endAgentRun` runs in a `finally` below
+the tail that dispatches the next step, so the step that just delivered is
+still in the registry when it hands off) doesn't misread itself as an
+interruption. But it means a same-task double-drop — the Task board's own
+▶ START button (`features.jsx`) carries no disabled state and no debounce
+(`onClick={(e) => { e.stopPropagation(); onStartTask(t.id, a); }}`), the
+identical physical shape as `## 388`'s stamp double-click, and the board's
+own comment already calls it "one click away and looks like queueing" —
+never lands on the `displaced` branch. `agentAbortersRef.current.get
+(agent.id)` (a REF, populated synchronously by the first call's own
+`beginAgentRun`, so unlike `## 388`/`## 389` this read is NOT stale) does
+find the live run, but with `displaced` null the code falls to `chatCut`
+instead. That branch's own comment claims "every cardless registrant is a
+chat surface" — false here, since the registrant IS this task's own
+just-started run — and shows a dialog that lies about why ("... is
+mid-conversation in chat ... Their reply stops where it is, and the rest
+of it is lost") with an OK button reading "Start it" — exactly what a boss
+who meant to click ▶ START once, and got hit with an unexpected dialog,
+would click through without reading it twice. Confirming it runs
+`onTaskDropOnAgent` a second time: `beginAgentRun` DOES evict the first
+run's controller, but only AFTER the first `HQ.agentStream` call has
+already fired. The eviction is real; it is simply too late to matter.
+
+Reproduced by lifting the REAL `onTaskDropOnAgent` function body out of
+app.jsx — brace-balanced text extraction of the actual committed source,
+not a re-implementation — along with the REAL `beginAgentRun`/
+`endAgentRun` and the REAL `displacedTask`, via new
+`scripts/harness_taskdrop_race.mjs`, and calling it twice (then three
+times) against one unchanged snapshot for the same (task, agent) pair.
+Pre-fix: `HQ.agentStream` — a real call to a real model — fired twice for
+one card.
+
+**The fix.** A new `startingTaskIdsRef` (a `Set` keyed by taskId, same
+shape as `## 388`'s `approvedIdsRef` and `## 389`'s `resendingIdsRef`) is
+checked-and-claimed as the very FIRST thing `onTaskDropOnAgent` does,
+synchronously, before `task` is even looked up. A second call for a taskId
+already mid-start is a silent no-op — it never reaches the mislabeled
+`chatCut` dialog at all. Released on every path that does NOT end in a
+real dispatch (task not found, displaced-and-declined, chat-cut-and-
+declined, either auto no-op) and in the run's own `finally`, so a task
+that finishes — or is genuinely restarted later, by hand or by a real
+chain re-drop — can still be dropped again. Keyed by taskId rather than
+agentId on purpose: a genuinely DIFFERENT card dropped on the same busy
+desk is a different, still-legitimate interrupt-and-replace, and must keep
+reaching its own (correctly-labeled) `displaced` confirm rather than being
+silently swallowed by a lock scoped to the wrong thing.
+
+**Fire-tested.** New
+`scripts/test_a_second_drop_on_a_desk_does_not_double_the_job.py`: round 1
+— structural, confirming `startingTaskIdsRef` exists, the claim sits before
+`task` is looked up, and every early-return path (including the run's own
+`finally`) releases it. Round 2 — the real extracted `onTaskDropOnAgent`
+body, called twice and three times for one card via the new
+`harness_taskdrop_race.mjs`: `HQ.agentStream` fires exactly once for the
+double- and triple-drop scenarios and for a plain single drop, while a
+genuinely different second card dropped on the same busy desk still
+dispatches once the boss confirms — the taskId-keyed claim does not block
+a different taskId. Reverted the fix in place (md5
+`17a2872d06777b7a201f4222d020a209`, the same pre-hunt hash `## 389`
+recorded) — 11 checks failed reliably across 3 repeated runs (9 structural,
+plus both the double- and triple-drop scenarios showing `agentStream`
+firing twice). Restored (byte-identical), green again on three repeated
+runs. `npm run build` succeeds.

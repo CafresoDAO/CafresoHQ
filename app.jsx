@@ -5292,9 +5292,43 @@ ${d.text}` : d.text,
      `opts.fromRun`  — the AbortController of the run HANDING THIS OVER,
                        when a chain step is dispatched from inside the tail
                        of the step before it. See `handingOver` below. */
+  /* onTaskDropOnAgent's own single-consumption lock, same shape as #388's
+     approvedIdsRef and #389's resendingIdsRef — and the door #389 explicitly
+     left unverified, described there as "bounded — a double-drop is caught
+     by beginAgentRun's own eviction … rather than any guard in the handler
+     itself." Measured with the real handler lifted out of this file
+     (scripts/harness_taskdrop_race.mjs) and called twice back-to-back for
+     the SAME (task, agent) pair — the ▶ START button in features.jsx has no
+     disabled state and no debounce, so a fast double-click is one tap away:
+     `agentAbortersRef` is a REF, updated synchronously, so the second call's
+     `running` check IS live, not stale — but `displacedTask` deliberately
+     excludes the task's OWN id (`t.id !== taskId`, see its comment in
+     hq-runtime.jsx) from "is this desk running something that would be
+     lost", so a same-task double-drop can never land on that branch. It
+     falls to `chatCut` instead, whose comment claims "every cardless
+     registrant is a chat surface" — false here, since the registrant IS
+     this same task's own just-started run — and shows the boss a dialog
+     that lies about why ("Vera is mid-conversation in chat … Their reply
+     stops where it is") with an OK button reading "Start it", which is
+     exactly what a boss who only meant to click ▶ START once would click.
+     Confirming it runs the whole handler a second time: beginAgentRun DOES
+     evict the first run's controller, but only after HQ.agentStream's first
+     real call already fired — the eviction happens too late to stop it.
+     Measured: two live calls to the model for one card. Claimed here,
+     synchronously, before `task` is even looked up — a second call for a
+     taskId already mid-start is a silent no-op, matching a drop landing on
+     a card that isn't there to be dropped on. Released on every path that
+     does NOT end in a real dispatch (not found, displaced-and-declined,
+     chat-cut-and-declined, either auto no-op) and in the run's own
+     `finally`, so a task that finishes — or is genuinely restarted later —
+     can still be dropped again. */
+  const startingTaskIdsRef = useRefA(new Set());
   const onTaskDropOnAgent = async (taskId, agent, taskFresh, opts = {}) => {
+    if (startingTaskIdsRef.current.has(taskId)) return;
+    startingTaskIdsRef.current.add(taskId);
+    const releaseStartClaim = () => startingTaskIdsRef.current.delete(taskId);
     const task = taskFresh || tasks.find(t => t.id === taskId);
-    if (!task) return;
+    if (!task) { releaseStartClaim(); return; }
 
     /* Is there a run on this desk that starting this card would cut into?
 
@@ -5360,6 +5394,7 @@ ${d.text}` : d.text,
         : t));
       logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, taskId,
         action: 'progress', text: `couldn't pick up "${task.title}" — still on "${displaced.title}"` });
+      releaseStartClaim();
       return;
     }
     if (displaced) {
@@ -5367,7 +5402,7 @@ ${d.text}` : d.text,
         `${agent.name} is working on "${displaced.title}".\n\n` +
         `Start "${task.title}" instead? "${displaced.title}" goes back to the inbox ` +
         `and whatever they had done on it so far is lost.`, { danger: true, okLabel: 'Start it' });
-      if (!ok) return;
+      if (!ok) { releaseStartClaim(); return; }
       setTasks(prev => prev.map(t => t.id === displaced.id
         ? { ...t, stalledNote: `put aside when you started "${task.title}" — start it again when you want it` }
         : t));
@@ -5402,6 +5437,7 @@ ${d.text}` : d.text,
         : t));
       logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, taskId,
         action: 'progress', text: `couldn't pick up "${task.title}" — mid-conversation` });
+      releaseStartClaim();
       return;
     }
     if (chatCut) {
@@ -5409,7 +5445,7 @@ ${d.text}` : d.text,
         `${agent.name} is mid-conversation in chat.\n\n` +
         `Start "${task.title}" now? Their reply stops where it is, ` +
         `and the rest of it is lost.`, { danger: true, okLabel: 'Start it' });
-      if (!ok) return;
+      if (!ok) { releaseStartClaim(); return; }
     }
 
     /* Starting clears the note: it explains why a card is sitting in the
@@ -5920,6 +5956,7 @@ ${d.text}` : d.text,
       if (!aborted) recordXp({ agentId: agent.id, kind: taskKind(task), outcome: 'snag', taskId, title: task.title });
     } finally {
       endAgentRun(agent.id, controller);
+      releaseStartClaim();
     }
     setChat(prev => prev.map(m => m.id === agentMsgId ? { ...m, streaming: false } : m));
     /* An opening DM_TO the parser never matched — the coworker tried to
