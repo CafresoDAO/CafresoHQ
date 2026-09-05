@@ -1153,7 +1153,12 @@ const HQSH_COMMANDS = {
       if (!schedules || !schedules.length) return '(no night schedules — hq night schedule <agentId> <topic>)';
       return schedules.map(s =>
         `  ${running.includes(s.id) ? '● RUNNING' : s.enabled ? '🌙' : '·'} ${s.id}  ${s.agentName || s.agentId} · ${String(s.topic).slice(0, 40)}` +
-        `  ${s.recurrence} · ${s.enabled ? 'next ' + fmtT(s.nextRunAt) : 'done'}`).join('\n');
+        // Same rule as the Night Shift card: `enabled` false only says the
+        // night was DISPATCHED. `hq night` printed "done" over a night the
+        // restart killed until serve.py's reconcile started marking the
+        // schedule it orphaned.
+        `  ${s.recurrence} · ${s.enabled ? 'next ' + fmtT(s.nextRunAt)
+          : s.lastRunInterrupted ? 'cut short ' + fmtT(s.lastRunAt) : 'done'}`).join('\n');
     },
   },
   receipts: {

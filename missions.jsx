@@ -965,13 +965,30 @@ function NightShiftSection({ agents }) {
             <div key={s.id} className="mission-card status-running">
               <div className="mc-head">
                 <div className="mc-title">🌙 {s.topic}</div>
-                <span className="mc-status">{running.includes(s.id) ? 'RUNNING NOW' : s.enabled ? 'SCHEDULED' : 'DONE'}</span>
+                {/* `enabled` is not an outcome. serve.py's `_night_scan`
+                    flips a `once` schedule false at DISPATCH — correctly,
+                    so it can never be picked up twice — which means a
+                    disabled once-schedule says the night STARTED and
+                    nothing about how it went. Read as DONE, it told the
+                    boss a night the box rebooted through was finished
+                    research, one line above a run row saying the office
+                    restarted before that same night finished. The reconcile
+                    marks the schedule now (`lastRunInterrupted`), so the
+                    card can tell the two apart instead of guessing. */}
+                <span className="mc-status">{running.includes(s.id) ? 'RUNNING NOW' : s.enabled ? 'SCHEDULED' : s.lastRunInterrupted ? 'CUT SHORT' : 'DONE'}</span>
               </div>
               <div className="mc-meta">
                 <span><b>{s.agentName || s.agentId}</b> · {s.vaultFolder}/</span>
                 <span>{s.recurrence === 'daily' ? 'daily' : 'once'} · {Math.round(s.durationMs / MIN)}m @ {Math.round(s.intervalMs / MIN)}m</span>
-                <span>{s.enabled ? `next: ${fmtT(s.nextRunAt)}${running.includes(s.id) ? '' : fmtEta(s.nextRunAt)}` : `last: ${fmtT(s.lastRunAt)}`}</span>
+                <span>{s.enabled ? `next: ${fmtT(s.nextRunAt)}${running.includes(s.id) ? '' : fmtEta(s.nextRunAt)}` : s.lastRunInterrupted ? `cut short: ${fmtT(s.lastRunAt)}` : `last: ${fmtT(s.lastRunAt)}`}</span>
               </div>
+              {/* The server's sentence, not a second one written here: the
+                  run row beside this card already carries the office's
+                  words for the same restart, and two authors on one fact is
+                  how the boss ends up reading it twice, differently. */}
+              {!s.enabled && s.lastRunInterrupted && (
+                <div className="mc-err">{s.lastRunNote}</div>
+              )}
               <div className="mc-actions">
                 <button className="px-btn danger" style={{ fontSize: 9 }} onClick={() => cancel(s.id)}>✕ CANCEL</button>
               </div>

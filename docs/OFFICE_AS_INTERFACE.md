@@ -38428,3 +38428,61 @@ brain gets the same treatment a nameless one already got: the button goes dark
 and the footer says why, naming the box by the label printed above it. A brain
 that merely needs signing in is left alone — the BRAIN row owns that sentence,
 and two blocks over one field is worse than one.
+
+---
+
+## 359. the night the power cut, reported as a night's work
+
+**The wreck.** The boss schedules a one-off Night Shift — Pip, "overnight
+competitor sweep", 2:00 AM, an hour of rounds — and closes the laptop. The box
+reboots at half past two. In the morning the Night Shift board reads:
+
+    🌙 overnight competitor sweep                              DONE
+       Pip · Research/    once · 60m @ 10m       last: Sep 4, 2:00 AM
+
+and directly underneath it, on the run row for that same night, the office's
+own sentence: *the office restarted before this night finished — the rounds it
+had already done are on the record, the rest of the night did not run.*
+
+Two surfaces on one screen disagreeing about one run, and the one the boss
+reads first is the wrong one. DONE is also the word that ends the conversation:
+the card's only button is ✕ CANCEL, so a boss who believes it has no reason to
+look further, and the research they asked for is simply never done — reported
+as finished.
+
+**Where it was.** Entry #328 closed out the run row. `_night_reconcile_-
+interrupted_runs()` in `serve.py` runs at import, before the scheduler thread,
+finds every row still saying `finishedAt: 0`, closes it at its last
+known-alive stamp and flags it `interruptedByRestart`. That fix was right and
+it stopped one surface short.
+
+The card never read the run at all. It read `enabled`, and `enabled` is not an
+outcome. `_night_scan` flips a `once` schedule false at DISPATCH — correctly,
+it must never be picked up twice — which means a disabled once-schedule records
+that the night *started* and nothing whatever about how it went. Both readers
+of that field guessed, and both guessed the same way: `missions.jsx` printed
+DONE, `views/terminal.jsx` printed `done` in `hq night`. Neither had anything
+else to go on.
+
+**Measured**, against a temp state dir seeded with one killed run and its
+schedule: the reconcile closed the run and flagged it, and `GET
+/missions/scheduled` handed the card back a row identical to the one written at
+dispatch. The card's own status expression, lifted out of `missions.jsx` and
+run over it, returned `DONE` and `last: …`.
+
+**The fix** marks the thing that has a way forward. The reconcile is already
+holding the orphaned run and its `scheduleId`, so it stamps that schedule
+`lastRunInterrupted` with one sentence — *schedule it again to pick the topic
+back up*, the run row's fact with the schedule's answer attached — and
+`_night_scan` clears the stamp on the next dispatch, so it only ever describes
+the latest night. The card reads CUT SHORT · `cut short: 2:00 AM` with that
+sentence under it; `hq night` says `cut short` where it said `done`. The
+sentence is written once, on the server, because the run row beside the card
+already carries the office's words for the same restart and two authors on one
+fact is how the boss ends up reading it twice, differently.
+
+A once-night that really ran its hour still reads DONE, a live schedule still
+reads SCHEDULED, and a shift in flight still reads RUNNING NOW. The mark is
+written on the schedule rather than derived in the browser because the run log
+is capped and rolls over: a card must not start claiming DONE again the week
+the evidence scrolls off the end of the list.

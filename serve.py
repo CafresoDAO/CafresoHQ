@@ -831,6 +831,20 @@ NIGHT_RESTART_NOTE = ('the office restarted before this night finished — '
                       'the rounds it had already done are on the record, '
                       'the rest of the night did not run')
 
+# The same fact said to the SCHEDULE rather than to the run, because the two
+# containers need different ways forward. The run row is history — there is
+# nothing to do about a night that is over. The schedule is the thing that
+# was supposed to produce the research, and for a `once` schedule the answer
+# is that nobody is going to unless the boss asks again: the card's only
+# button is ✕ CANCEL, and `_night_scan` has already flipped `enabled` false.
+#
+# One sentence, written once, for both readers (the Night Shift card and
+# `hq night`). Written separately in each they came out saying the same
+# thing differently, which is the office reading two authors on one fact.
+NIGHT_RESTART_SCHEDULE_NOTE = (
+    'the office restarted before this night finished — the rounds it did '
+    'are on the record; schedule it again to pick the topic back up')
+
 
 def _night_reconcile_interrupted_runs():
     """Close out runs whose process died with the last server.
@@ -871,11 +885,30 @@ def _night_reconcile_interrupted_runs():
     Recorded as prose with no error COUNT behind it, which is the shape
     app.jsx already reads as "ended for a reason that is on neither side of
     the ledger" (the boss-cancelled shape). A power cut is not the
-    coworker's snag."""
+    coworker's snag.
+
+    The SCHEDULE gets the same news, and needs it more than the run does.
+    `_night_scan` flips a `once` schedule `enabled: False` at DISPATCH, and
+    rightly — it must never be picked up twice — but that flip records only
+    that the night was STARTED, and nothing else ever recorded how it went.
+    Both readers of a disabled schedule then guessed, and both guessed the
+    same wrong way: the Night Shift card printed "DONE · last: 2:00 AM" and
+    `hq night` printed "done", directly above a run row saying the office
+    restarted before that same night finished. The card is what the boss
+    reads first, DONE is the word that ends the conversation, and the card's
+    only button is ✕ CANCEL — so a topic the boss asked to have researched
+    goes unresearched, reported as finished.
+
+    This loop is the one place that knows: it is already holding the
+    orphaned run AND its `scheduleId`. Marked here rather than derived on
+    the browser side because the run log is capped (MAX_NIGHT_RUNS_KEPT)
+    and rolls over — a card must not start claiming DONE again the week the
+    evidence scrolls off the end of the list."""
     now_ms = int(time.time() * 1000)
     with _night_lock:
         runs = _night_load('mission-runs.json', [])
         changed = False
+        orphaned_scheds = set()
         for r in runs:
             if not isinstance(r, dict) or r.get('finishedAt'):
                 continue
@@ -883,9 +916,21 @@ def _night_reconcile_interrupted_runs():
             r['interruptedByRestart'] = True
             if not r.get('lastError'):
                 r['lastError'] = NIGHT_RESTART_NOTE
+            if r.get('scheduleId'):
+                orphaned_scheds.add(str(r['scheduleId']))
             changed = True
         if changed:
             _night_save('mission-runs.json', runs)
+        if orphaned_scheds:
+            scheds = _night_load('scheduled-missions.json', [])
+            touched = False
+            for s in scheds:
+                if isinstance(s, dict) and str(s.get('id', '')) in orphaned_scheds:
+                    s['lastRunInterrupted'] = True
+                    s['lastRunNote'] = NIGHT_RESTART_SCHEDULE_NOTE
+                    touched = True
+            if touched:
+                _night_save('scheduled-missions.json', scheds)
 
 
 def _night_browser_active():
@@ -982,6 +1027,13 @@ def _night_scan():
             sid = str(s.get('id', ''))
             _night_running[sid] = True
             s['lastRunAt'] = now_ms
+            # `lastRunInterrupted` describes the LATEST run, so it goes out
+            # with the folder: a nightly schedule that lost one night to a
+            # reboot must not still be apologising for it a week later, and
+            # a once-schedule the boss re-enabled is asking for a fresh
+            # night, not a replay of the old one's ending.
+            s.pop('lastRunInterrupted', None)
+            s.pop('lastRunNote', None)
             if s.get('recurrence') == 'daily':
                 nxt = int(s.get('nextRunAt', now_ms) or now_ms)
                 # Advance by one LOCAL calendar day at a FIXED local hour,
