@@ -288,9 +288,14 @@ def main():
     # useCommands. If a second registrar ever appears, this check fails and
     # the enumeration below has to be redone rather than inherited — which is
     # precisely the mistake `## 395` made here.
+    # `.claude` is excluded for the same reason as node_modules: it holds
+    # git worktrees, each a full second copy of this tree. Globbing into them
+    # counts every concurrent checkout as its own registrar (16 of them on the
+    # machine this was written on), which says nothing about the repo's source.
     registrars = sorted(
         str(p.relative_to(ROOT)) for p in ROOT.glob('**/*.jsx')
-        if 'node_modules' not in p.parts and p != FEEDBACK_JSX
+        if 'node_modules' not in p.parts and '.claude' not in p.parts
+        and p != FEEDBACK_JSX
         and re.search(r"^\s*useCommands\(", p.read_text(encoding='utf-8'), re.M))
     check('app/commands.jsx is the ONLY registrar of palette commands, so '
           'the enumeration below is the whole denominator',
