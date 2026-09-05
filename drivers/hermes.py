@@ -289,6 +289,41 @@ def write_provider(provider, key, model, base_url):
     return True, gateway_restart('provider'), ''
 
 
+def clear_provider_key(provider):
+    """Take a cloud provider's key back OUT of the office: drop its line from
+    ~/.hermes/.env, drop it from THIS process's env (the gateway inherits
+    ours, so a file-only removal leaves the key live in the process that
+    already read it), and restart so the running gateway stops holding it.
+
+    config.yaml is deliberately left alone. It names the provider, not the
+    key, and rewriting it here would silently move the office onto some other
+    backend the boss never picked — removal means "no key", not "different
+    brain". `key_configured` reads exactly what this writes, so
+    GET /hermes/provider answers `configured: false` straight after.
+
+    Local backends have no key to remove; their config IS the base_url.
+    Returns (ok, restarted, error)."""
+    spec = PROVIDERS.get(provider)
+    if not spec or spec.get('local') or not spec.get('env'):
+        return False, False, 'no key to remove for %s' % provider
+    env_path = os.path.join(home(), '.env')
+    try:
+        if os.path.exists(env_path):
+            with open(env_path, 'r', encoding='utf-8') as f:
+                lines = [l for l in f.read().splitlines()
+                         if not l.startswith(spec['env'] + '=')]
+            with open(env_path, 'w', encoding='utf-8') as f:
+                f.write(('\n'.join(lines) + '\n') if lines else '')
+            try:
+                os.chmod(env_path, 0o600)
+            except Exception:
+                pass
+    except Exception as e:
+        return False, False, f'write .env: {e}'
+    os.environ.pop(spec['env'], None)
+    return True, gateway_restart('provider-key-removed'), ''
+
+
 # ── config import/export (config.yaml holds NO secrets) ─────────────────────
 def export_config():
     """(config_yaml, capability) — keys live in .env and are never exported."""
@@ -391,11 +426,14 @@ class HermesDriver(OpenAICompatDriver):
           {'model': id}                          → write_model
           {'capability': 'lite'|'full'}          → write_capability
           {'provider', 'key', 'model'?, 'baseUrl'?} → write_provider
+          {'provider', 'clearKey': True}          → clear_provider_key
         Validation (key regexes, the local-base_url allowlist, trial policy)
         stays with the HOST — this applies pre-validated changes."""
         from .base import DriverError
         settings = settings or {}
-        if 'provider' in settings:
+        if 'provider' in settings and settings.get('clearKey'):
+            ok, restarted, err = clear_provider_key(settings['provider'])
+        elif 'provider' in settings:
             ok, restarted, err = write_provider(
                 settings['provider'], settings.get('key', ''),
                 settings.get('model', ''), settings.get('baseUrl'))

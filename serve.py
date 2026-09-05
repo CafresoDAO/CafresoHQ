@@ -5812,6 +5812,24 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             ok, err = _validate_local_base_url(base_url)
             if not ok:
                 return self._send_json(400, {'error': err})
+        elif not key:
+            # An EMPTY key for a cloud backend is a removal, not a malformed
+            # key. It used to go through the regex below and come back "invalid
+            # OpenRouter key", so there was no way to take a key out of an
+            # office once it was in — and Settings → Connections, whose only
+            # remove control is emptying the field, told the boss it was gone
+            # while ~/.hermes/.env and the running gateway both still had it.
+            # config.yaml keeps naming this provider: removing a key means the
+            # office has no key, not that it quietly moved to another brain.
+            try:
+                d = _drivers.get('hermes').configure({'provider': provider,
+                                                      'clearKey': True})
+            except _DriverError as e:
+                return self._send_json(e.status, {'error': str(e)})
+            return self._send_json(200, {'ok': True, 'provider': provider,
+                                         'cleared': True,
+                                         'restarted': d['restarted'],
+                                         'note': 'key removed; gateway reloading'})
         elif not re.match(spec['re'], key):
             return self._send_json(400, {'error': f"invalid {spec['label']} key"})
         model = str(req.get('model', '')).strip() or spec['model']

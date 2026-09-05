@@ -38546,3 +38546,74 @@ sentence, since "you weren't granted this" and "we can't find who's asking"
 are different fixes for the boss. A `vault`-granted coworker is not
 collateral: they still reach the wire and meet the ordinary 503 of nothing
 listening in the test.
+
+---
+
+## 361. the key you deleted, still answering the phone
+
+**The wreck.** A boss pastes an OpenRouter key somewhere it should not have
+gone — a screenshot, a shared doc, a support thread — and goes to take it back
+out of their office. Settings → Connections → *Hermes brain (runs in your
+office)* shows the key in a password field. They select it, delete it, click
+away. Under the field, in green, with a tick:
+
+    ✓ OpenRouter key cleared
+
+Nothing was cleared anywhere except that browser tab. The office still had the
+key in `~/.hermes/.env`, the running gateway still authenticated with it, and
+every coworker, night shift and search-worker round went on spending it. The
+one sentence the boss needed to be true was the one sentence on screen, and it
+was false.
+
+**Where it was.** Emptying that field is the only remove control the app has,
+and it landed on `saveKey` in `modals/providers.jsx` → `hermesSetProvider` in
+`claude-client.jsx`, which opened with
+
+    if (!trimmed && !local) return { ok: true, serverStored: false, detail: 'cleared' };
+
+— *after* it had already wiped the browser's own copy. The removal never left
+the tab. And had it left, the office would have refused it: `_hermes_set_-
+provider` in `serve.py` ran the empty string through the provider's key regex
+and answered `400 invalid OpenRouter key`, because "no key" and "malformed key"
+were the same branch. There was no path, from anywhere in the app, to take a
+key out of an office once it was in.
+
+Three things followed, and the missing feature is the least of them. The key
+stayed live. The browser's copy — the one `hermesEnsureProvider` re-pushes
+after a container recreate — was the thing that really did get deleted, so the
+field now rendered empty beside an office still running on that key, and the
+screen and the office disagreed with the screen winning. And `GET
+/hermes/provider` went on answering `configured: true`, so nothing else in the
+building noticed either.
+
+The same file already reads this correctly on the way in: `serverStored` is the
+only field in the reply that means the office accepted anything, and the save
+path has honoured that since #297. The removal path printed its tick without
+asking.
+
+**Measured**, against a real `serve.py` on a scratch HOME with a stub `hermes`
+first on PATH: `POST /hermes/provider` with a key wrote
+`OPENROUTER_API_KEY=…` into `.env`; the same POST with an empty key came back
+`400 {"error": "invalid OpenRouter key"}`; `GET /hermes/provider` still said
+`configured: true`; the key was still in the file.
+
+**The fix** makes an empty cloud key mean removal, and makes the removal
+travel. `clear_provider_key` in `drivers/hermes.py` drops the provider's line
+from `~/.hermes/.env`, drops it from the process env the gateway inherits — a
+file-only removal leaves the key live in the process that already read it — and
+restarts, so the running gateway stops holding it. `config.yaml` is left alone
+on purpose: it names the provider, not the key, and rewriting it would move the
+office to a brain the boss never picked. Removal means *no key*, not *different
+brain*. `serve.py` routes an empty cloud key there instead of through the regex.
+The client stops short-circuiting and drops the browser copy only once the
+office confirms — dropping it first throws away the exact value needed to
+repair an office that refused, or never heard, the removal.
+
+And the line under the field now says which of the two happened: *OpenRouter
+key removed from your office · gateway reloading (~15s) — nothing answers until
+you add a key*, or, when the office refused or never answered, *removed here
+only — your office is still running on that OpenRouter key*.
+
+A malformed key is still refused, a local backend's empty key is still a URL
+push and not a removal, and saving a real key still reads *applied · gateway
+reloading*.

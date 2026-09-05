@@ -129,7 +129,17 @@ function ApiTab() {
       let r = { serverStored: false };
       if (C && C.hermesSetProvider) r = await C.hermesSetProvider(prov, val, '');
       else update({ [meta.field]: val, hermesBackend: prov });
-      if (!val) setProbeResult({ ok: true, detail: `${meta.label} key cleared` });
+      /* Emptying this field is the only control anywhere that takes a key
+         back OUT of an office, and it used to print a green "key cleared" on
+         the strength of the browser's own copy going away. The key stayed in
+         the office's ~/.hermes/.env and the gateway kept answering with it —
+         so a boss removing a key BECAUSE it leaked was told, with a tick,
+         that it was gone. `serverStored` is the only thing in the reply that
+         means the office actually let go of it, exactly as it is on the save
+         path two lines down. */
+      if (!val) setProbeResult(r && r.serverStored
+        ? { ok: true, detail: `${meta.label} key removed from your office · gateway reloading (~15s) — nothing answers until you add a key` }
+        : { ok: false, detail: `removed here only — your office is still running on that ${meta.label} key` });
       else if (r && r.serverStored) setProbeResult({ ok: true, detail: `${meta.label} applied · gateway reloading (~15s)` });
       else setProbeResult({ ok: false, detail: (r && r.detail) || 'saved locally only' });
     } catch (e) { setProbeResult({ ok: false, detail: e.message }); }

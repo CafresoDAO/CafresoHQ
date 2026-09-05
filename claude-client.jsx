@@ -882,11 +882,22 @@ async function hermesSetProvider(provider, key, model, baseUrl) {
   const local = HERMES_LOCAL_PROVIDERS.includes(prov);
   const field = HERMES_PROVIDER_KEY_FIELD[prov] || 'openrouterKey';
   const trimmed = String(key || '').trim();
-  // persist locally so it survives reload AND container recreate (re-push)
-  setSettings(local ? { hermesBackend: prov } : { hermesBackend: prov, [field]: trimmed });
-  // An empty key means "cleared" — but a local backend never has one, so that
-  // guard must not swallow it.
-  if (!trimmed && !local) return { ok: true, serverStored: false, detail: 'cleared' };
+  /* An empty key for a CLOUD backend is a removal — and a removal is the one
+     thing here whose whole point is that it happens somewhere other than this
+     browser. This used to return right here with detail:'cleared' after
+     wiping only the local copy, so the office kept the key in ~/.hermes/.env,
+     the gateway went on authenticating with it, GET /hermes/provider went on
+     answering configured:true — and Settings → Connections printed a green
+     "key cleared". A boss removing a LEAKED key was told it was gone.
+     A local backend never has a key at all, so an empty one there is not a
+     removal; that guard still must not swallow it. */
+  const clearing = !trimmed && !local;
+  /* Persist locally so it survives reload AND container recreate (re-push) —
+     but on a removal, only AFTER the office confirms. Dropping it first is
+     throwing away the exact value hermesEnsureProvider would need to repair
+     an office that just refused, or never heard, the removal. */
+  setSettings((local || clearing) ? { hermesBackend: prov }
+                                  : { hermesBackend: prov, [field]: trimmed });
   try {
     const r = await fetch(_API_BASE + '/hermes/provider', {
       method: 'POST',
@@ -896,7 +907,8 @@ async function hermesSetProvider(provider, key, model, baseUrl) {
     });
     if (r.ok) {
       const d = await r.json().catch(() => ({}));
-      return { ok: true, serverStored: true, ...d };
+      if (clearing) setSettings({ [field]: '' });
+      return { ok: true, serverStored: true, cleared: clearing, ...d };
     }
     // Old container without /hermes/provider (pre-overhaul image): fall back to
     // the legacy OpenRouter-only endpoint so existing OpenRouter users don't
@@ -907,13 +919,19 @@ async function hermesSetProvider(provider, key, model, baseUrl) {
           method: 'POST', headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ key: trimmed }),
         });
-        if (r2.ok) { const d = await r2.json().catch(() => ({})); return { ok: true, serverStored: true, ...d }; }
+        if (r2.ok) {
+          const d = await r2.json().catch(() => ({}));
+          if (clearing) setSettings({ [field]: '' });
+          return { ok: true, serverStored: true, cleared: clearing, ...d };
+        }
       } catch (_e) {}
     }
     const t = await r.text().catch(() => '');
-    return { ok: true, serverStored: false, detail: `server ${r.status}: ${t.slice(0, 120)}` };
+    return { ok: true, serverStored: false, detail: `server ${r.status}: ${t.slice(0, 120)}`, cleared: false };
   } catch (e) {
-    return { ok: true, serverStored: false, detail: 'offline — saved locally' };
+    return { ok: true, serverStored: false, cleared: false,
+             detail: clearing ? 'offline — your office still has that key'
+                              : 'offline — saved locally' };
   }
 }
 
