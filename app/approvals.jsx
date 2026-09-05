@@ -80,4 +80,38 @@ function formatToolInput(input) {
   }).join('\n');
 }
 
-export { APPROVAL_VALUE_CAP, formatToolInput };
+/* The approval row's HEADLINE, built here rather than at the call site.
+
+   The bidi guard above was applied to the detail box and to nothing else,
+   and the row has TWO surfaces carrying the requester's own bytes. The
+   headline (`Bash: <summary>`) was assembled inline in app.jsx out of
+   `p.summary`, which claude_approval_hook.py fills with the first 200
+   characters of the actual command, and painted raw by every surface that
+   shows it: the corner tray (features.jsx `ap-title`), the Team inbox row
+   (views/core.jsx "needs a stamp: …"), and — the one that outlives the
+   decision — the receipt, which `recordReceipt` copies straight from
+   `ap.title` into the "stamped approvals · audit trail".
+
+   So a command carrying U+202E painted a REORDERED headline while the
+   escaped detail box below it showed the truth: the two halves of the
+   same consent row disagreed, and the half the boss reads first, the half
+   the audit trail keeps forever, was the lying one. Worse, the hook's
+   200-char cut can slice an override off from its POP DIRECTIONAL
+   FORMATTING, leaving an unterminated control that reorders the rest of
+   the row too ("by claude-code · in <cwd>").
+
+   Same treatment as the value box, for the same reason and with the same
+   rule: escape to a visible `\uXXXX`, never strip — nothing about the
+   claim disappears, only its power to reorder how it reads. */
+function approvalTitle(tool, summary, input) {
+  const head = String(tool == null ? 'tool' : tool);
+  const sum = summary == null ? '' : String(summary);
+  /* Argument NAMES only — the no-summary fallback never claimed to show
+     values, and keeping it here keeps the whole headline in one place. */
+  const args = (input && typeof input === 'object' && !Array.isArray(input))
+    ? Object.keys(input) : [];
+  return escapeBidiControls(
+    sum ? `${head}: ${sum}` : `${head} (${args.join(', ') || 'no args'})`);
+}
+
+export { APPROVAL_VALUE_CAP, formatToolInput, approvalTitle };

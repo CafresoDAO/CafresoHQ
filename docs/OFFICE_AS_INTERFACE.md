@@ -33499,3 +33499,94 @@ a foreign session owns and this change never touches). This change covers only
 entry; `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any kind
 was run.
+
+---
+
+## 283. the approval headline could be painted backwards
+
+**The wreck.** `claude` is running under the PreToolUse hook, so every tool call
+stops at the boss's desk. A row appears in the corner tray:
+
+```
+🛡 Bash: rm -rf /tmp/cache ‮hsart/ fr- mr‬
+```
+
+Which the browser paints as `Bash: rm -rf /tmp/cache rm -rf /trash`. Close
+enough to what a cleanup step should say. The boss stamps APPROVE, the receipt
+files under that same headline, and the Receipts modal — subtitled "stamped
+approvals · audit trail" — keeps that sentence forever. The command that
+actually ran was neither of those.
+
+**What was actually happening.** `#…`'s trojan-source fix escaped Unicode
+bidi controls (U+202A–U+202E, U+2066–U+2069) in `formatToolInput`, on the
+stated grounds that "the bytes the CLI executes and the glyphs the boss reads
+can differ, which is exactly the gap this gate exists to close." True, and
+applied to exactly one of the row's two surfaces.
+
+The row has two, and both carry the requester's own bytes. The detail box is
+`formatToolInput(p.input)` — guarded. The headline was assembled inline in
+`app.jsx`:
+
+```js
+title: p.summary
+  ? `${p.tool}: ${p.summary}`
+  : `${p.tool} (${Object.keys(p.input || {}).join(', ') || 'no args'})`,
+```
+
+and `p.summary` is not a paraphrase. `claude_approval_hook.py`'s
+`_short_summary` fills it with `str(tool_input['command'])[:200]` — the real
+command, verbatim, truncated. So the same override that was neutralised twelve
+pixels lower ran free twelve pixels higher, and the two halves of one consent
+row disagreed about what was being authorised. The half that disagreed was the
+half the eye lands on first (`ap-title`, bold, features.jsx:1655; "needs a
+stamp: …" in the Team inbox, views/core.jsx:543) and the only half that
+outlives the decision, because `recordReceipt` copies `ap.title` straight into
+the audit trail and never looks at `ap.detail` for the headline.
+
+The 200-character cut sharpens it. It can slice an override away from its POP
+DIRECTIONAL FORMATTING, leaving an unterminated control that keeps reordering
+past the end of the headline and into the line below it — `by claude-code · in
+<cwd>`, the line that says which directory the command is about to run in.
+
+**The fix.** The headline moves out of the fetch handler and into
+`app/approvals.jsx` as `approvalTitle(tool, summary, input)`, next to the guard
+it needed, and goes through the same `escapeBidiControls` as the value box —
+escaped to a visible `\uXXXX`, never stripped, because nothing about a claim
+should disappear from the row that exists to check it. The no-summary fallback
+still lists argument NAMES and still says `no args`; ordinary headlines come
+out byte for byte as before. `app.jsx` calls it and no longer builds the string
+itself, so there is one place left where a consent surface is worded.
+
+**The test.**
+`scripts/test_the_approval_headline_cannot_be_painted_backwards.py` lifts
+`app/approvals.jsx` verbatim under Node — the file is import-free for exactly
+this — and feeds `approvalTitle` the payload the hook would really post for a
+spoofed `Bash` call. It asserts the row's headline never hands U+202E or its
+partner to the renderer, that the escape is visible rather than a silent strip,
+that every real character of the claim survives, and that the truncated-away
+terminator and the isolate successors are caught too. Four source checks pin
+the ownership: the function lives in the consent file, `app.jsx` imports it,
+uses it, and no longer interpolates the raw summary.
+
+Fire-tested: copied the fixed `app/approvals.jsx` and `app.jsx` to `/tmp`,
+reverted both in place with the editor (never `git checkout -- <file>`) — 4
+checks failed and the Node harness refused to run at all, exit 1. Restored,
+then reverted only the `escapeBidiControls(…)` wrapper to isolate the
+behaviour half — 5 of 14 failed, exit 1, the headline reading
+`Bash: rm -rf /tmp/cache ‮hsart/ fr- mr‬` in its raw form. Restored
+from the `/tmp` copies, confirmed byte-identical by `md5`
+(`1263848b3f15911ee30d2910281d2b06` for `app/approvals.jsx`,
+`fd582ab24005f77a4cb8103eceb88c1b` for `app.jsx`), reran — 14 of 14 passed,
+exit 0.
+
+`npm run build` was run once up front so `dist-ui/manifest.json` exists in a
+fresh worktree, and again after the `.jsx` edits.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file
+a foreign session owns and this change never touches). This change covers only
+`app/approvals.jsx`, `app.jsx`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any kind
+was run.

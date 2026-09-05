@@ -13,7 +13,7 @@ import { agentFiledPath, cabinetIsEncrypted, fileDelivery, hasSubstance, officeD
 import { applyStatus } from './app/worklog.jsx';
 import { taskKind, xpRecord } from './app/experience.jsx';
 import { attachVisit, chainHoldLine, doneLine, floorEmit, officeCause, shortfallLine, snagCause, snagSentence, toolActivity, visitLine, visitPlace } from './app/floor.jsx';
-import { formatToolInput } from './app/approvals.jsx';
+import { formatToolInput, approvalTitle } from './app/approvals.jsx';
 import { attentionCount as attentionCountOf } from './app/attention.jsx';
 import { capChatFair, chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, mergeMessages, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored } from './app/storage.jsx';
 import { ChatWindow, MSG_STATES, WindowFrame, _chatAnchor, _railRight } from './app/windows.jsx';
@@ -5830,9 +5830,12 @@ ${d.text}` : d.text,
                 id: HQ.uid('apx'),
                 externalId: p.id,
                 agentId: owner ? owner.id : undefined,
-                title: p.summary
-                  ? `${p.tool}: ${p.summary}`
-                  : `${p.tool} (${Object.keys(p.input || {}).join(', ') || 'no args'})`,
+                /* Built by app/approvals.jsx, not inline, because this
+                   headline is the row's OTHER attacker-controlled surface
+                   and it was the only one the bidi guard never reached —
+                   see `approvalTitle`. It is also what recordReceipt
+                   copies into the audit trail, so it outlives the row. */
+                title: approvalTitle(p.tool, p.summary, p.input),
                 by: p.agent || 'claude-code',
                 kind: 'claude-code · tool use',
                 elevated: true,           // red border + "agent waiting" treatment

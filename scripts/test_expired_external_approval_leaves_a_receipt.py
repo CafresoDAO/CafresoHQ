@@ -139,6 +139,14 @@ let capturedUpdater = null;
 function setApprovals(fn) { capturedUpdater = fn; }
 const agentsRef = { current: [] };
 function formatToolInput(input) { return JSON.stringify(input || {}); }
+/* Stub sibling of formatToolInput: the row's headline is built by
+   app/approvals.jsx too (#282), so the lifted updater needs it in scope.
+   This test is about the timeout/receipt path, not about the headline's
+   own bidi guard — that has its own test. */
+function approvalTitle(tool, summary, input) {
+  return summary ? tool + ': ' + summary
+                 : tool + ' (' + (Object.keys(input || {}).join(', ') || 'no args') + ')';
+}
 const HQ = { uid: (p) => p + '_test' };
 function say() {}
 function recordReceipt(ap, decision) {
