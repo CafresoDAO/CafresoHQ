@@ -38773,3 +38773,63 @@ Left alone, and named here so the next sweep does not think it is new: at
 project" still have their centres under the mobile tab bar. Those are
 bottom-anchored empty states with no clearance of their own, they were
 already like that before this change, and they are a different bug.
+
+---
+
+## 364. the empty office that said setup was already done
+
+**Symptom.** A brand-new boss opens CafresoHQ for the first time. The topbar's
+pinned alarm reads ⚠ NOBODY HIRED, which is true, and hovering it says:
+
+> Your desks are empty. Hire someone at the front desk — several candidates are
+> already on this machine and need no setup at all.
+
+Both halves are false. Click through and every card on the shelf the office
+opens by itself reads *no brain yet — add one in Settings → Connections*, and
+the hire you make off that screen lands `{"name":"Vera","model":""}` on the
+roster (#358). Nothing is on this machine, and setup is the entire remaining
+job — said by the loudest, reddest, unscrollable thing on the screen, at the
+exact moment nothing is set up.
+
+**Where it came from.** The sentence was typed as a fixed string, on a box
+where four local brains *were* detected; the comment above it still describes
+that machine. It was true there and nowhere else. Same class as the CEO's
+opening line, which used to state flatly that it was "already running on
+Cafreso's Gemma 4 brain" before anything had checked — that one was fixed by
+giving the greeting a listener on a probe that already existed. This one had
+no listener to give it: the candidates deck runs the office's one deep check
+(`/agent/drivers?probe=1`, plus its own stricter `candidateReady` rule) and
+kept the answer to itself, so the topbar had nothing to read and printed the
+developer's machine instead.
+
+**The fix** is a mirror, not a second probe. The shelf publishes what it
+measured; the alarm reads it, and the sentence follows in three states —
+because *nobody has looked* is not *nothing is here*, and a surface that has
+not heard back must not report a count in either direction:
+
+- **not yet measured** — says only what needs no probe (the desks are empty)
+  and describes the front desk as a place that *will* check.
+- **measured, nothing found** — says the front desk found no brain here, and
+  names the second thing the boss still has to get (a free local brain, or
+  their own key) before whoever they hire can work.
+- **measured, brains found** — says so, with the count that was actually
+  measured. The machine the old sentence was written for still reads well.
+
+Deleting the sentence was never on the table: an empty-desk chip that says
+nothing about the route out is worse than one that says the wrong thing, so
+every branch still names the door.
+
+**Measured** in headless Chrome on the real `hq.html`, twice: once with the
+back office unreachable — the cold first run — where the chip now reads *the
+front desk found no brain on this machine to hire onto*, and once against a
+served `/agent/drivers` reporting a reachable Ollama, where it reads *one brain
+is already set up on this machine*. Reverting the one line puts the old
+sentence back under both.
+
+**Swept for siblings** and found the office already honest elsewhere: Settings
+→ ON THIS MACHINE draws every row from the probe and distinguishes "not
+installed" from "installed but closed"; YOUR PLAN gates its "brain included" on
+`health.managed` after being caught fabricating a paid plan for a self-host;
+the onboarding key step asks `/hermes/trial-status` before saying "you're
+already set"; and the front desk's own `found:` lines only print on cards that
+were found. This tooltip was the last fixed claim about the user's machine.

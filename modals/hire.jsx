@@ -246,6 +246,39 @@ const FRONT_DESK = {
                    model: 'gemini-api:gemini-2.5-flash', tools: ['web'], cloud: true,
                    poweredBy: 'Google', found: 'Your Google AI account is connected to this workspace.' },
 };
+/* The readiness rule the shelf hires on, at module scope so the effect
+   that publishes its answer can sit ABOVE `if (!open) return null;` —
+   a hook below an early return is a hook that only sometimes runs, and
+   React counts them. Pure, and reads only FRONT_DESK.
+
+   Kept as a const arrow rather than a function declaration because
+   scripts/test_a_candidate_names_the_brain_it_will_use.py and
+   scripts/test_the_shelf_speaks_the_hermes_drivers_own_word.py find it in
+   this file by its assignment text and run it verbatim under node — and for
+   the same reason nothing above may quote that text, since they lift from
+   the FIRST match. */
+const candidateReady = (d) => {
+  const det = (d && d.detect) || {};
+  if (d.id === 'lmstudio' || d.id === 'ollama') return det.version === 'reachable';
+  /* 'reachable' is the LOCAL-DAEMON word (drivers/local_http.py writes it
+     from the /models probe). Hermes has never spoken it: drivers/hermes.py
+     reports its liveness as `version = 'gateway up' if up else ''`, with
+     `probeError: 'is not running'` on the down side. So this arm compared
+     against a string the driver cannot produce and was false on EVERY
+     machine — including one whose gateway the probe had just found up.
+     Hermes is 7th in CANDIDATE_BRAINS, so on a box that also runs a local
+     daemon or holds a CLI subscription the wrong answer is masked; on a
+     Hermes-only office it is the whole shelf. There, one screen said both
+     "Hermes · FOUND · Set up on this machine, with its gateway running"
+     and, one row below, "no brain yet — add one in Settings → Connections"
+     on every candidate, with ⚡SEED SWARM refusing outright: "There is no
+     brain on this machine yet, so these N would sit at their desks unable
+     to work." The office contradicting its own measurement, and the
+     refusal landing on the boss who was actually ready to hire. */
+  if (d.id === 'hermes') return det.installed && det.version === 'gateway up';
+  if (FRONT_DESK[d.id] && FRONT_DESK[d.id].cloud) return !!det.authenticated;
+  return !!det.installed && !det.probeError;
+};
 /* Loopback, in the shapes a base URL actually arrives in. A local daemon
    found HERE and one found across the LAN are the same card with a
    different true sentence on it — see the note in deskCards. */
@@ -380,6 +413,29 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
     setElevated(false); setShowBoard(true);
   }, [open]);
 
+  /* The brain the shelf will actually use, from the SAME detection the
+     front-desk row below is drawn from — see candidateBrain in cast.jsx for
+     what this is fixing. `driverList === null` means still probing, and
+     unknown is not "nothing found": the cards hold their brain line until
+     the probe lands rather than flashing "no brain yet" at every boss for
+     the few seconds a deep probe takes.
+
+     readyIds is deliberately STRICTER than "has a desk card" — see
+     candidateReady. It is computed HERE, above the early return, because
+     the effect below it is a hook. */
+  const probing = driverList === null;
+  const readyIds = (driverList || []).filter(candidateReady).map(d => d.id);
+
+  /* Tell the rest of the office what this shelf just measured. The topbar's
+     ⚠ NOBODY HIRED alarm describes the same machine and had no way to ask —
+     see emptyOfficeNote in app/cast.jsx for the sentence that was printed
+     instead. Published only once the probe LANDS: `probing` is not "nothing
+     found", and a mirror that reports it as such would just move the lie. */
+  useEffectM(() => {
+    if (probing) return;
+    try { HQ.noteFrontDeskBrains(readyIds); } catch (_e) {}
+  }, [probing, readyIds.join(',')]);
+
   /* <Modal> handles open=false → returns null. We still bail before running
      the heavier setup logic when closed. */
   if (!open) return null;
@@ -439,41 +495,10 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
      path, the onboarding and the pitch, and this shelf is where a first-run
      stranger meets the cast. A parked template keeps its full definition in
      OPENSWARM_ROSTER; it just does not get offered here. */
-  /* The brain the shelf will actually use, from the SAME detection the
-     front-desk row above is drawn from — see candidateBrain in cast.jsx for
-     what this is fixing. `driverList === null` means still probing, and
-     unknown is not "nothing found": the cards hold their brain line until
-     the probe lands rather than flashing "no brain yet" at every boss for
-     the few seconds a deep probe takes.
-
-     readyIds is deliberately STRICTER than "has a desk card". Hermes gets a
-     card reading NOT RUNNING and Codex one reading WON'T START — both worth
-     showing, neither able to take a job — so neither may be the brain a
-     specialist is silently hired onto. */
-  const candidateReady = (d) => {
-    const det = (d && d.detect) || {};
-    if (d.id === 'lmstudio' || d.id === 'ollama') return det.version === 'reachable';
-    /* 'reachable' is the LOCAL-DAEMON word (drivers/local_http.py writes it
-       from the /models probe). Hermes has never spoken it: drivers/hermes.py
-       reports its liveness as `version = 'gateway up' if up else ''`, with
-       `probeError: 'is not running'` on the down side. So this arm compared
-       against a string the driver cannot produce and was false on EVERY
-       machine — including one whose gateway the probe had just found up.
-       Hermes is 7th in CANDIDATE_BRAINS, so on a box that also runs a local
-       daemon or holds a CLI subscription the wrong answer is masked; on a
-       Hermes-only office it is the whole shelf. There, one screen said both
-       "Hermes · FOUND · Set up on this machine, with its gateway running"
-       and, one row below, "no brain yet — add one in Settings → Connections"
-       on every candidate, with ⚡SEED SWARM refusing outright: "There is no
-       brain on this machine yet, so these N would sit at their desks unable
-       to work." The office contradicting its own measurement, and the
-       refusal landing on the boss who was actually ready to hire. */
-    if (d.id === 'hermes') return det.installed && det.version === 'gateway up';
-    if (FRONT_DESK[d.id] && FRONT_DESK[d.id].cloud) return !!det.authenticated;
-    return !!det.installed && !det.probeError;
-  };
-  const probing = driverList === null;
-  const readyIds = (driverList || []).filter(candidateReady).map(d => d.id);
+  /* The brain the shelf will actually use, off the readyIds measured above
+     the early return — see candidateBrain in cast.jsx for what this is
+     fixing, and candidateReady for why the rule is stricter than "has a
+     desk card". */
   const shelfBrain = probing ? undefined : candidateBrain(readyIds);
 
   const candidates = (HQ.OPENSWARM_ROSTER || [])

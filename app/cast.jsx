@@ -507,6 +507,60 @@ function officeHasBrain(agents, C) {
   return (agents || []).some(a => agentBrainReady(a, C));
 }
 
+/* ── What the ⚠ NOBODY HIRED alarm is allowed to say ─────────────────────
+   The alarm fires on the one state a brand-new office is always in, from
+   the PINNED cluster that can never scroll away, and its tooltip was a
+   fixed string:
+
+     "Your desks are empty. Hire someone at the front desk — several
+      candidates are already on this machine and need no setup at all."
+
+   Written on a box where four local brains WERE detected, and true only
+   there. Measured on a cold first run: `candidateBrain([])` is null, every
+   card on the shelf the office opens by itself reads "no brain yet — add
+   one in Settings → Connections", and a hire off that screen produced a
+   coworker with `model: ""`. So at the exact moment nothing was set up, the
+   office told a brand-new boss that setup was already done — and pointed
+   them at a door that could not, on that machine, deliver what the sentence
+   promised. Same class as the CEO's opening line, which used to state flatly
+   that it was "already running on Cafreso's Gemma 4 brain" before anything
+   had checked (app.jsx, first-run welcome).
+
+   `found` is what the front desk MEASURED — see noteFrontDeskBrains in
+   hq-runtime.jsx. Three states, three sentences:
+
+     undefined/null  nobody has looked yet. Say only what needs no probe
+                     (the desks are empty) and describe the door as a place
+                     that will check, never as a place that already has.
+     []              looked, found nothing. Name the second thing they need
+                     and where to get it, or the hire they make is the
+                     brainless one #345 caught.
+     [ids…]          looked, found some. Say so, with the count that was
+                     actually measured.
+
+   Never returns '' — an empty-desk chip that says nothing about the route
+   out is a worse chip than a wrong one. Pure and import-free so
+   scripts/test_an_empty_office_never_promises_a_brain_this_machine_lacks.py
+   can run it verbatim under node. */
+function emptyOfficeNote(found) {
+  const n = Array.isArray(found) ? found.length
+    : (typeof found === 'number' && found >= 0 ? Math.floor(found) : -1);
+  if (n < 0) {
+    return 'Your desks are empty — nobody works here yet. Click to open the '
+      + 'front desk: it checks this machine for a brain you already have, and '
+      + 'offers a one-click hire for whatever it finds.';
+  }
+  if (n === 0) {
+    return 'Your desks are empty, and the front desk found no brain on this '
+      + 'machine to hire onto. Click to see the candidates — then add a free '
+      + 'local brain (LM Studio, Ollama) or your own key in Settings → '
+      + 'Connections, or whoever you hire will sit there unable to work.';
+  }
+  return 'Your desks are empty. Hire someone at the front desk — '
+    + (n === 1 ? 'one brain is' : `${n} brains are`)
+    + ' already set up on this machine, so a hire needs no further setup at all.';
+}
+
 /* §7's third route — "pick another coworker". A failure that only offers
    "try again" is a dead end when the thing that failed is the CEO's brain:
    the CEO runs on the DEFAULT provider and a hired coworker pins their own,
@@ -702,4 +756,4 @@ function withRouteOut(text, candidates, C, roster) {
   return out + tail;
 }
 
-export { agentBrainReady, brainName, candidateBrain, CANDIDATE_BRAINS, canDoPhrase, CAN_DO, CAN_DO_NEEDS, CAN_DO_UNLOCK, CAN_USE_OFF_TIP, CAN_USE_TIP, CAST_CLASSES, CAST_DEFAULT, EFFORT_TIP, grantedTools, handoffHint, memoryLabel, memoryNotes, memoryRoot, nameList, officeHasBrain, OFFICE_EFFORT_TIP, payrollLabel, poweredBy, roomStrayNote, specialtyTag, routeOut, statBars, withHandoff, withRouteOut };
+export { agentBrainReady, brainName, candidateBrain, CANDIDATE_BRAINS, canDoPhrase, CAN_DO, CAN_DO_NEEDS, CAN_DO_UNLOCK, CAN_USE_OFF_TIP, CAN_USE_TIP, CAST_CLASSES, CAST_DEFAULT, EFFORT_TIP, emptyOfficeNote, grantedTools, handoffHint, memoryLabel, memoryNotes, memoryRoot, nameList, officeHasBrain, OFFICE_EFFORT_TIP, payrollLabel, poweredBy, roomStrayNote, specialtyTag, routeOut, statBars, withHandoff, withRouteOut };

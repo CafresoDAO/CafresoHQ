@@ -1824,6 +1824,41 @@ function onVaultReadyChange(fn) {
   return () => _vaultWatchers.delete(fn);
 }
 
+/* ── What the front desk actually found on this machine ──────────────────
+   The candidates deck (modals/hire.jsx) runs the one deep probe this office
+   has — /agent/drivers?probe=1 plus its own `candidateReady` rule — and
+   until now it kept the answer to itself. So the TOPBAR, which has to
+   describe the same machine in the ⚠ NOBODY HIRED alarm, had nothing to
+   read and said what a developer's box happened to hold: "several
+   candidates are already on this machine and need no setup at all", printed
+   over a first run where the shelf one click away read "no brain yet" on
+   every card.
+
+   Same shape as the vault trio above and for the same reason: `undefined`
+   means NOBODY HAS LOOKED, which is not "nothing found". A surface that has
+   not heard from the front desk must not report a count in either
+   direction. `[]` is a real measurement of an empty machine.
+
+   Deliberately a mirror, not a probe: nothing here fetches. The deep check
+   stays where it is deliberate (opening the candidate book), and this only
+   carries its result to the other surface that needs it. */
+let _frontDeskBrains;              // undefined = never measured
+const _frontDeskWatchers = new Set();
+function noteFrontDeskBrains(ids) {
+  const next = Array.isArray(ids) ? ids.slice() : [];
+  const before = _frontDeskBrains;
+  _frontDeskBrains = next;
+  const same = Array.isArray(before) && before.length === next.length
+    && before.every((v, i) => v === next[i]);
+  if (same) return;
+  for (const fn of [..._frontDeskWatchers]) { try { fn(next); } catch (_e) { /* a watcher must not break the shelf */ } }
+}
+function frontDeskBrainsSync() { return _frontDeskBrains; }
+function onFrontDeskBrainsChange(fn) {
+  _frontDeskWatchers.add(fn);
+  return () => _frontDeskWatchers.delete(fn);
+}
+
 /* Whether the agent-wallet ICP-Service is installed AND the on-chain bridge is
    reachable (i.e. we're inside the ai.cafreso.com shell that holds the II key).
    The catalog mirrors the on-chain flag to settings.icpServices.wallet so tool
@@ -4776,7 +4811,7 @@ const HQ = {
   AGENT_COLORS, ROLES, TOOLS_CATALOG, ELEVATION_TOOL_IDS, CHIEF_OF_STAFF,
   MODELS, MEMORY_PROMPT_CAP,
   INITIAL_AGENTS, INITIAL_CHAT, ACTIVITY_SEED, OPENSWARM_ROSTER, spawnOpenswarmRoster,
-  uid, extractApproval, approvalBody, extractDM, extractAllDMs, isHandoffPlaceholder, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, fabricatedRelay, unsentAsk, unsentBlocks, unsentElevation, unsentHandoff, unverifiedSources, unfiledPath, honestyNotes, publishDoorNote, icpPublishEnabled, clearVaultReadyCache, isVaultReady, vaultReadySync, onVaultReadyChange, throttleTokens, cleanHarmony, reasoningPatterns, stripReasoning, maskReasoning, displacedTask,
+  uid, extractApproval, approvalBody, extractDM, extractAllDMs, isHandoffPlaceholder, extractHandoff, stripHandoff, extractMention, extractAllMentions, extractAcks, stripAcks, visibleReply, fabricatedRelay, unsentAsk, unsentBlocks, unsentElevation, unsentHandoff, unverifiedSources, unfiledPath, honestyNotes, publishDoorNote, icpPublishEnabled, clearVaultReadyCache, isVaultReady, vaultReadySync, onVaultReadyChange, noteFrontDeskBrains, frontDeskBrainsSync, onFrontDeskBrainsChange, throttleTokens, cleanHarmony, reasoningPatterns, stripReasoning, maskReasoning, displacedTask,
   ceoStream, agentStream, chatToMessages, buildCeoSystem, supportsJsonToolFormat,
   /* Exported for the three surfaces that describe a coworker's reach — the
      candidate shelf, the coworker card, the inspect panel. They must all ask

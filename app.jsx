@@ -7,7 +7,7 @@ import { CafresoHQModals } from './modals.jsx';
 import { CafresoHQUI } from './ui.jsx';
 import { CafresoHQViews } from './views.jsx';
 import { downgradeElevatedModel } from './app/agents.jsx';
-import { brainName, officeHasBrain } from './app/cast.jsx';
+import { brainName, emptyOfficeNote, officeHasBrain } from './app/cast.jsx';
 import { AppGlobalCommands } from './app/commands.jsx';
 import { agentFiledPath, cabinetIsEncrypted, fileDelivery, hasSubstance, officeDate, stripToolEcho } from './app/artifacts.jsx';
 import { applyStatus } from './app/worklog.jsx';
@@ -725,6 +725,13 @@ function App() {
      coworker pins their own brain, so the office can be fully operational
      while this is false. See officeHasBrain in app/cast.jsx. */
   const officeCanWork = useMemoA(() => hasKey || officeHasBrain(agents, CafresoHQClient), [hasKey, agents]);
+  /* What the front desk found on this machine, mirrored from the one deep
+     probe the office runs (modals/hire.jsx). `undefined` until it has run —
+     see emptyOfficeNote in app/cast.jsx, which owns the three sentences. */
+  const [frontDeskBrains, setFrontDeskBrains] = useStateA(() => { try { return HQ.frontDeskBrainsSync(); } catch (_e) { return undefined; } });
+  React.useEffect(() => {
+    try { return HQ.onFrontDeskBrainsChange(setFrontDeskBrains); } catch (_e) { return undefined; }
+  }, []);
   React.useEffect(() => {
     const C = CafresoHQClient;
     const recompute = () => { try { setHasKey(C.hasUsableKey()); } catch (_e) {} };
@@ -7311,10 +7318,18 @@ ${d.text}` : d.text,
                 false, it was answering the wrong question, which on the one
                 screen that decides whether someone stays is worse.
 
-                Empty office → say so, and open the front desk. */}
+                Empty office → say so, and open the front desk.
+
+                What the tooltip may CLAIM about the machine is a second
+                question, and it got the opposite answer: the sentence here
+                was fixed, promising "several candidates are already on this
+                machine and need no setup at all" on a first run where the
+                shelf one click away says "no brain yet" on every card. It is
+                now emptyOfficeNote's, read off what the front desk actually
+                measured. */}
             {!officeCanWork && agents.length === 0 && (
               <button className="chip chip-warn" onClick={()=>setHireOpen(true)}
-                title="Your desks are empty. Hire someone at the front desk — several candidates are already on this machine and need no setup at all."
+                title={emptyOfficeNote(frontDeskBrains)}
                 style={{cursor:'pointer', background:'rgba(232,169,169,0.16)', borderColor:'rgba(232,169,169,0.5)', color:'#E8A9A9'}}>
                 ⚠ NOBODY HIRED
               </button>
