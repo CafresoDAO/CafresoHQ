@@ -39339,3 +39339,50 @@ produce), restored the fix, confirmed the restored `night_runner.py` is
 byte-identical (md5) to the fixed one.
 `scripts/test_a_revoked_grant_reaches_the_run_already_under_way.py` and
 `scripts/test_night_grammar.py` still pass unchanged.
+
+---
+
+## 376. the coworker who wasn't there yet
+
+**The lead.** `onTaskDropOnAgent` (app.jsx) is a plain, non-memoized async
+arrow function — the same shape `dispatchToAgent` has, and the reason
+`agentsRef`/`tasksRef` exist: a hunt for the same stale-closure-over-state
+category that already produced `dispatchToAgent`'s assistant-hire-cap fix
+and its four-site prompt-context fix (`scripts/test_dispatch_prompt_
+context_reads_live_agents_and_tasks.py`), and the chain-advance/DM-fanout
+`agentsRef.current`/`tasksRef.current` reads already sitting in this exact
+function. The chain-advance block correctly reads `tasksRef.current` —
+its own comment says why: "this run can take minutes". The DM-fanout loop
+a little further down correctly reads `agentsRef.current`. Between them,
+the `HQ.agentStream` call that actually runs the coworker's turn was
+passing `peers: agents.filter(x => x.id !== agent.id)` — the plain
+closure, not the ref.
+
+**The wreck.** Dropping a card on a coworker who is already mid-run raises
+`window.hqConfirm` first — "X is working on Y, start this instead?" — an
+await that blocks on the BOSS, for as long as they take to answer it. Only
+after that promise resolves does the function build the brief and start
+the stream. `peers` is not decoration: `toolsForAgent` in hq-runtime.jsx
+gates the whole DM_TO tool on `peers.length` and writes the "Coworkers you
+can DM: …" line straight from it, and binds PEER_JOURNAL's lookups to the
+same list. Reading `agents` here means that roster is frozen at the
+render that started the drop — before the dialog ever opened. A coworker
+hired while the boss sat on that dialog is invisible as a DM target for
+the entire run that follows; a coworker dismissed in the same window is
+still handed to the model as somebody safe to message.
+
+**The fix.** `peers: agentsRef.current.filter(x => x.id !== agent.id)`,
+matching `dispatchToAgent`'s own peer list a few hundred lines up and the
+two other live reads already in this same function.
+
+**Fire-tested.** New
+`scripts/test_a_busy_desk_wait_stales_the_dm_roster.py`, built the same
+way the assistant-hire-cap and prompt-context tests were: extract the
+actual `peers:` line by regex (not a hand-copied duplicate) and run it
+under Node with a stale `agents` array (only the coworker who was there at
+drop time) against a live `agentsRef.current` (one coworker hired since,
+one dismissed since), and confirm the extracted line now reports the live
+pair, not the stale one. Reverted the fix in place, confirmed the same
+check fails (`['Milo']` — the dismissed coworker still listed, the new
+hire missing), restored from a `/tmp` copy, confirmed the restored
+`app.jsx` is byte-identical (md5) to the fixed one.

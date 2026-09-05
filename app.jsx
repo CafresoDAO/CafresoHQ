@@ -5427,7 +5427,18 @@ ${d.text}` : d.text,
             recordToolReceipt(agent, ev);
           }
         },
-        peers: agents.filter(x => x.id !== agent.id),
+        // agentsRef.current, not the `agents` closure — onTaskDropOnAgent is a
+        // plain, non-memoized async function that can sit at either
+        // `hqConfirm` await above for as long as the boss takes to answer it,
+        // then run for minutes more once the desk is actually cleared. The
+        // stale `agents` snapshot from the render that started this drop
+        // would hand the model a peer roster from before that wait: a
+        // coworker hired while the dialog sat open is invisible as a DM
+        // target, and one dismissed in the meantime is still offered as a
+        // valid one. dispatchToAgent's own peer list made this same fix —
+        // see the matching `peers: agentsRef.current.filter(...)` a few
+        // hundred lines up.
+        peers: agentsRef.current.filter(x => x.id !== agent.id),
         // no `chat` — see the note above the stream call: a task is its brief.
         signal: controller.signal,
       });
