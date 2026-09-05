@@ -12,6 +12,26 @@ set -e
 # cd to the directory this script lives in (the repo root), regardless of caller.
 cd "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 
+# ── UI preflight ────────────────────────────────────────────────────────────
+# dist-ui/ and node_modules/ are both gitignored, so a fresh clone has neither
+# and serve.py can only answer /hq.html with a 500. This script is what testers
+# are pointed at, so it does the two steps itself rather than handing the 500
+# page the job of teaching them.
+if [ ! -f dist-ui/manifest.json ]; then
+  if ! command -v npm >/dev/null 2>&1; then
+    echo "[start] ERROR the HQ UI is not built (dist-ui/manifest.json is missing) and"
+    echo "        npm is not on PATH, so it cannot be built here. Install Node.js 18+"
+    echo "        (https://nodejs.org), then run: npm install && npm run build"
+    exit 1
+  fi
+  if [ ! -d node_modules ]; then
+    echo "[start] installing UI dependencies (npm install) — first run only…"
+    npm install || { echo "[start] ERROR npm install failed — see the output above"; exit 1; }
+  fi
+  echo "[start] building the HQ UI bundle (npm run build) — first run only…"
+  npm run build || { echo "[start] ERROR npm run build failed — see the output above"; exit 1; }
+fi
+
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 HERMES_API_PORT="${HERMES_API_PORT:-8642}"
 PORT="${PORT:-8787}"

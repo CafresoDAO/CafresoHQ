@@ -2117,7 +2117,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     '<script>console.warn(%s);</script>\n</body>'
                     % json.dumps(_ui_stale_sentence(stale)))
         except Exception as e:
-            return self.send_error(500, 'HQ UI not built: %s (run `npm run build`)' % e)
+            # BOTH steps, in order. `npm run build` alone was the advice here
+            # for a long time, and on a fresh clone it is not sufficient
+            # advice: node_modules/ is gitignored too, so the build named by
+            # this very page fails on its own missing dependencies. Someone
+            # reading only this sentence has to be able to get to a rendered
+            # page from it.
+            return self.send_error(
+                500, 'HQ UI not built: %s — run `npm install` then `npm run build` in %s'
+                     % (e, os.getcwd()))
         body = html.encode('utf-8')
         self.send_response(200)
         self.send_header('Content-Type', 'text/html; charset=utf-8')

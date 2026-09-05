@@ -34608,3 +34608,42 @@ two were making it to an office with nobody in it.
 The one refusal that stayed is the split of `topic + agent required` into its
 two halves, said separately, because they are two different problems and only
 one of them is the boss's fault.
+
+---
+
+## 300. the remedy printed on the error page was itself broken
+
+`#295`'s beta audit reproduced the worst blocker there is — a new tester
+cannot start the app at all — and `#295`/`#296` fixed only the README half of
+it. The code half was still there. `dist-ui/` and `node_modules/` are both
+gitignored, so a fresh clone has neither. Asking for `/hq.html` produced the
+stdlib 500 page reading "HQ UI not built: … (run `npm run build`)", and that
+command, the one the app itself had just named, died with
+
+    Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'esbuild'
+
+because `scripts/build_ui_bundle.mjs` imported `esbuild` at the top level.
+A static ESM import fails during module *resolution* — before a single line
+of the builder runs — so the script that knows perfectly well what a missing
+`node_modules/` means never got the chance to say so. Two dead ends, and the
+second one is the app failing at its own instruction, which is a worse shape
+than no advice at all: it reads as the project being broken rather than the
+checkout being incomplete.
+
+Three edits, one rule: every place a tester can land has to name the way
+out. The builder now loads `esbuild` behind a guard and exits with a
+sentence naming `npm install` and the directory to run it in — the same
+sentence the vendor-file check already reaches for, so "esbuild is missing"
+and "react's UMD build is missing" no longer read as two unrelated problems.
+serve.py's 500 names both steps in order, because on a fresh clone `npm run
+build` alone is not sufficient advice. And `Start-CafresoHQ.sh`, the script
+testers are actually pointed at, stopped delegating the job to a 500 page:
+if `dist-ui/manifest.json` is absent it installs and builds, and if `npm`
+is not on `PATH` it says that plainly and exits instead of serving an
+office that cannot render.
+
+The test runs the builder in a temp directory outside the checkout — node
+walks ancestors looking for `node_modules`, so a copy inside the repo would
+have resolved `esbuild` from a parent and quietly tested nothing — and reads
+what the tester would see: non-zero exit, `npm install` named, no raw
+`ERR_MODULE_NOT_FOUND` stack.

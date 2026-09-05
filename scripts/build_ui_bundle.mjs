@@ -18,7 +18,6 @@
  * The manifest drives placeholder substitution in hq.html (done by serve.py for
  * local/electron and by scripts/build_hq_ui.py for the asset canister).
  */
-import * as esbuild from 'esbuild';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -26,6 +25,34 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
+
+/* DEPENDENCY PREFLIGHT — why esbuild is loaded dynamically below.
+   dist-ui/ and node_modules/ are both gitignored, so a fresh clone has
+   neither. Asking for hq.html then 500s with "HQ UI not built", and that
+   page's own remedy is this script — which, when esbuild was a static
+   top-level import, died during MODULE RESOLUTION, before a single line of
+   the file ran, with a raw ERR_MODULE_NOT_FOUND stack that never says
+   `npm install`. A new tester hit two dead ends before a pixel rendered,
+   the second one being the app's own advice failing. The import moved
+   behind a guard so this script can speak for itself. */
+function depsMissing(what) {
+  console.error(`[ui] ${what}`);
+  console.error('[ui] Dependencies are not installed — this build reads esbuild and the '
+    + 'vendor UMD files out of node_modules/, which is not in the repository.');
+  console.error(`[ui] Run \`npm install\` in ${ROOT} first, then \`npm run build\`.`);
+  process.exit(1);
+}
+
+const esbuild = await (async () => {
+  try {
+    return await import('esbuild');
+  } catch (e) {
+    const missing = e && (e.code === 'ERR_MODULE_NOT_FOUND'
+      || /Cannot find (package|module)/.test(String(e.message || '')));
+    if (missing) depsMissing('cannot load the bundler: package `esbuild` is not installed.');
+    throw e;
+  }
+})();
 const OUT = path.join(ROOT, 'dist-ui');
 const BUNDLE = path.join(OUT, 'bundle');
 
@@ -97,7 +124,7 @@ function copyVendor() {
   const js = [];
   for (const v of VENDOR) {
     const abs = path.join(ROOT, v.src);
-    if (!fs.existsSync(abs)) throw new Error(`vendor file missing: ${v.src} (did npm install run?)`);
+    if (!fs.existsSync(abs)) depsMissing(`vendor file missing: ${v.src}`);
     js.push(writeHashed(v.name, 'js', fs.readFileSync(abs)));
   }
   const css = [];
