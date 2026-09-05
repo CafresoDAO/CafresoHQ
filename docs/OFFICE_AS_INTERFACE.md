@@ -42524,3 +42524,258 @@ Renumbered from #400 at integration: a concurrent hunt landed first. Every
 `scripts/test_an_export_that_failed_leaves_nothing_in_the_library.py` moved
 with it. The bare numbers throughout the inventory above (272, 380, 455,
 645, 1132…) are LINE numbers, not entry numbers, and did not move.
+
+## 402. the restore reloaded, and the reload took the office back
+
+`## 395` and `## 397` swept four client files for **work the office
+performs that never reaches the boss**. `## 401` swept the whole server.
+The rest of the client — `ui/*`, `modals/*`, `views/*` other than
+graph/terminal, `app/*` other than storage, and the barrels — had never
+been swept. This is that sweep, and it inherits a denominator rather than
+guessing at one.
+
+### The inventory — every `catch` in the client, parsed, not grepped
+
+399 catch clauses across the client, from a `@babel/parser` walk of every
+`.jsx` at the repo root plus `ui/`, `modals/`, `views/`, `app/` (never a
+regex: `catch` appears inside comments, strings and `.catch(` chains that
+a grep cannot tell apart). Classified by BODY — `empty` is `{}` or a
+comment only; `console-only` is nothing but a `console.*` line; `surfaced`
+reaches a toast / setState / dispatch / `print`; `rethrow` throws.
+Counts are **post-fix**; the two cells this hunt moved are marked.
+
+| file | total | empty | console-only | surfaced | rethrow | other |
+|---|---|---|---|---|---|---|
+| `agent_runner.jsx` | 11 | 8 | 0 | 1 | 0 | 2 |
+| `app.jsx` | 46 | 32 | 0 | 7 | 0 | 7 |
+| `app/agents.jsx` | 1 | 1 | 0 | 0 | 0 | 0 |
+| `app/artifacts.jsx` | 3 | 0 | 0 | 0 | 0 | 3 |
+| `app/cast.jsx` | 3 | 2 | 0 | 0 | 0 | 1 |
+| `app/floor.jsx` | 1 | 0 | 0 | 0 | 0 | 1 |
+| `app/patience.jsx` | 1 | 0 | 0 | 0 | 0 | 1 |
+| `app/storage.jsx` | 18 | 12 | 0 | 3 | 0 | 3 |
+| `claude-client.jsx` | 87 | 45 | 1 | 2 | 0 | 39 |
+| `features.jsx` | 8 | 2 | 0 | 1 | 0 | 5 |
+| `hq-runtime.jsx` | 19 | 9 | 0 | 0 | 1 | 9 |
+| `missions.jsx` | 16 | 8 | 0 | 3 | 0 | 5 |
+| `modals/base.jsx` | 3 | 1 | 0 | 1 | 0 | 1 |
+| `modals/collab.jsx` | 4 | 2 | 0 | 0 | 0 | 2 |
+| `modals/delivery.jsx` | 3 | 0 | 0 | 1 | 0 | 2 |
+| `modals/hire.jsx` | 3 | 1 | 0 | 0 | 0 | 2 |
+| `modals/providers.jsx` | 19 | 2 | 0 | 9 | 0 | 8 |
+| `modals/settings.jsx` | 36 | 9 | 0 | 15 | 0 | 12 |
+| `modals/starter.jsx` | 1 | 0 | 0 | 0 | 0 | 1 |
+| `ui/chat.jsx` | 11 | 3 | 0 | 2 | 0 | 6 |
+| `ui/feedback.jsx` | 2 | 1 | 0 | 0 | 0 | 1 |
+| `ui/office.jsx` | 13 | 5 | 0 | 0 | 0 | 8 |
+| `ui/onboarding.jsx` | 2 | 1 | 0 | 0 | 0 | 1 |
+| `views/core.jsx` | 5 | 2 | 0 | 0 | 0 | 3 |
+| `views/graph.jsx` | 15 | 8 | 0 | 3 | 0 | 4 |
+| `views/ide.jsx` | 1 | 1 | 0 | 0 | 0 | 0 |
+| `views/projects.jsx` | 31 | **11** | 0 | **12** | 0 | 8 |
+| `views/terminal.jsx` | 19 | 11 | 0 | 3 | 0 | 5 |
+| `views/vault.jsx` | 17 | 4 | 0 | 6 | 0 | 7 |
+| **TOTAL** | **399** | **181** | **1** | **69** | **1** | **147** |
+
+`ui/panels.jsx`, `ui/primitives.jsx`, `views/misc.jsx`, `modals/delivery.jsx`
+and the six remaining `app/*` files contribute nothing or almost nothing —
+the empties concentrate in `claude-client.jsx` (45), `app.jsx` (32),
+`app/storage.jsx` (12) and `views/projects.jsx` (11). Of the 48 empties in
+the never-swept surface, most are genuinely cosmetic and carry a comment
+saying so; the sweep below is of the ones that are not.
+
+Two automated passes ran alongside the inventory, and both ship with it as
+`scripts/client_catch_inventory.mjs` (`DETAIL=1`, `MODE=inert`,
+`MODE=state`) so the next hunt reruns them rather than rebuilding them:
+
+- **write-only / never-set state pairs** across all 32 client files: ONE
+  hit, `modals/collab.jsx:568`'s `tick`, and it is a deliberate re-render
+  nudge. `## 395`'s `nodeCount` was the last real one; the client is clean
+  on that shape now.
+- **structurally inert guards** — a `try/catch` wrapping an unawaited call
+  to a locally-declared `async` function, the `## 397` `runCmd` shape: 8
+  hits, 7 of them inside async functions where the guard still works, and
+  exactly 1 (`views/vault.jsx:450`) genuinely inert — and genuinely
+  cosmetic (`refreshGraph`, with a comment arguing precisely that). No
+  second `runCmd`.
+
+### 1. The restore that reloaded over itself — modals/settings.jsx
+
+Settings → OFFICE BACKUP → IMPORT. `importOffice` writes the backup into
+localStorage, and for the thirteen keys that are ALSO mirrored to an
+`hq-state`/`hq-memory` file it PUTs the matching file. `OFFICE_FILE_BACKED`
+exists for exactly one reason, and the map's own comment states it:
+
+> "within the same reload this button triggers, the mount-fetch pulls the
+> old file back over the just-written value and the 'restore' silently
+> undoes itself with no error anywhere."
+
+The PUT that prevents that was:
+
+```
+filePuts.push(fetch(`${apiBase}/hq/${target.scope}/${target.name}`, {
+  method: 'PUT', headers: {…}, body: raw,
+}).catch(() => {}));
+…
+if (filePuts.length) await Promise.allSettled(filePuts);
+window.location.reload();
+```
+
+No `r.ok` check. The rejection swallowed. `Promise.allSettled` over
+handlers that can never reject, its results discarded. And
+`window.location.reload()` underneath, unconditional. **The failure this
+code exists to prevent is precisely what a failure of this code produces**
+— and it is invisible, because a reload is what SUCCESS looks like here.
+
+**Driven, not read.** The harness lifts the REAL body (comment-stripped,
+brace-balanced, `OFFICE_HQ_PREFIX` through the end of `importOffice`) and
+runs it under node against four responses. Pre-fix:
+
+```
+{"scenario":"offline",   "putCount":2,"lsKeysWritten":3,"reloaded":true,"notes":[""]}
+{"scenario":"refused403","putCount":2,"lsKeysWritten":3,"reloaded":true,"notes":[""]}
+{"scenario":"server500", "putCount":2,"lsKeysWritten":3,"reloaded":true,"notes":[""]}
+{"scenario":"healthy",   "putCount":2,"lsKeysWritten":3,"reloaded":true,"notes":[""]}
+```
+
+Four rows, one outcome. A total failure of the mirror was **byte-identical
+to a complete success** in every signal that exists. The `notes: ['']` is
+the `setNote('')` that clears the line at the top of the handler — the
+office's last word on a restore it had just thrown away. The boss confirmed
+a red danger dialog reading "Replace office", watched the app reload, and
+got their old chat, team and tasks back.
+
+Not hypothetical, and not only for the offline case: `/hq/*` is served by
+the companion backend, and ai.cafreso.com has no companion backend — a
+`_API_BASE` pointing at an asset host answers the PUT with the SPA
+fallback, which `.catch(() => {})` and a missing `r.ok` accept equally.
+
+**The fix**, following `app/storage.jsx`'s own debounced PUT — the sibling
+that got this exact treatment in `## 397`, and whose comment says "a failed
+PUT here used to vanish into a bare `.catch(() => {})`": `_putOfficeFile`
+resolves to `null` on success and to `{target, raw, where, why}` on
+failure, `why` routed through **`officeCause`** (the office's own backend
+is the subject; `cleanCause`, already imported here, cannot say "the office
+isn't allowed to touch that file"). The results are READ. If anything is
+stale, `setOfficeRetry(stale)`, one honest sentence, and **no reload** —
+the reload is the step that would do the damage, so it is withheld rather
+than decorated. A TRY AGAIN row appears in the OFFICE BACKUP panel naming
+the exact files, retries only those, and reloads once nothing stale is
+left. Post-fix, the same three failures:
+
+```
+offline     reloaded:false  retry:2  "the office isn't answering — check it's still running"
+refused403  reloaded:false  retry:2  "the office isn't allowed to touch that file"
+server500   reloaded:false  retry:2  "the office ran into trouble doing that — not something you did"
+healthy     reloaded:true   retry:0  notes:[""]
+```
+
+Three failures, three different causes, where there had been one silence.
+Pinned by the test: all four scenarios still write all 3 localStorage keys
+and still attempt both PUTs — reporting a failure must not cost the boss
+the restore they came for — and the healthy path still reloads saying
+nothing, so the fix costs the working case zero.
+
+### 2. The Reload that only removed the warning — views/projects.jsx
+
+The Classic project editor's conflict banner reads **"⚠ Your coworker
+changed this file while you had edits."** Its Reload button, in both
+Classic panes, calls `reloadOpenClassic`:
+
+```
+const reloadOpenClassic = async (path) => {
+  try { … await CafresoHQClient.fsReadText(path); … } catch (_e) {}
+  setConflict(false);
+};
+```
+
+`setConflict(false)` sits OUTSIDE the try. Dismissing the banner is the
+boss's ONLY evidence the reload happened, and it happened either way.
+Driven on the real lifted body:
+
+```
+{"scenario":"reload_office_down","bannerCleared":true,"bufferContent":"MY OLD BUFFER","errsShown":[]}
+{"scenario":"reload_healthy",    "bannerCleared":true,"bufferContent":"COWORKER CONTENT","errsShown":[]}
+```
+
+The warning that a coworker's version is on disk is cleared by a read that
+never landed, over a buffer that never changed, silently. Fixed by moving
+`setConflict(false)` inside the try after the read and putting the reason
+on `err` — which both Classic panes already render through `officeCause`
+a few lines from the banner itself, so nothing new had to be built. The
+stale buffer stays stale: the fix reports, it does not invent content.
+
+Both fixes ADD state and a branch rather than split a function, per
+`## 395`'s precedent, so no lifted harness anywhere gained a free variable.
+
+### Fire-tested
+
+New `scripts/test_a_restore_that_did_not_land_does_not_reload.py` (34
+checks) over new `scripts/harness_office_restore_mirror.mjs`. Structural:
+the two old shapes are gone by their exact text, `Promise.allSettled` over
+never-rejecting handlers is gone, `officeCause` is imported and used, the
+retry is a real control and not only note text, `OFFICE_FILE_BACKED` still
+holds 13 entries, `app/storage.jsx`'s `r.ok` precedent has not drifted, and
+both Classic banners still route through the one fixed function.
+Behavioural, on two REAL brace-lifted bodies under node: `importOffice`
+against offline / 403 / 500 / healthy, `reloadOpenClassic` against a dead
+office and a healthy one.
+
+**Fallout, repaired.** Two existing tests genuinely broke and both were
+repaired rather than relaxed. `test_a_restored_office_does_not_snap_back_to_
+the_old_file.py` is the sibling that PUT the mirrored files in the first
+place; its lift needed `_putOfficeFile` (which is why that helper carries a
+block body rather than a bare arrow expression — the test's `brace_lift`
+wants an opening brace) plus `setOfficeRetry`/`officeCause` stubs, and its
+structural check `await Promise.allSettled(filePuts)` was replaced with a
+STRICTER pair: the puts are awaited AND their results are read, with the
+reload past the branch that returns on a stale file. Its own headline check
+— "reload fires only AFTER every mirrored file finished writing" — passes
+unchanged. `test_the_wallet_panel_dumped_raw_exceptions.py` asserted the
+whole `import { cleanCause } from '../app/floor.jsx';` statement verbatim
+and broke on the widened import; it now matches the NAMED import, which is
+what that line was ever about. Full suite: 576 tests, 2 failures, both known
+and neither ours (`test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`,
+moc M0219 on a foreign `main.mo`; and
+`test_two_note_writes_at_once_do_not_splice_two_bodies.py`, flaky under
+concurrent load).
+
+Reverted both in place (md5 `595c2a6405091e6c5212ad193bf417b0`,
+`7b3b70c93f7cecac8bec614323c94d4d`) — **20 checks failed reliably across 3
+runs**, with the real evidence printed: `reloaded: True`, `notes: ['']`,
+`bannerCleared: True`, `bufferContent: 'MY OLD BUFFER'`. The settings revert
+was re-fired against the final bytes after `_putOfficeFile` grew a block body
+(15 checks down across 3 runs, plus the repaired sibling below). Restored
+byte-identical on both, green on 3 repeated runs. `npm run build` succeeds
+and eslint is clean on both files.
+
+### Left EXPOSED, diagnosed, so the next hunt need not re-derive
+
+1. **`ui/office.jsx:942` — the Vault Room's gold treasury.** The
+   `chain.wallet.balances` fan-out is wrapped in `catch (_e) {}`, so
+   `goldTreasury` stays `null`, `goldBars` computes 0, and a failed read
+   renders as **exactly** a treasury with no gold in it — `## 395`'s
+   Library-graph shape, on a decorative surface. Same for `bankBalance`
+   at 978, where the empty case is at least documented as intentional
+   feature-detection. Left on impact, not on mechanism: the display is
+   ornamental and nothing is lost. Named because the shape is real.
+2. **`views/projects.jsx:231` and `1054` — the pre-write conflict stat.**
+   Both `save()` and `saveFile()` re-`fsStat` before writing "so a
+   coworker's concurrent edit is never silently clobbered", and both wrap
+   that stat in `catch (_e) {}` — so a stat that FAILS skips the check and
+   the write proceeds. That is fail-open on the one guard whose whole job
+   is to refuse. It may well be the right trade (refusing to save because
+   a stat failed is its own harm), but it is currently an unexamined
+   default with no comment defending it, and the boss is told nothing
+   either way. Needs a decision, not a reflex.
+3. **`claude-client.jsx` — 45 empty catches, unswept.** The largest single
+   concentration in the client and the layer every view's errors travel
+   through. Out of scope here; it deserves a hunt of its own with this
+   table as its starting denominator.
+
+Two other hunts were appending concurrently, so this number may collide and
+be renumbered at integration. Every `#402` in `modals/settings.jsx`,
+`views/projects.jsx`, `scripts/harness_office_restore_mirror.mjs` and
+`scripts/test_a_restore_that_did_not_land_does_not_reload.py` moves with it.
+The bare numbers throughout the inventory above (450, 568, 942, 978, 231,
+1054…) are LINE numbers, not entry numbers, and must not be renumbered.

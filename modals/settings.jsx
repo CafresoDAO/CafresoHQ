@@ -9,7 +9,11 @@ import { Modal, ModelPicker } from './base.jsx';
    "couldn't reach that brain — it looks offline from here", which is a
    confident diagnosis of the wrong subject. cleanCause strips the raw
    error without inventing a cause. */
-import { cleanCause } from '../app/floor.jsx';
+/* officeCause joins it for the office-restore mirror writes below (#402):
+   those PUTs go to the office's OWN backend, so the office IS the subject
+   and its table has sentences cleanCause cannot invent — "the office isn't
+   answering", "isn't allowed to touch that file". */
+import { cleanCause, officeCause } from '../app/floor.jsx';
 /* VaultTab was written for this exact panel — Settings → Connections —
    but never actually mounted anywhere: `modals/providers.jsx`, the file
    it lives in, had zero real `import` sites anywhere in the app (one grep
@@ -1493,6 +1497,50 @@ function AccountTab({ usageTokens = 0 }) {
     return raw;
   };
   const officeInputRef = useRefM(null);
+  /* #402 — the mirror write above is the whole reason OFFICE_FILE_BACKED
+     exists, and it used to be `fetch(…).catch(() => {})`: no `r.ok` check,
+     the rejection swallowed, the settled results discarded, and
+     `window.location.reload()` run unconditionally underneath. So EVERY way
+     that PUT can fail — the office not running, a 403, a 500, or the 200
+     SPA-fallback a host with no backend serves — resolved as though it had
+     worked, and the reload then did the exact thing this code was written
+     to prevent: the mount-fetch pulled the old file back over the restored
+     value and the restore silently undid itself.
+     Measured on the real body, four responses (offline / 403 / 500 /
+     healthy): all four wrote 3 localStorage keys, attempted 2 PUTs, fired
+     the reload, and left `notes: ['']`. A total failure of the mirror was
+     BYTE-IDENTICAL to a complete success, and a reload is what success
+     looks like — the boss confirmed a danger dialog, watched the app
+     reload, and got their old office back with nothing said anywhere.
+     Now: resolve to null on success and to a record on failure, hold the
+     failed writes so the boss can retry exactly those, and do NOT reload
+     while a stale file is still out there waiting to reassert itself. */
+  const [officeRetry, setOfficeRetry] = useStateM(null);   // null | [{target, raw, where, why}]
+  const _putOfficeFile = (target, raw) => {
+    return fetch(`${apiBase}/hq/${target.scope}/${target.name}`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: raw,
+    }).then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status} ${r.statusText || ''}`.trim());
+      return null;
+    }).catch(err => ({
+      target, raw,
+      where: `${target.scope}/${target.name}`,
+      why: officeCause((err && err.message) || String(err)),
+    }));
+  };
+  const retryOfficeRestore = async () => {
+    const pending = officeRetry;
+    if (!pending || !pending.length) return;
+    setNote('');
+    const stale = (await Promise.all(pending.map(s => _putOfficeFile(s.target, s.raw)))).filter(Boolean);
+    if (stale.length) {
+      setOfficeRetry(stale);
+      setNote(`still ${stale.length} of ${pending.length} office file${pending.length === 1 ? '' : 's'} unwritten — ${stale[0].why}`);
+      return;
+    }
+    setOfficeRetry(null);
+    window.location.reload();
+  };
   const exportOffice = () => {
     try {
       const entries = {};
@@ -1555,14 +1603,25 @@ function AccountTab({ usageTokens = 0 }) {
              a map entry per slug, which isn't enumerable. */
           const target = OFFICE_FILE_BACKED[remainder]
             || OFFICE_FILE_BACKED[remainder.replace(/:[^:]*$/, '')];
-          if (target) {
-            filePuts.push(fetch(`${apiBase}/hq/${target.scope}/${target.name}`, {
-              method: 'PUT', headers: { 'content-type': 'application/json' }, body: raw,
-            }).catch(() => {}));
-          }
+          if (target) filePuts.push(_putOfficeFile(target, raw));
         }
       }
-      if (filePuts.length) await Promise.allSettled(filePuts);
+      if (filePuts.length) {
+        const stale = (await Promise.all(filePuts)).filter(Boolean);
+        if (stale.length) {
+          /* §7 — one honest sentence and a way forward. The reload is
+             withheld deliberately: it is the step that would REVERT what
+             the boss just restored, so the failure must not be allowed to
+             look like the success it is otherwise identical to. */
+          setOfficeRetry(stale);
+          setNote(`office restored in this browser, but ${stale.length} of ${filePuts.length} office file`
+            + `${filePuts.length === 1 ? '' : 's'} could not be written — ${stale[0].why}.`
+            + ` Reloading now would pull the old ${stale.map(s => s.where).join(', ')} back over it.`
+            + ' Try again below once the office is reachable.');
+          return;
+        }
+      }
+      setOfficeRetry(null);
       window.location.reload();
     } catch (er) { setNote('office import failed: ' + er.message); }
   };
@@ -1697,6 +1756,22 @@ function AccountTab({ usageTokens = 0 }) {
           <button className="px-btn" style={{fontSize:9,padding:'8px 10px'}} onClick={() => officeInputRef.current && officeInputRef.current.click()}>IMPORT</button>
           <input ref={officeInputRef} type="file" accept=".json" style={{display:'none'}} onChange={importOffice}/>
         </div>
+        {/* #402 — an unfinished restore is the one state where reloading
+            LOSES what the boss just restored, so it gets a row of its own
+            rather than only a line of note text that the next click clears. */}
+        {officeRetry && officeRetry.length > 0 && (
+          <div className="row-knob">
+            <div>
+              <div className="lbl">Finish the restore</div>
+              <div className="sub">
+                {officeRetry.length} office file{officeRetry.length === 1 ? '' : 's'} still hold
+                {officeRetry.length === 1 ? 's' : ''} the old office — {officeRetry.map(s => s.where).join(', ')}.
+                Don't reload until this goes through.
+              </div>
+            </div>
+            <button className="px-btn" style={{fontSize:9,padding:'8px 10px'}} onClick={retryOfficeRestore}>TRY AGAIN</button>
+          </div>
+        )}
         <div className="hint">Your office lives in this browser. A cleared profile, a new machine, or a different browser starts empty — export before you need it.</div>
         <div className="row-knob">
           <div><div className="lbl">Export agent setup</div><div className="sub">your Hermes agent config as a file (keys NOT included)</div></div>

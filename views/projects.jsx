@@ -1066,9 +1066,25 @@ function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
     } catch (e) { setErr(e.message || String(e)); }
     setBusy(false);
   };
+  /* #402 — `setConflict(false)` used to sit OUTSIDE this try, next to a bare
+     `catch (_e) {}`. The banner it clears reads "⚠ Your coworker changed this
+     file while you had edits." and this is its Reload button, so dismissing
+     it is the boss's only evidence the reload happened. Measured on the real
+     body: with the office unreachable the banner cleared, the buffer still
+     held "MY OLD BUFFER", and nothing was shown — outcome identical to the
+     healthy run in the one signal the boss can see. Clear the warning only
+     when the read that resolves it actually landed, and put the reason on
+     `err`, which both Classic panes already render through officeCause a few
+     lines from the banner itself. */
   const reloadOpenClassic = async (path) => {
-    try { const r = await CafresoHQClient.fsReadText(path); setOpenFile(o => (o && o.path === path) ? { ...o, content: r.content, mtime: r.mtime, hash: r.hash, dirty: false } : o); } catch (_e) {}
-    setConflict(false);
+    setErr(null);
+    try {
+      const r = await CafresoHQClient.fsReadText(path);
+      setOpenFile(o => (o && o.path === path) ? { ...o, content: r.content, mtime: r.mtime, hash: r.hash, dirty: false } : o);
+      setConflict(false);
+    } catch (e) {
+      setErr((e && e.message) || String(e));
+    }
   };
 
   /* Join a dir + name using whichever separator the dir already uses (so

@@ -71,7 +71,13 @@ def main():
 
     # ── 0. cleanCause is a real, already-imported helper on this screen ─────
     check('cleanCause is defined in app/floor.jsx', 'function cleanCause(raw)' in FLOOR)
-    check('modals/settings.jsx imports it', "import { cleanCause } from '../app/floor.jsx';" in SETTINGS)
+    # The import widened in #402 (officeCause joined cleanCause for the
+    # office-restore mirror PUTs, which DO have the office as their subject).
+    # What this line is for is that cleanCause is imported here at all, so
+    # match the named import rather than the whole statement.
+    check('modals/settings.jsx imports it',
+          re.search(r"import \{[^}]*\bcleanCause\b[^}]*\} from '\.\./app/floor\.jsx';",
+                    SETTINGS) is not None)
 
     # ── 1. no call site in this file still hands a raw exception to setMsg ──
     check('no setMsg(String(e.message || e)) remains anywhere in the file',

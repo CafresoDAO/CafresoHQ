@@ -96,6 +96,13 @@ const fetch = (url, opts) => {
 const apiBase = 'http://TESTAPI';
 let noteCalls = [];
 const setNote = (n) => { noteCalls.push(n); };
+/* #402 — the PUT now reports instead of swallowing, so the lift carries
+   `_putOfficeFile` and needs the two things it closes over: the retry
+   state's setter and officeCause. Both are stubs; the PUT body itself is
+   lifted real, like everything else here. */
+let retryCalls = [];
+const setOfficeRetry = (v) => { retryCalls.push(v); };
+const officeCause = (raw) => String(raw || '');
 
 %s
 
@@ -120,7 +127,7 @@ const setNote = (n) => { noteCalls.push(n); };
   };
   const e = { target: { files: [file], value: 'x' } };
   await importOffice(e);
-  console.log(JSON.stringify({ order, fetchCalls, store: localStorage.store, noteCalls }));
+  console.log(JSON.stringify({ order, fetchCalls, store: localStorage.store, noteCalls, retryCalls }));
 })();
 '''
 
@@ -136,8 +143,26 @@ def main():
           'const OFFICE_FILE_BACKED = {' in settings_nc)
     check('importOffice looks up OFFICE_FILE_BACKED before reloading',
           re.search(r'importOffice[\s\S]*?OFFICE_FILE_BACKED\[[\s\S]*?window\.location\.reload\(\);', settings_nc))
-    check('the file-backed PUT is awaited, not fired-and-forgotten',
-          re.search(r'await Promise\.allSettled\(filePuts\);\s*\n\s*window\.location\.reload\(\);', settings_nc))
+    # #402 changed the shape here, and STRENGTHENED what this line is for.
+    # It used to be `await Promise.allSettled(filePuts)` — awaited, yes, but
+    # over handlers that ended in `.catch(() => {})`, so it could not have
+    # settled to anything but fulfilled and its results went unread. Now the
+    # handlers RESOLVE to a failure record, the results are read, and the
+    # reload is reached only past the branch that returns when any file is
+    # still stale. Same requirement — the reload must not outrun the writes
+    # — with the outcome of those writes actually consulted.
+    check('the file-backed PUTs are awaited, not fired-and-forgotten',
+          re.search(r'const stale = \(await Promise\.all\(filePuts\)\)\.filter\(Boolean\);',
+                    settings_nc))
+    check('...and their results are READ, not merely awaited: a stale file '
+          'returns before the reload that would revert the restore',
+          re.search(r'if \(stale\.length\) \{[\s\S]*?return;\s*\}\s*\}\s*'
+                    r'setOfficeRetry\(null\);\s*window\.location\.reload\(\);',
+                    settings_nc))
+    check('nothing in this file PUTs to /hq/ without checking r.ok — the '
+          'swallow that made a failed mirror look like a healthy one',
+          '}).catch(() => {}));' not in settings_nc
+          and 'if (!r.ok) throw new Error(`HTTP ${r.status}' in settings_nc)
     check('the PUT targets the mirrored hq endpoint',
           "fetch(`${apiBase}/hq/${target.scope}/${target.name}`" in settings_nc
           and "method: 'PUT'" in settings_nc)
@@ -188,6 +213,8 @@ def main():
             "const OFFICE_EXPORT_BLOCKED = [",
             "const OFFICE_FILE_BACKED = {",
             "const _scrubClientBlob = (raw) => {",
+            # #402 — importOffice's PUT moved into this helper.
+            "const _putOfficeFile = (target, raw) => {",
             "const importOffice = async (e) => {",
         ):
             if opener.rstrip().endswith('{') and not opener.rstrip().endswith('};'):
