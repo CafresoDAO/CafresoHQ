@@ -8,7 +8,9 @@ root is settable from the UI, so a snapshot would go stale.
 """
 import base64
 import fs_routes
+import functools
 import json
+import threading
 import uuid
 import sys
 import secrets
@@ -28,6 +30,66 @@ _vault_root = None
 # (#141 — the write doors learned this question in #140; these five doors
 # ride a different resolver and had never been asked it).
 _vault_hidden_part = None
+
+
+# ── Claims made by a door that never filed anything (#401) ───────────────────
+# _vault_binary_path CLAIMS its answer on disk — O_CREAT|O_EXCL, a real
+# zero-byte file — before any rendering or provider call starts, because that
+# is the only way two exports racing the same name cannot erase each other.
+# The claim is correct. What was missing is the other half: a door that then
+# FAILS has written a file into the boss's Library that nobody asked for and
+# nobody is told about. Measured on a real server with no provider keys set —
+# the ordinary first-run state — three refused /generate/image calls for
+# `Art/hero.png` left `hero.png`, `hero (2).png` and `hero (3).png` on disk at
+# zero bytes each, and the fourth attempt, the one that finally works, is
+# filed as `hero (4).png`. The husks even win the race they were meant to
+# settle: each one falsely holds the name against the next caller.
+#
+# fs_routes already knows this move — _fs_rename_unclaim undoes a
+# claimed-but-never-filled destination "so a failed rename does not leave a
+# phantom empty file/folder behind at `to` (which would then itself falsely
+# win the next claim)". The export doors ride the same claim_name and never
+# got the same undo.
+#
+# Kept in a thread-local rather than on `self` because this is a ThreadingMixIn
+# server (one door per thread, and keep-alive reuses one handler across
+# requests) and because _vault_binary_path is also called directly, with no
+# handler at all, by the export-race regression test. Outside a door
+# `pending` is None and nothing is remembered: whoever called the helper by
+# hand owns what it claimed.
+_claims = threading.local()
+
+
+def _remember_claim(path):
+    pending = getattr(_claims, 'pending', None)
+    if pending is not None:
+        pending.append(path)
+
+
+def _unfilled_claim_is_not_a_deliverable(door):
+    """Wrap an export door so a claim it never filled leaves no file behind.
+
+    Zero bytes is a measurement, not a guess: every one of these five doors
+    ends by writing the rendered deck / document / PDF / image / video into
+    the claimed path, so a claim still empty when the door returns is one no
+    deliverable ever reached. A door that succeeded has bytes and is kept
+    untouched — including the pdf door's Path A, which fills the same claim
+    weasyprint failed on when reportlab takes over.
+    """
+    @functools.wraps(door)
+    def guarded(self, *a, **kw):
+        _claims.pending = []
+        try:
+            return door(self, *a, **kw)
+        finally:
+            claimed, _claims.pending = _claims.pending, None
+            for p in claimed:
+                try:
+                    if p.stat().st_size == 0:
+                        p.unlink()
+                except OSError:
+                    pass   # already gone, or not ours to remove
+    return guarded
 
 
 def _scrub(text, *secret_values):
@@ -147,6 +209,9 @@ def _vault_binary_path(self, rel: str, allowed_ext: tuple) -> pathlib.Path:
     # _ctx.meta.filedAs, so the sidestep is said, not hidden.
     fd, _, candidate, _ = fs_routes.claim_name(candidate.name, lambda c: parent / c)
     os.close(fd)
+    # …and the claim is only half the transaction — see
+    # _unfilled_claim_is_not_a_deliverable above for the undo.
+    _remember_claim(candidate)
     return candidate
 
 def _read_json_body(self):
@@ -156,6 +221,7 @@ def _read_json_body(self):
     except json.JSONDecodeError:
         return None
 
+@_unfilled_claim_is_not_a_deliverable
 def _export_pptx(self):
     """Render a markdown outline into a real .pptx and save to vault.
     Body: { path, content }. The outline uses `## Slide N: Title` headers
@@ -220,6 +286,7 @@ def _export_pptx(self):
     rel_out = str(out_path.relative_to(pathlib.Path(_vault_root()).resolve())).replace('\\', '/')
     return self._send_json(200, {'path': rel_out, 'slides': len(prs.slides)})
 
+@_unfilled_claim_is_not_a_deliverable
 def _export_docx(self):
     """Render markdown into a real .docx and save to vault. Body: {path, content}.
     Supports headings (# / ## / ###), bullets (- / *), and paragraphs.
@@ -263,6 +330,7 @@ def _export_docx(self):
     rel_out = str(out_path.relative_to(pathlib.Path(_vault_root()).resolve())).replace('\\', '/')
     return self._send_json(200, {'path': rel_out})
 
+@_unfilled_claim_is_not_a_deliverable
 def _export_pdf(self):
     """Render markdown into a .pdf and save to vault. Body: {path, content}.
     Tries weasyprint (best) → reportlab (fallback). Returns 503 if neither."""
@@ -330,6 +398,7 @@ def _export_pdf(self):
     return self._send_json(200, {'path': rel_out, 'renderer': 'reportlab'})
 
 # ---- Image / video generation (user-configured provider) -------------
+@_unfilled_claim_is_not_a_deliverable
 def _generate_image(self):
     """Generate an image via the user's configured provider, save to vault.
     Body: { path, prompt, provider, model, size?, apiKey? }
@@ -554,6 +623,7 @@ def _generate_image(self):
     rel_out = str(out_path.relative_to(pathlib.Path(_vault_root()).resolve())).replace('\\', '/')
     return self._send_json(200, {'path': rel_out, 'provider': provider, 'model': model})
 
+@_unfilled_claim_is_not_a_deliverable
 def _generate_video(self):
     """Generate a video via the user's configured provider, save to vault.
     Body: { path, prompt, provider, model, duration?, apiKey? }

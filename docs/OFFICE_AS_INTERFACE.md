@@ -42229,3 +42229,298 @@ cache declarations by hand rather than lifting the region, needed
 `_vaultCacheEpoch`. All four given the dependency with a comment citing this
 entry and pointing at the test that owns the moving-board case. The other
 forty-four pass unchanged.
+## 401. the export that refused still filed something, and it was empty
+
+`## 395` swept the CLIENT for **work the code performs that never reaches the
+boss** — state written but never read, an error caught and swallowed, a
+failure path that reports success — and closed by naming what it could not
+reach: *"they do not cover `serve.py` or the drivers, where the same three
+shapes are very likely to live and nobody has counted them yet."* This is
+that count, and the one thing in it worth fixing.
+
+The server's version of shape three turned out not to be a route that lies
+about a failure. Every route in these files says its failure out loud —
+measured, not assumed, below. It is the opposite: a route that reports the
+failure correctly and, on the way out, **performs a write nobody is told
+about, which then changes the answer to the next request that works.**
+
+### The bug
+
+`exporters._vault_binary_path` CLAIMS its answer on disk — `O_CREAT|O_EXCL`
+through `fs_routes.claim_name`, a real zero-byte file — *before* any
+rendering or provider call starts. `## 337`-family put it there and it is
+right: two exports naming `Slides/q3.pptx` at the same moment must not be
+able to erase each other, and asking "is this name free?" without claiming it
+in the same syscall is how they did.
+
+The claim is half a transaction. All five doors (`/export/pptx`,
+`/export/docx`, `/export/pdf`, `/generate/image`, `/generate/video`) can then
+fail for a dozen ordinary reasons — no provider key, a provider that is not
+running, a missing render library, a refusal from upstream — and every one of
+those exits left the claim standing.
+
+Driven on a real `serve.py` on its own port, an empty temp vault, and no
+provider keys in the environment — which is the **ordinary first-run state**,
+since `## 396` established that the office ships with no credentials at all:
+
+    POST /generate/image  Art/hero.png   400 {"error":"OPENAI_API_KEY required"}
+        vault: Art/hero.png       0 bytes
+    POST /generate/image  Art/hero.png   400 {"error":"OPENAI_API_KEY required"}
+        vault: + Art/hero (2).png 0 bytes
+    POST /generate/image  Art/hero.png   400 {"error":"OPENAI_API_KEY required"}
+        vault: + Art/hero (3).png 0 bytes
+    POST /generate/image  Art/hero.png   400 {"error":"GOOGLE_API_KEY required"}
+        vault: + Art/hero (4).png 0 bytes
+
+Twelve refusals in one run of the harness produced twelve husks. The boss is
+told the export failed — the toast is correct and always was. Nothing tells
+them the Library just gained a file. And the husks **win the very race the
+claim exists to settle**: each one holds the name against the next caller, so
+the attempt that finally works, after the tester sets the key, is filed as
+`hero (5).png` while the deck they wrote still points at `hero.png` — a
+zero-byte file that renders as a broken image. A tester who tries three times
+before reading the error has permanently burned the name they asked for,
+using nothing but the office's own retry.
+
+Neighbouring code already knows the move. `fs_routes._fs_rename_unclaim`
+(774) undoes a claimed-but-never-filled destination after a failed
+`/fs/rename` *"so a failed rename does not leave a phantom empty file/folder
+behind at `to` (which would then itself falsely win the next claim)"* — the
+same sentence, about the same file, for the same reason. The export doors
+ride the same `claim_name` and never got the same undo.
+
+### The fix
+
+`_unfilled_claim_is_not_a_deliverable`, a one-branch guard on the five doors.
+`_vault_binary_path` registers what it claimed in a thread-local; the guard
+clears the register on the way in and, in a `finally` so a door that *raises*
+is covered too, removes any claim still at **zero bytes** on the way out.
+
+Zero bytes is a measurement, not a guess: every door ends by writing its
+rendered deck / document / PDF / image / video into the claim, so a claim
+still empty when the door returns is one no deliverable ever reached. A door
+that succeeded has bytes and is not touched — including the PDF door's Path
+A, where reportlab fills the same claim weasyprint failed on. Thread-local
+rather than `self` because this is a `ThreadingMixIn` server, keep-alive
+reuses one handler across requests, and `_vault_binary_path` is also called
+with no handler at all by the export-race regression test; outside a door
+`pending` is `None` and nothing is remembered, so a direct caller still owns
+what it claimed. Nothing about the race fix moved: 60 threads still resolve
+to 60 distinct claimed paths, and a genuine second export of a name that is
+genuinely taken still steps aside to `hero (2).png`.
+
+### Test
+
+New `scripts/test_an_export_that_failed_leaves_nothing_in_the_library.py`.
+
+Round 1 is structural and **general rather than pinned to five names**: it
+walks exporters.py's AST for every function that resolves a vault path
+through `self._vault_binary_path(` — that is what makes a function a door —
+and requires every one of them to carry the guard, so a *sixth* door added
+later fails this check instead of quietly reintroducing the bug. It also pins
+that `_vault_binary_path` still claims through `fs_routes.claim_name`, that
+the guard returns the door's own response unchanged, that its cleanup is in a
+`finally`, and that it only removes a claim that is still zero bytes.
+
+Round 2 is the invariant, on a real server: **a door that does not answer 2xx
+leaves the vault byte-for-byte as it found it.** Thirteen probes, all
+thirteen of which refuse on this machine and twelve of which used to leave a
+husk (the thirteenth refuses before the claim), each one reachable with no
+credential of any
+kind (every key stripped from the child's environment; the only keys and URLs
+in the file are obvious fakes). It also asserts the run is not vacuous — at
+least eight refusals actually observed — because an invariant nothing
+exercises passes trivially.
+
+Round 3 proves the other side, and it is the sequence a tester actually
+walks: a refusal, then the retry that works. The retry must be filed under
+`Art/hero.png` — the name that was asked for, not a variant bumped past the
+earlier failure's husk — and a genuine second export must still step aside.
+
+Fire-tested: reverted in place (md5 `1472ba71943d8fcb1ce3d2b96496c23d`,
+byte-identical to the pre-fix file — `git diff` empty), **21 checks failed
+reliably across 3 runs**, with the husk ladder above printed as the evidence
+on every one. Restored byte-identical
+(`b3849450c8dfb57112389cf529281e33`), green on 3 repeated runs. Also run
+green against a clean `git archive` of `chore/oss-reduction` with only these
+two files overlaid — an integration-shaped tree with no `.claude/worktrees/`
+in it — because `## 397`'s test passed in its worktree and failed on
+integration for exactly that reason. This test globs nothing; its only
+`os.walk` is over its own temp vault.
+
+**No fallout.** All 15 existing tests naming exporters.py or lifting
+`_vault_binary_path` / `_read_json_body` / the five door names were run
+standalone and every one passes, including
+`test_two_exports_racing_the_same_name_do_not_erase_each_other.py` (the race
+fix this builds on — 5 rounds of 10 concurrent exports, still 10 distinct
+files, still no cross-contamination) and `test_exporters_wired.py` (which
+checks every `self._X(` in exporters.py against serve.py's binding list — the
+new helpers are module functions, called without `self.`, precisely so that
+list did not have to change). Same reason as `## 395` and `## 397`: this adds
+a decorator and two module functions rather than splitting a function, so no
+test that lifts a body by name gained a new free variable. **serve.py is not
+touched.**
+
+### The swept inventory
+
+Mechanically first, so the denominator is real, and with `ast` rather than
+grep so handler bodies are exact. Across `serve.py`, `fs_routes.py`,
+`exporters.py`, `pty_server.py` and all seven `drivers/*.py` — **11,373
+lines**: **377 `try` statements carrying 401 `except` handlers**, each
+classified by its body; **zero bare `except:`** in the whole server; 14
+`send_error` calls; 6 `subprocess.run` sites; 11 `_obsidian_request` sites.
+
+| file | try | empty | log-only | re-raise | surfaced | other body |
+|---|---|---|---|---|---|---|
+| serve.py | 207 | 46 | 7 | 5 | 85 | 69 |
+| pty_server.py | 52 | 23 | 0 | 0 | 5 | 22 |
+| fs_routes.py | 36 | 4 | 0 | 0 | 37 | 10 |
+| exporters.py | 25 | 1 | 1 | 1 | 25 | 5 |
+| drivers/hermes.py | 22 | 8 | 1 | 1 | 0 | 12 |
+| drivers/claude_code.py | 9 | 4 | 0 | 2 | 0 | 2 |
+| drivers/codex.py | 9 | 4 | 0 | 2 | 0 | 2 |
+| drivers/local_http.py | 8 | 4 | 0 | 2 | 0 | 3 |
+| drivers/gemini_cli.py | 6 | 3 | 0 | 1 | 0 | 1 |
+| drivers/base.py | 3 | 1 | 0 | 0 | 0 | 2 |
+| drivers/\_\_init\_\_.py | 0 | — | — | — | — | — |
+| **total** | **377** | **98** | **9** | **14** | **152** | **128** |
+
+Four further mechanical passes, each a different shape:
+
+- **Unchecked returncode.** Every `subprocess.run` site checked for a
+  `.returncode` read on its own result anywhere in the enclosing function:
+  **6 of 6 read it.** `drivers/base.probe_cli` (53) is the reason — an
+  earlier hunt found it returning a crash message as a version, and its
+  docstring is now the longest in the package.
+- **Unchecked upstream status.** Every `_obsidian_request` call site checked
+  for a read of the status it unpacks: **11 of 11 read it**; none discards it
+  into `_`.
+- **`json.loads` on an unchecked response.** `urlopen`/`urllib` reads whose
+  body is parsed with no status test: the only ones are inside
+  `except urllib.error.HTTPError` bodies, where the status is what got you
+  there.
+- **A 2xx built from a swallow.** Two passes — an `except` that assigns an
+  empty literal which then reaches a `_send_json(2xx, …)` in the same
+  function (**0 hits**), and a module-level helper that returns an empty
+  default out of an `except` or a status guard and whose call site feeds a
+  2xx body (**21 such helpers, 2 reaching a 2xx**, both in serve.py, both
+  listed as EXPOSED below).
+
+### SAFE — every verdict with its named read-site or its reason
+
+Not "it looks like a fall-through". The specific place the failure IS
+surfaced, or the specific reason it need not be.
+
+- **`drivers/base.probe_cli` (48, 50)** — both arms return a `problem`
+  predicate, read by `claude_code.detect` (89) / `codex` / `gemini_cli` into
+  `probeError` + `probeDetail`, which the front desk renders as "…but it will
+  not start" with the command's own first line in the tooltip.
+- **`drivers/base.Driver.cancel` (149)** — `proc.kill()` on a process being
+  torn down. There is nothing left to report a failed kill *to*, and the
+  caller already decided the task is over.
+- **`drivers/base.run_task_text`** — not a swallow at all, and the reference
+  for the whole package: a stream that failed AFTER some text raises nothing
+  but appends `⚠ stopped early: {err}` so an unattended caller cannot file a
+  half-answer as finished.
+- **`drivers/local_http.detect` (58)** — `reachable = False` is read at
+  **64**, becoming `version: ''` instead of `'reachable'`. A probe that does
+  not answer is a backend the roster shows as unreachable.
+- **`drivers/local_http.events` (200)** — `except (TimeoutError, OSError)`
+  sets `err`, read at **209**; the terminal event is `ev_error` naming the
+  backend, never `ev_done`. `resp.close()`'s swallow (203-206) is teardown.
+  `cancel`'s (228) likewise.
+- **`drivers/local_http.start_task` (121-124, 126-130)** — the two swallows
+  inside the `HTTPError` arm only widen the message that is about to be
+  raised anyway (`detail` and `retry_after`); the `DriverError` at **131**
+  carries the code and reason regardless.
+- **`drivers/claude_code.detect_auth` (72, 76)** — returns `(False, '')`,
+  read as `authenticated: False`, which is the sign-in prompt on the front
+  desk. Its own docstring says why this must fail closed: *"False is a hint,
+  not a verdict"* — a keychain credential has no file to see.
+- **`drivers/claude_code`'s `_drain` (170) and the `finally` kill (266)** —
+  a stderr pump on a dying process and a teardown kill. What stderr *did*
+  reach `stderr_buf` is read at **286** and yielded as `ev_error` on a
+  non-zero exit.
+- **`drivers/codex.py` / `drivers/gemini_cli.py`** — same four shapes, same
+  read-sites, each file's terminal branch reaching `ev_error` on a non-zero
+  exit whether or not text arrived first.
+- **`fs_routes` 272 and 380** — `self.wfile.write(data)` *after* the 200 and
+  the headers are already on the wire. The client is gone; there is no
+  surface left to draw on. The client-side twin `## 397` blessed is
+  `app/storage.jsx`'s `pagehide` flush.
+- **`fs_routes` 455** — a filename mojibake fallback that `return name`, the
+  header's own value. A decode that does not improve the name leaves the name
+  alone; the upload still lands and its receipt names what was written.
+- **`fs_routes._fs_rename_unclaim` (774)** — the precedent this entry's fix
+  copies. Its `except OSError: pass` is correct: the undo is best-effort
+  cleanup on a path that has *already* answered 500 with the real cause.
+- **`fs_routes._fs_json_body` (645)** — `return None`, and **all 3** call
+  sites answer `400 {"error": "bad json"}`. Counted, not assumed.
+- **`exporters._read_json_body` (157)** — `return None`, and **all 5** doors
+  answer `400 {"error": "bad json"}` on it. Counted.
+- **`exporters` 289/291 (the PDF door's Path A)** — `ImportError` and a
+  `stderr` line, both falling through to Path B (reportlab) on the same
+  claim. If Path B is also absent the door answers **503 naming both install
+  commands**; if it is present the boss gets a PDF. A degraded renderer that
+  still delivers is not a swallow.
+- **`pty_server` 1132 / 1225 / 1079 / 1123 / 1217** — `BrokenPipeError` /
+  `ConnectionResetError` on writes into a socket whose reader has gone. Same
+  reason as fs_routes 272.
+- **`pty_server` 662 / 703** — a `resize` control frame with a nonsense
+  `cols`/`rows`. The terminal keeps the size it had; there is no work to lose
+  and the next frame corrects it.
+- **`pty_server` 487 / 496 / 518 / 558-579 / 618-625** — `setwinsize`,
+  `ioctl`, replay writes and fd teardown on the reconnect and drop paths.
+  Every one is bracketed by a `[pty-ws]` stderr line naming the session, and
+  none of them is the boss's action.
+- **`pty_server._terminal_stream`** — swept before this hunt: `err` is
+  latched from the CLI's own `result.subtype` / `is_error` / in-band `error`
+  frame and read by the tail, which emits `delta.type: 'error'` — *"the ONLY
+  signal the terminal has that a turn failed"*.
+- **`serve._api_key_ok` (2494) and `_site_sandbox_ok` (2517)** — `return
+  False` out of the `except`. Both fail **closed**: a peer address that
+  cannot be read is refused, not admitted. That is the correct direction and
+  the refusal is a 401/403 the caller sees.
+- **`serve._within_allowed_dirs` (346) and `_static_path_allowed` (2704)** —
+  same shape, same direction. A path that cannot be resolved is outside the
+  allowlist.
+- **`serve._night_try_claim_scan` (1090, 1092)** — `return False` with the
+  reasons written on the lines themselves ("someone else just released it
+  mid-check", "a live process holds it"). A lock not taken means this scan
+  does not run; the next one does.
+- **`serve.py`'s 7 log-only handlers (1195, 1203, 6331, 6453, 6497, 6523,
+  6565)** — all on boot and cron paths, none inside a request. 1203 says so
+  in as many words: *"a bad run log must never stop the server booting"*.
+
+### EXPOSED — diagnosed, not fixed, so the next hunt need not re-derive
+
+Both are in `serve.py`, which this hunt was scoped to read and not edit, and
+both are the *client's* shape three wearing server clothes: an error becomes
+an empty-but-valid payload and the browser renders "nothing here" over it.
+
+1. **`_rest_search` (2161-2170)** — the Library's search on the Obsidian REST
+   backend. `if s != 200: return []`, and a body that will not parse also
+   `return []`. The call site is **5686**,
+   `self._send_json(200, {'hits': _rest_search(query, limit)})` — a **200**
+   with an empty hit list. A wrong API key (401), Obsidian not running, or
+   the Local REST plugin disabled all render as *"no results"* for a query
+   whose answer is sitting in the vault. Exactly `## 397`'s `hq night`
+   destructuring a refusal into "(no night runs yet)". Narrower than that one
+   only because it needs the REST backend configured.
+2. **`_drivers.hermes.read_model` (162)** — `return ''` out of a bare
+   `except`, sent as `self._send_json(200, {'model': …})` at **5897**, so a
+   config the office could not read is indistinguishable from a brain with no
+   model set. `drivers/hermes.py` is owned by a concurrent hunt; named here
+   for whoever holds it.
+
+Not exposed but worth writing down: `exporters._generate_image`'s Google arm
+is reached with `provider: 'google'`, not `'gemini'` — `'gemini'` falls to
+`400 unsupported provider`. The driver registry spells the same backend
+`gemini-api`. Three spellings for one provider is a naming debt, not a bug,
+and the refusal is at least loud.
+
+Renumbered from #400 at integration: a concurrent hunt landed first. Every
+`#401` in `exporters.py` and in
+`scripts/test_an_export_that_failed_leaves_nothing_in_the_library.py` moved
+with it. The bare numbers throughout the inventory above (272, 380, 455,
+645, 1132…) are LINE numbers, not entry numbers, and did not move.
