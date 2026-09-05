@@ -33261,3 +33261,73 @@ a foreign session owns and this change never touches). This change covers only
 `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any kind
 was run.
+
+## 280. the coworker bought a plant and the books said they had earned one
+
+**The wreck.** A boss opens the furniture shop, spends 20 sGLDT on a desk plant
+for Llama, and signs the sale in the shell. Coins rain over Llama's desk
+labelled `+20 sGLDT`. Then the COWORKER P&L board on the office wall — the one
+surface in this product that claims to be the team's books — moves Llama's row
+from `▲0 ▼0 =0` to `▲20 ▼0 =20`. Twenty gold left the wallet and the wall
+records it as twenty earned: a forty-token error, in the direction that
+flatters.
+
+**Why it happened.** `cafresohq:moneyEvent` is not an income channel, though
+its name and both of its readers assumed it was. Three places fire it: the tip
+watcher (`kind:'tip'`), the payroll watcher (`kind:'payday'`) — and
+`modals/collab.jsx`, which fires `kind:'furnish'` *after* a signed sGLDT
+purchase comes back `paid`. The P&L board's live listener in `ui/office.jsx`
+read:
+
+```js
+if (!d.agentId || !d.amountRaw) return;
+… earnedRaw: cur.earnedRaw + BigInt(d.amountRaw) …
+```
+
+No `kind` anywhere in it. Its one remaining guard, `d.token !== cur.token`, is
+the guard a furnish sails straight through: the shop is denominated in sGLDT,
+which is exactly the token the office treasury is kept in. The Tip Rain chip
+below made the same assumption in one character — a hardcoded `+` in front of
+every amount.
+
+The `▼` half is honest and always was: it reads `chain.wallet.totals()`, the
+on-chain spend metering, which does eventually count the purchase. So a reload
+half-corrects the row and the boss's two readings of the same wall disagree,
+which is the shape that makes this worse than a stale number.
+
+**The fix.** An allowlist, not a `!== 'furnish'` patch — the next spend kind
+someone adds must be ignored by default rather than banked by default:
+
+```js
+const EARNING_KINDS = { tip: true, payday: true };
+… if (!d.agentId || !d.amountRaw || !EARNING_KINDS[d.kind]) return;
+```
+
+The coins still fall on a furnish. Money genuinely moved at that desk and §4
+wants the beat; it is the *sign* that was lying, so the chip now prints `−20
+sGLDT`.
+
+**The test.** `scripts/test_a_purchase_is_not_a_payday.py` establishes the
+premise before asserting the fix — that `modals/collab.jsx` really does
+broadcast a spend on this channel, carrying an `agentId`, an `amountRaw` and
+`token:'sGLDT'`, so it really does clear every other guard on the listener.
+Then: the listener names its income kinds, does not name `furnish`, rejects a
+non-earning kind in the early return before `setPlTotals` is reached, and does
+it as an allowlist rather than a one-off exclusion. Last, the desk chip's sign.
+
+Fire-tested: copied the fixed `ui/office.jsx` to `/tmp`, reverted both hunks in
+place with the editor (never `git checkout -- <file>`) — 3 of 11 checks failed,
+exit 1. Restored from the `/tmp` copy, confirmed byte-identical by `md5`
+(`9b8574eecfa143e298ed957844b4269e`), reran — 11 of 11 passed, exit 0.
+
+`npm run build` was run once up front so `dist-ui/manifest.json` exists in a
+fresh worktree.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file
+a foreign session owns and this change never touches). This change covers only
+`ui/office.jsx`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any kind
+was run.

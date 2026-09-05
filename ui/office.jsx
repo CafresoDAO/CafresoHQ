@@ -804,9 +804,18 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
         setPlTotals(t);
       } catch (_e) { if (!dead) setPlWallets([]); }
     })();
+    /* EARNED means money that came IN, and `cafresohq:moneyEvent` does not
+       only carry income: modals/collab.jsx fires kind:'furnish' AFTER a
+       signed sGLDT furniture purchase settles (status 'paid'). This handler
+       credited every event carrying an amountRaw straight into earnedRaw, so
+       spending 20 sGLDT on a desk plant made this board read ▲20 earned and
+       pushed net 20 the WRONG WAY — the books said the coworker had made
+       money by spending it. Only genuine income may credit earned; the spend
+       side is the on-chain spendTotals this row already reads for ▼. */
+    const EARNING_KINDS = { tip: true, payday: true };
     const onMoney = (e) => {
       const d = e.detail || {};
-      if (!d.agentId || !d.amountRaw) return;
+      if (!d.agentId || !d.amountRaw || !EARNING_KINDS[d.kind]) return;
       setPlTotals(prev => {
         if (!prev || !prev[d.agentId]) return prev;
         const cur = prev[d.agentId];
@@ -1569,7 +1578,12 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
                               <span key={ci2} className="px-coin" style={{ left: `${10 + ci2 * 15}%`, animationDelay: `${ci2 * 0.18}s` }} />
                             ))}
                             <div className="px-tipamount">
-                              {tipRain[a.id].kind === 'payday' ? '💰 PAYDAY ' : ''}+{tipRain[a.id].amount} {tipRain[a.id].token}
+                              {/* Same lie, second rendering: 'furnish' is a
+                                  PURCHASE, and the chip printed it with a
+                                  leading '+' like a tip. The coins may still
+                                  fall — money really moved at that desk — but
+                                  they left the wallet, so the sign says so. */}
+                              {tipRain[a.id].kind === 'payday' ? '💰 PAYDAY ' : ''}{tipRain[a.id].kind === 'furnish' ? '−' : '+'}{tipRain[a.id].amount} {tipRain[a.id].token}
                             </div>
                           </div>
                         )}
