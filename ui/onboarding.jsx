@@ -312,7 +312,8 @@ function OnboardingKeyStep() {
   const existing = (C && C.getSettings && C.getSettings().openrouterKey) || '';
   const [key, setKey] = useState(existing);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(existing ? 'have' : null); // 'have' | 'ok' | 'local' | 'err'
+  const [saved, setSaved] = useState(existing ? 'have' : null); // 'have' | 'ok' | 'gw' | 'err'
+  const [saveDetail, setSaveDetail] = useState('');            // the server's own words
   // Trial brain: when this deployment ships a shared free key, a brand-new HQ
   // ALREADY works with no signup — so this step is an optional upgrade, not a
   // gate. Fetch the live status so the copy tells the truth for THIS container.
@@ -330,14 +331,39 @@ function OnboardingKeyStep() {
   const save = async () => {
     const trimmed = (key || '').trim();
     if (!trimmed || saving) return;
-    setSaving(true); setSaved(null);
+    setSaving(true); setSaved(null); setSaveDetail('');
+    /* `hermesSetOpenRouterKey` NEVER throws and never returns ok:false — a
+       400 from the container comes back as {ok: true, serverStored: false,
+       detail: 'server 400: invalid OpenRouter key'}, and so does an office
+       the browser could not reach at all. So `serverStored` is the only
+       thing in the reply that means the key landed, and the old code read
+       its falsehood as the cheerful state 'local' — a rejected key, a
+       truncated paste, a stray space, all of it under a green tick reading
+       "✓ Key saved. (Stored in this browser — your container will pick it
+       up.)" Nothing would ever pick it up; there was nothing to pick up.
+       Settings → Connections has always read this correctly (see saveKey in
+       modals/providers.jsx), and this step is that same read. */
     try {
       const r = (C && C.hermesSetOpenRouterKey)
         ? await C.hermesSetOpenRouterKey(trimmed)
-        : { ok: true, serverStored: false };
-      setSaved(r && r.serverStored ? 'ok' : 'local');
-    } catch (_e) {
-      setSaved('err');
+        : { ok: true, serverStored: false, detail: 'no connection to your office' };
+      if (!(r && r.serverStored)) {
+        setSaved('err'); setSaveDetail((r && r.detail) || '');
+      } else if (r.restarted === false) {
+        /* The key IS on file — and the gateway it is for never came back.
+           `gateway_restart` in drivers/hermes.py is a best-effort Popen of a
+           `hermes` binary that may not exist; when it doesn't, the server
+           still answers 200 with the note "gateway reloading", and only the
+           `restarted: false` beside it tells the truth. Without this branch
+           the tester is told they are ready and then every message fails
+           with "couldn't reach that brain", a sentence that names neither
+           Hermes nor the script that would have started it. */
+        setSaved('gw');
+      } else {
+        setSaved('ok');
+      }
+    } catch (e) {
+      setSaved('err'); setSaveDetail((e && e.message) || '');
     } finally { setSaving(false); }
   };
 
@@ -403,11 +429,15 @@ function OnboardingKeyStep() {
         </button>
       </div>
       <div style={{ marginTop: 'var(--sp-2)', fontSize: 'var(--text-9)', minHeight: '1.2em',
-        color: saved === 'err' ? 'var(--danger, #c33)' : 'var(--ink-3)' }}>
+        color: saved === 'err' ? 'var(--danger, #c33)'
+             : saved === 'gw' ? 'var(--warn, #d4952a)' : 'var(--ink-3)' }}>
         {saved === 'ok'    && '✓ Key saved to your container. You\'re ready.'}
-        {saved === 'local' && '✓ Key saved. (Stored in this browser — your container will pick it up.)'}
+        {saved === 'gw'    && '⚠ Key saved — but the Hermes gateway didn\'t start, so nothing is '
+                            + 'listening on 127.0.0.1:8642 yet. Run Start-CafresoHQ.sh, or pick a '
+                            + 'different brain in Settings → Connections.'}
         {saved === 'have'  && '✓ A key is already set. Paste a new one to replace it.'}
-        {saved === 'err'   && '✕ Couldn\'t save — check the key and try again.'}
+        {saved === 'err'   && ('✕ Couldn\'t save — check the key and try again.'
+                            + (saveDetail ? ' (' + saveDetail + ')' : ''))}
         {!saved && (onTrial
           ? 'Optional — your own key gives unlimited use and lets you pick the model.'
           /* No tab named here on purpose. This line is read on a managed

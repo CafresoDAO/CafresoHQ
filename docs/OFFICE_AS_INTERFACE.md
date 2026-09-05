@@ -34391,3 +34391,58 @@ block must name a directory that exists in this checkout, or reach outside
 it explicitly with `../`. Prose may still mention `frontend/` historically —
 and now does, to explain where it went — because a command block is
 instructions and a paragraph is not.
+
+---
+
+## 297. a key the office refused came back as a green tick
+
+The tour's third step asks a first-time boss for an OpenRouter key. It had
+one branch for everything short of success, and it was worded as a success:
+
+    setSaved(r && r.serverStored ? 'ok' : 'local');
+      …
+    {saved === 'local' && '✓ Key saved. (Stored in this browser — your
+                            container will pick it up.)'}
+
+`hermesSetOpenRouterKey` never throws and never returns `ok: false`. That is
+a deliberate contract, not a defect — a non-2xx comes back as `{ok: true,
+serverStored: false, detail: 'server 400: invalid OpenRouter key'}`, and a
+browser that could not reach the office at all comes back as the same shape
+with `detail: 'offline — saved locally'`. Which makes `serverStored` the one
+field in the whole reply that means the key landed, and makes its falsehood
+the error case: the one thing this step read it as never being. A truncated
+paste, a key with a stray space, a container that was not answering — all
+three drew a tick and the words "your container will pick it up." Nothing
+was going to pick it up. Nothing had been left anywhere to pick up. The
+`'err'` branch two lines below was unreachable, because the only thing that
+could reach it was a throw.
+
+The same reply is read correctly one modal away. `saveKey` in
+`modals/providers.jsx` has always gone `else if (r && r.serverStored)` … and
+then printed `r.detail` on the other side, so Settings → Connections tells a
+self-hoster exactly what the container objected to. Two surfaces calling one
+function disagreed about what its answer meant, and the surface that
+disagreed was the one a beginner meets first, before they know enough to
+doubt it.
+
+The second half is the same shape a layer down, and the evidence for it was
+already in the reply. `POST /hermes/provider` writes the key and then calls
+`gateway_restart`, whose entire body is a best-effort `Popen(['hermes', …])`
+inside a `try/except`. On a box with no `hermes` binary that raises, is
+swallowed, and returns False — and the handler still answers `200 {ok: true,
+restarted: False, note: 'gateway reloading; allow ~10s'}`. The note is
+untrue in exactly that case and the `restarted` field sitting beside it is
+the correction. Nobody read it. So the tester was told they were ready, and
+then every message they sent failed with "couldn't reach that brain — it
+looks offline from here" — a sentence that is accurate and names neither
+Hermes, nor a gateway, nor `Start-CafresoHQ.sh`, which is the script that
+would have started one. A step that cannot promise the brain is up should at
+least say which brain, and where the switch is.
+
+Three states now, and they are three because the situations are genuinely
+different: saved and live is a tick, saved with a dead gateway is a warning
+that names the port and the script, and not-saved is a failure carrying the
+container's own words rather than a generic "try again". Absent stays
+distinct from false — an older container that omits `restarted` entirely is
+still a tick, because telling a working office to go and run a startup
+script is the same error inverted.
