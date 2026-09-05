@@ -60,7 +60,23 @@ def _vault_binary_path(self, rel: str, allowed_ext: tuple) -> pathlib.Path:
             'hidden files are not accepted — the Library never lists '
             f'anything under "{hidden}". Drop the leading dot to file '
             'this where it can be seen.')
-    ext = pathlib.Path(rel).suffix.lower()
+    # `.suffix` is not "the file's type" — it is "everything after the last
+    # dot", and a deliverable TITLE carries dots that were never an
+    # extension. "Q3 v1.2 plan" has suffix ".2 plan"; "Meeting 2026.08.30"
+    # has ".30". Read naively, both looked like a WRONG extension, so this
+    # door refused them outright — "extension must be one of ('.pptx',), got
+    # .2 plan" — and a coworker's EXPORT_* on a dated or versioned title,
+    # which is most of them, could never file its deck at all. serve.py's
+    # `_vault_resolve` learned this exact lesson for the note-write doors
+    # and named these two very titles; the export doors ride this resolver
+    # instead and had never been told. So a suffix only counts as a file
+    # type when it is SHAPED like one: 1-8 alphanumerics with at least one
+    # letter. Every real extension qualifies ('.md', '.pptx', '.7z'); a
+    # version number, a date fragment and anything carrying a space do not,
+    # and fall through to the append arm below like the bare title they are.
+    _suffix = pathlib.PurePosixPath(rel).suffix
+    ext = _suffix.lower() if re.fullmatch(
+        r'\.(?=[^.]*[A-Za-z])[A-Za-z0-9]{1,8}', _suffix) else ''
     if ext not in allowed_ext:
         # If no extension was given, append the first allowed one.
         if not ext:

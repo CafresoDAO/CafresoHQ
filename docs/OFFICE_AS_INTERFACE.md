@@ -34091,3 +34091,78 @@ foreign session owns and this change never touches). This change covers
 `hq-runtime.jsx`, one new test, and this entry; `src/cafresohq_state/main.mo` was
 never staged or edited, no II or `derivationOrigin` value was read or written,
 and no dfx/IC action of any kind was run.
+
+---
+
+## 292. a dot in a deck's title is not a file extension
+
+**The reading.** Assigned area: `views/vault.jsx` and `exporters.py`. The vault
+view has been hunted hard — `#243` took the mobile Library blanking, `#251` the
+invisible export, and the file now carries a guard on nearly every leave path
+(`flushBeforeLeave`), a hidden-part refusal at the prompt, a collision guard on
+`newNote`, and a poll that only propagates when the listing actually changed.
+`exporters.py` is 595 lines behind a single 68-line resolver, `_vault_binary_path`,
+that every one of the eight export and generate doors goes through: EXPORT_PPTX,
+EXPORT_DOCX, EXPORT_PDF, and the image/video generators for openai, google, fal,
+a1111 and comfyui. That resolver is where the whole surface's filing decisions
+are made, so that is where I read.
+
+**What was actually happening.** The resolver asked
+`pathlib.Path(rel).suffix.lower()` what kind of file it was about to write.
+`.suffix` is not "the file's type". It is "everything after the last dot", and a
+deliverable *title* carries dots that were never an extension:
+
+    "Slides/Q3 v1.2 plan"        .suffix -> '.2 plan'
+    "Decks/Meeting 2026.08.30"   .suffix -> '.30'
+    "Research/Findings 1.5"      .suffix -> '.5'
+
+Because those come back non-empty, the resolver skipped its append-the-extension
+arm entirely and took the *other* branch — the one written for a caller who asked
+for the wrong format — and refused:
+
+    extension must be one of ('.pptx',), got .2 plan
+
+So a coworker told to build "the Q3 v1.2 plan deck" or "the board update for
+2026.08.30" produced the deck, called EXPORT_PPTX with the title it had been
+given, and got a 400. Nothing reached the Library. Dated and versioned titles
+are not an exotic case; on a deliverable they are close to the default, and the
+work was rendered and then thrown away at the door.
+
+**The part that stings.** The office already knew this. `serve.py`'s
+`_vault_resolve` — the resolver the note-write doors use — carries a paragraph
+naming these two exact titles, `Q3 v1.2 plan` and `Meeting 2026.08.30`, and the
+rule it landed on: a suffix only counts as a file type when it is *shaped* like
+one, 1-8 alphanumerics with at least one letter. The export doors ride a
+different resolver and were never told. That is the same shape as the `#141`
+note sitting at the top of `exporters.py` — "the write doors learned this
+question in `#140`; these five doors ride a different resolver and had never
+been asked it" — a note written about the hidden-file question, three lines above
+the line where the very next question was still being answered the old way.
+
+**The fix.** Two lines in `_vault_binary_path`: run the raw suffix through the
+same `\.(?=[^.]*[A-Za-z])[A-Za-z0-9]{1,8}` shape test `_vault_resolve` uses, and
+treat anything that fails it as no extension at all, so it falls through to the
+append arm like the bare title it is. Every real extension still qualifies
+(`.md`, `.pptx`, `.7z`), a genuinely wrong one is still refused out loud, and
+the hidden-part re-check that `#251` added after the append is untouched.
+
+**The test.** `scripts/test_a_dotted_deck_title_is_not_a_file_extension.py`
+drives the real resolver against a temp vault for all four allowed-extension
+sets, runs the whole EXPORT_DOCX door end to end (only the `python-docx`
+boundary is stubbed) and asserts the file is on disk holding the coworker's
+words, and greps the source with comments stripped first — the explanation of
+the fix necessarily quotes the pattern it replaced, and a grep that could not
+tell those apart would fail the correct code. On the old resolver it fails 10 of
+18 checks; on the new one all 18 pass. Fire-tested by reverting the fix in place
+with the editor (never `git checkout`), watching those 10 fail, restoring from
+`/tmp`, and confirming `exporters.py` md5 `8ead06e35eaf48f3b4a001ffae46fd7d`
+byte-identical.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file a
+foreign session owns and this change never touches). This change covers
+`exporters.py`, one new test, and this entry; no existing test was changed,
+`src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any kind
+was run.
