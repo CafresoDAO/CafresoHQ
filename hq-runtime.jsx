@@ -4019,6 +4019,38 @@ function chatToMessages(chat, { omitLastCeo = false, selfName = '' } = {}) {
   const speaker = (m) => String(m.name || '').split(' · ')[0].trim();
   const out = [];
   for (const m of src) {
+    /* A bubble the office wrote ABOUT THE BOSS'S OWN ROUTING never becomes
+       a turn. `stripOfficeVoice` below is the same rule enforced on the
+       TEXT of somebody else's bubble; this is the rule enforced on a bubble
+       that is the office's from end to end, and it is a flag rather than a
+       pattern because these sentences interpolate names — a regex over them
+       would either miss a coworker called "Meeting" or eat a real aside.
+
+       #350 gave the room a note naming the @mentioned people it did NOT
+       ask, and said in its own comment that it was "screen-only, and
+       deliberately: … nobody in the room is being told about a colleague
+       who is not here." Measured on the real chain, that was false. The
+       note is a `from:'system'` bubble, `chatToMessages` reads every bubble
+       in `chatRef.current.slice(-6)` with no filter, and the envelope
+       handed to the very next attendee carried
+
+         { role: 'user',
+           content: "[HQ]: (@Dax isn't in this meeting — only @Kip was
+                     asked. Invite them to the meeting, or ask in the
+                     DIRECT thread.)" }
+
+       — the absent colleague named to the room after all, with a routing
+       instruction meant for the boss arriving as something a participant
+       said. The DIRECT thread's "(unknown teammate: @X)", which #350 was
+       modelled on, had been doing the same thing for longer.
+
+       Stage directions stay: "(dropped … on Vera's desk)", "✓ APPROVED —
+       …" are the office narrating a gesture the boss really made, and
+       "A stage direction became the boss's ask" filed them as
+       `from:'system'` precisely so the model would read them labelled
+       `[HQ]:` instead of in the boss's voice. Those carry no flag and are
+       untouched. */
+    if (m && m.officeVoice) continue;
     /* stripOfficeVoice: the office's report of its OWN actions must not
        re-enter the model's context as prior conversation. Measured — a
        coworker that had seen real `📡 …→` echoes in history wrote its own,

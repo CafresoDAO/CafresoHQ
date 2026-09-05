@@ -426,13 +426,22 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
            dropped in silence until now — see roomStrayNote. Screen-only, and
            deliberately: `body` has the mentions stripped off it, so nobody in
            the room is being told about a colleague who is not here. This is
-           the boss's own routing being narrated back to them. */
+           the boss's own routing being narrated back to them.
+
+           `officeVoice: true` is what makes "screen-only" true. Stripping
+           the mentions out of `body` was only half of it: the note is its
+           own bubble in the same `chat` array, and `chatToMessages` reads
+           the last six bubbles with no filter, so the very next attendee's
+           envelope carried "[HQ]: (@Dax isn't in this meeting …)" — the
+           absent colleague named to the room after all, and the boss's
+           route-out arriving as something a participant said. The flag is
+           honoured at that choke point. */
         const strayRoomNote = explicit
           ? roomStrayNote(explicit.targetNames, recipients, agents, activeRoom.kind)
           : '';
         if (strayRoomNote) {
           setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-            text: strayRoomNote, thread: activeThread }]);
+            text: strayRoomNote, thread: activeThread, officeVoice: true }]);
         }
         emitDoorNote(activeThread);
         setStreaming(true);
@@ -615,10 +624,15 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
           }
         }
         if (unknown.length) {
+          /* The room's twin, and the older of the two — this is the note
+             #350 was modelled on, and it had been reaching the brains for
+             longer. Same flag, same reason: a name the boss typed that
+             nobody answered to is the office narrating the boss's routing,
+             not something the coworker who DID get the message said. */
           setChat(prev => [...prev, {
             id: HQ.uid('m'), from: 'system', name: 'HQ',
             text: `(unknown teammate${unknown.length > 1 ? 's' : ''}: ${unknown.map(n => '@' + n).join(', ')})`,
-            thread: targetThread,
+            thread: targetThread, officeVoice: true,
           }]);
         }
         setStreaming(true);

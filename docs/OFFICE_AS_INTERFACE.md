@@ -38833,3 +38833,97 @@ installed" from "installed but closed"; YOUR PLAN gates its "brain included" on
 the onboarding key step asks `/hermes/trial-status` before saying "you're
 already set"; and the front desk's own `found:` lines only print on cards that
 were found. This tooltip was the last fixed claim about the user's machine.
+
+---
+
+## 365. the room told the meeting about the colleague it left out
+
+**The wreck.** `## 350.`, one ticket old. It gave the multi-agent room the
+sentence it had never had — a name the boss @mentioned that the room does not
+seat gets said out loud instead of falling off the end of a filter — and then
+promised, in its own comment and in its ledger entry, something it did not do:
+
+> Screen-only, and deliberately: `body` has the mentions stripped off it, so
+> nobody in the room is being told about a colleague who is not here.
+
+Stripping the mentions out of `body` was only half of it. The note is its own
+bubble in the same `chat` array (`from: 'system'`, `name: 'HQ'`); every
+dispatch reads `chatRef.current.slice(-6)` with no filter on thread or author;
+and `chatToMessages` — "the single place stored chat becomes prompt" — walks
+every bubble it is handed. Measured 2026-09-05 under node on the real
+`extractAllMentions → roomStrayNote → chatToMessages` chain, meeting
+*Migration sync* seating Kip and Plato, Dax hired and idle, the boss typing
+`@Kip @Dax in one word, is the migration risky?`:
+
+    { role: 'user', content: '@Kip @Dax in one word, is the migration risky?' }
+    { role: 'user', content: "[HQ]: (@Dax isn't in this meeting — only @Kip
+                              was asked. Invite them to the meeting, or ask
+                              in the DIRECT thread.)" }
+
+The absent colleague named to the room after all, and a route-out written for
+the boss arriving in the slot the model reads as something a participant said.
+A meeting takes turns, so the note is rendered and flushed long before attendee
+two is dispatched; and it stays in the last six for every turn after it, in
+this thread or any other. The chief of staff's envelope carried it too.
+
+**Not one note, two.** The DIRECT thread's `(unknown teammate: @X)` — the note
+`## 350.` cites as its own prior art — had been doing exactly this for longer.
+Repairing the new one and leaving the old one is the shape this repo keeps
+finding in itself, so both are fixed.
+
+**And one that must keep going.** The third routing note, `(nobody here is
+called @Zed — the team is … Sending this to CafresoHQ instead.)`, is handed to
+the CEO **on purpose** and says so in its own comment: *"The CEO cannot clarify
+what it was never told."* It carries no flag, and the suite pins that, because
+a fix that grew into "drop everything the office wrote" would silently undo it.
+So would the stage directions — `(dropped … on Vera's desk)`, `✓ APPROVED — …`
+— which were filed `from: 'system'` precisely so the model would read them
+labelled `[HQ]:` instead of in the boss's voice. Those are pinned too.
+
+**The fix.** An `officeVoice: true` flag on the two bubbles, honoured at the
+choke point: `chatToMessages` skips a bubble the office marked as its own
+routing before it can become a turn. A flag and not a pattern, because these
+sentences interpolate names — a regex over them would either miss a coworker
+called *Meeting* or eat a coworker's real parenthetical aside, and `## 351.`
+could use literals only because its two sentences are constants. The flag rides
+`...rest` through `persistableChat`, so a reload does not reopen the leak; the
+suite measures that too.
+
+**What else was probed and held.** `## 349.`'s three corrected claims were
+re-measured against a real server rather than against each other: keyless
+`/fs/browse` and `/fs/file` → **200** under `$HOME/Documents` and **403** one
+directory up, `/fs/delete` `/fs/mkdir` `/fs/rename` `/fs/upload` `/tools/exec`
+`/vault/*` → **401** with a key set and none supplied, no
+`Access-Control-Allow-Origin` for a foreign Origin, and
+`CAFRESOHQ_ALLOWED_DIRS` really defaulting to `~/Documents`. `## 351.`'s strip
+is line-anchored, so a coworker who quotes the phrase mid-sentence keeps it and
+a doubled note still goes; a real italic aside survives. `## 352.` ran 12/12
+clean with no skip, and reverting `.office-wrap` out of the clearance list
+failed it 5/5 with the same 62px overlap and the same `BUTTON.mtab` the ticket
+recorded — its `.toast` exclusion is narrow, since `.toast` is one leaf div
+with two spans in `ui/panels.jsx` and no layout container can sit inside it.
+`## 353.`'s guard was probed live on `PORT=11355`: the case-only rename lands
+and rewrites the inbound `[[meeting]]`, a genuine two-note collision is still
+409, and a folder case-rename works.
+
+**Residue, recorded not hidden.** `## 353.`'s comment says "a symlink is its
+own directory entry even when it points here, so it still counts as occupied".
+It is not: `_vault_resolve` ends in `.resolve()`, which follows symlinks, so
+`d_path.is_symlink()` is unreachable — a destination that is a symlink back at
+the source measured **200**, not 409, and `os.replace` no-opped. Nothing is
+destroyed (POSIX `rename` of two links to one inode is a defined no-op, and a
+hard-linked pair measured intact), but the Library is told a rename succeeded
+that did not happen. The same silent 200 covers `meeting.md → meeting` and
+`linker.md → /linker.md`, which `_vault_resolve` normalizes to the source.
+Small, and its own ticket. `(X bowed out — …)` and `(meeting adjourned — …)`
+are office voice reaching the model by the same road and are deliberately left
+alone here: they are reports about a run, not about the boss's routing, and
+widening this change to them without measuring what a coworker does with them
+would be guessing.
+
+**Whose twin.** `## 351.`, which built this exact door one entry before
+`## 350.` walked past it. The lesson is narrower than "check the choke point":
+`## 350.`'s comment was *written by someone who had thought about this* — it
+names the risk, and stops at `body`. Stripping the payload is not the same as
+not sending the note, and a comment that says "screen-only" is the sentence a
+reviewer trusts instead of following the bubble.
