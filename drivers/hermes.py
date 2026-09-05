@@ -21,6 +21,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 
 from .local_http import OpenAICompatDriver
 
@@ -68,6 +69,39 @@ def config_path():
 
 def capability_file():
     return os.path.join(home(), 'capability_mode')
+
+def _atomic_write(path, text):
+    """Write `text` to `path` without a reader ever observing a truncated or
+    half-written file. write_model/write_capability/write_provider/
+    clear_provider_key/import_config all READ config.yaml (or .env), derive a
+    new full-file body from it in Python, and used to write that body back
+    with a bare `open(path, 'w')` — which truncates the instant it opens, not
+    at close. Four HTTP endpoints (`/hermes/model`, `/hermes/capability`,
+    `/hermes/provider`, `/hermes/config/import`) can all land on config.yaml
+    at the same moment (serve.py is a ThreadingMixIn server), so one caller's
+    `open(path, 'r')` can land in the middle of another caller's truncate-then-
+    write and read a partial file — e.g. `write_capability`'s
+    `cfg.find('\\ntoolsets:')` missing the marker because the read caught
+    config.yaml mid-truncation, falling into its "no toolsets: line" branch
+    and APPENDING a second toolsets/agent/tools block onto the file instead of
+    replacing the one that (a moment later, fully written) actually is there.
+    Same family as `_vault_write_local`'s fix in serve.py: tmp file unique to
+    this call (mkstemp, same dir so os.replace stays same-filesystem), fsync,
+    then os.replace — so any reader of `path` always sees either the whole
+    old file or one writer's whole new one, never a file mid-truncation."""
+    d = os.path.dirname(path) or '.'
+    os.makedirs(d, exist_ok=True)
+    tfd, tmp = tempfile.mkstemp(dir=d, prefix=f'.{os.path.basename(path)}.', suffix='.tmp')
+    try:
+        with os.fdopen(tfd, 'w', encoding='utf-8') as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        try: os.unlink(tmp)
+        except OSError: pass
+        raise
 
 
 # ── binary / gateway lifecycle ───────────────────────────────────────────────
@@ -149,8 +183,7 @@ def write_model(model):
     if n == 0:
         return False, False, 'no model.default line in config'
     try:
-        with open(config_path(), 'w', encoding='utf-8') as f:
-            f.write(new_cfg)
+        _atomic_write(config_path(), new_cfg)
     except Exception as e:
         return False, False, f'write config: {e}'
     return True, gateway_restart('model'), ''
@@ -186,10 +219,8 @@ def write_capability(mode):
     idx = cfg.find('\ntoolsets:')
     new_cfg = (cfg[:idx + 1] if idx >= 0 else cfg.rstrip() + '\n') + block
     try:
-        with open(config_path(), 'w', encoding='utf-8') as f:
-            f.write(new_cfg)
-        with open(capability_file(), 'w', encoding='utf-8') as f:
-            f.write(mode)
+        _atomic_write(config_path(), new_cfg)
+        _atomic_write(capability_file(), mode)
     except Exception as e:
         return False, False, f'write config: {e}'
     return True, gateway_restart('capability'), ''
@@ -252,8 +283,7 @@ def write_provider(provider, key, model, base_url):
                     lines = [l for l in f.read().splitlines()
                              if not l.startswith(spec['env'] + '=')]
             lines.append(f"{spec['env']}={key}")
-            with open(env_path, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(lines) + '\n')
+            _atomic_write(env_path, '\n'.join(lines) + '\n')
             try:
                 os.chmod(env_path, 0o600)
             except Exception:
@@ -279,8 +309,7 @@ def write_provider(provider, key, model, base_url):
                        'toolsets:\n  - hermes-cli\n'
                        'agent:\n  environment_probe: false\n  task_completion_guidance: false\n'
                        'tools:\n  tool_search:\n    enabled: true\n    threshold_pct: 0\n')
-        with open(config_path(), 'w', encoding='utf-8') as f:
-            f.write(new_cfg)
+        _atomic_write(config_path(), new_cfg)
     except Exception as e:
         return False, False, f'write config: {e}'
 
@@ -312,8 +341,7 @@ def clear_provider_key(provider):
             with open(env_path, 'r', encoding='utf-8') as f:
                 lines = [l for l in f.read().splitlines()
                          if not l.startswith(spec['env'] + '=')]
-            with open(env_path, 'w', encoding='utf-8') as f:
-                f.write(('\n'.join(lines) + '\n') if lines else '')
+            _atomic_write(env_path, ('\n'.join(lines) + '\n') if lines else '')
             try:
                 os.chmod(env_path, 0o600)
             except Exception:
@@ -346,18 +374,15 @@ def import_config(cfg, capability=''):
             try:
                 with open(cfg_p, 'r', encoding='utf-8') as f:
                     prev = f.read()
-                with open(cfg_p + '.bak', 'w', encoding='utf-8') as f:
-                    f.write(prev)
+                _atomic_write(cfg_p + '.bak', prev)
             except Exception:
                 pass
-        with open(cfg_p, 'w', encoding='utf-8') as f:
-            f.write(cfg)
+        _atomic_write(cfg_p, cfg)
     except Exception as e:
         return False, False, cfg_p + '.bak', f'write config: {e}'
     if capability in ('lite', 'full'):
         try:
-            with open(capability_file(), 'w', encoding='utf-8') as f:
-                f.write(capability)
+            _atomic_write(capability_file(), capability)
         except Exception:
             pass
     return True, gateway_restart('import'), cfg_p + '.bak', ''

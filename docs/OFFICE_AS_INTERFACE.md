@@ -39785,3 +39785,106 @@ copy, confirmed byte-identical (md5, `6675c7dc7b6bcd18bdad83f563777b7e`)
 to the fixed one, test green again on three repeated runs.
 
 No `.jsx`/`.js`/`.css` touched — no build required.
+
+## 383. two coworkers changed the office brain at once and lost the toolset list
+
+**The lead.** This hunt's own brief closed with two doors to still check:
+finish `#382`'s own unverified lead on `/projects/clone`, and go looking
+for the same shape anywhere else a write touches more than one file or
+reads-then-writes one non-atomically. `/projects/clone` cleared: fired
+real concurrent clones at one destination directory over a real local
+`git clone http://` source, five rounds of 25 — exactly one winner every
+round, `git fsck --full` clean, content byte-identical to the source,
+every loser either a clean 409 (`target.exists()` already true) or a
+clean 502 (`git clone`'s OWN atomic `mkdir` on the worktree dir refused
+the second caller with a normal exit-128 error). git's own clone already
+claims its destination the exclusive way `claim_name` claims a name — no
+fix needed there, and no ledger of "found nothing" either, because the
+second door had the real bug.
+
+That door: `drivers/hermes.py`'s four config-surgery functions —
+`write_model`, `write_capability`, `write_provider`, `import_config` —
+routed from `/hermes/model`, `/hermes/capability`, `/hermes/provider`,
+`/hermes/config/import`. All four read `~/.hermes/config.yaml`, derive a
+new full-file body in Python, and used to write it back with a bare
+`open(config_path(), 'w', encoding='utf-8')` — the exact shape `#382`
+just closed on `/vault/note`, on a file four separate HTTP doors can all
+reach at once.
+
+**The wreck.**
+
+    with open(config_path(), 'w', encoding='utf-8') as f:
+        f.write(new_cfg)
+
+`open(path, 'w')` truncates the instant it opens, not at close, and
+serve.py is a ThreadingMixIn server — a coworker picking a model in
+Settings while a night-shift capability flip lands on the same
+config.yaml is an ordinary Tuesday, not a contrived one. `write_capability`
+carries its own bit of fragility on top: it locates its own block with
+`cfg.find('\ntoolsets:')` and falls back to *appending* a fresh block when
+the marker isn't found — a fallback meant for a first-run empty config,
+not for catching a sibling writer's file mid-truncation. Measured against
+a real running server (a throwaway `HERMES_HOME`, no real `hermes` binary
+anywhere near it — see below): 60 rounds of one `/hermes/model` POST
+racing one `/hermes/capability` POST onto one config.yaml, before the fix
+— several rounds came back holding TWO toolsets:/agent:/tools: blocks
+glued together, `write_capability`'s stale read having caught the file
+between `write_model`'s truncate and its write and found no marker to
+replace. A boss who just flipped capability mode gets 200 OK back over a
+config.yaml the gateway can no longer parse cleanly.
+
+**The fix.** A new `_atomic_write(path, text)` helper in
+`drivers/hermes.py` — `tempfile.mkstemp` in the same directory, fsync,
+`os.replace()` into place — the identical tmp + fsync + os.replace shape
+`_vault_write_local` (serve.py, `#382`) already carries. `write_model`,
+`write_capability`, `write_provider`, `clear_provider_key`, and
+`import_config` all route every file they touch (config.yaml, its
+`.bak`, `capability_mode`, `.env`) through it now. Any reader now always
+sees either the whole old file or one writer's whole new one — never a
+file caught mid-truncation — which removes the mechanism that produced
+the duplicate block. Two writers changing DIFFERENT things at the same
+instant can still have the later one's full rewrite silently carry the
+earlier one's change forward or not (last-writer-wins on the FILE, same
+accepted semantics `#382` left in place for `/vault/note`'s whole-body
+replace) — this closes the corruption, not that ordinary race.
+
+**A near-miss worth logging.** The first investigation pass drove this
+race against `HERMES_HOME` pointed at a scratch directory but left the
+test subprocess's `PATH` untouched. `write_model`/`write_capability`
+both end in `gateway_restart()`, which is a bare
+`subprocess.Popen(['hermes', 'gateway', 'restart'])` — a PATH lookup,
+not gated on `HERMES_HOME` at all. On a dev box that also runs the real
+Hermes stack, that PATH lookup found the REAL `hermes` binary and
+launched a real gateway-restart process against the scratch config — an
+actual, live side effect this hunt should never have caused. The
+process was left running (killing arbitrary system PIDs is out of
+scope for this hunt) and the user was told directly rather than buried
+in this ledger. The test's `boot()` now pins the child's `PATH` to
+`/usr/bin:/bin:/usr/sbin:/sbin` — no `hermes` on it — so the PATH lookup
+fails cleanly and `gateway_restart` reports `restarted=False` exactly as
+it already does for "hermes not installed," with a comment on `boot()`
+explaining why. `gateway_restart`'s bare-PATH lookup (vs. honoring
+`CAFRESOHQ_HERMES_BIN`/`resolve()` like everything else in this file
+does) is a real inconsistency but out of scope for this fix — flagged,
+not fixed, here.
+
+**Fire-tested.** New
+`scripts/test_two_hermes_config_writes_at_once_do_not_duplicate_blocks.py`
+drives a real `python3 serve.py` subprocess (PATH pinned per above) with
+real concurrent HTTP requests: 60 rounds of 4 concurrent `/hermes/model`
+writers racing 4 concurrent `/hermes/capability` writers onto one
+config.yaml, checking that `toolsets:`/`agent:`/`tools:`/`model:` each
+appear exactly once every round; plus a static check that all five
+config-surgery functions route through `_atomic_write` (mkstemp +
+`os.replace`) rather than a bare `open(path, 'w')`; plus a plain
+single-model-set and single-capability-set sanity pass. Reverted the fix
+in place (back to the bare `open(config_path(), 'w')` calls) — all nine
+structural checks failed by name, the race check failed, and even the
+plain single-write sanity check failed (`"no model.default line in
+config"` — the pre-fix `write_capability`'s append-fallback had already
+mangled the seed config from an earlier structural-check read), on all
+three repeated runs. Restored `drivers/hermes.py` from a `/tmp` copy,
+confirmed byte-identical (md5, `09c842b187a6ac3da0d85138fef0c88e`) to
+the fixed one, test green again on three repeated runs.
+
+No `.jsx`/`.js`/`.css` touched — no build required.
