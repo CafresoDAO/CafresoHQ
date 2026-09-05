@@ -3370,7 +3370,6 @@ function detectToolCall(text, tools) {
      than in each of them. See maskReasoning for why it blanks in place. */
   const scan = maskReasoning(text);
   const jsonCall = detectJsonToolCall(scan, tools);
-  if (jsonCall) return jsonCall;
   /* FIRST in the REPLY, not first in the registry.
      This loop used to return on the first tool whose regex matched
      anywhere, which made the winner a property of the ORDER toolsForAgent
@@ -3403,6 +3402,43 @@ function detectToolCall(text, tools) {
     const m = String(scan).match(t.re);
     if (m && (!best || m.index < best.m.index)) best = { t, m };
   }
+  /* The same rule has to hold ACROSS formats, and this is the half #257
+     left standing. The JSON pass ran first and returned unconditionally,
+     so a reply carrying both shapes was decided by which DETECTOR runs
+     first rather than by what the coworker wrote first — the identical
+     defect, one layer up.
+
+     It is not hypothetical for a JSON-format coworker. `supportsJsonToolFormat`
+     puts every Anthropic/Google/local-capable brain on the JSON snippet, but
+     the bracket vocabulary reaches the SAME prompt from two places the
+     snippet does not control: the office's own FILE-DELIVERY RULE ("MUST be
+     saved to the Library using [VAULT_NEW: <path>]…[/VAULT_NEW]") and every
+     shipped persona that orders "[SEARCH] … then [VAULT_NEW]". So the model
+     is told to file in brackets and to call in JSON, and obeys both:
+
+       [VAULT_NEW: Research/findings.md]
+       …everything it had just worked out…
+       [/VAULT_NEW]
+       <<<TOOL>>>
+       {"tool": "SEARCH", "arg": "one more thing"}
+       <<<END_TOOL>>>
+
+     The SEARCH ran, and `upToToolCall` — slicing at the JSON block, which is
+     LATER — pushed the whole VAULT_NEW block back as an assistant turn with
+     `[TOOL_RESULT: SEARCH]` under it. Every signal the model has says the
+     note is filed. It tells the boss so. The Library is empty, and nothing
+     downstream catches it (VAULT_NEW is granted, so `reachedFor` is silent;
+     the delivery sheet reads the cleaned body, where the block is gone).
+
+     Earliest start wins; a tie keeps the old JSON-first answer. */
+  if (jsonCall && best) {
+    const jsonAt = String(scan).indexOf(jsonCall.raw);
+    if (jsonAt !== -1 && jsonAt > best.m.index) {
+      return { tool: best.t, arg: best.m[1], body: best.m[2] || '', raw: best.m[0] };
+    }
+    return jsonCall;
+  }
+  if (jsonCall) return jsonCall;
   if (best) return { tool: best.t, arg: best.m[1], body: best.m[2] || '', raw: best.m[0] };
   /* A [DM_TO: name] opener whose [/DM_TO] simply never got emitted.
      Observed twice, both documented in this file: an 8B Claude-family

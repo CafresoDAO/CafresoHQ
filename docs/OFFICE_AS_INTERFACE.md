@@ -34012,3 +34012,82 @@ foreign session owns and this change never touches). This change covers
 tests, and this entry; `src/cafresohq_state/main.mo` was never staged or edited, no II
 or `derivationOrigin` value was read or written, and no dfx/IC action of any
 kind was run.
+
+## 291. the file it filed in brackets, thrown away by the call it made in json
+
+`#257` fixed the bracket pass in `detectToolCall`: it used to return on the
+first tool in the *registry* whose regex matched anywhere, so a coworker who
+filed a note and then asked one more question ran the question and lost the
+note. The rule that replaced it — earliest match in the **reply** wins — was
+written into that loop and only that loop. The pass above it was left exactly
+as it was:
+
+```js
+const jsonCall = detectJsonToolCall(scan, tools);
+if (jsonCall) return jsonCall;
+```
+
+Unconditional, and *first*. So the office still decided by which detector runs
+first rather than by what the coworker wrote first — the same defect, one layer
+up, and on the half that serves every capable brain in the product.
+
+It is not a hypothetical mix. `supportsJsonToolFormat` puts Anthropic, Google
+and the capable local models on the JSON snippet, and `toolsPromptSnippetJson`
+teaches nothing but `<<<TOOL>>>`. But bracket vocabulary reaches the *same*
+system prompt from two places that snippet does not control: `agentStream`'s own
+FILE-DELIVERY RULE, which tells every coworker without a job description that a
+long deliverable **MUST** be saved "using `[VAULT_NEW: <path>]…[/VAULT_NEW]`",
+and every shipped `OPENSWARM_ROSTER` persona that orders "`[SEARCH]` … then
+synthesize into a research note via `[VAULT_NEW]`". Told to file in brackets and
+to call in JSON, a model obliges in both:
+
+```
+[VAULT_NEW: Research/findings.md]
+…everything it had just worked out…
+[/VAULT_NEW]
+<<<TOOL>>>
+{"tool": "SEARCH", "arg": "one more thing"}
+<<<END_TOOL>>>
+```
+
+The SEARCH ran. And because `upToToolCall` cuts the transcript at the marker
+that *did* run — here the JSON block, which sits later — the whole `VAULT_NEW`
+block went back into the next hop as something the coworker had **said**, with
+`[TOOL_RESULT: SEARCH]` underneath it and "Do NOT repeat the tool call" beside
+it. Every signal the model has says the note is filed. It says so to the boss,
+the boss opens the Library, and there is nothing there. `#257`'s own note on why
+nothing downstream recovers this applies unchanged: `VAULT_NEW` is a granted
+marker, so `reachedFor` stays silent, and the delivery sheet's unfiled-path note
+reads the cleaned body, where the block is already gone.
+
+**The fix.** Eight lines in `detectToolCall` (`hq-runtime.jsx:3372`). The JSON
+pass still runs first, but it no longer *returns* first: its `raw` is located in
+the same masked buffer the bracket loop scans, and whichever call starts
+earliest wins. A tie keeps the old JSON-first answer, and a JSON call with no
+bracket rival — or the reverse — takes exactly the path it always did. A marker
+quoted inside the JSON payload starts after the block that contains it, so it
+can never steal the turn. The harmony fallback is untouched, below both.
+
+**The test.**
+`scripts/test_a_json_tool_call_never_swallows_an_earlier_bracket_block.py` lifts
+`detectToolCall` and its dependencies out of this file and runs them under node,
+the same harness `#257`'s test built, against the same fake tool array pinned
+regex-for-regex to `TOOL_REGISTRY`. Six shapes: the measured defect, the same
+with prose around it, the two orders that were already right, a lone call of
+each kind, and a bracket marker quoted inside a JSON argument. It also asserts
+the winner's `body` and `raw` are its own — picking the earliest call is
+worthless if the transcript is then cut at the loser — and greps a
+**comment-stripped** copy of the function for the mechanism, so the note above
+explaining the bug cannot pass the check on its own. On the old code 7 of 15
+checks fail; on the new code all 15 pass. Fire-tested by reverting the fix in
+place with the editor (never `git checkout`), watching those 7 fail, restoring
+from `/tmp`, and confirming `hq-runtime.jsx` md5
+`dbcd56f4a9ef10af9a75e4b7f310ccd7` byte-identical. No existing test was changed.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file a
+foreign session owns and this change never touches). This change covers
+`hq-runtime.jsx`, one new test, and this entry; `src/cafresohq_state/main.mo` was
+never staged or edited, no II or `derivationOrigin` value was read or written,
+and no dfx/IC action of any kind was run.
