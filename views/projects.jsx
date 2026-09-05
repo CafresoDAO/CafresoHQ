@@ -1817,8 +1817,17 @@ function AddProjectModal({ prefillName, onClose, onCommit }) {
   const submitLocal = (e) => {
     e && e.preventDefault();
     setErr(null);
-    if (!name.trim()) return setErr('name required');
-    if (!path.trim()) return setErr('path required');
+    /* Was `name required` / `path required`: the raw state variables, in the
+       dialog step 5 of the getting-started checklist opens — three inches
+       under a hint whose own comment spends a paragraph on why naming a
+       thing in a vocabulary the reader cannot act on is the defect ("the
+       boss does not need to know the rule, only which door answers"), and
+       one file away from #299's `topic + agent required`. Each sentence now
+       names the field by the LABEL printed above its box and says what to
+       do, and the path one points at 📁 Browse, the same door the hint
+       below already sends people to. */
+    if (!name.trim()) return setErr('This project needs a name — it is what you and your coworkers will call it.');
+    if (!path.trim()) return setErr('Say where the project lives: type an absolute path, or use 📁 Browse to pick the folder.');
     onCommit({ name: name.trim(), path: path.trim(), source: 'local' });
   };
 

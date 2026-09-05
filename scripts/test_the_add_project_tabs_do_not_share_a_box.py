@@ -91,9 +91,16 @@ CASES = [
      'My Website', '', '', 'react-fork', '__none__'),
 ]
 
+# CHANGED by #308. These two expectations were the literal strings
+# `name required` and `path required` — the raw state-variable vocabulary
+# this dialog's own sibling hint carries a long comment against, so the
+# assertion was pinning the defect in place: any rewrite into office words
+# would have failed here. What this test is actually about is WHICH form the
+# complaint belongs to, not which words it uses, so the expectation is now a
+# pattern that says the complaint is about the name / about the path.
 LOCAL_CASES = [
-    ('empty form', '', '', 'name required', None),
-    ('name only', 'My Website', '', 'path required', None),
+    ('empty form', '', '', r'(?i)\bneeds a name\b', None),
+    ('name only', 'My Website', '', r'(?i)\bBrowse\b.*folder|folder.*\bBrowse\b', None),
     ('name and path', 'My Website', '/Users/you/site', None, 'My Website'),
 ]
 
@@ -178,8 +185,10 @@ def main():
     for (label, _n, _p, want_err, want_name), (_l, committed, errored) in zip(
             LOCAL_CASES, lgot):
         if want_err:
-            check('local: %s → %s' % (label, want_err), errored == want_err,
-                  'got %r' % errored)
+            check('local: %s → a complaint about that field' % label,
+                  isinstance(errored, str)
+                  and re.search(want_err, errored) is not None,
+                  'got %r, wanted /%s/' % (errored, want_err))
         else:
             check('local: %s files the project under the name that was typed'
                   % label,

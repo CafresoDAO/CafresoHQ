@@ -35177,3 +35177,66 @@ only ever an exploration.
 Clearing now empties the query box as well as the hits. A search term left
 sitting in an input above a restored tree is a filter that looks like it is
 still on, which is the `#306` mistake in miniature.
+
+---
+
+## 309. the first button a beta tester presses did nothing at all
+
+Onboarding step 2 opens BRING IN A HELPER on the NEW HIRE form with every
+box empty. `HIRE ✓` sits in that dialog's footer as `px-btn primary` — the
+loudest control on the screen, in the room whose entire purpose is the one
+thing a new office has to do — and its handler opened with
+
+    if (!name.trim()) return;
+
+over a button carrying no `disabled` state, with nothing anywhere on the
+screen asking for a name. So the click on the form exactly as it opens was
+taken and swallowed. No error, no highlight, no dialog, no hint; the modal
+stayed open, unchanged, silent. There is no reading of that available to a
+first-time boss except that the app is broken, and it is very plausibly the
+first button a beta tester ever presses.
+
+This is `#299` one degree worse. There, 🌙 SCHEDULE and ▶ RUN NOW were live
+over an office with nobody in it, but they at least came back with
+`topic + agent required` — shorthand, and shorthand naming a field with no
+label on the screen, but a refusal. Here the promise a live button makes was
+answered with nothing at all, which is the failure mode `#303` names in its
+own words: the remedy existed in the head of whoever wrote the guard, and
+the person never got to it.
+
+`hireNeedsNote(name)` is the same module-level pure sentence as
+`noCrewNote(agents)` and `inboxEmptyNote(...)`, carrying the reason and the
+route, and the point is that it has exactly three readers and they cannot
+drift: `disabled`, `title`, and the footer hint. The hint LEADS, in the slot
+that held "A new desk will be assigned on spawn." — the same trade `#299`
+made when it put the crew note ahead of the research costing, because while
+the form cannot go through, what it is waiting for outranks a fact about
+desk assignment. It names the field `NAME`, the label printed above the box,
+not the variable. `submit()` keeps its guard as a backstop, which is what a
+silent return is allowed to be once nothing in the UI can reach it.
+
+The form's second silent return is ★ SAVE AS TEMPLATE. `window.hqPrompt`
+resolves `string | null` — ui/feedback.jsx says so on the line that defines
+it — and the handler collapsed both answers with `(… || '').trim()`, so
+pressing OK on a blank box closed the dialog, saved nothing, and said
+nothing. Cancel STAYS silent, because the boss just said no and that is not
+an error; an answer that cannot be used is a different event and now gets a
+sentence naming what a template needs and how to try again.
+
+One file away, `views/projects.jsx` was answering the Add Project form with
+`name required` and `path required`: raw state-variable names, in the dialog
+the getting-started checklist opens at step 5, three inches under a hint
+whose own comment spends a paragraph on why naming a thing in a vocabulary
+the reader cannot act on is the defect — "the boss does not need to know the
+rule, only which door answers." Both now name the field by its label and say
+what to do, and the path one points at 📁 Browse, the same door that hint
+already sends people to.
+
+`test_the_add_project_tabs_do_not_share_a_box.py` was asserting those two
+strings literally, so the old wording was pinned in place by a test: it is
+now a pattern about WHICH field the complaint belongs to, which is what that
+test was ever about. The new test drives `hireNeedsNote` under node —
+blank, whitespace, unset, typed, padded — and reads the button out of the
+source to prove the disabled state and the visible hint come from the same
+sentence, because a helper nothing consumes would have passed a screen that
+still swallowed the click.

@@ -59,6 +59,37 @@ const formToolIds = (ids) => {
   return (ids || []).filter(id => shown.has(id));
 };
 
+/* Why HIRE ✓ cannot go through yet, in office words — or '' when the form is
+   ready and the button is live.
+
+   HIRE ✓ is the front door. Onboarding step 2 opens this dialog on the NEW
+   HIRE form with every box empty, so it is very plausibly the first button a
+   beta tester ever presses — and `submit()` opened with a bare
+   `if (!name.trim()) return;` over a button with no `disabled` state and no
+   message anywhere on the screen. Clicking it on the form exactly as it
+   opens did literally nothing: no error, no highlight, no hint, no dialog.
+   That is worse than a refusal, because a live button is a promise that it
+   can do the thing, and the only reading left for the boss is that the app
+   is broken.
+
+   Same shape and same remedy as `noCrewNote(agents)` on the missions form
+   (#299) and `inboxEmptyNote(...)` in the inbox (#306): one sentence
+   carrying the reason AND the route, read by both the button's `disabled`
+   state and the hint the boss can see without hovering, so the two can
+   never drift apart. It names the field by the label printed above the box
+   (NAME) rather than by the variable — the vocabulary rule §6 that
+   `topic + agent required` broke in #299.
+
+   Kept module-level, pure and import-free so
+   scripts/test_the_hire_button_says_what_it_is_waiting_for.py runs it
+   verbatim under node. */
+function hireNeedsNote(name) {
+  const typed = String(name == null ? '' : name).trim();
+  if (typed) return '';
+  return 'Give your new coworker a name first — type one in the NAME box '
+    + 'above, anything you would like to call them.';
+}
+
 /* ── The front desk (DRIVER_CONTRACT §3 · OFFICE_AS_INTERFACE §3) ─────────
    What /agent/drivers detected on THIS machine, offered as one-click hires.
    The default is whatever the user already pays for or runs — no driver is
@@ -302,8 +333,22 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
     setShowBoard(false);
   };
   const saveAsTemplate = async () => {
-    const tplName = ((await window.hqPrompt('Save this configuration as a template — name it (e.g., "Researcher", "Inbox triage"):')) || '').trim();
-    if (!tplName) return;
+    /* The second silent early return on this form. `hqPrompt` resolves
+       `string | null` (ui/feedback.jsx) and this collapsed both answers to
+       one `|| ''`, so pressing OK on a blank box — or on spaces — closed the
+       dialog and did nothing at all, with no template on the shelf and
+       nothing said. Cancel MUST stay silent, because the boss just said no;
+       an answer that cannot be used is a different event and gets a
+       sentence. */
+    const answer = await window.hqPrompt('Save this configuration as a template — name it (e.g., "Researcher", "Inbox triage"):');
+    if (answer == null) return;
+    const tplName = String(answer).trim();
+    if (!tplName) {
+      await window.hqConfirm(
+        'A template is found again by its name, so it needs one — try SAVE AS TEMPLATE again and type what to call this setup.',
+        { okLabel: 'Got it', hideCancel: true });
+      return;
+    }
     const t = { id: 'tpl_'+Math.random().toString(36).slice(2,7), name: tplName, role, prompt, tools, avatar, model, temp };
     const next = [t, ...templates.filter(x => x.name !== tplName)];
     setTemplates(next); saveTemplates(next);
@@ -437,7 +482,10 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
   };
 
   const submit = async () => {
-    if (!name.trim()) return;
+    /* Belt and braces: the button below is dark whenever this note is set,
+       so this branch should be unreachable from the UI. It stays because a
+       silent return is only acceptable when nothing could have got here. */
+    if (hireNeedsNote(name)) return;
     if (elevated && !(await window.hqConfirm(
       `Hire ${name.trim()} with COMPUTER ACCESS?\n\n` +
       `This agent will be backed by an elevated CafresoHQ session that can read/write files and run shell commands on this machine.\n\n` +
@@ -466,10 +514,17 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
 
   const footer = !showBoard ? (
     <>
-      <div className="hint" style={{marginRight: 'auto'}}>A new desk will be assigned on spawn.</div>
+      {/* The note leads, exactly as #299 put noCrewNote ahead of the
+          research costing: while the form cannot go through, what it is
+          waiting for outranks a fact about desk assignment. */}
+      <div className="hint" style={{marginRight: 'auto'}}>
+        {hireNeedsNote(name) || 'A new desk will be assigned on spawn.'}
+      </div>
       <button className="px-btn secondary" style={{fontSize: 'var(--text-9)'}} onClick={saveAsTemplate}>★ SAVE AS TEMPLATE</button>
       <button className="px-btn secondary" onClick={onClose}>Cancel</button>
-      <button className="px-btn primary" onClick={submit}>HIRE ✓</button>
+      <button className="px-btn primary" onClick={submit}
+              disabled={!!hireNeedsNote(name)}
+              title={hireNeedsNote(name) || undefined}>HIRE ✓</button>
     </>
   ) : null;
 
