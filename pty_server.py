@@ -236,12 +236,32 @@ def _terminal_spawn(self):
 
 def _terminal_nonce(self):
     """GET /terminal/nonce → {"nonce": "<hex>"}
-    Returns the per-process nonce that /terminal/pty requires as a query
-    param. Same-origin callers (no Origin header on same-origin XHR, or an
-    Origin in the allowlist) get it; a cross-origin Origin that isn't in the
-    allowlist is refused, so only the HQ app — same-origin or an approved
-    canister origin (CAFRESOHQ_ALLOWED_WS_ORIGINS) — can obtain it.
+    Returns the per-process nonce that /terminal/pty requires as a query param.
+    TWO gates, and both are load-bearing:
+
+      * the HOST gate (_rebind_host_gate) — the Host must be something a
+        DNS-rebinding attack cannot produce: absent, a loopback literal, a bare
+        IP literal, or a hostname in _app_origins();
+      * the ORIGIN gate below — a cross-origin Origin not in the allowlist is
+        refused, which is what stops an ordinary cross-origin fetch.
+
+    This docstring used to say the Origin gate alone made the route
+    "same-origin only", on the reasoning that an absent Origin means a
+    same-origin XHR. That reasoning is false under DNS rebinding, and it stated
+    the hole as the design. A page at http://evil.example whose name has been
+    rebound to 127.0.0.1 is same-origin WITH ITSELF, so the browser sends no
+    Origin header at all; the check was skipped and the nonce handed over. The
+    page then opened /terminal/pty?cli=claude&cwd=… with it — arbitrary code
+    execution on the machine of anyone who visited it. Ledger `## 320.`.
+
+    Both gates are also applied at dispatch in serve.py, for the whole
+    /terminal family. The Host gate is repeated here because this function is
+    bound onto the handler as a free function: it is one line in a dispatch
+    table away from being reachable by some other path, and the nonce is the
+    key to a shell.
     """
+    if not self._rebind_host_gate():
+        return
     _origin = self.headers.get('Origin', '').strip()
     if _origin and _origin not in self._app_origins():
         return self._send_json(403, {'error': f'origin not allowed: {_origin}'})
@@ -294,7 +314,16 @@ def _terminal_pty_ws(self):
     # workspace cwd scopes the agent to that project. Others just exec.
     cli_extra_args = ['chat'] if cli == 'hermes' else []
 
-    # ── Security: Origin + nonce checks ────────────────────────────────
+    # ── Security: Host + Origin + nonce checks ─────────────────────────
+    # Host validation — reject a DNS-rebound page. Also applied at dispatch
+    # in serve.py for the whole /terminal family; repeated here because this
+    # is the route that hands out a shell, and neither of the two checks
+    # below stops a rebind on its own: the Origin check is skipped when no
+    # Origin is sent (a rebound page sends none, being same-origin with this
+    # server), and the nonce is fetchable by that same page from
+    # /terminal/nonce. Ledger `## 320.`.
+    if not self._rebind_host_gate():
+        return
     # Origin validation — reject cross-origin WS initiations.
     # Browsers always send Origin on WebSocket upgrade; non-browser clients
     # may omit it (curl, CLI tools, unit tests) — those are allowed through

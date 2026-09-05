@@ -101,6 +101,16 @@ def main():
         def _app_origins(self):
             return []
 
+        def _rebind_host_gate(self):
+            # `## 320.` put the whole /terminal family behind the DNS-rebinding
+            # Host gate, and _terminal_pty_ws calls it directly. This stub owes
+            # the same helper surface as _app_origins above; True is what the
+            # real gate returns for these requests anyway, since this harness
+            # sends no Host header at all and an absent Host passes. No
+            # assertion in this file changes -- it is about session bookkeeping,
+            # not about who may connect.
+            return True
+
         def _send_json(self, code, obj):
             self.refusals.append((code, obj))
 

@@ -36370,3 +36370,163 @@ supply an attribute. It cannot supply a method it has never heard of. The test
 was right and the shape was wrong, so `_request_scheme` is a module-level
 function taking the handler, reading only those four attributes. No assertion
 in that test was touched.
+
+---
+
+## 323. the nonce that guarded the shell was handed out to anyone who did not ask
+
+`## 315.` closed DNS rebinding on the `/fs` family and ended with a loose
+thread it had measured but deliberately not pulled: `/terminal/nonce` gates on
+`Origin`, not `Host`, so a forged `Host` with no `Origin` at all got 200 and
+the nonce. This is that thread, and it turns out to have RCE on the end of it.
+
+**The gate that was documented as the design.** The code was three lines:
+
+```python
+_origin = self.headers.get('Origin', '').strip()
+if _origin and _origin not in self._app_origins():
+    return self._send_json(403, ...)
+return self._send_json(200, {'nonce': _PTY_NONCE})
+```
+
+and the docstring above them called that "same-origin callers only", reasoning
+that a same-origin XHR sends no `Origin` header, so an absent `Origin` means a
+caller who was already inside. That reasoning holds exactly as long as "no
+`Origin`" implies "same origin as the real office". Under rebinding it does
+not. An attacker points `evil.example` at `127.0.0.1`; the page the tester
+visits is then **same-origin with itself**, so the browser sends no `Origin` on
+its fetch, the `if _origin and …` is skipped on the first clause, and the nonce
+comes back. The page appends it to
+`/terminal/pty?cli=claude&cwd=/Users/…` and gets a shell. Not a file read this
+time — the CLI, in a directory of its choosing, on the machine of whoever
+opened the page.
+
+Measured, by reverting the fix and running the new test against a real
+`serve.py` with `Host: evil.example:PORT` and no `Origin` header on the wire:
+`/terminal/nonce` → `200 {"nonce": …}`, `/terminal/status` → 200,
+`/terminal/spawn` → 200 **and a Terminal window actually opened**, and
+`/terminal/pty` carrying that nonce → **`101 Switching Protocols`**. The
+handshake completed. Every one of the six routes was reachable.
+
+**Why `## 315.` did not already cover it.** Its gate was correct and is reused
+here unchanged in substance; it was simply dispatched on `/fs/` and nothing
+else. Worse, its own comment recorded the belief that `/terminal/nonce`
+"already had" this gate — the sibling nine lines up in the same dispatch table
+that it was modelling itself on. It did not. It had an `Origin` check, which
+answers a different question, and the two look identical from a distance
+because both end in a 403 for a stranger. That mistaken belief is most of why
+this survived: an auditor reading the `/fs` fix would conclude the terminal was
+the *already-solved* case. The comment is now corrected in place rather than
+deleted, because the wrong belief is the interesting part.
+
+The `Origin` check is not removed. It is the thing that stops an ordinary
+cross-origin `fetch`, which is a real and different attack. It is simply not a
+rebinding defence, and it was being asked to be one.
+
+**The fix.** `_fs_host_gate` is renamed `_rebind_host_gate` — the old name was
+half the problem, since a gate named for one route family is a gate nobody
+thinks to apply to another — and the whole `/terminal/` family now dispatches
+through it: `/terminal/status`, `/terminal/kill`, `/terminal/nonce`,
+`/terminal/spawn` and `/terminal/pty` in `do_GET`, `/terminal/stream` in
+`do_POST`. All six, because gating the nonce alone would be worth nothing: a
+page that can open the WebSocket needs no nonce, and a page that can read the
+nonce needs nothing else. Every one of them is in `_KEY_PROTECTED_PREFIXES`,
+and that is not protection — with no `CAFRESOHQ_API_KEY` configured, which is
+the documented local setup, the key gate degrades to "loopback callers only",
+and a rebound page's `fetch` leaves the victim's own `127.0.0.1`.
+
+`_terminal_nonce` and `_terminal_pty_ws` also call the gate themselves. These
+handlers are free functions bound onto the `Handler` class one line at a time;
+a route whose only defence lives in a dispatch table it does not control is one
+careless refactor from having none, and the thing on the other side is a shell.
+
+One generalisation was needed. `_host_gate_ok` matched its last clause as
+`scheme://host` against `_app_origins()`, deriving the scheme from whether the
+socket is TLS. Behind the Caddy gateway the browser speaks
+`https://hq.cafreso.com` but the proxied hop into this process is plaintext, so
+that clause synthesised `http://hq.cafreso.com`, failed to find it in an
+allowlist that lists the `https` form, and would have 403'd the production
+terminal outright. It now matches on **hostname**, which is what a `Host`
+header actually carries. This costs nothing: rebinding's whole problem is that
+it cannot make a browser send someone else's hostname, and that is as true over
+`http` as over `https`. The `/fs` routes silently had the same latent break and
+get the fix with it.
+
+`_app_origins` gains the sentence that would have prevented all of this: **it
+is not a request gate.** Its careful, correct paragraph about why a
+client-supplied `Host` must not be trusted reads exactly like one, and every
+caller it has ever had either compares an `Origin` against it or picks an
+`Access-Control-Allow-Origin` from it — both no-ops when the request carries no
+`Origin`, which is precisely what a rebound page sends. The prose was doing
+security work the code was not. It now names `_rebind_host_gate` as the thing
+that actually refuses a rebound request.
+
+**The test.**
+`scripts/test_a_rebound_page_gets_no_pty_nonce_and_no_shell.py` boots real
+`serve.py` instances on free ports and speaks raw `http.client` — raw for the
+same reason `## 315.` needed it, because `urllib` rewrites `Host` from the URL
+and would quietly void the entire point. A forged `Host` with **no `Origin`
+header at all** must 403 all six routes, including a WebSocket handshake
+carrying a genuine nonce fetched a moment earlier by a legitimate caller, and
+the refusal must contain no nonce. The pre-existing checks are asserted intact:
+a cross-origin `Origin` on a good `Host` is still refused, and a good `Host`
+with a wrong nonce still gets no PTY.
+
+Then the four callers the product depends on, all of which must keep working
+or the fix is wrong: same-origin `localhost` sending no `Origin` (the case that
+made the hole look safe in the first place), the LAN/mobile bare-IP host from
+the startup banner, `Host: hq.cafreso.com` with the gateway's `Origin`, and a
+`CAFRESOHQ_ALLOWED_WS_ORIGINS` canister entry on a second instance — which also
+proves that configuring an allowlist does not reopen the forged `Host`. No
+legitimate assertion here spawns a PTY or a Terminal window; the only route
+that would is exercised solely on the refused side.
+
+Fire-tested: copied both fixed files to `/tmp`, reverted the four hunks in
+place with the editor (never `git checkout -- <file>`) — both dispatch gates
+and both in-handler calls — and watched 8 of 18 checks fail, exit 1, with
+`/terminal/pty` reporting `101`. Restored from `/tmp`, `md5`
+`a4713f777f4e30ea97f22c5eb07411ad` and `c6d3eeeb4fa6b2b9ce438c6248fa4ce1`
+byte-identical, reran: all pass, exit 0.
+
+**Two existing test files were touched, and both deserve saying out loud.**
+Neither had an assertion changed or weakened.
+
+`scripts/test_pty_without_session_id_is_not_orphaned.py` drives
+`_terminal_pty_ws` against a hand-rolled `FakeHandler` that stubs the real
+handler's helper surface — `_app_origins`, `_send_json`, `send_error`, the CLI
+resolvers. Adding a gate call to the handler broke it with
+`AttributeError: 'FakeHandler' object has no attribute '_rebind_host_gate'`, so
+the stub gains the helper alongside the others, returning `True` — which is
+what the real gate returns for that harness anyway, since it sends no `Host`
+header and an absent `Host` passes. That file's subject is session bookkeeping,
+not who may connect, and every check in it is untouched.
+
+`scripts/test_a_blank_allowlist_locks_the_filesystem_and_a_forged_host_gets_no_body.py`
+carried the finding this entry closes, written as prose in its docstring and in
+a comment above its `/terminal/nonce` control: "a bare forged `Host` with no
+`Origin` at all sails through (measured: 200)". That is no longer true, and a
+comment asserting a live hole that has since been closed is worse than no
+comment. The prose now says the gap was pulled in `## 320.` and points at the
+new file. Its one assertion — that a cross-origin `Origin` is still refused —
+is unchanged and still passes, because that gate was never the problem.
+
+**Suite:** `python3 scripts/run_tests.py`, run twice. The first run came back
+497/500 and every one of the three failures is accounted for: the `FakeHandler`
+stub above (fixed), `scripts/test_terminal_cwd_wired.py` reading a
+`dist-ui/manifest.json` this fresh worktree had not built yet (`npm run build`,
+then it passes), and the expected pre-existing
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` — the
+`moc` toolchain mismatch on a file a foreign session owns and this change never
+touches. The second run, after both, is **499/500** with that same `moc` case
+as the sole failure. Its last suite, `search_worker_service`, took well over an
+hour rather than its usual 81 s — three concurrent sessions were polling the
+same local Docker search worker — but it passed, and nothing it covers is
+reachable from anything this change touches. Every terminal and PTY suite
+passes in both runs,
+including `test_terminal_cwd_wired`, `test_pty_reconnect_applies_new_dimensions`,
+`test_two_terminals_resuming_one_session_id_never_leave_a_pty_behind`,
+`test_workspace_terminal_key` and `test_security_boundaries`. This change covers
+`serve.py`, `pty_server.py`, one new test, the two existing test files above
+and this entry; `src/cafresohq_state/main.mo` was never staged or edited, no II
+or `derivationOrigin` value was read or written, and no dfx/IC action of any
+kind was run.

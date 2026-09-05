@@ -30,9 +30,11 @@ C. A forged Host must get no body.
    server, so it never needs an Access-Control-Allow-Origin to read the reply.
 
    One correction to the audit's framing, measured here: the nonce's gate keys
-   off ORIGIN, not Host -- a bare forged Host with no Origin gets 200 from it.
-   The gate added to /fs is therefore the stronger of the two, which is the
-   right way round for a route that carries no key at all.
+   off ORIGIN, not Host -- a bare forged Host with no Origin got 200 from it.
+   The gate added to /fs was therefore the stronger of the two. That gap in
+   the nonce was closed separately in `## 320.`, which extended this same gate
+   to the whole /terminal family; the control below still asserts the Origin
+   half, which is unchanged.
 
 Every file read here is a decoy this test writes and removes itself. The real
 ~/.ssh is never touched -- the point is the boundary, not the secret.
@@ -214,13 +216,15 @@ def main():
             check(f"{route.split('?')[0]} with a forged Host -> 403",
                   status == 403, f"got {status}")
 
-        # The sibling, as the control -- and a correction to the audit's
-        # framing. /terminal/nonce's gate keys off ORIGIN, not Host: a
-        # cross-origin Origin is refused, and a bare forged Host with no
-        # Origin at all sails through (measured: 200). The /fs gate added
-        # here is the stronger of the two, which is the right way round for
-        # a keyless route; the nonce's own Host exposure is left as its own
-        # finding rather than widened into this fix.
+        # The sibling, as the control. /terminal/nonce's gate keys off
+        # ORIGIN: a cross-origin Origin is refused, and that is still true
+        # and still asserted here. When this was written a bare forged Host
+        # with no Origin at all sailed through it (measured: 200), and this
+        # comment left that as its own finding. It was pulled in `## 320.`,
+        # which put the whole /terminal family behind the same Host gate --
+        # so that half is now covered by
+        # scripts/test_a_rebound_page_gets_no_pty_nonce_and_no_shell.py, and
+        # only the Origin control below belongs to this file.
         status, _ = get(default.port, "/terminal/nonce",
                         headers={"Origin": "https://evil.example"})
         check("/terminal/nonce still refuses a cross-origin Origin",

@@ -2041,6 +2041,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._agents_status()
         if self.path.split('?')[0] == '/agent/drivers':
             return self._agent_drivers()
+        # `## 320.`: the whole /terminal family, gated ahead of dispatch for
+        # the same reason the /fs family below it is. Only ONE of these six
+        # ever looked at where the request came from — /terminal/nonce, and it
+        # looked at Origin, which a rebound page simply does not send: it is
+        # same-origin with this server, so its fetch carries no Origin header
+        # and the check was skipped entirely. The nonce and the WebSocket that
+        # consumes it have to be gated together or neither is gated: a page
+        # that can reach /terminal/pty needs no nonce, and a page that can
+        # read the nonce needs nothing else. /terminal/pty is a shell.
+        if self.path.startswith('/terminal/'):
+            if not self._rebind_host_gate():
+                return
         if self.path == '/terminal/status':
             return self._terminal_status()
         if self.path.startswith('/terminal/kill'):
@@ -2052,13 +2064,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if self.path.startswith('/terminal/pty'):
             return self._terminal_pty_ws()
         # #318: the whole /fs family goes through the same loopback-literal
-        # Host gate its sibling /terminal/nonce (nine lines up) already had.
+        # Host gate. #318 believed /terminal/nonce already had one; it did
+        # not — it had an ORIGIN check, and `## 320.` above supplies the Host
+        # gate that belief assumed was there.
         # These five are keyless by design and _cafresohq_allowed_dirs is
         # their only other boundary; without this a page the tester visits
         # could DNS-rebind onto this port and read every file in the sandbox
         # as same-origin.
         if self.path.startswith('/fs/'):
-            if not self._fs_host_gate():
+            if not self._rebind_host_gate():
                 return
         if self.path.startswith('/fs/browse'):
             return self._fs_browse()
@@ -2359,6 +2373,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._cafresohq_stream()
         if self.path == '/codex/stream':
             return self._codex_stream()
+        # `## 320.`: the POST half of the terminal family. /terminal/stream
+        # runs an agentic CLI (Edit/Write, --add-dir on the caller's chosen
+        # cwd) against a directory the request body names, so it is the same
+        # class of hazard as the PTY and gets the same gate.
+        if self.path.startswith('/terminal/'):
+            if not self._rebind_host_gate():
+                return
         if self.path == '/terminal/stream':
             return self._terminal_stream()
         if self.path == '/projects/clone':
@@ -2373,7 +2394,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         # satisfies, since its fetch() originates on the victim's own
         # 127.0.0.1. Same Host gate, same reason.
         if self.path.startswith('/fs/'):
-            if not self._fs_host_gate():
+            if not self._rebind_host_gate():
                 return
         if self.path.startswith('/fs/upload'):
             return self._fs_upload()
@@ -3770,7 +3791,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         nonce and the terminal WebSocket — i.e. RCE from a visited web page.
         Host is only honoured when it names a loopback literal (which no rebinding
         attack can forge, since the browser sends the attacker's own hostname) or
-        a host explicitly configured via CAFRESOHQ_ALLOWED_WS_ORIGINS."""
+        a host explicitly configured via CAFRESOHQ_ALLOWED_WS_ORIGINS.
+
+        NOTE — this function is NOT a request gate, and the paragraph above
+        describes only how it builds its set. It answers "which browser Origins
+        may this response be shared with", nothing more. Every caller so far has
+        either compared an Origin header against it or picked an
+        Access-Control-Allow-Origin from it, and both of those are no-ops when
+        the request carries no Origin at all — which is exactly what a
+        DNS-rebound page sends, because it is same-origin with this server. The
+        careful rebinding reasoning above therefore protects nothing on its own;
+        it only stops the set from being poisoned. The gate that actually
+        refuses a rebound request is _rebind_host_gate below, and a route that
+        wants rebinding protection must call THAT. Ledger `## 320.`."""
         origins = {
             'https://hq.cafreso.com',        # production Caddy gateway
             'https://hq-ui.cafreso.com',     # canister UI shell (cross-origin split)
@@ -3810,9 +3843,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             address it likes but it cannot make the browser send a literal.
             So this keeps the LAN/mobile path (`http://10.0.0.131:8787/`)
             working without reopening the hole;
-          * an origin already in _app_origins() — the production gateway,
-            the canister shells, and anything an operator listed in
-            CAFRESOHQ_ALLOWED_WS_ORIGINS.
+          * the HOSTNAME of an origin already in _app_origins() — the
+            production gateway, the canister shells, and anything an operator
+            listed in CAFRESOHQ_ALLOWED_WS_ORIGINS. Matched on hostname and
+            not on `scheme://host`, because a Host header carries no scheme:
+            behind the Caddy gateway the browser speaks
+            https://hq.cafreso.com but the proxied hop into this process is
+            plaintext, so a `scheme://host` comparison synthesises
+            `http://hq.cafreso.com`, finds it absent from an allowlist that
+            lists the https form, and 403s the production terminal. Dropping
+            the scheme costs nothing: a rebinding attack's problem is that it
+            cannot make the browser send SOMEONE ELSE'S hostname, and that is
+            just as true over http as over https.
         Anything else gets 403 and no body."""
         host = (self.headers.get('Host', '') or '').strip()
         if not host:
@@ -3828,17 +3870,42 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return True
         except Exception:
             pass
+        # Match on scheme://host first, then fall back to the hostname alone.
+        # The scheme-qualified form is the precise one and is what
+        # X-Forwarded-Proto exists to make correct behind a TLS-terminating
+        # proxy. The hostname fallback is what actually keeps the production
+        # gateway working: Caddy speaks plaintext on the proxied hop, a Host
+        # header carries no scheme to begin with, and a configured canister
+        # origin reaches us the same way. Dropping the scheme costs nothing
+        # here for the reason given above — an attacker cannot make the
+        # browser send someone else's hostname over http any more than over
+        # https — and requiring it 403'd three legitimate callers, measured.
         scheme = _request_scheme(self)
-        return f'{scheme}://{host}' in self._app_origins()
+        origins = self._app_origins()
+        if f'{scheme}://{host}' in origins:
+            return True
+        allowed_hostnames = set()
+        for origin in origins:
+            netloc = origin.split('://', 1)[-1].strip().lower()
+            if not netloc:
+                continue
+            allowed_hostnames.add(netloc)                       # host:port
+            allowed_hostnames.add(netloc.rsplit(':', 1)[0]      # bare hostname
+                                  if not netloc.startswith('[')
+                                  else netloc.split(']', 1)[0] + ']')
+        return hostname in allowed_hostnames or host.lower() in allowed_hostnames
 
-    def _fs_host_gate(self):
-        """Guard for every /fs route. Returns True when the request may
-        proceed; otherwise answers 403 and returns False. Applied to the
-        keyless read routes (browse/collect/site/stat/file) AND to the
-        key-protected mutation routes — the key gate falls back to
-        "loopback callers only" when CAFRESOHQ_API_KEY is unset, and a
-        rebound page's fetch() IS a loopback caller, so the key alone never
-        stopped this."""
+    def _rebind_host_gate(self):
+        """Guard for every route a DNS-rebound page must not reach: the whole
+        /fs family and the whole /terminal family. Returns True when the
+        request may proceed; otherwise answers 403 and returns False.
+
+        Applied to keyless routes (the /fs reads: browse/collect/site/stat/file)
+        AND to key-protected ones (the /fs mutations, every /terminal route) —
+        the key gate falls back to "loopback callers only" when
+        CAFRESOHQ_API_KEY is unset, which is the normal local configuration,
+        and a rebound page's fetch() IS a loopback caller because it leaves the
+        victim's own 127.0.0.1. So the key alone never stopped this."""
         if self._host_gate_ok():
             return True
         self._send_json(403, {'error': 'host not allowed'})
