@@ -942,6 +942,40 @@ function _hqshFmt(raw, token) {
     return (frac ? `${whole}.${frac}` : whole) + ` ${token}`;
   } catch (_e) { return `${raw} ${token} (raw)`; }
 }
+/* How often a salary pays, said exactly.
+   `hq payroll` is the audit line — the one place a boss reads back what
+   the payroll timer is actually going to do — and it printed the period as
+   `Math.round(s.periodSecs / 3600)` + 'h'. That is the same expression #330
+   pulled out of the Settings panel, still living on the surface that
+   REPORTS the schedule rather than the one that sets it, and it is lossy in
+   the direction that matters: a period is not an amount, but it is the
+   number that decides how OFTEN the amount leaves.
+
+   Driven under node against the real command with real salary rows:
+
+     0.05 ICP every 1800s (30 min)  →  "0.05 ICP / 1h"     (half the burn)
+     0.05 ICP every  900s (15 min)  →  "0.05 ICP / 0h"
+     0.05 ICP every   60s           →  "0.05 ICP / 0h"
+     0.05 ICP every 5400s (90 min)  →  "0.05 ICP / 2h"
+
+   Only whole-hour multiples were ever told truthfully. Every one of those
+   periods is a first-class setting: `hoursToSecs` accepts 0.5 and 0.25, and
+   savePay deliberately allows down to the canister's own 60-second floor —
+   #330 fixed `secsToHoursText` precisely so sub-hour periods read back
+   honestly in the panel, and this line never got that fix. A boss auditing
+   an agent that pays twice an hour read a rate half the real one.
+
+   No rounding, ever: hours only when the stored seconds ARE whole hours,
+   minutes when they are whole minutes, otherwise the seconds themselves.
+   `hq wallets`, two commands up, already prints its window as raw seconds
+   for the same reason. */
+function _hqshEvery(secs) {
+  const n = Number(secs);
+  if (!Number.isFinite(n) || n <= 0) return `${secs}s`;
+  if (n % 3600 === 0) return `${n / 3600}h`;
+  if (n % 60 === 0) return `${n / 60}m`;
+  return `${n}s`;
+}
 const HQSH_COMMANDS = {
   help: {
     help: 'help — list commands',
@@ -1062,7 +1096,7 @@ const HQSH_COMMANDS = {
         `\n  paused    : ${pr.paused ? 'YES' : 'no'}`;
       if (!pr.salaries || !pr.salaries.length) return head + '\n  (no salaries — set one on an agent wallet card)';
       return head + '\n' + pr.salaries.map(s =>
-        `  ${s.agentId}  ${_hqshFmt(s.amount, s.token)} / ${Math.round(s.periodSecs / 3600)}h  ${s.mode}` +
+        `  ${s.agentId}  ${_hqshFmt(s.amount, s.token)} / ${_hqshEvery(s.periodSecs)}  ${s.mode}` +
         `${s.active ? '' : '  [inactive]'}${s.stalledSince ? '  [STALLED: ' + s.lastResult + ']' : s.lastResult ? '  (' + s.lastResult + ')' : ''}`).join('\n');
     },
   },

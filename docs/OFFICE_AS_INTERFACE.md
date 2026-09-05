@@ -37629,3 +37629,58 @@ received its outcome, and the office narrated the opposite with total
 confidence. A gate that records the wrong verdict is not a gate the boss can
 audit, and audit is the only thing that makes the first stamp worth asking
 for.
+
+## 344. the salary that paid twice an hour and audited as hourly
+
+**The wreck.** `hq payroll` is the audit line — the one surface that reads
+back what the state canister's payroll timer is actually going to do, agent
+by agent, amount and period and mode. It printed the period like this:
+
+```js
+`  ${s.agentId}  ${_hqshFmt(s.amount, s.token)} / ${Math.round(s.periodSecs / 3600)}h  ${s.mode}`
+```
+
+`Math.round(secs / 3600)` is the exact expression `## 330.` pulled out of
+the Settings panel, still alive one file over, on the surface that *reports*
+the schedule rather than the one that sets it. A period is not an amount.
+It is the number that decides how OFTEN the amount leaves, and it was being
+rounded to the nearest whole hour.
+
+Driven under node against the real command, real salary rows, nothing
+mocked but the bridge:
+
+```
+  ada  0.05 ICP / 1h   salary      ← really every 30 minutes
+  bo   0.05 ICP / 0h   salary      ← really every 15 minutes
+  cy   0.05 ICP / 0h   salary      ← really every 60 seconds
+  eve  0.05 ICP / 2h   salary      ← really every 90 minutes
+```
+
+The first line is the one that costs money. 0.05 ICP twice an hour is 2.4
+ICP a day off the signed payroll budget; the audit line said 1h, which is
+1.2. Half. The next two report a salary running every quarter hour, and one
+running at the canister's own 60-second floor, as having a period of zero
+hours — a schedule the office cannot even state. Only whole-hour multiples
+were ever told truthfully.
+
+None of those periods is a corner. `hoursToSecs` takes 0.5 and 0.25 exactly
+as typed, `savePay` deliberately allows down to 60 seconds and says so in
+its own refusal, and `## 330.` fixed `secsToHoursText` *precisely* so that a
+sub-hour period reads back honestly in the panel. The panel got the fix.
+The shell that audits the panel did not, so the two surfaces disagreed about
+the same stored number, and the disagreeing one is the one a boss opens to
+check.
+
+**The fix.** `_hqshEvery(secs)` never rounds. Hours when the stored seconds
+*are* whole hours, minutes when they are whole minutes, otherwise the
+seconds themselves — `30m`, `15m`, `1m`, `24h`, `3661s`. A stored 0 or a
+missing value is not dressed up as `0h`. `hq wallets`, two commands up the
+same registry, has always printed its cap window as raw seconds for exactly
+this reason; this is that neighbour's argument applied to the row beside it.
+
+**Whose twin.** `## 330.`, the emptied "per __ h" box, and `## 316.`, the
+declined payment captioned *"Sent 0.05 ICP"*. All three are the office
+stating a money number it has no right to state: one wrote the wrong
+ceiling, one narrated a transfer that never happened, and this one reported
+a burn rate at half its real value on the screen built for auditing it. A
+prettier number is not worth a wrong one.
