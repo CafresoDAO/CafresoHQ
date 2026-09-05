@@ -5588,8 +5588,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # access log. Every PTY connection wrote the office's own key to stderr,
     # i.e. into whatever file the operator redirects the server to. Redact
     # the value, keep the parameter so the request stays recognisable.
-    _LOG_SECRET_RE = _re.compile(r'([?&](?:k|key|token|api_key)=)[^&\s"]+',
-                                 _re.IGNORECASE)
+    # `nonce` belongs on this list for the same reason as `k`, and was missed
+    # because it does not read like a credential. It is one: `#323` measured a
+    # forged-Host page trading this value for `101 Switching Protocols` on
+    # /terminal/pty, i.e. a shell. Any handshake that fails before the upgrade
+    # — a missing CLI, a `cwd` that does not exist — is logged by this very
+    # method with the whole 64-hex value in the query string, so the operator's
+    # redirected log file held the key to the terminal.
+    _LOG_SECRET_RE = _re.compile(
+        r'([?&](?:k|key|token|api_key|nonce)=)[^&\s"]+', _re.IGNORECASE)
 
     def log_message(self, fmt, *args):
         line = self._LOG_SECRET_RE.sub(r'\1<redacted>', fmt % args)

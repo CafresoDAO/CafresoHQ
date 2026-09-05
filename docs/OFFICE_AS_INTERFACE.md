@@ -36711,3 +36711,41 @@ handshake carries `&nonce=`, so any `/terminal/pty` request that fails before
 the 101 — a missing CLI, a bad `cwd` — logs the whole 64-hex value. Observed;
 it is the `## 315.` hazard wearing the other parameter's name, and it belongs
 with whoever is holding the terminal route.
+
+---
+
+## 326. the log file kept the key to the terminal
+
+**The wreck.** `## 315.` found the office writing its own API key to stderr on
+every PTY handshake and fixed it: `_api_key_ok` deliberately accepts
+`CAFRESOHQ_API_KEY` as `?k=…` on a WebSocket URL, because the browser's
+WebSocket API cannot set a header, and `log_message` writes the query string
+verbatim. It added `_LOG_SECRET_RE` over `k|key|token|api_key` and said so in
+a comment that names the hazard exactly: "leaks into access logs".
+
+It did not list `nonce`, and the same URL carries one.
+
+`nonce` does not read like a credential. It is one. `## 323.` measured a
+rebound page trading that value for `101 Switching Protocols` on
+`/terminal/pty` — a shell on the tester's machine. And a handshake that fails
+*before* the upgrade is exactly the case that gets logged: a CLI that is not
+installed, a `cwd` that does not exist, either of which returns 400 through
+this method with the whole 64-hex value still in the line. The secrets hunt
+behind `## 325.` observed it:
+
+    127.0.0.1 - "GET /terminal/pty?cli=hermes&cwd=/nonexistent-dir-xyz
+    &cols=80&rows=24&nonce=<64 hex, verbatim> HTTP/1.1" 400 -
+
+So an operator who redirects the server to a file — which the startup banner's
+own instructions encourage — kept the key to their terminal in it, and would
+paste it into a bug report along with everything else in the log.
+
+**The fix.** One word on the list, and a test that holds the *list* rather
+than the entry: it lifts the real compiled pattern out of `serve.py` and drives
+every query parameter this app is known to put a credential in, so the next one
+has to be added there to be forgotten here. It also pins that redaction stops
+at credentials — `?path=` survives, because a log nobody can read is its own
+kind of failure.
+
+**Whose twin.** `## 315.`, which established the rule and applied it to four
+names. The fifth was in the same URL as the first.
