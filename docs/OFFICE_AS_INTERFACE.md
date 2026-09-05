@@ -34796,3 +34796,58 @@ never touches). This change covers only `night_runner.py`, the one new test, the
 one source pin in `#205`'s test, and this entry; `src/cafresohq_state/main.mo`
 was never staged or edited, no II or `derivationOrigin` value was read or
 written, and no dfx/IC action of any kind was run.
+
+---
+
+## 303. a folder that moved drew itself as a file called "Not a directory"
+
+Move, rename, or delete a project folder on disk — or add a project whose
+path turns out to be a file — and open it in the Workspace. The tree opened
+normally and showed one row: a file named
+
+    Not a directory: /Users/anthony/Documents/Projects/site
+
+There was no error, no colour, no retry. The boss was looking at a folder
+that the office said it had read, holding a single strangely named file.
+Clicking it produced a second failure from an entirely different subsystem
+("the office couldn't find that — it may have been moved or renamed"), which
+is the sentence the tree itself should have said in the first place, one
+click earlier, about the folder rather than about a file that never existed.
+
+The mechanism is the one serve.py already documented in its own words, right
+next to the flag it added for it: "a missing file or a path that isn't a
+directory are ordinary answers to an ordinary question, so they come back 200
+with the explanation as the result ... every surface that renders the event
+was reading 'there is a result' as 'it worked'." `DIR_LIST` does not raise
+here. It answers `{ok: true, failed: true, result: "Not a directory: …"}`,
+because the coworker downstream needs that text to try something else. The
+file tree asked for the listing without `meta`, so the flag was thrown away,
+the `.catch` never ran, and `parseDirEntries` did what it is supposed to do
+with a line of text: it made a row out of it.
+
+The galling part is that the honest screen was already written and sitting
+directly above the fetch — the red "Couldn't read this folder" sentence with
+its ↻ TRY AGAIN button, whose own comment names "a folder that moved
+(ENOENT)" as the case it exists for. It was reachable only for failures that
+throw, which is to say for network trouble and permission refusals, and never
+for the commonest way a listing fails. A remedy nobody can reach is the same
+class of defect as #300's broken remedy: the code that would have helped was
+there, and the person never got to it.
+
+One level down the lie was quieter and just as confident. A subfolder whose
+listing failed was cached as `[]`, so the folder drew itself open and empty —
+a claim about its contents, not an admission about the read — and because the
+empty array counted as a cached listing, re-opening it never asked again.
+
+The fix reads the flag on both calls. A refused listing becomes a sentence
+that names the path, because finding the folder is the entire fix, and says
+what happened to it ("there's nothing at /… any more — that folder was
+renamed, moved, or deleted after this project was added") rather than
+reprinting the tool's own words. A failed subfolder stores that sentence
+instead of an empty array, prints it where its children would have gone, and
+re-opening the row retries — only an array now counts as a listing.
+
+The test runs the real effect and the real `loadSub`, lifted from the file,
+against a `toolExec` that fails the way the server actually fails: 200,
+`ok: true`, `failed: true`, refusal as the result. Asserting on the source
+would have passed a tree that still drew the fake file row.

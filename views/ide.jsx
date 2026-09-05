@@ -307,6 +307,21 @@ function parseDirEntries(text, basePath) {
   return out;
 }
 
+/* A DIR_LIST that failed answers 200 with its refusal as the "listing".
+   The only shape it produces is "Not a directory: <path>", which covers both
+   a folder that is gone and a path that turned out to be a file — so say
+   that, and name the path, because finding the folder is the whole fix.
+   Anything else falls through to the office table. */
+function listingRefusal(text) {
+  const s = String(text == null ? '' : text).trim();
+  const m = s.match(/^Not a directory:\s*(.+)$/m);
+  if (m) {
+    return 'there’s nothing at ' + m[1].trim() + ' any more — that folder was '
+      + 'renamed, moved, or deleted after this project was added';
+  }
+  return officeCause(s);
+}
+
 /* ---------------- Local file-tree with lazy sub-directory loading ---------------- */
 function LocalTree({ path, onSelectFile, refreshNonce, onRename, onDelete, onUploadTo, pulsePaths }) {
   const [entries, setEntries] = useSV(null);
@@ -330,21 +345,46 @@ function LocalTree({ path, onSelectFile, refreshNonce, onRename, onDelete, onUpl
     setSubEntries({});
   }, [path]);
 
-  /* Re-fetch the root listing when the path changes OR refreshNonce bumps. */
+  /* Re-fetch the root listing when the path changes OR refreshNonce bumps.
+     The listing tool does NOT throw when the folder is gone: serve.py's own
+     comment says so ("a missing file or a path that isn't a directory are
+     ordinary answers ... they come back 200 with the explanation as the
+     result"), and it flags them with `failed` instead. This tree read "there
+     is a result" as "it worked" — so a project folder that had been renamed,
+     moved, or deleted came back as the single line "Not a directory:
+     /Users/…/proj", which parseDirEntries dutifully turned into ONE FILE ROW
+     named after the refusal. The boss saw a folder holding one oddly-named
+     file, clicked it, and got a second unrelated failure from the reader.
+     The err screen above — the one with the sentence and the TRY AGAIN
+     button, written for exactly this ("a folder that moved (ENOENT)") — was
+     unreachable for the commonest way a listing fails. Read the flag. */
   React.useEffect(() => {
     if (!path) return;
     setLoading(true);
     setErr(null);
-    CafresoHQClient.toolExec('DIR_LIST', path)
-      .then(text => { setEntries(parseDirEntries(text, path)); setLoading(false); })
+    const meta = {};
+    CafresoHQClient.toolExec('DIR_LIST', path, { meta })
+      .then(text => {
+        if (meta.failed) { setErr(listingRefusal(text)); setLoading(false); return; }
+        setEntries(parseDirEntries(text, path)); setLoading(false);
+      })
       .catch(e => { setErr(officeCause(e && e.message ? e.message : e)); setLoading(false); });
   }, [path, refreshNonce, retryNonce]);
 
+  /* Same flag, same lie one level down — plus the catch's own: storing []
+     for a subfolder that could not be read draws it OPEN AND EMPTY, which
+     is a claim about the folder's contents. Store the sentence instead, and
+     let a re-open retry (only an array counts as a cached listing). */
   const loadSub = (subPath) => {
-    if (subEntries[subPath]) return;
-    CafresoHQClient.toolExec('DIR_LIST', subPath)
-      .then(text => { setSubEntries(prev => ({ ...prev, [subPath]: parseDirEntries(text, subPath) })); })
-      .catch(() => { setSubEntries(prev => ({ ...prev, [subPath]: [] })); });
+    if (Array.isArray(subEntries[subPath])) return;
+    const meta = {};
+    CafresoHQClient.toolExec('DIR_LIST', subPath, { meta })
+      .then(text => {
+        setSubEntries(prev => ({ ...prev, [subPath]: meta.failed
+          ? { error: listingRefusal(text) }
+          : parseDirEntries(text, subPath) }));
+      })
+      .catch(e => { setSubEntries(prev => ({ ...prev, [subPath]: { error: officeCause(e && e.message ? e.message : e) } })); });
   };
 
   const toggle = (p) => {
@@ -384,7 +424,13 @@ function LocalTree({ path, onSelectFile, refreshNonce, onRename, onDelete, onUpl
             {pulsePaths && pulsePaths.has(e.path) && <span className="tree-agent-dot" title="just written by a coworker">A</span>}
             {rowActions(e)}
           </div>
-          {isOpen && kids && renderEntries(kids, depth + 1)}
+          {isOpen && Array.isArray(kids) && renderEntries(kids, depth + 1)}
+          {isOpen && kids && !Array.isArray(kids) && (
+            <div style={{paddingLeft: 6 + (depth + 1) * 14, fontSize: 9, color: 'var(--danger)'}}
+                 title="click the folder again to retry">
+              Couldn’t read this folder — {kids.error}
+            </div>
+          )}
           {isOpen && !kids && <div style={{paddingLeft: 6 + (depth + 1) * 14, fontSize: 9, opacity: 0.5}}>Loading…</div>}
         </div>
       );
