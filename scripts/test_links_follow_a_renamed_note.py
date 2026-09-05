@@ -20,10 +20,12 @@ stayed untouched.
 Run: python3 scripts/test_links_follow_a_renamed_note.py
 """
 import ast
+import os
 import pathlib
 import re
 import sys
 import tempfile
+import threading
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 FAILS = []
@@ -65,7 +67,11 @@ def main():
           'followed the rename' in (ROOT / 'views' / 'vault.jsx').read_text(encoding='utf-8'))
 
     # ── behavior: lift the real function into a temp vault ──────────────
-    fn_src = lift_function(serve, '_vault_rewrite_wikilinks')
+    # #385 routed the rewriter's write through _vault_write_local, serialised
+    # by the module-level _vault_write_lock — lift both, and give the
+    # namespace a real lock, or the rewriter can't find either name.
+    fn_src = (lift_function(serve, '_vault_write_local') + '\n\n'
+              + lift_function(serve, '_vault_rewrite_wikilinks'))
     with tempfile.TemporaryDirectory() as td:
         vault = pathlib.Path(td)
         (vault / 'Research').mkdir()
@@ -75,7 +81,8 @@ def main():
             encoding='utf-8')
         (vault / 'Research' / 'other.md').write_text(
             'Also [[old-note.md]] here.\n', encoding='utf-8')
-        ns = {'pathlib': pathlib, 're': re, '_vault_root': str(vault)}
+        ns = {'pathlib': pathlib, 're': re, 'os': os, 'threading': threading,
+              '_vault_write_lock': threading.Lock(), '_vault_root': str(vault)}
         exec(fn_src, ns)
         links, files = ns['_vault_rewrite_wikilinks']('Research/old-note.md',
                                                       'Archive/new-note.md')

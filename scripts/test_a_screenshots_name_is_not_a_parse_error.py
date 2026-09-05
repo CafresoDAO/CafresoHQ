@@ -19,11 +19,13 @@ Run: python3 scripts/test_a_screenshots_name_is_not_a_parse_error.py
 """
 import ast
 import json
+import os
 import pathlib
 import re
 import subprocess
 import sys
 import tempfile
+import threading
 import urllib.parse
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -102,10 +104,15 @@ def main():
     # ── rename rewriter: both spellings follow, angle form written ──────
     serve = (ROOT / 'serve.py').read_text(encoding='utf-8')
     tree = ast.parse(serve)
-    src_fn = next(ast.get_source_segment(serve, n) for n in tree.body
-                  if isinstance(n, ast.FunctionDef)
-                  and n.name == '_vault_rewrite_wikilinks')
-    ns = {'pathlib': pathlib, 're': re, 'urllib': urllib,
+    # #385 routed the rewriter's write through _vault_write_local, serialised
+    # by the module-level _vault_write_lock — lift both, and give the
+    # namespace a real lock, or the rewriter can't find either name.
+    src_fn = '\n\n'.join(
+        ast.get_source_segment(serve, n) for n in tree.body
+        if isinstance(n, ast.FunctionDef)
+        and n.name in ('_vault_write_local', '_vault_rewrite_wikilinks'))
+    ns = {'pathlib': pathlib, 're': re, 'urllib': urllib, 'os': os,
+          'threading': threading, '_vault_write_lock': threading.Lock(),
           '_vault_root': str(d)}
     exec(src_fn, ns)
     links, files = ns['_vault_rewrite_wikilinks'](SHOT,

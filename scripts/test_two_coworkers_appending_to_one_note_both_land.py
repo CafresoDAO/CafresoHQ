@@ -259,7 +259,10 @@ def source_check() -> None:
     check('the helper opens for append rather than truncating',
           "'a+b'" in helper or '"a+b"' in helper, helper[:300])
     check('the helper serialises its newline probe against other appenders',
-          '_vault_append_lock' in helper, helper[:300])
+          # #385 generalized the append-only _vault_append_lock into
+          # _vault_write_lock, shared with the whole-body write and the
+          # wikilink-rewrite paths — same lock, wider name.
+          '_vault_write_lock' in helper, helper[:300])
 
 
 def main() -> int:

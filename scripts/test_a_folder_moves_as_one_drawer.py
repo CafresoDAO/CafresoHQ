@@ -32,6 +32,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import threading
 import urllib.parse
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -144,7 +145,11 @@ def main():
 
     # ── server: resolvers + rewriter, lifted and run against a temp vault ──
     tree = ast.parse(serve)
-    want = ('_vault_resolve', '_vault_resolve_dir', '_vault_rewrite_wikilinks')
+    # #385 routed _vault_rewrite_wikilinks's write through _vault_write_local,
+    # serialised by the module-level _vault_write_lock — lift both too and
+    # give the namespace a real lock, or the rewriter can't find either name.
+    want = ('_vault_resolve', '_vault_resolve_dir', '_vault_write_local',
+            '_vault_rewrite_wikilinks')
     segs = {n.name: ast.get_source_segment(serve, n) for n in tree.body
             if isinstance(n, ast.FunctionDef) and n.name in want}
     with tempfile.TemporaryDirectory() as td:
@@ -155,6 +160,7 @@ def main():
         (root / 'citer.md').write_text(
             'See [[Drawer/alpha|the alpha]] and by name [[alpha]].')
         ns = {'pathlib': pathlib, 're': re, 'urllib': urllib, 'os': os,
+              'threading': threading, '_vault_write_lock': threading.Lock(),
               '_vault_root': str(root)}
         exec('\n\n'.join(segs[k] for k in want), ns)
 

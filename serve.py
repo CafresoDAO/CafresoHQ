@@ -1806,7 +1806,18 @@ def _vault_write_local(target: pathlib.Path, body) -> None:
     tmp + fsync + os.replace shape `_hq_handler`'s PUT uses, so the readable
     file on disk is always either the old note or one writer's complete new
     one, never a splice of two.
+
+    One thing os.replace does NOT give back for free: the old bare
+    write_text opened `target` directly, so a note chmod'd read-only
+    correctly raised PermissionError at open time. os.replace only needs
+    write permission on the PARENT directory to swap a new inode into
+    target's name — it does not check target's own permission bits — so
+    without this check a read-only note would silently accept being
+    overwritten instead of protecting its contents. Check explicitly so
+    that behavior survives the move to a tmp-file swap.
     """
+    if target.exists() and not os.access(target, os.W_OK):
+        raise PermissionError(13, 'Permission denied', str(target))
     import tempfile as _tf
     data = body.encode('utf-8') if isinstance(body, str) else (body or b'')
     tfd, tmp = _tf.mkstemp(dir=str(target.parent), prefix=f'.{target.name}.', suffix='.tmp')

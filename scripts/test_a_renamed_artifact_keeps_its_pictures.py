@@ -20,10 +20,12 @@ external URL beside it untouched, /vault/file serves the moved file.
 Run: python3 scripts/test_a_renamed_artifact_keeps_its_pictures.py
 """
 import ast
+import os
 import pathlib
 import re
 import sys
 import tempfile
+import threading
 import urllib.parse
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -57,9 +59,14 @@ def main():
         '[[chart.png]] and plain [link](Research/chart.png)\n')
     (d / 'other.md').write_text('no references here\n')
 
-    ns = {'pathlib': pathlib, 're': re, 'urllib': urllib,
+    ns = {'pathlib': pathlib, 're': re, 'urllib': urllib, 'os': os,
+          'threading': threading, '_vault_write_lock': threading.Lock(),
           '_vault_root': str(d)}
-    exec(lift(serve, '_vault_rewrite_wikilinks'), ns)
+    # #385 routed the rewriter's write through _vault_write_local, serialised
+    # by the module-level _vault_write_lock — lift both, and give the
+    # namespace a real lock, or the rewriter can't find either name.
+    exec(lift(serve, '_vault_write_local') + '\n\n'
+         + lift(serve, '_vault_rewrite_wikilinks'), ns)
     links, files = ns['_vault_rewrite_wikilinks'](
         'Research/chart.png', 'Research/q3-chart.png')
 

@@ -36,6 +36,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -66,7 +67,11 @@ LATIN1 = 'Notes from Jos\xe9: see [[old-note]] for the numbers.\n'.encode('latin
 # ── the pass itself, lifted out of serve.py ───────────────────────────────
 def unit_checks(serve):
     print('=== the rewrite pass, on a vault it cannot fully rewrite ===')
-    fn = lift_function(serve, '_vault_rewrite_wikilinks')
+    # #385 routed the rewriter's write through _vault_write_local, serialised
+    # by the module-level _vault_write_lock — lift both, and give the
+    # namespace a real lock, or the rewriter can't find either name.
+    fn = (lift_function(serve, '_vault_write_local') + '\n\n'
+          + lift_function(serve, '_vault_rewrite_wikilinks'))
     with tempfile.TemporaryDirectory() as td:
         vault = pathlib.Path(td)
         (vault / 'Research').mkdir()
@@ -78,7 +83,8 @@ def unit_checks(serve):
         (vault / 'unrelated.md').write_text('Nothing to do with it.\n',
                                             encoding='utf-8')
         os.chmod(vault / 'linker-readonly.md', 0o444)
-        ns = {'pathlib': pathlib, 're': re, 'urllib': urllib,
+        ns = {'pathlib': pathlib, 're': re, 'urllib': urllib, 'os': os,
+              'threading': threading, '_vault_write_lock': threading.Lock(),
               '_vault_root': str(vault)}
         exec(fn, ns)
 
