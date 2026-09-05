@@ -43,8 +43,14 @@ def check(name, cond, detail=''):
 def main():
     print("published — link copied, before it was copied")
 
-    fn = re.search(r"const publishOpen = async \(\) => \{[\s\S]*?\n  \};", PROJECTS)
-    check('found publishOpen()', fn is not None)
+    # `_publishOpen`, not `publishOpen`: `## 392` split the handler into a
+    # synchronous double-click claim (`publishOpen`, what the button is
+    # wired to) and the publish itself (`_publishOpen`), so the branches
+    # this test is about now live in the inner half. The non-greedy match
+    # would otherwise stop at the wrapper's own closing brace and find no
+    # canister branch at all.
+    fn = re.search(r"const _publishOpen = async \(\) => \{[\s\S]*?\n  \};", PROJECTS)
+    check('found _publishOpen()', fn is not None)
     body = fn.group(0) if fn else ''
 
     canister = re.search(r"if \(r\.mode === 'canister'\) \{[\s\S]*?\n      \}", body)

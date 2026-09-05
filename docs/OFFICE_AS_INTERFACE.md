@@ -40690,3 +40690,119 @@ had not driven; nothing in the SAFE list above rests on either. The four
 remaining EXPOSED doors are not deferred judgements — they are diagnosed
 bugs with the fix shape already established, waiting only for a hunt that
 can fire-test them properly.
+
+## 392. two clicks on 🚀 Publish were two publishes, and one of them was open
+
+`## 391` closed its own two doors and left an inventory of six more, each
+diagnosed with the line and the exact stale value it reads. Two of those six
+are in `views/projects.jsx`, and they are the same bug in two sibling
+surfaces of one file, so they are fixed together here. Both diagnoses were
+re-derived against the current source before anything was touched — the
+whole premise of this series is that a confident reading keeps failing when
+someone actually builds a harness, and that cuts in both directions. One of
+the two came back exactly as described. The other came back weaker, and the
+difference is written down rather than smoothed over.
+
+**`publishOpen` — confirmed, and it is not even a race.** Every door
+`## 388` through `## 391` fixed at least *had* a check; it just read a
+React value that had not committed yet. This one has nothing. The
+`setPubMsg({ kind: 'busy', text: … })` at the top of the handler is the
+thing that looks like a flag, and it is never read as one — it paints a
+line of text and that is all. Neither 🚀 Publish nor its 🔗 Preview link
+twin carries a `disabled`, and there is no debounce anywhere on the path.
+Two clicks were two `CafresoHQClient.publishSite` calls, unconditionally,
+with no dependence on React's commit timing at all. In `canister` mode a
+publish is a real upload of the whole site to public hosting plus a `.url`
+file written into the project, so a duplicate is a duplicate deploy; and
+because both rounds then race the single `pubMsg` slot and the clipboard,
+the link the boss finally pastes can be the loser's.
+
+**`submitGithub` — confirmed, but narrower than the note said.** `## 391`
+listed this as "`setBusy(true)` with no busy guard above it", which is true
+of the handler and incomplete about the surface. The button really is
+`disabled={busy}`, and that gate is not merely cosmetic: an ordinary second
+mouse click lands in a later task, React 18 has already flushed the
+discrete `setBusy(true)` by then, and HTML refuses implicit form submission
+through a disabled default button, so the Enter path is covered too. What
+`disabled` cannot cover is a second submit landing in the SAME tick as the
+first, before React has committed anything — a duplicate synthetic click
+off a touch double-tap, on a view that is explicitly mobile-aware
+(`_isMobile`, the pane switcher), or a programmatic `requestSubmit`. So
+this one is a genuine race window rather than an open door. It is fixed
+anyway: the window is real, the cost when it lands is two `cloneRepo` calls
+— two `git clone`s of one repo racing the same destination directory on
+disk — plus two `onCommit`s, i.e. two project rows in the office for one
+repo the boss added once.
+
+**Repro.** `scripts/harness_projects_publish_clone_race.mjs` lifts the REAL
+`publishOpen`/`_publishOpen` and `submitGithub`/`_submitGithub` bodies out
+of `views/projects.jsx` — brace-balanced text extraction of the actual
+committed source, not a re-implementation, the same rule `## 388`–`## 391`'s
+harnesses use — and calls each twice, then three times, against one
+unchanged snapshot. Pre-fix: `publishSite` fired **2** times for a double
+click and **3** for a triple, with the clipboard written 2 and 3 times to
+match, and **2** again in the preview-link fallback; `cloneRepo` fired
+**2** and **3**, with `onCommit` filing a project row for every one of
+them. Post-fix all of those are 1.
+
+**The fix.** A `publishingPathsRef` / `cloningUrlsRef` — a live ref holding
+a `Set`, the only thing in either component true the instant the work
+begins — is checked-and-claimed as the FIRST thing each handler does, and
+the work moves behind the claim into `_publishOpen` / `_submitGithub` so
+the release is a single `finally` covering every ending (done, failed,
+threw) rather than a release at each of several terminal points, where one
+missed path deadens the button forever. Keyed by a `Set` on the natural id
+— the file path being published, the repo URL being cloned — the way
+`## 388`'s `approvedIdsRef`, `## 389`'s `resendingIdsRef` and `## 390`'s
+`startingTaskIdsRef` are, rather than `## 391`'s bare boolean, so the claim
+scopes to the thing being acted on and a genuinely different file or repo
+is never swallowed by a lock aimed at the wrong one. Two details that
+matter more here than in the earlier four:
+
+- **Release on failure.** A publish that fails and a clone that fails are
+  precisely the moments the boss WILL click again — the error box invites
+  it in as many words. Both scenarios are asserted in the test, not
+  reasoned about.
+- **`e.preventDefault()` stays ahead of the claim** in `submitGithub`. It
+  is the one statement that must also run on the submit the claim REFUSES;
+  drop it there and the blocked second event navigates the page away, which
+  is worse than the bug. The test drives two submit events and checks both
+  were prevented while only one clone fired.
+
+The `disabled={busy}` on Clone & add stays exactly where it is, as the
+second line of defence for the ordinary post-commit click, and the test
+pins it so a later edit cannot quietly trade one gate for the other.
+
+**Test.** New `scripts/test_a_second_click_on_publish_does_not_publish_
+twice.py`. Round 1 structural — both refs exist as `useRV(new Set())`, both
+claims sit at the top of their handler with nothing but the key derivation
+(and `preventDefault`) ahead of them, both release in a `finally`, the real
+call really did move out of the wrapper and into the inner half, and the
+existing `disabled={busy}` survives. Rounds 2-4 — the real extracted
+bodies: exactly one `publishSite` and one clipboard write, exactly one
+`cloneRepo` and one `onCommit`, for double and triple clicks and for a
+plain single one; the preview-link fallback checked as its own scenario
+since it is the same door; a second attempt started AFTER the first
+finished still runs in full; and a retry after a FAILED attempt still runs,
+proving the claim releases on the path that matters most. Fire-tested:
+reverted in place (md5 `535c414eb27fb6141deedc865faf7746`), 21 checks
+failed reliably across 3 runs, 9 of them the real doubled counts; restored
+byte-identical, green on 3 repeated runs.
+
+**Fallout, repaired here.** Two existing tests lift this source into
+isolated JS namespaces and broke on the split, the same way `## 389`'s and
+`## 390`'s did. `test_published_link_copied_before_it_was_copied.py`
+regex-matches `const publishOpen = async () => {` non-greedily to the first
+`\n  };`, which after the split stops at the wrapper's own brace and finds
+no canister branch at all — retargeted to `_publishOpen`.
+`test_the_add_project_tabs_do_not_share_a_box.py` lifts `submitGithub` and
+runs it under node with hand-supplied dependencies — it now lifts both
+halves and is handed `cloningUrlsRef`, without which the lifted source
+throws `ReferenceError` before the first case runs. Both cite this entry in
+place. Every other test that reads `views/projects.jsx` (34 of them) was run
+standalone and still passes. `npm run build` succeeds.
+
+**Still open from `## 391`'s inventory**, unchanged by this entry:
+`ui/chat.jsx`'s `send`, `FocusMode.send` (features.jsx),
+`TerminalChat.send` (views/terminal.jsx), and `onPin` (app.jsx, left alone
+on purpose — the duplicate is one removable corkboard row).

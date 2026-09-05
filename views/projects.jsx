@@ -581,7 +581,43 @@ function WorkspaceView({ projects, setProjects, agents = [], onSwitchView }) {
     try { return !!(CafresoHQChain && CafresoHQChain.isAvailable && CafresoHQChain.isAvailable()); }
     catch (_e) { return false; }
   };
+  /* 🚀 Publish's one-live-publish lock, keyed by the path being published.
+
+     This surface had NO in-flight guard of any kind — not even the stale
+     state one `## 388`–`## 391` kept finding. `setPubMsg({ kind: 'busy' })`
+     below looks like the flag and is never read as one; it only paints a
+     line of text. Neither 🚀 Publish nor 🔗 Preview link carries a
+     `disabled`, and there is no debounce. So two clicks were two
+     `CafresoHQClient.publishSite` calls, unconditionally — this one did not
+     even depend on React's commit timing the way the four before it did.
+     Measured with the real handler lifted out of this file
+     (scripts/harness_projects_publish_clone_race.mjs): 2 publishes for one
+     click's worth of intent, 3 for a triple.
+
+     A publish is not a duplicate the boss can shrug off: in `canister` mode
+     it is a real upload of the whole site to public hosting plus a second
+     `.url` file dropped into the project, and both rounds then race the one
+     `pubMsg` slot and the clipboard, so the link the boss pastes can be the
+     loser's.
+
+     Keyed by path rather than being a bare boolean (the `## 391` shape)
+     because a path is the natural id here, matching `## 388`'s
+     approvedIdsRef, `## 389`'s resendingIdsRef and `## 390`'s
+     startingTaskIdsRef — and because the claim should scope to the FILE
+     being published, not to the editor forever. Released in the `finally`
+     below on every ending, including a failure: a publish that fails is
+     exactly the case where the boss will click again, and must be able to. */
+  const publishingPathsRef = useRV(new Set());
   const publishOpen = async () => {
+    /* Claimed SYNCHRONOUSLY, before anything else runs — the one statement
+       above it derives the key and reads no state that the publish writes. */
+    const claim = (openFile && openFile.path) || '';
+    if (publishingPathsRef.current.has(claim)) return;
+    publishingPathsRef.current.add(claim);
+    try { await _publishOpen(); } finally { publishingPathsRef.current.delete(claim); }
+  };
+
+  const _publishOpen = async () => {
     if (!openFile) return;
     setPubMsg({ kind: 'busy', text: publicHostingReady() ? 'Publishing…' : 'Building preview…' });
     try {
@@ -1831,8 +1867,47 @@ function AddProjectModal({ prefillName, onClose, onCommit }) {
     onCommit({ name: name.trim(), path: path.trim(), source: 'local' });
   };
 
+  /* Clone & add's one-live-clone lock, keyed by the repo URL.
+
+     Weaker than `publishOpen`'s door above, and worth naming precisely
+     rather than lumping the two together: this button IS `disabled={busy}`,
+     and that is a real gate, not a cosmetic one — a second ordinary mouse
+     click lands in a later task, React 18 has already flushed the discrete
+     `setBusy(true)` by then, and HTML's implicit form submission is refused
+     outright when the default button is disabled, so Enter is covered too.
+     What `disabled` cannot cover is a second submit landing in the SAME
+     tick as the first, before React has committed anything: a duplicate
+     synthetic click off a touch double-tap (this view is explicitly mobile —
+     see `_isMobile` above), or a programmatic `requestSubmit`. So it is a
+     race window rather than an open door. It is fixed here anyway because
+     the window is real, the cost is the same shape as the others, and a ref
+     is the only thing in this modal true the instant the clone begins.
+
+     What it costs when it lands: two `CafresoHQClient.cloneRepo` calls, two
+     `git clone`s of the same repo racing the same destination directory on
+     disk, and two `onCommit`s — two project rows in the office for one
+     repo the boss added once. Measured pre-fix at the handler level: 2
+     clones and 2 commits for a double submit, 3 and 3 for a triple.
+
+     Keyed by the URL (`## 388`/`## 389`/`## 390`'s Set shape) rather than a
+     bare boolean, so a genuinely different repo typed after a failure is
+     never swallowed by a lock scoped to the wrong thing. Released in the
+     `finally` on every ending — a clone that fails is precisely when the
+     boss retries, and the `setBusy(false)` in the catch below re-opens the
+     button for exactly that. `e.preventDefault()` deliberately stays ahead
+     of the claim: it is the only statement that must run on the REFUSED
+     submit too, or the blocked second event navigates the page away. */
+  const cloningUrlsRef = useRV(new Set());
+
   const submitGithub = async (e) => {
     e && e.preventDefault();
+    const claim = repoUrl.trim();
+    if (cloningUrlsRef.current.has(claim)) return;
+    cloningUrlsRef.current.add(claim);
+    try { await _submitGithub(); } finally { cloningUrlsRef.current.delete(claim); }
+  };
+
+  const _submitGithub = async () => {
     setErr(null);
     const url = repoUrl.trim();
     if (!url) return setErr('repo URL or owner/repo required');

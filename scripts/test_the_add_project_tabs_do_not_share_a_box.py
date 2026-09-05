@@ -124,6 +124,13 @@ def main():
         '  const onCommit = (p) => { committed = p; };',
         '  const CafresoHQClient = { cloneRepo: async (a) => { cloned = a;',
         '    return { name: a.name || "react", path: "/tmp/" + (a.name || "react") }; } };',
+        # `## 392` gave this submit a double-submit claim: `submitGithub` is
+        # now a synchronous ref-claim wrapper around `_submitGithub`, which
+        # holds the body this test drives. Both halves are lifted, and the
+        # ref the wrapper claims is handed in here — without it the lifted
+        # source throws ReferenceError before any case runs.
+        '  const cloningUrlsRef = { current: new Set() };',
+        '  ' + lift(modal, '_submitGithub'),
         '  ' + lift(modal, 'submitGithub'),
         '  await submitGithub(null);',
         '  OUT.push([label, cloned, committed, errored]);',
