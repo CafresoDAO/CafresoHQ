@@ -65,6 +65,20 @@ python3 serve.py                   # serve.py prints the URL *and* scheme — it
 bash start-elevated.sh
 ```
 
+For a **complete** local office, prefer the launcher — bare `serve.py` does not
+start a Hermes gateway, so the default brain has nothing listening on
+`127.0.0.1:8642` and every message fails:
+```bash
+sh Start-CafresoHQ.sh                # serve.py + the Hermes gateway + TLS notes
+```
+
+**What a local run exposes.** `serve.py` binds `127.0.0.1` only, so the
+`📱 Mobile / LAN` address it prints is *not* reachable from your phone unless
+you also set `CAFRESOHQ_BIND` (and, off loopback, `CAFRESOHQ_API_KEY`). The
+`/fs` read routes are keyless by design and default to serving your **home
+directory** — see `CAFRESOHQ_ALLOWED_DIRS` in [`.env.example`](.env.example)
+and narrow it before running the office on a machine you share.
+
 **Self-hosted container**
 ```bash
 docker run -d --name cafresohq -p 8787:8787 \
