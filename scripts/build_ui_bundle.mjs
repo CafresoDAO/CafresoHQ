@@ -26,6 +26,38 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 
+/* NODE PREFLIGHT — `## 405.`
+   The README's prerequisite ("Node 18+") was never checked by anything. esbuild
+   0.24.2 declares `engines.node >=18` and eslint declares its own floor, but npm
+   treats `engines` as a WARNING unless `engine-strict` is set, so a tester on
+   Node 16 got a clean-looking `npm install` and then an obscure failure from
+   inside the bundler with nothing on screen naming Node. `.npmrc` now sets
+   `engine-strict=true` so `npm install` refuses first; this guard is the second
+   net, for anyone who runs the build script directly or copied node_modules in.
+
+   The floor is read from package.json rather than hardcoded so there is exactly
+   one place to raise it, and the comparison uses `process.version` (a plain
+   string) so a test can drive the under-floor branch on any machine. */
+function nodeFloorFromPackageJson() {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+    const m = /(\d+)/.exec(String((pkg.engines || {}).node || ''));
+    return m ? Number(m[1]) : 0;
+  } catch { return 0; }
+}
+{
+  const floor = nodeFloorFromPackageJson();
+  const have = Number(/v?(\d+)/.exec(String(process.version))?.[1] ?? 0);
+  if (floor && have && have < floor) {
+    console.error(`[ui] Node ${process.version} is too old — CafresoHQ needs Node ${floor}+.`);
+    console.error('[ui] The bundler (esbuild) and the linter both require it; on an older '
+      + 'Node this build fails somewhere inside them with an error that never says so.');
+    console.error(`[ui] Install Node ${floor} or newer from https://nodejs.org (or `
+      + `\`nvm install ${floor} && nvm use ${floor}\`), then re-run: npm install && npm run build`);
+    process.exit(1);
+  }
+}
+
 /* DEPENDENCY PREFLIGHT — why esbuild is loaded dynamically below.
    dist-ui/ and node_modules/ are both gitignored, so a fresh clone has
    neither. Asking for hq.html then 500s with "HQ UI not built", and that

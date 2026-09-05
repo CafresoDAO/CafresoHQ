@@ -1,5 +1,99 @@
 # Beta readiness — re-audit
 
+## 2026-09-05 (`## 405.`) — the first run, walked in the README's own order
+
+`## 396.` did the first cold-start pass and found the README's ordering did not
+work. This one walked what that pass left: the prerequisites nobody checked,
+the mkcert step nobody documented, and the search worker's separate setup path
+nobody had followed. `git archive hunt409-coldstart | tar -x` into an empty
+directory, `HOME` pointed at an empty temp dir, no `hermes` on `PATH`.
+
+**The README's sequence works, exactly as written.** This is the transcript,
+not a claim about it:
+
+```
+$ npm install
+npm warn deprecated xterm-addon-fit@0.8.0: … xterm@5.3.0: …
+added 265 packages, and audited 266 packages in 2s
+$ npm run build
+[ui] built 8 assets -> dist-ui/  (graphEngine=true)
+$ python3 serve.py                       # PORT=8811, empty HOME
+CafresoHQ -> http://localhost:8811/hq.html
+  📱 Mobile / LAN  -> http://10.0.0.131:8811/hq.html
+  💡 Set CAFRESOHQ_TLS_CERT + CAFRESOHQ_TLS_KEY (or install mkcert) for HTTPS …
+$ curl -o /dev/null -w '%{http_code} %{size_download}' …/hq.html
+200 11071
+```
+
+Three findings, all of them in what happens when a step is *not* met.
+
+**1. "Node 18+ and Python 3" was a sentence, not a check.** `package.json`
+declared no `engines` at all, so npm had nothing of the repo's own to enforce;
+`esbuild@0.24.2` declares `>=18` and eslint its own floor, and npm treats every
+`engines` field as a **warning** by default. A tester on Node 16 got that
+warning buried under 265 packages of output and then "added 265 packages", and
+discovered the problem later from inside the bundler, in a message that never
+says "Node". Now: `engines.node: ">=18"` declared once, `.npmrc` sets
+`engine-strict=true`, and `npm install` refuses. Measured, with the floor
+temporarily raised to `>=99` to drive it on this machine:
+
+```
+npm error code EBADENGINE
+npm error notsup Required: {"node":">=99"}
+npm error notsup Actual:   {"npm":"10.9.2","node":"v22.17.1"}
+```
+
+The build script is the second net, for anyone who runs it directly. Driven
+with `process.version` redefined to `v16.20.0`:
+
+```
+[ui] Node v16.20.0 is too old — CafresoHQ needs Node 18+.
+[ui] The bundler (esbuild) and the linter both require it; on an older Node
+     this build fails somewhere inside them with an error that never says so.
+[ui] Install Node 18 or newer from https://nodejs.org (or `nvm install 18 …`)
+```
+
+**Python 3 was the weaker half of the worry.** serve.py and every module it
+imports parse at `feature_version=(3,6)`; the whole office was driven green on
+stock macOS `/usr/bin/python3` — **3.9.6** — and on 3.14.6, `GET /hq.html` 200
+on both. The real failure is python3 missing outright, and the launcher handled
+`npm` and not it. Before, verbatim:
+
+```
+[start] serving CafresoHQ on :8787  (loopback-only; serve.py prints the exact URL + scheme)
+./Start-CafresoHQ.sh: line 86: exec: python3: not found
+```
+
+It promised a running office one line before the shell said the backend could
+not start. After:
+
+```
+[start] ERROR python3 is not on PATH, and serve.py — the whole backend — is a
+        Python program. Nothing in CafresoHQ can start without it.
+        Install Python 3 (https://www.python.org/downloads/, or
+        `brew install python3` / `apt install python3`), then re-run this script.
+```
+
+**2. The mkcert paragraph said the opposite of what the code does.** Item 6
+below has the detail. Short version: no mkcert means **plain HTTP**, not a
+self-signed cert; both `Start-CafresoHQ.sh` and item 6 of this document claimed
+the fallback. Corrected in both, and the test derives the rule from serve.py's
+call site rather than pinning the sentence.
+
+**3. The search worker's setup path did not lead anywhere.** Item 7 below has
+the detail: a gitignored `env_file` with no committed template, and a README
+naming the *other* compose file's env file for the compose command. Fixed as
+far as an agent may go; the credentials themselves are a human gate.
+
+**Still human-only, and untouched by this pass:** the hosted / ICP first run
+(item 3 below), Internet Identity (item 4), the worker's own registration and
+Brave key (item 7). None was attempted. Docker Desktop was not running on this
+machine, so `docker compose` was never executed either — the worker findings
+are from the compose file, the README and `.gitignore`, and the new test
+asserts them without docker.
+
+---
+
 ## 2026-09-05 (follow-up to the fourth pass) — the silence, measured
 
 The fourth pass below names one item "the largest single beta-blocker on the
@@ -159,10 +253,16 @@ human for, and they should go in the invitation rather than be discovered.
    silence." `## 399.` measured that at 46.5 seconds, made it 25ms, and gave it
    a sentence that names Settings → Connections. The brain is still missing;
    only the wait and the wording were ever fixable in code.)
-2. **Node.js 18+ and Python 3.** Neither is bundled or checked for before the
-   fact; `Start-CafresoHQ.sh` explains a missing `npm`, but a tester on a
-   machine with neither has a prerequisites problem no page in the product can
-   solve.
+2. **Node.js 18+ and Python 3.** Still not bundled — that part stands, and no
+   page in the product can install an interpreter. But "not checked for" was
+   true when this was written and is not true now: `## 405.` walked it and
+   both are checked. See that entry's note at the top of this document for
+   what was measured; in short, `npm install` now refuses an under-floor Node
+   naming Required and Actual, the build script refuses one itself, and
+   `Start-CafresoHQ.sh` checks `python3` before it does any work. Python 3
+   turned out to be the weaker half of the worry: serve.py parses back to 3.6
+   and was driven green on stock macOS `/usr/bin/python3` (3.9.6) as well as
+   3.14.6.
 3. **Any hosted / ICP path at all.** A local office touches no canister and
    needs no identity, and that is the path to hand a tester. The hosted face
    needs a mainnet action, and a mainnet action is the user's alone — no
@@ -177,12 +277,36 @@ human for, and they should go in the invitation rather than be discovered.
 5. **Cycles.** Unchanged from gate 3 below: `cafresohq_state` has no auto
    top-up and has already been wiped once, on 2026-08-05. A hosted beta that
    outlives its balance loses its testers' data, exactly once.
-6. **`mkcert`, for a warning-free HTTPS embed.** Optional — serve.py falls
-   back to a self-signed cert — but a tester who wants the `ai.cafreso.com`
-   embed or the iOS service worker has to install a third-party tool first.
+6. **`mkcert`, for a warning-free HTTPS embed.** Optional, and the clause
+   this item used to carry — "serve.py falls back to a self-signed cert" —
+   was **false**, corrected by `## 405.` after driving a cold tree with no
+   mkcert installed: the office came up on `http://localhost:8811/hq.html`,
+   plain HTTP, no cert at all. `_ensure_local_tls` is called with
+   `allow_selfsigned=_tls_forced` and that flag is only set by
+   `CAFRESOHQ_TLS_AUTO=1`; the reason is written at the call site (a TLS-only
+   server with a cert the browser rejects is *unreachable*, which is worse
+   than HTTP, and `http://localhost` is already a secure context). So HTTP is
+   the honest default and mkcert is the only route to HTTPS — a tester who
+   wants the `ai.cafreso.com` embed or the iOS service worker has to install
+   a third-party tool first, and one who was told to expect a self-signed
+   cert went looking for a warning that never comes. `Start-CafresoHQ.sh`
+   carried the same false sentence and now says the true one.
 7. **The standalone search worker.** A separate `docker compose` and a Brave
    key. The 502 says so clearly, which is the right behaviour; it is still a
-   thing the tester cannot produce on their own.
+   thing the tester cannot produce on their own. `## 405.` walked the setup
+   path up to the point where it becomes a mainnet action and found it did
+   not lead anywhere: `docker-compose.worker.yml` declares
+   `env_file: worker-standalone.env`, that name is gitignored, and the fresh
+   clone had **no template for it and none for `worker.env` either** — so the
+   first command in `search_worker_service/README.md` aborted on Compose's
+   own words about a missing env file. Worse, that README named `worker.env`
+   for the compose path, which is the *other* compose file's env file and the
+   one thing the command will never read. Both env files now have committed
+   `.example` templates and the README names the right one. What remains is
+   genuinely a human gate: `WORKER_PRINCIPAL`/`WORKER_SECRET` come from
+   registering a worker in ai.cafreso.com's settings — a mainnet action — and
+   `BRAVE_API_KEY` from a Brave account. No agent in this loop may make the
+   first, so the worker was never *run* here; only its setup path was walked.
 
 ### Verdict delta
 

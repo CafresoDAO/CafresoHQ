@@ -47,6 +47,14 @@ The project has accreted three names — here's the convention:
 
 ## Local development
 
+**Prerequisites: Node 18+ and Python 3.** Both are checked for now, and both
+refuse early with an actionable message rather than failing later somewhere
+obscure (`## 405.`): `npm install` stops on the Node floor (declared in
+`package.json`'s `engines.node`, enforced by `.npmrc`'s `engine-strict`), and
+`Start-CafresoHQ.sh` checks `python3` before it does anything else. serve.py
+itself parses back to Python 3.6 and has been run on 3.9.6 (stock macOS) and
+3.14.6; nothing bundles either interpreter.
+
 **SvelteKit frontend** — *not in this repo.* It lives in the sibling
 `cafreso-pages` checkout; `frontend/` was deleted here in `8dbcc6f`, so these
 commands only work from that repo:

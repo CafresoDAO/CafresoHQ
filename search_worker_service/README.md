@@ -30,23 +30,41 @@ retires the in-monolith path (see the extraction plan this came from).
 
 ## Running it
 
+**Step 0 — the env file, first.** Both commands below read one, and its name is
+gitignored, so a fresh clone has no such file. Copy the template:
+
 ```
-docker build -t cafreso-search-worker:local -f search_worker_service/Dockerfile .
-docker run -d --name cafreso-search-worker \
-  --env-file worker.env \
-  -p 8788:8788 \
-  -v cafreso-search-worker-data:/data \
-  cafreso-search-worker:local
+cp worker-standalone.env.example worker-standalone.env
+chmod 600 worker-standalone.env
+$EDITOR worker-standalone.env       # fill in the four required values
 ```
 
-Or via `docker-compose.worker.yml` at the repo root:
+The standalone worker's env file is **`worker-standalone.env`** — a *different*
+file from `docker-compose.local.yml`'s `worker.env`, on purpose, so that a
+standalone worker and the full HQ container can run side by side under separate
+identities during validation. `docker-compose.worker.yml`'s header explains the
+reasoning; its `env_file:` names `worker-standalone.env` and nothing else.
+(Until `## 405.` this section said `worker.env` for both, so a tester following
+it literally filled in a file the compose command never reads and got Compose's
+"env file … not found" instead of a worker.)
 
 ```
 docker compose -f docker-compose.worker.yml up -d --build
 ```
 
-Required env (in `worker.env`, gitignored — same file convention as
-`docker-compose.local.yml`):
+Or without Compose — note that `--env-file` is yours to point wherever you
+like, so this is the one place `worker.env` would also work:
+
+```
+docker build -t cafreso-search-worker:local -f search_worker_service/Dockerfile .
+docker run -d --name cafreso-search-worker \
+  --env-file worker-standalone.env \
+  -p 8788:8788 \
+  -v cafreso-search-worker-data:/data \
+  cafreso-search-worker:local
+```
+
+Required env:
 
 ```
 SEARCH_WORKER=1
@@ -54,6 +72,11 @@ WORKER_PRINCIPAL=<principal registered via ai.cafreso.com settings>
 WORKER_SECRET=<64-hex secret shown once at registration>
 BRAVE_API_KEY=<your Brave key>
 ```
+
+**None of those four can be produced locally.** The principal/secret pair comes
+from registering a worker in ai.cafreso.com's settings — a mainnet action — and
+the Brave key from a Brave Search API account. This is a human-only gate; see
+`docs/BETA_READINESS.md`.
 
 Optional model config — see `worker.py`'s module docstring for the full
 precedence rules (local env always wins over the operator's published

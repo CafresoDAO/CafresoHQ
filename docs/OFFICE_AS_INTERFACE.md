@@ -43190,3 +43190,173 @@ their dependencies by name, so the new seed threw `ReferenceError:
 openSeqRef is not defined`. Given the dependency with a comment citing this
 entry. Full suite 576/577; the one failure is the known foreign moc M0219
 on `src/cafresohq_state/main.mo`.
+---
+
+## 405. it told me it was serving, then said python3 was not found
+
+`## 396` walked the cold start once and found the README's own ordering did
+not work. `docs/BETA_READINESS.md` then listed what that pass had NOT walked,
+in its own words: *"Node.js 18+ and Python 3. Neither is bundled or checked
+for"*, *"`mkcert`, for a warning-free HTTPS embed — undocumented, unchecked"*,
+and *"The standalone search worker. A separate `docker compose` and a Brave
+key."* This entry drove all three, plus the README end to end in its own
+order, from a `git archive hunt409-coldstart | tar -x` into an empty
+directory with an empty `HOME` and no `hermes` on `PATH`.
+
+**The README's sequence is sound.** That much survived driving, and it is the
+one claim in this entry that was already true:
+
+```
+$ npm install                 → added 265 packages … in 2s
+$ npm run build               → [ui] built 8 assets -> dist-ui/  (graphEngine=true)
+$ python3 serve.py            → CafresoHQ -> http://localhost:8814/hq.html
+$ curl -sw '%{http_code} %{size_download}' …/hq.html   → 200 11072
+```
+
+Everything below is what happens when a step is **not** met.
+
+### The bug: a promise printed one line above the failure
+
+`Start-CafresoHQ.sh` is what testers are pointed at. It guarded `npm` with a
+`command -v` and four lines of advice. Its LAST line was a bare
+`exec python3 serve.py`. Driven on this machine with a `PATH` that has no
+python3 — the unfixed script, verbatim, from the main checkout:
+
+```
+[start] WARN hermes CLI not installed — /hermes will 502 until you install it (Settings → Agents)
+[start] TIP: install mkcert for a browser-trusted local HTTPS cert →
+        https://github.com/FiloSottile/mkcert  (without it, the cert is self-signed)
+[start] serving CafresoHQ on :8787  (loopback-only; serve.py prints the exact URL + scheme)
+/…/Start-CafresoHQ.sh: line 86: exec: python3: not found
+```
+
+Four `[start]` lines, one of them announcing a running office, and then the
+shell — not the product — saying the entire backend could not be launched. No
+version, no install command, no next step. §4 in one screen: the office
+reported the outcome before it had one. The check now runs before any work,
+so the tester reads it against an empty terminal rather than after a
+two-minute `npm install`:
+
+```
+[start] ERROR python3 is not on PATH, and serve.py — the whole backend — is a
+        Python program. Nothing in CafresoHQ can start without it.
+        Install Python 3 (https://www.python.org/downloads/, or
+        `brew install python3` / `apt install python3`), then re-run this script.
+```
+
+**Python 3 turned out to be the weaker half of the worry.** `serve.py` and
+every module it imports parse at `ast.parse(feature_version=(3,6))`, and the
+whole office was driven green on stock macOS `/usr/bin/python3` — **3.9.6** —
+as well as 3.14.6. `GET /hq.html` 200 on both. The prerequisite that bites is
+python3 being absent, not python3 being old.
+
+### The second bug: a stated prerequisite nothing could enforce
+
+"Node 18+" lived only in prose. `package.json` declared no `engines` at all,
+so npm had nothing of the repo's own to check, and npm treats a dependency's
+`engines` as a **warning**: `esbuild@0.24.2` says `>=18`, eslint says
+`^18.18.0 || ^20.9.0 || >=21.1.0`, and a tester on Node 16 saw those scroll
+past under 265 packages and then read "added 265 packages". The failure
+arrived later, from inside the bundler, in words that never say "Node".
+
+Three changes, one number. `package.json` now declares
+`engines.node: ">=18"`; `.npmrc` sets `engine-strict=true` so the refusal
+lands on the first command the README gives; and the build script and the
+launcher both read that same field rather than repeating it. Measured, with
+the floor temporarily raised to `>=99` to drive it here:
+
+```
+npm error code EBADENGINE
+npm error notsup Required: {"node":">=99"}
+npm error notsup Actual:   {"npm":"10.9.2","node":"v22.17.1"}
+```
+
+and, running the build script directly with `process.version` redefined to
+`v16.20.0`:
+
+```
+[ui] Node v16.20.0 is too old — CafresoHQ needs Node 18+.
+[ui] Install Node 18 or newer from https://nodejs.org (or `nvm install 18 …`)
+```
+
+### The third bug: the mkcert sentence said the opposite of the code
+
+Both `Start-CafresoHQ.sh` and `docs/BETA_READINESS.md` item 6 said serve.py
+*"falls back to a self-signed cert"* without mkcert. It does not.
+`_ensure_local_tls` is called with `allow_selfsigned=_tls_forced`, and
+`_tls_forced` is only true under `CAFRESOHQ_TLS_AUTO=1`; with neither, the
+branch is `if not allow_selfsigned: return None, None, False` and the office
+stays on plain HTTP. Measured on a cold tree with no mkcert installed:
+`CafresoHQ -> http://localhost:8811/hq.html`. The code's reason is written at
+its own call site and is correct — a TLS-only server with a cert the browser
+rejects is *unreachable*, which is worse than HTTP. Only the two sentences
+about it were wrong, and both now say what the code does.
+
+### The fourth bug: the worker's setup path did not lead anywhere
+
+`docker-compose.worker.yml` declares `env_file: - worker-standalone.env`;
+`.gitignore` ignores that name and `worker.env` both; and neither had a
+committed `.example`. `.env.example` existed for serve.py's `.env`. So the
+fresh clone contained no template, no list of required keys, and nothing to
+copy — the first command in `search_worker_service/README.md` had nowhere to
+start. Worse, that README's own "Required env" block named **`worker.env`**
+directly under the `-f docker-compose.worker.yml` command, which is the
+*other* compose file's env file and the one thing that command never reads.
+The compose file's header says, in as many words, that the two are "a
+DIFFERENT file … on purpose"; the README beside it said otherwise. Both env
+files now ship `.example` templates and the README names the right one.
+
+**Human-only gate, stated plainly:** `WORKER_PRINCIPAL`/`WORKER_SECRET` come
+from registering a worker in ai.cafreso.com's settings — a mainnet action —
+and `BRAVE_API_KEY` from a Brave account. No session in this loop may make
+the first, so the worker was never *run* here; only its setup path was
+walked, and only as far as it can be walked without credentials. Docker
+Desktop was not running on this machine either, so `docker compose` was never
+executed: the findings are from the compose file, the README and
+`.gitignore`, and the test asserts them without docker. **The hosted / ICP
+first-run path remains entirely unwalked and is a human-only gate**, as is
+Internet Identity configuration — neither was touched.
+
+### The tests
+
+Three, all asserting invariants rather than pinned strings.
+
+- `test_a_fresh_clone_is_told_which_node_it_needs.py` — the floor is declared
+  once; it is at least as high as the highest floor any *installed*
+  dependency declares (computed from `node_modules/`, skipped loudly when
+  absent); `.npmrc` enforces it and is not gitignored; and the build script's
+  refusal is DRIVEN, by redefining `process.version` to one major below
+  whatever `package.json` says. The green side runs in a throwaway copy with
+  no `node_modules`, so it proves the guard passed through without rebuilding
+  anyone's `dist-ui/`.
+- `test_the_launcher_never_promises_a_server_it_cannot_start.py` — derives
+  the rule from the script's own text (*every* command it `exec`s must have a
+  `command -v` above it, so a future bare invocation is caught with no edit
+  here), then drives the launcher with a python3-free `PATH` and requires it
+  to exit non-zero, name python3 **on a `[start]` line**, offer somewhere to
+  go, and never print the serving promise. Its self-signed check is derived
+  from `serve.py` — it only fires while `allow_selfsigned` is wired to the
+  forced flag — and sweeps every `.md` and `.sh`, flattened first, because
+  the sentence that started this was wrapped across two comment lines and a
+  line-oriented search read the file and missed it.
+- `test_a_compose_file_names_an_env_file_the_repo_can_produce.py` — for
+  *every* compose file, every `env_file:` it declares must be committed or
+  have a committed `.example`; no template may carry a non-placeholder value
+  under a secret-shaped key; and no document may name a different compose
+  file's env file beside a `docker compose -f X` command. Textual, so it runs
+  with no yaml module and no docker.
+
+Two things the main checkout taught that the worktree could not. The
+`[start] serving CafresoHQ on :8787` transcript above only reproduces where
+`dist-ui/` already exists, which is why the launcher test was run from both.
+And all three doc sweeps originally walked `.claude/worktrees/` — other
+sessions' checkouts of this same repo — turning one offending line into
+twenty-four and making the verdict depend on what an unrelated hunt had on
+disk. Excluded in both.
+
+Concurrent hunts are appending to this ledger at the same time; if this entry
+lands as a different number, every `## 405.` and `` `## 405.` `` marker in
+`README.md`, `.npmrc`, `Start-CafresoHQ.sh`, `scripts/build_ui_bundle.mjs`,
+`search_worker_service/README.md`, `worker.env.example`,
+`worker-standalone.env.example`, `docs/BETA_READINESS.md` and the three test
+files above moves with it. They are all spelled that way for grep.

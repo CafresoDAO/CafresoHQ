@@ -4,6 +4,9 @@
   "private": true,
   "description": "CafresoHQ app UI build pipeline \u2014 transforms JSX (no in-browser Babel) and bundles the sigma.js graph engine.",
   "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "build": "node scripts/build_ui_bundle.mjs",
     "watch": "node scripts/build_ui_bundle.mjs --watch",

@@ -12,6 +12,37 @@ set -e
 # cd to the directory this script lives in (the repo root), regardless of caller.
 cd "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 
+# ── Prerequisite preflight ──────────────────────────────────────────────────
+# `## 405.` — the README names "Node 18+ and Python 3" and nothing checked for
+# either. This script already explained a missing `npm`; its LAST line was a
+# bare `exec python3 serve.py`, so a machine without python3 ended the whole
+# launch on `Start-CafresoHQ.sh: python3: not found` — the shell's words, not
+# the product's, with no version, no URL, and no next step. Check both here,
+# before any work, so the tester learns what to install while they still have
+# an empty terminal instead of after a two-minute npm install.
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "[start] ERROR python3 is not on PATH, and serve.py — the whole backend — is a"
+  echo "        Python program. Nothing in CafresoHQ can start without it."
+  echo "        Install Python 3 (https://www.python.org/downloads/, or"
+  echo "        \`brew install python3\` / \`apt install python3\`), then re-run this script."
+  exit 1
+fi
+
+# Node's floor is declared in ONE place — package.json's engines.node — so this
+# reads it rather than repeating the number. npm enforces the same floor at
+# install time via .npmrc's engine-strict; this catches the case where npm is
+# never reached because dist-ui/ already exists but node is still too old.
+if command -v node >/dev/null 2>&1; then
+  _node_floor="$(sed -n 's/.*"node": *">=\([0-9][0-9]*\)".*/\1/p' package.json | head -1)"
+  _node_have="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo '')"
+  if [ -n "$_node_floor" ] && [ -n "$_node_have" ] && [ "$_node_have" -lt "$_node_floor" ]; then
+    echo "[start] ERROR Node $(node -v) is too old — CafresoHQ needs Node ${_node_floor}+ to build its UI."
+    echo "        Install Node ${_node_floor} or newer (https://nodejs.org), or"
+    echo "        \`nvm install ${_node_floor} && nvm use ${_node_floor}\`, then re-run this script."
+    exit 1
+  fi
+fi
+
 # ── UI preflight ────────────────────────────────────────────────────────────
 # dist-ui/ and node_modules/ are both gitignored, so a fresh clone has neither
 # and serve.py can only answer /hq.html with a 500. This script is what testers
@@ -67,15 +98,24 @@ else
   echo "[start] WARN hermes CLI not installed — /hermes will 502 until you install it (Settings → Agents)"
 fi
 
-# serve.py auto-provisions a localhost TLS cert in local mode and serves HTTPS,
-# so the app can be embedded inside https://ai.cafreso.com. For a *trusted* cert
-# (no browser warning, seamless embed) install mkcert; otherwise serve.py falls
-# back to a self-signed cert (works after a one-time trust, or for direct use).
+# serve.py serves HTTPS in local mode ONLY when it can get a browser-TRUSTED
+# cert, which today means mkcert on PATH. Without mkcert it stays on plain
+# HTTP — it does NOT fall back to a self-signed cert. (`## 405.` corrected this
+# paragraph, which claimed the opposite; serve.py's `_ensure_local_tls` is
+# called with `allow_selfsigned=_tls_forced`, and that is false unless the
+# tester sets CAFRESOHQ_TLS_AUTO=1. The reason is written at the call site: a
+# TLS-only server with a cert the browser rejects is unreachable, which is
+# worse than HTTP, and http://localhost is already a secure context.)
+# HTTP is fine for using HQ directly; the embed in https://ai.cafreso.com and
+# the iOS service worker are what need the trusted cert.
 if command -v mkcert >/dev/null 2>&1; then
   echo "[start] mkcert found — HQ will get a browser-trusted HTTPS cert (embeds cleanly in ai.cafreso.com)"
 else
-  echo "[start] TIP: install mkcert for a browser-trusted local HTTPS cert →"
-  echo "        https://github.com/FiloSottile/mkcert  (without it, the cert is self-signed)"
+  echo "[start] serving over plain HTTP (fine for local use). For the ai.cafreso.com embed"
+  echo "        or the iOS service worker, HQ needs a browser-TRUSTED cert: install mkcert →"
+  echo "        https://github.com/FiloSottile/mkcert  then re-run this script."
+  echo "        (Without it there is no HTTPS at all here — not a self-signed one. Set"
+  echo "         CAFRESOHQ_TLS_AUTO=1 if you want the self-signed fallback and will trust it.)"
 fi
 
 # serve.py binds 127.0.0.1 by default in local mode (loopback-only = safe, no key
