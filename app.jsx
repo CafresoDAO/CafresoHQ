@@ -1163,15 +1163,40 @@ function App() {
      undone by the next reload. */
   const RECEIPTS_CAP = 200;
   const receiptsRef = useRefA([]);
+  /* Set only by onClearReceipts below — the one signal that distinguishes
+     "the boss just deleted everything" from "nothing has happened to this
+     ref yet", which an empty receiptsRef.current cannot tell apart on its
+     own (it also reads [] on the very first render, before anything has
+     run). See the merge transform's own comment for why that distinction
+     is load-bearing. */
+  const receiptsClearedRef = useRefA(false);
   const [receipts, setReceipts] = useFileStored(k('receipts'), 'state', 'receipts', [],
     (fetched) => {
+      /* Same latent hydration race #177/#232 fixed for `messages` and
+         `activity`: a receipt recorded in the ~100-300ms window before this
+         file's mount-fetch resolves flips useFileStored's dirtyRef, and
+         without `mergeOnDirty` that guard skips this transform entirely and
+         persists ONLY the in-session value — silently discarding every
+         receipt a prior session had already written to disk. Unlike
+         `activity`/`messages`, this store couldn't just take the same flag:
+         `onClearReceipts` is a REAL in-session deletion
+         (`setReceipts([])`), and a plain union-by-id merge can only ADD or
+         overwrite entries, never express "this id is gone" — so blindly
+         merging a clear-all against the fetched file would resurrect every
+         receipt the boss just wiped, the moment the fetch lands.
+         `receiptsClearedRef` is the reasoned fix: honor the clear (return
+         empty, so it writes back to disk too) rather than merging when the
+         boss's own last action was CLEAR ALL; otherwise merge exactly like
+         before, so an approval/receipt recorded in that boot window is no
+         longer silently lost. */
+      if (receiptsClearedRef.current) return [];
       const byId = new Map();
       for (const r of (Array.isArray(fetched) ? fetched : [])) byId.set(r.id, r);
       for (const r of (Array.isArray(receiptsRef.current) ? receiptsRef.current : [])) byId.set(r.id, r);
       return [...byId.values()]
         .sort((a, b) => (b.decidedAt || 0) - (a.decidedAt || 0))
         .slice(0, RECEIPTS_CAP);
-    });
+    }, { mergeOnDirty: true });
   useEffectA(() => { receiptsRef.current = receipts; }, [receipts]);
   const [receiptsOpen, setReceiptsOpen] = useStateA(false);
   // Inbox modal — durable agent-comms message registry (Phase 1 of refactor)
@@ -6609,7 +6634,7 @@ ${d.text}` : d.text,
     }
     say('Rejected ✕', 'STAMP');
   };
-  const onClearReceipts = () => setReceipts([]);
+  const onClearReceipts = () => { receiptsClearedRef.current = true; setReceipts([]); };
   const onOpenStandup = () => { setStandupOpen(true); setLastStandup(Date.now()); };
   const onArchiveStandup = (entry) => {
     setTasks(prev => [entry, ...prev]);

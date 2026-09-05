@@ -39507,3 +39507,81 @@ byte-identical (md5, `be910509679695be5325ca2cee482811`) to the fixed
 one.
 
 `npm run build` run after the change — 8 assets built clean.
+
+---
+
+## 379. the audit trail that could lose to its own boot sequence
+
+**The lead.** Money/approval/payout flows, off the back of the closed-out
+stale-snapshot sweep (`#374`–`#378`): `ApprovalTray`, `ReceiptsModal`, the
+`onApprove`/`onReject` handlers, payroll (`modals/settings.jsx`'s `payNow`
+and its `#311` fix), and the sibling gap `#209`'s own ledger entry left
+standing in plain words: *"`receipts` sits on a similar inline union
+transform but was left alone on purpose... that one needs its own reasoned
+fix, not this flag."* Nobody had come back for it.
+
+**The wreck.** `receipts` is the ReceiptsModal's own words for itself:
+"stamped approvals · audit trail" — every APPROVE/REJECT, every elevated
+tool call, filed as the one durable record a boss can scroll back through
+months later. It lives on `useFileStored`, whose mount fetch hydrates it
+from `hq-state/receipts.json` ~100-300ms after first render, gated by:
+
+    if (dirtyRef.current && !untouched && !mergeOnDirty) return;
+
+`#177`/`#209` closed this exact hole for `activity` and `messages` with
+`{ mergeOnDirty: true }` — safe there because both stores only ever append
+or transition, so the union-by-id transform they already carry (reading
+the CURRENT in-memory value via a ref and merging it with the fetch) can
+never lose anything by running. `receipts` carries the identical
+union-by-id transform and was exposed to the identical race — a receipt
+recorded in the first ~300ms (an elevated tool call landing, an external
+approval decision recorded the instant the office paints) flips
+`dirtyRef`, the mount fetch resolves with the real ledger file, the guard
+returns before the transform is ever called, and the entire on-disk
+history is discarded rather than merged. The next receipts write's
+debounced PUT then overwrites `hq-state/receipts.json` with only the new
+session's own rows — every prior approval and rejection gone from disk,
+silently, on the one surface whose whole job is to survive that.
+
+But `receipts` could not just take `#177`'s flag, which is exactly why it
+was left standing: `onClearReceipts` is a REAL in-session deletion
+(`setReceipts([])`), and a plain union-by-id merge can only ADD or
+overwrite entries — it has no way to say "this id is gone." Wiring
+`mergeOnDirty: true` alone would have made CLEAR ALL racing the same mount
+fetch resurrect every receipt the boss had just wiped, the moment the file
+landed — trading one silent loss for the opposite one.
+
+**The fix.** `receiptsClearedRef`, flipped only by `onClearReceipts`
+alongside its `setReceipts([])`, checked first inside the merge transform.
+An empty `receiptsRef.current` at that call site cannot by itself mean
+"nothing has happened yet" — it also reads `[]` on the very first render,
+before anything has run — so the ref is a dedicated signal, not inferred
+from array length. When it's set, the transform returns `[]` (honoring
+the clear, which also gets written back to disk, so the boss's own CLEAR
+ALL cannot be undone by a lagging fetch either); otherwise it merges
+exactly as it already did, now actually reachable via `{ mergeOnDirty:
+true }` on the call. Every other store's wiring — `activity`, `messages`
+— is untouched.
+
+**Fire-tested.** New
+`scripts/test_a_receipt_recorded_before_hydration_did_not_wipe_the_ledger.py`
+lifts the REAL mount-fetch `.then(data => {...})` body out of
+`app/storage.jsx` (the same source-anchored extraction the messages/
+activity sibling test uses) and the REAL receipts transform + its
+`mergeOnDirty` wiring out of `app.jsx` by brace-balanced extraction, then
+runs both under Node: the bug reproduced with the option off (an early
+receipt means the fetched 3-row ledger never enters state); the fix as
+wired (all 4 rows present, including the rejected decision, and the
+merged union is written back to disk); CLEAR ALL racing the same fetch
+(the clear is honored, the file's 3 rows are not resurrected, and the
+empty result reaches disk too); an id conflict (an in-session `outcome`
+amendment beats the stale file copy); and a clean mount (file adopted
+whole, unchanged). Reverted the fix in place (dropped the
+`receiptsClearedRef` check, the `mergeOnDirty` option, and the flag set in
+`onClearReceipts`) — 5 of 18 checks failed, by name, including the CLEAR
+ALL scenario resurrecting the file's 3 cleared rows exactly as described
+above. Restored `app.jsx` from a `/tmp` copy, confirmed byte-identical
+(md5, `419abff6a463963573a56c6dcb5c2e0e`) to the fixed one, test green
+again.
+
+`npm run build` run after the change — 8 assets built clean.
