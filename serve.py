@@ -52,6 +52,7 @@ import uuid
 # a time — claude-code first, Hermes last (§5 of the contract doc).
 import drivers as _drivers
 from drivers.base import DriverError as _DriverError
+from drivers.base import probe_cli as _probe_cli
 
 # Listen port. Env-configurable (the Dockerfile + entrypoint set PORT) so a
 # self-hoster can avoid a clash with another local service; defaults to 8787.
@@ -3315,15 +3316,26 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # optional and installed on-demand so the image stays lean and provisioning
     # is fast. Users add the agents they want from HQ Settings.
     # ──────────────────────────────────────────────────────────────────────
-    def _agent_version(self, bin_, *args):
-        if not bin_:
-            return ''
-        try:
-            r = subprocess.run([bin_, *args], capture_output=True, text=True, timeout=6)
-            out = (r.stdout or r.stderr or '').strip()
-            return out.splitlines()[0][:80] if out else ''
-        except Exception:
-            return ''
+    def _agent_probe(self, bin_):
+        """(version, problem, detail) for one agent CLI.
+
+        This was `_agent_version`, and it was `stdout or stderr` with the
+        return code never read — the same predicate drivers/base.probe_cli
+        was corrected for, one import away, missed because it lives outside
+        drivers/. A CLI that ran and CRASHED had its crash recorded as its
+        version. Measured against a shim that exits 1 the way a real Codex
+        whose vendored binary is gone does, both doors of ONE booted office:
+
+            GET /agent/drivers?probe=1 → version '', probeError 'will not
+                                         start', probeDetail the ENOENT line
+            GET /agents                → version 'Error: spawn …/codex ENOE'
+
+        Same program, same second, opposite verdicts — and /agents is the
+        door the roster sync and the model picker read. So it now calls the
+        one probe, and hands on what that probe found: a problem is not a
+        version, and the office says which it saw.
+        """
+        return _probe_cli(bin_)
 
     def _agent_auth_detect(self, aid):
         """Best-effort login/credential detection for an agent CLI on THIS host.
@@ -3376,15 +3388,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         # Probe versions concurrently (bounded; each call self-limits to ~6s).
         from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=len(specs)) as ex:
-            futs = {aid: ex.submit(self._agent_version, b, '--version')
+            futs = {aid: ex.submit(self._agent_probe, b)
                     for aid, b in bins.items() if b}
-            versions = {aid: f.result() for aid, f in futs.items()}
+            probes = {aid: f.result() for aid, f in futs.items()}
         auth = {aid: self._agent_auth_detect(aid) for aid in bins}
         hermes_up = bool(bins.get('hermes')) and self._hermes_gateway_running()
         agents = [
             {'id': aid, 'label': label, 'installed': bool(bins[aid]),
              'default': dflt, 'removable': rem,
-             'version': versions.get(aid, ''), 'desc': desc,
+             'version': probes.get(aid, ('', '', ''))[0], 'desc': desc,
+             # Same two fields, same meaning, as /agent/drivers' detect:
+             # a probe that RAN and failed. '' = not probed or probed clean,
+             # never 'broken'. `installed` stays true — the CLI IS on PATH,
+             # and a failing --version is a hint, not a verdict (§4).
+             'probeError': probes.get(aid, ('', '', ''))[1],
+             'probeDetail': probes.get(aid, ('', '', ''))[2],
              'authenticated': auth[aid][0], 'auth': auth[aid][1],
              **({'running': hermes_up} if aid == 'hermes' else {})}
             for (aid, label, dflt, rem, _resolve, desc) in specs
@@ -3459,7 +3477,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'hermes':      self._hermes_resolve,
         }
         resolve = resolvers[agent]
-        version_of = self._agent_version
+        probe_of = self._agent_probe
 
         def _worker():
             result = {'status': 'error', 'error': 'unknown'}
@@ -3491,9 +3509,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     result = {'status': 'error', 'error': hint}
                 else:
                     bin_ = resolve()
+                    version, problem, pdetail = probe_of(bin_)
+                    # npm exiting 0 does not mean the thing it wrote can run.
+                    # Carry the probe's verdict rather than printing its crash
+                    # line in the version slot as if it were a build number.
                     result = {'status': 'done', 'ok': True,
                               'installed': bool(bin_),
-                              'version': version_of(bin_, '--version')}
+                              'version': version,
+                              'probeError': problem, 'probeDetail': pdetail}
             except subprocess.TimeoutExpired:
                 result = {'status': 'error', 'error':
                           'install timed out (>600s) — usually blocked network egress to '

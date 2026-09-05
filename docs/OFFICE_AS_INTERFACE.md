@@ -37437,3 +37437,61 @@ container's own scroll box and outside the container, which is a place a
 screenshot cannot show you and a `getBoundingClientRect` will — the scene's
 bottom and its parent's bottom were 46.5px apart in a file where they had
 been the same number since the day it was written.
+
+---
+
+## 339. one office, two doors, opposite answers about the same program
+
+**The wreck.** `drivers/base.probe_cli` was corrected once already, and its
+own docstring says why: it returned `stdout or stderr` without ever reading
+the return code, so a CLI that ran and CRASHED had its crash line filed as
+its version. Measured then on a real machine — a Codex shim on PATH whose
+vendored binary was gone, `codex --version` exiting 1 with `Error: spawn
+…/codex ENOENT` — and the front desk offered it as found-and-ready, needing
+only a sign-in. Every driver in `drivers/` was moved onto the fixed probe.
+
+`serve.py` kept its own copy. `_agent_version` — the probe behind
+`GET /agents` — was the same six lines with the same missing test, one
+import away from the fix, and it went unfixed because it does not live in
+`drivers/`. Both doors of ONE booted office, asked in the same second, with
+one shim on PATH that exits 1 the way that real Codex did:
+
+```
+GET /agent/drivers?probe=1 → version '', probeError 'will not start',
+                             probeDetail 'Error: spawn …/codex ENOENT'
+GET /agents                → version 'Error: spawn /opt/nodejs/lib/node_
+                             modules/@openai/codex/vendor/aarch64-apple'
+```
+
+`/agents` is not a back road. Three callers read it, and each was told a
+broken program was a working one with an unusually long version string. The
+roster refresh in `app.jsx` writes that string into a hired coworker's
+`cliVersion` and captions it *"detected on this machine · needs login —
+open a Terminal tab"*: the wrong diagnosis, stated confidently, sending the
+boss to a login screen for a program that cannot start — and signing in
+successfully changes nothing. The model picker in `claude-client.jsx` gates
+"Gemini · file & shell access" on `gem.installed` alone, so it offers a
+brain every task pointed at it bounces off, the failure surfacing one layer
+down as a stream error instead of here, where it was already known. And
+`decideFirstRunWelcome` reads the same list to decide the office is already
+staffed: a brand-new boss whose only backend is a crashing shim gets no
+welcome, no hire deck, and no explanation of the empty floor.
+
+**The fix.** `_agent_probe`, which is `probe_cli` and nothing else, plus
+`probeError`/`probeDetail` on every `/agents` row — the same two fields, the
+same meaning, as the detect the front desk already reads. `installed` stays
+true: the CLI IS on PATH, and a failing `--version` is a hint, not a verdict.
+The install worker gets it too, because npm exiting 0 does not mean the thing
+it wrote can run. Then the three callers: the picker and the first-run gate
+stop counting a crashing CLI, and the roster line says what Settings has said
+since `## the broken-CLI fix` — *"on this machine, but it will not start — a
+sign-in will not fix it"*.
+
+**Whose twin.** `## 314.`, exactly. That one found a fifth copy of an
+exit-code predicate in `pty_server.py`, which predates the driver layer and
+so escaped the four fixes in `drivers/`. This is the same escape by the same
+route: a probe extracted into `drivers/`, corrected there, and left standing
+in the file the drivers were extracted OUT of. The durable check is not
+"codex" — it is that the only version probe in the building is the one that
+reads the return code, and that whatever it found reaches the caller. A
+problem is not a version, and the office says which it saw.

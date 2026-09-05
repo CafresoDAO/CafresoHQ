@@ -83,7 +83,11 @@ async function decideFirstRunWelcome({ agentsCount, agentsStatus }) {
   if (typeof agentsStatus === 'function') {
     let detected = [];
     try { detected = (await agentsStatus()).agents || []; } catch (_e) { detected = []; }
-    if (detected.some(d => d && d.installed)) return false;   // pre-staffed via local CLI
+    // `probeError` means the CLI was RUN and failed. A machine whose only
+    // backend is a crashing shim is not pre-staffed — suppressing the
+    // welcome there leaves a brand-new boss on an empty floor with no
+    // opening move and no explanation.
+    if (detected.some(d => d && d.installed && !d.probeError)) return false;   // pre-staffed via local CLI
   }
   return true;
 }
@@ -151,13 +155,25 @@ function App() {
         const next = [...list];
         for (const d of installed) {
           const def = DEFS[d.id];
-          const recent = 'detected on this machine'
-            + (d.authenticated ? ' · logged in' : ' · needs login — open a Terminal tab');
+          /* Three states, not two. A CLI that ran and crashed is neither
+             "logged in" nor "needs login": telling someone to sign in to a
+             program that cannot start is the wrong diagnosis stated
+             confidently, and a sign-in will not fix it. Same sentence
+             Settings → Connections gives for the same measurement. */
+          const recent = d.probeError
+            ? `on this machine, but it ${d.probeError} — a sign-in will not fix it`
+            : 'detected on this machine'
+              + (d.authenticated ? ' · logged in' : ' · needs login — open a Terminal tab');
           const i = next.findIndex(a => a.id === def.id);
           if (i === -1) {
             continue;   // not hired — the front desk offers them instead
           } else if (next[i].cliVersion !== (d.version || '')
-                     || next[i].cliAuthed !== !!d.authenticated) {
+                     || next[i].cliAuthed !== !!d.authenticated
+                     /* `recent` is the sentence the boss reads; a CLI that
+                        starts crashing changes it while version ('' both
+                        sides) and auth stay put, so it has to be compared
+                        too or the stale line survives the refresh. */
+                     || next[i].recent !== recent) {
             changed = true;
             next[i] = { ...next[i], cliVersion: d.version || '',
                         cliAuthed: !!d.authenticated, recent };

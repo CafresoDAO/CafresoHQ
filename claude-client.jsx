@@ -1596,7 +1596,11 @@ async function localModelOptions() {
   try {
     const st = await agentsStatus();
     const gem = (st.agents || []).find(a => a.id === 'gemini');
-    if (gem && gem.installed) {
+    /* `probeError` = the CLI was run and failed. Offering "Gemini · file &
+       shell access" for a binary that cannot start hands the boss a brain
+       every task pointed at it will bounce off, with the failure surfacing
+       one layer down as a stream error instead of here where it is known. */
+    if (gem && gem.installed && !gem.probeError) {
       groups.push({
         label: 'Gemini · file & shell access (Google Gemini CLI + tools)',
         provider: 'gemini',
