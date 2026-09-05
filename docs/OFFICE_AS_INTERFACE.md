@@ -42779,3 +42779,190 @@ be renumbered at integration. Every `#402` in `modals/settings.jsx`,
 `scripts/test_a_restore_that_did_not_land_does_not_reload.py` moves with it.
 The bare numbers throughout the inventory above (450, 568, 942, 978, 231,
 1054…) are LINE numbers, not entry numbers, and must not be renumbered.
+## 403. five different answers, one of them true, all of them "no results"
+
+`## 401` swept the server for the client's shape three — an error that becomes
+an empty-but-valid payload the browser renders as "nothing here" — and left
+its two hits DIAGNOSED BUT UNFIXED, in an EXPOSED section written so the next
+hunt would not have to re-derive them. This is that hunt. Both reproduce.
+**One of the symptoms `## 401` listed does not**, which is why the first thing
+here was a driven server rather than a fix.
+
+### What was measured, before anything was changed
+
+A real `serve.py` on its own port, `CAFRESOHQ_VAULT_BACKEND=rest` pointed at a
+stand-in Obsidian Local REST API, every provider key stripped from the child's
+environment, `HERMES_HOME` scoped to a temp dir and `PATH` pinned to an empty
+one so nothing could find a real `hermes` binary:
+
+    GET /vault/search?q=quarterly
+      wrong API key (Obsidian answers 401)       -> 200 {"hits": []}
+      Local REST plugin disabled (404)           -> 200 {"hits": []}
+      Obsidian errors (500)                      -> 200 {"hits": []}
+      200 with a body that will not parse        -> 200 {"hits": []}
+      genuinely no matches (200 [])              -> 200 {"hits": []}
+      Obsidian not running (refused connection)  -> 502 obsidian: [Errno 61]…
+
+    GET /hermes/model
+      no config.yaml at all                      -> 200 model=''
+      a readable config.yaml                     -> 200 model='gemma-4-…'
+      config.yaml exists but is UNREADABLE       -> 200 model=''
+      config.yaml is not valid UTF-8             -> 200 model=''
+      config.yaml with no model.default          -> 200 model=''
+
+Five identical answers for five different situations, one of which is the
+truth; and three identical answers for three situations, two of which are.
+
+The last line of the first ladder is the correction. `## 401` named "Obsidian
+not running" among the symptoms, and it is not one: `_obsidian_request` raises
+on a refused connection and `/vault/search`'s own `except` has always answered
+502 for it. The swallow was never the connection — it was the four ways
+Obsidian can ANSWER without answering.
+
+### Who was reading the lie
+
+`_rest_search`'s `return []` had three consumers, and all three were already
+written to handle a refusal correctly. They had simply never been shown one.
+
+- **The Library pane.** `vaultSearch` throws on `!r.ok`; `search()` toasts
+  "Search failed — …". It got a clean 200 and drew the empty-hit list.
+- **The daytime `VAULT_SEARCH` tool** (hq-runtime.jsx), same client function,
+  same 200, and `if (!hits.length) return 'No matches in the Library.'`
+- **The night shift.** `night_runner` checks `s != 200` and answers "Vault
+  search failed (%d)". That check exists because of
+  `test_a_search_that_failed_is_not_a_search_that_found_nothing.py`, whose
+  entire subject is this lie one door further out: the coworker's standing
+  instruction is *"Don't re-write notes that already exist — extend them with
+  VAULT_APPEND instead"*, a shut-out vault reported no such note, and it duly
+  wrote the note again, night after night, with the run recording **errors:
+  0**. The status that entry taught the night shift to read is a status
+  `_rest_search` never let turn non-200. A wrong API key in Connections and
+  the whole fix is inert.
+
+### The fixes, in each door's existing channel
+
+**`_rest_search` raises**, and the door's existing `except Exception as e:
+return self._send_json(502, {'error': f'obsidian: {e}'})` — untouched — turns
+that into the answer its two neighbours already give and its three consumers
+already read. No new mechanism, no call-site change. A body that parses to
+valid JSON which is not a LIST raises too: `data[:limit]` on a dict would
+otherwise have relayed `obsidian: unhashable type: 'slice'`.
+
+The sentence is `_obsidian_search_refusal(status)`, four of them, in §7's
+shape — what went wrong, then what to do — and **deliberately digit-free**.
+That is not fastidiousness: the browser runs this string through
+`app/floor.jsx`'s `officeCause` (via views/vault.jsx's `snag`) before it
+reaches the toast, and that table owns bare numbers. A sentence carrying "404"
+comes back as *"the office couldn't find that — it may have been moved or
+renamed"* — wrong subject, wrong advice — and one carrying "503" blames the
+office for a program that is not the office. `cleanCause` also truncates at 90
+characters **including** the `obsidian: ` prefix the door adds, so a sentence
+that says what to do in its second half loses exactly that half. This is the
+same lesson as `## 123`'s `obsidianCause` ("the patterns are right; the noun
+is wrong"), met from the writing end instead of the reading end.
+
+**`/hermes/model` keeps its 200 and its presets and carries a `modelProblem`
+sentence alongside the answer**, the way `/vault/status` carries `restDetail`
+and `unanswered` one file over. Deliberately **not** a 5xx: the client's
+`hermesGetModel` answers `{model:'', presets:[]}` on any `!r.ok`, so a refusal
+here would empty the preset list too and take away the boss's only way to SET
+a model — the swallow moved one floor up, not removed.
+
+`drivers/hermes.read_model` now reads through `_read_config_text`, which
+returns `(text, problem)` and is the single reader, so the answer and the
+problem can never disagree about the same file. **A missing config.yaml is not
+a problem**: that is what a machine with no hermes on it looks like, it is the
+ordinary first-run state (docs/BETA_READINESS.md), and "check that file's
+permissions" is advice that is false about a file which does not exist. Only
+`PermissionError`, `UnicodeDecodeError` and other `OSError` produce a
+sentence, and it names the path and ends *"repair that file, then reopen this
+panel"* — **not** "pick one below anyway", because `write_model` opens the
+same file first and returns `read config: …`. `modals/providers.jsx` renders
+it in both Model rows' sub-lines, ahead of the three sentences already there,
+because both rows draw `hModel` and none of those sentences describes why it
+is empty.
+
+### Test
+
+New `scripts/test_a_library_that_could_not_look_does_not_say_it_found_nothing.py`,
+three rounds.
+
+Round 1 is structural and AST-based: `_rest_search` returns no empty default
+at all any more (walked, not grepped), raises on both paths; `_read_config_text`
+names `FileNotFoundError` separately from `PermissionError` /
+`UnicodeDecodeError` and has **no bare `except Exception`** left; the door
+sends the field and the panel draws it (a field nothing renders is the same
+swallow one floor up).
+
+Round 2 is the invariant on a real server, and it is general rather than five
+hand-picked statuses: **eleven** ways the plugin can answer without answering
+(400/401/403/404/405/429/500/502/503, a 200 that is not JSON, a 200 that is
+JSON but not a list), each required to produce a non-2xx carrying a sentence
+with no digit, no newline and no more than 90 characters — so a status nobody
+thought of is covered by the same rule. Both other sides are pinned in the
+same round: a genuinely empty search is **still** a 200 with `hits: []`, and a
+search that finds something is unchanged. On the model door, all five states
+above, with silence required for the two honest ones.
+
+Round 3 is the general form of the digit trap, and it runs the real thing:
+`app/floor.jsx` is loaded into `node` (the harness `test_cause_subject.py`
+established) and every sentence round 2 actually collected is passed through
+`officeCause` **and** `obsidianCause`, each required to come back **unchanged
+and untruncated**. Any future refusal sentence that trips a rule in either
+table fails here rather than reaching a boss as a confident misdiagnosis.
+
+Fire-tested: reverted in place — `_rest_search` back to `return []`,
+`read_model` back to its own `try/except`, `read_model_problem` stubbed to no
+problem — **35 checks failed on each of 3 runs**, with the ladder above
+(`obsidian 401 -> HTTP 200 {"hits": []}`, `hermes unreadable -> 200 model=''
+problem=''`) printed as the evidence every time. Restored byte-identical
+(serve.py `d6f9ad6c71ed931dfc840406c453fada`, drivers/hermes.py
+`1566fe46365b71010d5fac1e55f6a942`, modals/providers.jsx
+`d1df3f453d4c090a93d68fecad50cc92`), green on 3 repeated runs. Also run green
+against a clean `git archive` of `chore/oss-reduction` with only these four
+files overlaid — an integration-shaped tree with no `.claude/worktrees/` in it
+— for the reason `## 397` and `## 401` both name.
+
+**No fallout.** Full suite: the two known failures and nothing else
+(`test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`, moc M0219 on a
+foreign `main.mo`; `test_two_note_writes_at_once_do_not_splice_two_bodies.py`,
+flaky under concurrent load on this shared machine).
+
+### The sweep, re-counted rather than inherited
+
+`## 401` reported 21 helpers returning an empty default from an `except` or a
+status guard, **2** of which reach a 2xx body. Re-derived independently with a
+different AST pass (17 helpers under a narrower definition of "status guard"),
+and the 2 come out the same: `_rest_search` and `read_model`. But that pass
+only sees a helper whose call sits *inside* the `_send_json` expression, and
+walking the call sites by hand found **two more that reach a 2xx through a
+variable** — `hermes.gateway_running` and `hermes.key_configured`. Neither
+mechanical count would have caught them. The denominator is a starting point,
+not the answer.
+
+- **`gateway_running`** — `return False` on `OSError` from a
+  `create_connection` probe. The only failure it can have IS "not listening",
+  which is what it reports. Not a swallow.
+- **`key_configured`** — the third instance of this entry's shape, and it is
+  real. Measured, on the same driven server, with a fake key in a temp
+  `.env`:
+
+        no .env at all                 -> 200 {… "configured": false}   true
+        .env WITH a key, readable      -> 200 {… "configured": true}    true
+        .env WITH a key, UNREADABLE    -> 200 {… "configured": false}   a lie
+
+  Left EXPOSED, with the reason **measured rather than argued**: pasting a key
+  is the action that state invites, and it does not silently paper over the
+  problem — the same run then posted `/hermes/provider` and got
+  `500 {"error": "write .env: [Errno 13] Permission denied: …"}`, with
+  `configured` still false afterwards. The boss is told on their next move,
+  loudly, so this is the same shape one severity down. (That 500 carries a raw
+  errno and a path into a body §7 says the boss must not meet — a separate
+  finding for whoever holds that door.)
+
+Nothing in this entry touched `src/cafresohq_state/main.mo`, any II
+configuration, or the mainnet. A concurrent hunt was appending to this ledger
+at the same time; if this landed second, its number moved and every `#403` in
+`serve.py`, `drivers/hermes.py`, `modals/providers.jsx` and
+`scripts/test_a_library_that_could_not_look_does_not_say_it_found_nothing.py`
+moved with it.

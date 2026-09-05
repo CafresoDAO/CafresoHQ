@@ -2176,15 +2176,67 @@ def _rest_list_all() -> list:
     return out
 
 
+# The one sentence a boss gets when Obsidian ANSWERED and the answer was not a
+# result list. Kept beside _rest_search because it is only ever that door's
+# voice, and worded to the office's §7 shape — what went wrong, then what to do
+# about it.
+#
+# Deliberately DIGIT-FREE and short. The browser runs this string through
+# app/floor.jsx's officeCause (via views/vault.jsx's `snag`) before it reaches
+# the toast, and that table owns bare numbers: a sentence carrying "404" is
+# rewritten to "the office couldn't find that — it may have been moved or
+# renamed" (the wrong subject and the wrong advice), and one carrying "503"
+# becomes "the office ran into trouble" about a program that is not the office.
+# cleanCause also caps the line at 90 characters including the `obsidian: `
+# prefix the door adds, so anything longer is truncated mid-advice.
+def _obsidian_search_refusal(status: int, unparseable: bool = False) -> str:
+    if unparseable:
+        return 'its reply was not a result list — that address may not be its REST API'
+    if status in (401, 403):
+        return 'it turned down the API key — copy it again from its Local REST API settings'
+    if status == 404:
+        return 'no search endpoint at that address — its Local REST API plugin may be off'
+    return 'it answered with an error instead of results — check it is still running'
+
+
 def _rest_search(query: str, limit: int = 10) -> list:
+    """Search the vault through Obsidian's Local REST API.
+
+    RAISES on a refusal rather than answering with an empty hit list. This
+    used to `return []` on any non-200 and on a body that would not parse,
+    and the door feeds that list straight into `_send_json(200, {'hits': …})`
+    — so a wrong API key, a switched-off Local REST plugin, or an Obsidian
+    that answered 5xx all arrived at the boss as "no results found" for a
+    query whose answer is sitting in their vault (#403, measured).
+
+    Three consumers read that lie, and all three are fixed by raising here,
+    because all three already handle a refusal correctly and only ever saw a
+    200: the Library pane (`vaultSearch` throws on !r.ok), the daytime
+    VAULT_SEARCH tool (same client function), and the NIGHT SHIFT, whose
+    `_self_call` checks `s != 200` and whose standing instruction is "Don't
+    re-write notes that already exist" — `test_a_search_that_failed_is_not_a_
+    search_that_found_nothing.py` is the entry that put that check in, and it
+    was reading a status this helper never let turn non-200. A shut-out vault
+    told the coworker there was no such note; it duly wrote the note again,
+    night after night, and the run recorded errors: 0.
+
+    The connection-level failures (Obsidian not running at all) were never
+    part of this: `_obsidian_request` raises for those and the door's own
+    `except` answers 502. Measured — #401 listed "Obsidian not running" among
+    the symptoms and that half of its diagnosis is wrong."""
     qs = urllib.parse.urlencode({'query': query, 'contextLength': 120})
     s, _, body = _obsidian_request('GET', '/search/simple/?' + qs)
     if s != 200:
-        return []
+        raise RuntimeError(_obsidian_search_refusal(s))
     try:
         data = json.loads(body.decode('utf-8'))
     except Exception:
-        return []
+        raise RuntimeError(_obsidian_search_refusal(s, unparseable=True))
+    # Valid JSON that is not a result LIST is the same failure one step later:
+    # `data[:limit]` on a dict raises TypeError, which the door would have
+    # relayed as `obsidian: unhashable type: 'slice'` — a raw dump §7 forbids.
+    if not isinstance(data, list):
+        raise RuntimeError(_obsidian_search_refusal(s, unparseable=True))
     hits = []
     for r in data[:limit]:
         filename = r.get('filename') or r.get('path') or ''
@@ -5912,7 +5964,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # GET  /hermes/model            → {model, presets}
     # POST /hermes/model {model}    → driver configure (config rewrite + restart)
     def _hermes_get_model(self):
+        # `modelProblem` is '' whenever the office could look at config.yaml —
+        # including when there isn't one, which is a machine with no hermes on
+        # it and not a failure. It is a SENTENCE only when the office could not
+        # read the file at all, so the front desk can stop drawing "no model
+        # set" over a config it never managed to open (#403). Still a 200 with
+        # the presets intact: the client's hermesGetModel discards the whole
+        # body on any !r.ok, so a non-2xx here would take the boss's only way
+        # to SET a model away along with the answer.
         return self._send_json(200, {'model': _drivers.hermes.read_model(),
+                                     'modelProblem': _drivers.hermes.read_model_problem(),
                                      'presets': _drivers.hermes.MODEL_PRESETS})
 
     def _hermes_set_model(self):

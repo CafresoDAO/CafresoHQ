@@ -176,14 +176,69 @@ def api_server_key():
 
 
 # ── config.yaml: model ───────────────────────────────────────────────────────
-def read_model():
-    """Current model.default from config.yaml, '' if unreadable."""
+# read_model() answered '' for three different situations and the front desk
+# drew the same empty Model dropdown over all of them (#403, measured on a real
+# GET /hermes/model):
+#
+#   no config.yaml at all              -> 200 model=''   ← honest: no hermes here
+#   config.yaml with no model.default  -> 200 model=''   ← honest: nothing is set
+#   config.yaml the office CANNOT READ -> 200 model=''   ← a lie
+#
+# The third is the office saying "no model is set" about a file that may well
+# set one — a config owned by another user, a mode that locks this process out,
+# bytes that are not utf-8. #401 named it EXPOSED; this splits the "we could not
+# look" case out of the "nothing is there" case, which is the distinction the
+# office already draws everywhere else (`## 395`'s officeCause, `## 397`'s night
+# card, `## 399`'s _NO_BRAIN_MESSAGE/_NO_BRAIN_HINT pair, /vault/status's
+# `restDetail` + `unanswered` fields one file over).
+#
+# NOT an exception and NOT a non-2xx: the browser's `hermesGetModel` answers
+# `{model:'', presets:[]}` on any !r.ok, so a 502 here would empty the preset
+# list as well and take away the boss's only way to SET a model. The problem
+# rides alongside the answer instead, the way /vault/status's does.
+def _read_config_text():
+    """(text, problem). `problem` is '' when the office could look — INCLUDING
+    the case where there simply is no config.yaml, which is what a machine with
+    no hermes installed looks like and is not a failure to report. Anything
+    else is the office admitting it could not read the file."""
     try:
         with open(config_path(), 'r', encoding='utf-8') as f:
-            m = re.search(r'^\s*default:\s*(.+)\s*$', f.read(), re.MULTILINE)
-        return m.group(1).strip() if m else ''
-    except Exception:
+            return f.read(), ''
+    except (FileNotFoundError, NotADirectoryError):
+        # Nothing there. Nothing to say — and "check the permissions on a file
+        # that does not exist" is advice that is false on a fresh machine,
+        # which is the ordinary first-run state (docs/BETA_READINESS.md).
+        return '', ''
+    except UnicodeDecodeError:
+        return '', 'isn’t readable text'
+    except PermissionError:
+        return '', 'is one this office isn’t allowed to open'
+    except OSError:
+        return '', 'could not be read'
+
+
+def read_model():
+    """Current model.default from config.yaml, '' if unset or unreadable.
+    Pairs with read_model_problem(), which says WHICH '' this is."""
+    text, _problem = _read_config_text()
+    m = re.search(r'^\s*default:\s*(.+)\s*$', text, re.MULTILINE)
+    return m.group(1).strip() if m else ''
+
+
+def read_model_problem():
+    """'' when the office could look at config.yaml, or the one sentence to
+    show the boss when it could not: what went wrong, then what to do."""
+    _text, problem = _read_config_text()
+    if not problem:
         return ''
+    # "then reopen this panel", NOT "pick one below anyway": write_model()
+    # opens the very same file first and returns `read config: …`, so telling
+    # the boss to set a model here would be advice that cannot work. The way
+    # forward has to be the file itself, and the file is named because the
+    # office knows where it is and the boss otherwise has to guess.
+    return ('This office can’t tell which model Hermes is on — %s %s. Setting '
+            'one here will fail for the same reason: repair that file, then '
+            'reopen this panel.' % (config_path(), problem))
 
 def valid_model_id(model):
     """Presets OR any plausible model id. The vendor slash is OPTIONAL: cloud

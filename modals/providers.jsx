@@ -61,9 +61,20 @@ function ApiTab() {
   const [hModel, setHModel] = useStateM('');
   const [hPresets, setHPresets] = useStateM([]);
   const [hBusy, setHBusy] = useStateM(false);
+  /* '' when the office could read Hermes' config.yaml — INCLUDING when there
+     isn't one, which is what a machine with no hermes on it looks like. A
+     sentence only when the office could not open the file at all, in which
+     case `hModel` is '' for a reason that has nothing to do with the model.
+     Relayed here rather than diagnosed here, the same way #399's no-brain
+     message and hint are: the office knows which file and why, the panel
+     only knows where to put the sentence. (#403) */
+  const [hModelProblem, setHModelProblem] = useStateM('');
   useEffectM(() => {
     if (C && C.hermesGetCapability) C.hermesGetCapability().then(setCapMode).catch(()=>{});
-    if (C && C.hermesGetModel) C.hermesGetModel().then(r => { setHModel(r.model || ''); setHPresets(r.presets || []); }).catch(()=>{});
+    if (C && C.hermesGetModel) C.hermesGetModel().then(r => {
+      setHModel(r.model || ''); setHPresets(r.presets || []);
+      setHModelProblem(r.modelProblem || '');
+    }).catch(()=>{});
   }, []);
   const changeCap = async (mode) => {
     if (mode === capMode || capBusy) return;
@@ -241,7 +252,8 @@ function ApiTab() {
               <div className="lbl">Model</div>
               <div className="sub">
                 {hBusy ? 'Switching model… (~10s)'
-                  : 'Free open-weights running in your office · switch anytime'}
+                  : hModelProblem
+                  || 'Free open-weights running in your office · switch anytime'}
               </div>
             </div>
             <select value={hPresets.some(p=>p.id===hModel) ? hModel : ''}
@@ -288,8 +300,12 @@ function ApiTab() {
           <div className="row-knob">
             <div>
               <div className="lbl">Model</div>
+              {/* hModelProblem first: this row also renders `hModel`, and when
+                  the office could not read config.yaml that value is '' for a
+                  reason none of the three sentences below describes. */}
               <div className="sub">
-                {hbModels === null ? 'checking what your backend has…'
+                {hModelProblem ? hModelProblem
+                  : hbModels === null ? 'checking what your backend has…'
                   : hbModels.length === 0
                     ? "couldn't reach that endpoint — you can still type a model id"
                     : 'a model must be LOADED to answer; unloaded ones fail or stall on first use'}
