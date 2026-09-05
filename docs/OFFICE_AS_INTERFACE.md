@@ -33080,3 +33080,85 @@ a foreign session owns and this change never touches). This change covers only
 entry; `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any kind
 was run.
+
+---
+
+## 278. the second coworker's delivery quietly replaced the first one's
+
+**The report.** Give the same brief to two coworkers — the obvious way to
+compare two brains on one question — and the office says both finished, the
+out-tray counts two deliveries, and the cabinet holds one file.
+
+**What was actually happening.** `fileDelivery` in `app/artifacts.jsx` built
+its cabinet path as `${home}/${slugify(task.title)}.md` and wrote it with
+`mode: 'write'`. Nothing about that path is unique: the folder is one of four
+constants, and the slug is the boss's own words cut at 56 characters. And
+`mode: 'write'` on `PUT /vault/note` is a REPLACE on every backend the Library
+has — `serve.py` does `target.write_text(body)`, the REST backend PUTs, OCI
+`put_object`s. So the second delivery to resolve onto a name destroyed the
+first, with no error, no prompt and no undo.
+
+Two ordinary routes there, neither exotic. The starter card derives the title
+from the subject, so the same brief given twice produces the same title and
+the same file: `Research/research-brief-how-small-teams-price-a-new-product.md`.
+And "Research brief: " spends 16 of the 56 characters before the boss types a
+word, so two *different* briefs that agree for their first ~41 characters land
+on one name too.
+
+The lie on top of the loss is that both tasks then carry the same
+`artifactPath`. The out-tray's "open the latest" on the first coworker opens
+the second coworker's work — under the first one's name, on a sheet whose own
+`*Delivered by …*` header credits whoever finished last. Every surface agreed,
+and every surface was wrong.
+
+`agent_runner.jsx`'s child-note writer had this exact bug and got this exact
+fix in `#239` — a `pathTaken()` probe and a step loop, because "the model's
+choice of title was, in effect, the choice of which existing note to destroy".
+The deliverable filer is the writer a zero-config boss meets *first*, and it
+never got it.
+
+**The fix.** A conservative `pathIsFree()` probe and a step loop that walks
+`<base>.md`, `<base>-2.md`, … up to 20:
+
+```js
+if (task && task.artifactPath === candidate) { target = candidate; break; }
+if (await pathIsFree(candidate)) { target = candidate; break; }
+```
+
+`pathIsFree` clears a name only on a real 404/"not found" — offline, a 502, a
+415 on a binary all leave the answer *unknown*, and unknown is not permission
+to replace. If nothing in 20 steps is free the office files nothing and
+reports no artifact, which is honest and reversible; overwriting is neither.
+The first arm is the deliberate exception: a re-run of the SAME task —
+`task.artifactPath` already equal to the candidate — refreshes its own sheet
+in place, so retrying a card doesn't grow `-2`, `-3`, … beside it.
+`stepPath` inserts before the extension, so a stepped page is `…-2.html` and
+still opens.
+
+**The test.**
+`scripts/test_a_second_delivery_never_overwrites_the_first.py` lifts the real
+module (imports/exports dropped, browser-only `cabinetIsEncrypted` excised by
+brace balancing) and runs the real `fileDelivery` under Node against a fake
+in-memory Library that answers the way the doors do — GET 404s on a missing
+note, PUT `write` replaces. Five scenarios: two coworkers on one brief, two
+long titles colliding only after the 56-character cap, a re-run refreshing its
+own sheet, an unreadable cabinet filing nothing, and a `.html` page keeping
+its extension when stepped.
+
+Fire-tested: copied the fixed `app/artifacts.jsx` to `/tmp`, reverted the step
+loop in place with the editor (never `git checkout -- <file>`) — 11 of 15
+checks failed, exit 1, with Kip's sheet sitting at Nova's path. Restored from
+the `/tmp` copy, confirmed byte-identical by `md5`
+(`a601b7c38747804d116ad4619469b3c2`), reran — 15 of 15 passed, exit 0.
+
+`npm run build` was run once up front so `dist-ui/manifest.json` exists in a
+fresh worktree.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file
+a foreign session owns and this change never touches). This change covers only
+`app/artifacts.jsx`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any kind
+was run.

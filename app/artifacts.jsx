@@ -562,6 +562,48 @@ function cabinetIsEncrypted() {
   catch (_e) { return false; }
 }
 
+/* ── One filename, two deliveries ─────────────────────────────────────────
+   The filed path is `${home}/${slugify(task.title)}.md`, and NOTHING about
+   it is unique: the folder is one of four constants and the slug is the
+   boss's own words, capped at 56 characters. `mode: 'write'` on
+   PUT /vault/note is a REPLACE on every backend the Library has (serve.py:
+   `target.write_text(body)`; REST: PUT; OCI: put_object), so the second
+   delivery to land on a name silently destroyed the first.
+
+   Two ordinary ways to get there, neither of them exotic:
+   - the same brief given to two coworkers to compare their answers — the
+     starter card builds the title from the subject, so both tasks are
+     "Research brief: how small teams price a new product" and both file to
+     `Research/research-brief-how-small-teams-price-a-new-p.md`;
+   - two different briefs whose first ~41 characters agree, since the slug
+     is cut at 56 and "Research brief: " already spends 16 of them.
+
+   In both cases the boss watched two tasks go green, saw the out-tray count
+   two deliveries, and had one file — and BOTH tasks' `artifactPath` pointed
+   at it, so "open the latest" on the first coworker opened the second
+   coworker's work under the first one's name. Silent, and the surviving
+   sheet's own header names the wrong author.
+
+   agent_runner.jsx's child-note writer had exactly this bug and exactly
+   this fix (`pathTaken` + a step loop); the deliverable filer, the writer
+   the boss meets first, never got it. `pathIsFree` is conservative the same
+   way: only a real 404/"not found" clears a name. Offline, 502, a binary
+   415 — the answer is unknown, and unknown is not permission to replace.
+   If nothing in 20 steps is free the office files NOTHING and reports no
+   artifact, which is honest and reversible; overwriting is neither. */
+async function pathIsFree(path) {
+  try { await CafresoHQClient.vaultRead(path); return false; }   // already taken
+  catch (e) { return /not found|404/i.test((e && e.message) || ''); }
+}
+
+function stepPath(path, n) {
+  if (n <= 1) return path;
+  const p = String(path || '');
+  const dot = p.lastIndexOf('.');
+  const slash = p.lastIndexOf('/');
+  return dot > slash + 1 ? `${p.slice(0, dot)}-${n}${p.slice(dot)}` : `${p}-${n}`;
+}
+
 /* File a finished task's deliverable. Resolves to the vault path, or null if
    there's nothing to file / no cabinet configured. NEVER throws: a filing
    failure must not take down task completion, which already succeeded. */
@@ -571,8 +613,18 @@ async function fileDelivery(task, agent, text, visits) {
     if (!built) return null;
     const st = await CafresoHQClient.vaultStatus();
     if (!st || !st.configured || !st.exists) return null;   // no cabinet yet
-    await CafresoHQClient.vaultWrite(built.path, built.content, 'write');
-    return built.path;
+    let target = '';
+    for (let n = 1; n <= 20; n++) {
+      const candidate = stepPath(built.path, n);
+      /* A re-run of the SAME task refreshes its own sheet rather than
+         growing -2, -3, … beside it: that file is this task's, and the
+         boss asked for it again. Anyone else's sheet is stepped past. */
+      if (task && task.artifactPath === candidate) { target = candidate; break; }
+      if (await pathIsFree(candidate)) { target = candidate; break; }
+    }
+    if (!target) return null;   // no free name — file nothing rather than replace
+    await CafresoHQClient.vaultWrite(target, built.content, 'write');
+    return target;
   } catch (_e) {
     // Cabinet unreachable, or the deliverable defeated the builder. The
     // result still lives on the task; the caller runs inside the completion
