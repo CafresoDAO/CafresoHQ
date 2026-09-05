@@ -705,6 +705,22 @@ def _fs_delete(self):
     # resolve() that would erase the very thing being asked about).
     link_path = _workspace_path(raw)
     is_link = link_path.is_symlink()
+    # ...and because `target` is the RESOLVED destination, the 403 above proves
+    # only where the link POINTS, never where the link itself LIVES. A symlink
+    # sitting OUTSIDE the sandbox that happens to point at something inside it
+    # therefore sailed through the whitelist and was then unlink()ed at its own
+    # out-of-sandbox location — the delete door escaping CAFRESOHQ_ALLOWED_DIRS
+    # entirely (e.g. path=/usr/local/bin/node when that link resolves into the
+    # workspace). _fs_rename already whitelist-checks the link's own parent for
+    # exactly this reason; delete has to as well, or the two mutation doors
+    # disagree about where the sandbox ends.
+    if is_link:
+        try:
+            self._validate_path(str(link_path.parent))
+        except PermissionError as e:
+            return self._send_json(403, {'error': str(e)})
+        except Exception as e:
+            return self._send_json(400, {'error': f'invalid path: {e}'})
     if not target.exists() and not is_link:
         return self._send_json(404, {'error': 'not found'})
     # Never delete an allowed-dir root itself.

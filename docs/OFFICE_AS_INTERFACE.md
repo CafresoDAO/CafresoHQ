@@ -33331,3 +33331,71 @@ a foreign session owns and this change never touches). This change covers only
 `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any kind
 was run.
+
+---
+
+## 281. the delete door followed a shortcut out of the sandbox
+
+`CAFRESOHQ_ALLOWED_DIRS` is the fence. Every `/fs` door is supposed to check a
+path against it before touching anything, and `_validate_path` in `serve.py`
+does exactly that — after calling `.resolve()`, which is where the fence stops
+being a fence for one particular shape of path.
+
+A symlink has two addresses: where it *lives* and where it *points*. `.resolve()`
+throws the first away. So when `_fs_delete` asked `_validate_path` about
+`/usr/local/bin/node`, the whitelist was never shown `/usr/local/bin` at all —
+it was shown whatever that link resolves to, and if the link happened to point
+back into the workspace, the answer came back "inside, go ahead." The route then
+did the right thing for the wrong path:
+
+```python
+(link_path if is_link else target).unlink()
+```
+
+`link_path` is the *unresolved* path — the link's own address, the one the fence
+never saw. The earlier symlink-delete fix — the one
+`scripts/test_fs_delete_symlinked_dir_spares_the_target.py` guards — put that
+line there deliberately, so that deleting a shortcut removes the shortcut
+instead of rmtree-ing the real directory behind it, and that part is right. What was missing is that once you
+start acting on the link's own location, the link's own location is what has to
+be inside the fence. `POST /fs/delete {"path": "/anywhere/on/the/host/link"}`
+removed a file outside `CAFRESOHQ_ALLOWED_DIRS`, and answered `200 ok` with the
+out-of-sandbox path printed back in `deleted`.
+
+The twin door already knew this. `_fs_rename` carries the guard and the sentence
+explaining it — "a link living OUTSIDE the sandbox must not become movable just
+because its target happens to sit inside" — and delete is the same door facing
+the same way. It just never got the same paragraph. So it gets the guard now:
+when the requested path is a symlink, its own parent goes through
+`_validate_path` too, and a link parked outside the fence is refused `403`
+before anything is unlinked. Nothing changes for a link that lives inside — it
+is still removed, and the real directory it points at is still spared.
+
+**The test.**
+`scripts/test_fs_delete_never_removes_a_link_that_lives_outside_the_sandbox.py`
+calls the real `fs_routes._fs_delete` against real temp directories, with a
+`_validate_path` that mirrors `serve.py`'s own (anchor, `.resolve()`, then
+whitelist), so the dereference the bug depends on actually happens. A link
+outside the sandbox pointing in — as a file and again as a directory — must be
+refused and must still be on disk afterwards. The other half guards what must
+not regress: a link inside the sandbox is still deleted, its target is still
+spared, and an ordinary file still goes.
+
+Fire-tested: copied the fixed `fs_routes.py` to `/tmp`, reverted the guard in
+place with the editor (never `git checkout -- <file>`) — 4 of 10 checks failed,
+exit 1, with `elsewhere/stray_link` and `elsewhere/stray_dir_link` both reported
+`{"ok": true, "deleted": …}` from outside the fence. Restored from the `/tmp`
+copy, confirmed byte-identical by `md5`
+(`f42f9998266e33e9ec8387204541175b`), reran — 10 of 10 passed, exit 0.
+
+`npm run build` was run once up front so `dist-ui/manifest.json` exists in a
+fresh worktree; no UI file was touched.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file a
+foreign session owns and this change never touches). This change covers only
+`fs_routes.py`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any kind
+was run.
