@@ -408,8 +408,8 @@ function OnboardingKeyStep() {
               container's own brain has no daily cap to report, so the
               remaining-count clause only ever fires for the shared trial. */}
           <strong>You're already set.</strong> {managedBrain
-            ? "Your HQ ships with its own AI brain built in — hire an agent and it works right now, no signup."
-            : "Your HQ runs on Cafreso's free shared brain out of the box — hire an agent and it works right now, no signup."}
+            ? "Your HQ ships with its own AI brain built in — hire a coworker and it works right now, no signup."
+            : "Your HQ runs on Cafreso's free shared brain out of the box — hire a coworker and it works right now, no signup."}
           {!managedBrain && trial && typeof trial.remaining === 'number' && (
             <span style={{ color: 'var(--ink-3)' }}>{' '}({trial.remaining} of {trial.cap} free
             messages left today.)</span>
