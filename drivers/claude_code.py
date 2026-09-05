@@ -178,6 +178,14 @@ class ClaudeCodeDriver(Driver):
         yield ev_status('starting')
         in_tok = out_tok = 0
         emitted = False
+        # Latched cause of a failed turn, read by the terminal branch below.
+        # Every other driver in this package already keeps one: #282 taught
+        # local_http.py that a stream which dies after a few tokens must not
+        # terminate with a success event, and codex.py / gemini_cli.py both
+        # end a non-zero exit as ev_error whether or not text arrived first.
+        # This driver — the office's flagship one — was the odd one out on
+        # both counts. See the tail.
+        err = ''
         try:
             for line in proc.stdout:
                 if handle.cancelled.is_set():
@@ -230,8 +238,25 @@ class ClaudeCodeDriver(Driver):
                     u = ev.get('usage') or {}
                     in_tok = u.get('input_tokens', in_tok)
                     out_tok = u.get('output_tokens', out_tok)
+                    # The CLI's own verdict on the turn, and the only place it
+                    # states one: `subtype` is 'success' on a clean finish and
+                    # names the failure otherwise ('error_max_turns',
+                    # 'error_during_execution'), with `is_error` saying the
+                    # same as a bool. Neither field was read, so a turn the
+                    # CLI itself declared failed reached the tail below
+                    # indistinguishable from a finished one.
+                    sub = str(ev.get('subtype') or '')
+                    if ev.get('is_error') or (sub and sub != 'success'):
+                        err = (str(ev.get('result') or '').strip()
+                               or sub or 'the CLI reported a failed turn')
                 elif t == 'error':
-                    yield ev_error(ev.get('message') or ev, recoverable=True)
+                    # In-band failure frame. This used to be yielded inline
+                    # and then followed by the success event at the bottom —
+                    # the same mirror local_http's socket-drop handler had —
+                    # so anything keyed on the LAST event (which base.py's own
+                    # docstring invites) read a failed run as a clean finish.
+                    err = str(ev.get('message') or ev)
+                    break
         finally:
             try:
                 proc.wait(timeout=2)
@@ -242,9 +267,25 @@ class ClaudeCodeDriver(Driver):
                     pass
         if in_tok or out_tok:
             yield ev_usage(in_tok, out_tok, self.MANIFEST['costHint'])
-        # Non-zero exit with nothing streamed: surface stderr as the error.
-        if proc.returncode and not emitted and not (in_tok or out_tok):
-            err = ''.join(handle.private.get('stderr') or [])[:600]
-            yield ev_error(err or f'exit {proc.returncode}')
+        # A finished turn is the ONE ending that gets ev_done. The old test
+        # here was `returncode and not emitted and not (in_tok or out_tok)`:
+        # a CLI that streamed half a paragraph and then died — OOM, killed,
+        # a hook refusal, a dropped API socket — exited non-zero with
+        # `emitted` True and terminated with a success event, and usage alone
+        # was enough to excuse it even when no text ever arrived, because the
+        # first assistant message carries usage. The host reads the terminal
+        # event as the verdict: base.run_task_text() marks "stopped early"
+        # only when an error event was seen, and the task card goes green
+        # above a reply that stops mid-sentence. Non-zero exit is a failure
+        # however much text preceded it — codex.py and gemini_cli.py have
+        # always said so; recoverable marks that the words already yielded
+        # stand and this only says where the reply stops.
+        if err:
+            yield ev_error(err[:600], recoverable=bool(emitted))
+        elif proc.returncode:
+            stderr_text = ''.join(handle.private.get('stderr') or []).strip()
+            yield ev_error(f'exited {proc.returncode}: '
+                           + (stderr_text[:300] or f'exit {proc.returncode}'),
+                           recoverable=bool(emitted))
         else:
             yield ev_done()

@@ -34446,3 +34446,131 @@ container's own words rather than a generic "try again". Absent stays
 distinct from false — an older container that omits `restarted` entirely is
 still a tick, because telling a working office to go and run a startup
 script is the same error inverted.
+
+---
+
+## 298. the flagship coworker's crash was filed as a finished turn
+
+**The twin.** `#282` — "a reply that stopped mid-sentence was filed as
+finished work" — is about one sentence in `base.py`'s own docstring:
+`events()` "terminates with either `ev_done` or `ev_error`". Everything
+downstream reads that last event as the verdict. `run_task_text()`, the
+unattended entry point, marks a turn "⚠ stopped early" only when an error
+event went past; `serve.py`'s SSE bridge stamps `'type': 'error'` on the
+frame only for an error event; the task card goes green on a `done`. So a
+driver that ends a failed run with `ev_done` is not being sloppy, it is
+lying, and `#282` said so and fixed it — in `drivers/local_http.py`.
+
+There are four drivers in this package that terminate a stream, and after
+`#282` three of them agreed on the rule. `codex.py`:
+
+```py
+if rc and rc not in (0, None):
+    yield ev_error(f'exited {rc}: ' + …)
+```
+
+`gemini_cli.py`: the same two lines. `local_http.py`: an `err` latch, and a
+terminal `if err: yield ev_error(...)` ahead of the `elif emitted:` arm,
+with the comment `#282` left explaining why. `claude_code.py` — the first
+driver ever extracted, the office's flagship, the coworker the boss meets
+first — was the odd one out:
+
+```py
+if proc.returncode and not emitted and not (in_tok or out_tok):
+    err = ''.join(handle.private.get('stderr') or [])[:600]
+    yield ev_error(err or f'exit {proc.returncode}')
+else:
+    yield ev_done()
+```
+
+**The bug.** Read the condition as the guard it is: a non-zero exit is
+reported *only if nothing was streamed and no usage arrived*. Both
+excuses fire in the ordinary case.
+
+A `claude -p --output-format stream-json` run that produces two paragraphs
+and then dies — the machine runs out of memory and the OS sends SIGKILL, a
+`PreToolUse` hook refuses and the CLI aborts, the upstream socket drops
+mid-turn, the process is reaped — exits non-zero with `emitted` already
+`True`. It took the `else`. The office recorded a finished turn, `serve.py`
+sent no error frame, `app/artifacts.jsx`'s `fileDelivery` filed the
+half-paragraph into the Library as the deliverable, and the card said
+`✓ Claude finished this` directly above a sentence that stops in the
+middle. Exactly `#282`'s wreck, on the driver `#282` did not look at.
+
+The `in_tok or out_tok` half is worse, because it fires with *no text at
+all*: the CLI's very first `{"type":"assistant"}` message carries `usage`,
+so by the time anything goes wrong `in_tok` is already set, and a crash
+that said nothing whatsoever still terminated with `done`. The one ending
+this guard actually caught — a non-zero exit before the first assistant
+message — is the narrowest of the three.
+
+Two more halves of the same thing were sitting in the loop above it. The
+in-band frame:
+
+```py
+elif t == 'error':
+    yield ev_error(ev.get('message') or ev, recoverable=True)
+```
+
+yielded inline and then fell straight through to the `else` at the bottom
+and yielded `done` after it — the precise mirror `#282` found in
+local_http's socket-drop handler, where the error was announced and then
+withdrawn by the event that followed it. And `{"type":"result"}`, the frame
+in which the CLI states its own verdict — `subtype` is `success` on a clean
+finish and `error_max_turns` / `error_during_execution` otherwise, with
+`is_error` saying the same as a bool — was read for its two token counts
+and nothing else. A turn the CLI itself declared failed, at exit code 0,
+was indistinguishable from a good one.
+
+**The fix.** `drivers/claude_code.py` gets the `err` latch its three
+siblings have. The `error` frame latches and breaks; the `result` frame
+latches when the CLI marks it failed; the tail becomes the three-way the
+other drivers already spell — `if err` → error, `elif proc.returncode` →
+error naming the exit code and the drained stderr, `else` → `ev_done()`,
+which is now reachable from one branch only. `recoverable` is
+`bool(emitted)`, matching local_http: the words that did arrive stand, and
+the error only says where the reply stops. Nothing changes for a clean run
+— tokens, tool frames, usage and `ev_done` are all as they were — and a
+zero-exit turn that simply produced no text is still `done`, as it was
+here before, rather than borrowing codex's louder no-content refusal.
+
+**The test.**
+`scripts/test_a_crashed_cli_turn_is_not_a_finished_deliverable.py` runs the
+real `ClaudeCodeDriver.events()` against a scripted process emitting real
+stream-json lines, and then runs `base.run_task_text()` — the night shift's
+own entry point — over the same driver to check what an unattended caller
+actually receives. Twenty-five checks: a crash after text keeps its words
+and ends in `error` naming exit `143` and `out of memory`, marked
+recoverable; a crash with usage but no text is an error and *not*
+recoverable; an in-band `error` frame ends the turn once with no `done`
+after it; both failing `result` subtypes end as errors; a clean run keeps
+its text, its usage and its `ev_done` with no error anywhere;
+`run_task_text` marks the crashed turn "stopped early" while keeping the
+half-answer, raises when there was no text at all, and leaves a clean run
+unmarked. The last three hold the family rule on the source with comments
+and docstrings stripped first — this file's prose and the driver's new
+comment both quote the old `not emitted and not (in_tok or out_tok)`
+spelling verbatim, and a grep that could not tell those apart would fail
+the correct code — asserting the excuse is gone, the latch is present, and
+that all four of `claude_code.py`, `codex.py`, `gemini_cli.py` and
+`local_http.py` reach `ev_done` from exactly one branch.
+
+Fire-tested: copied the fixed `drivers/claude_code.py` to `/tmp`, reverted
+the tail and the two loop arms in place with the editor (never
+`git checkout -- <file>`) — 14 of 25 checks failed, exit 1, the crashed
+turn reported `{'event': 'done', 'summary': ''}` as its terminal event and
+`run_task_text` returning the half sentence unmarked. Restored from the
+`/tmp` copy, confirmed byte-identical by `md5`
+(`ff3f2ffc83100ae1ad6c628a4c005df5`), reran — 25 of 25 passed, exit 0.
+
+`npm run build` was run once up front so `dist-ui/manifest.json` exists in a
+fresh worktree; no UI file was touched.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the `moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on
+a file a foreign session owns and this change never touches). This change
+covers only `drivers/claude_code.py`, the one new test file, and this entry;
+no existing test was changed, `src/cafresohq_state/main.mo` was never staged
+or edited, no II or `derivationOrigin` value was read or written, and no
+dfx/IC action of any kind was run.
