@@ -385,10 +385,29 @@ _KEY_PROTECTED_PREFIXES = (
 # read routes are the load-bearing case: they are deliberately keyless and
 # _cafresohq_allowed_dirs defaults to $HOME. The key-gated members are listed
 # too — the key already stops them, and defence in depth costs nothing here.
+#
+# "The key-gated members are listed too" was the intent, not the code: only 11
+# of the 24 key-protected prefixes were spelled out here, and the missing ones
+# were exactly the routes that answer with the office's own work. The key does
+# NOT stop the browser threat, because the key is normally UNSET — with no key
+# configured _api_key_ok falls back to "loopback callers only", and a page the
+# user is visiting IS a loopback caller: its fetch() leaves their own machine's
+# 127.0.0.1. Measured against a keyless local instance, Origin: evil.example →
+#   /browser/status, /agents, /approvals/external/list, /missions/runs
+#   → 200, Access-Control-Allow-Origin: *, full body readable by that page.
+# That is the pending-approval queue (tool, cwd, arguments), the agent roster,
+# the night-shift run log, and — via /browser/fetch?url=… — an SSRF read of any
+# intranet URL the office can reach, all handed to a stranger's tab. So instead
+# of naming a few by hand and drifting again on the next added prefix, derive
+# it: anything protected enough to want an API key is host data by definition.
+# The keyless-by-design entries ('/fs' reads for the preview iframe) stay
+# listed explicitly, since no key gate would ever add them.
 _HOST_DATA_PREFIXES = (
     '/fs', '/vault', '/projects', '/export', '/tools', '/terminal', '/hq/',
     '/brave',
-)
+) + tuple(p for p in _KEY_PROTECTED_PREFIXES
+          if not p.startswith(('/fs', '/vault', '/projects', '/export',
+                               '/tools', '/terminal', '/hq/', '/brave')))
 
 # Background CLI-install jobs (POST /agents/install returns 202 immediately;
 # the UI polls GET /agents/install/status?agent=…). One job per agent id.

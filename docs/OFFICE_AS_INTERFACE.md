@@ -34292,3 +34292,74 @@ a foreign session owns and this change never touches). This change covers only
 changed; `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any kind
 was run.
+
+---
+
+## 294. any page the boss had open could read the office's own answers
+
+**The bug.** `serve.py` keeps two lists side by side.
+`_KEY_PROTECTED_PREFIXES` names the routes that want an API key.
+`_HOST_DATA_PREFIXES` names the routes an unknown browser origin must never be
+handed an `Access-Control-Allow-Origin` for — that missing header is the whole
+reason a stranger's tab cannot read the response. The second list's own comment
+says "the key-gated members are listed too — the key already stops them, and
+defence in depth costs nothing here." Only 11 of the 24 key-gated prefixes were
+in it, and the sentence's premise is wrong twice over: the key does not stop
+them, because `CAFRESOHQ_API_KEY` is normally unset, and with no key configured
+`_api_key_ok` (`serve.py:1866`) falls back to *loopback callers only* — which a
+page in the boss's own browser trivially is. Its `fetch()` to `127.0.0.1:8787`
+leaves that same machine.
+
+Measured against a keyless local instance with `Origin: https://evil.example`,
+before the fix:
+
+    /browser/status           200  Access-Control-Allow-Origin: *
+    /agents                   200  Access-Control-Allow-Origin: *
+    /approvals/external/list  200  Access-Control-Allow-Origin: *
+    /missions/runs            200  Access-Control-Allow-Origin: *
+
+That is the pending tool-approval queue — every tool name, `cwd` and argument
+blob the office is currently asking the boss about — plus the agent roster, the
+night-shift run log, and, through `/browser/fetch?url=…`, an SSRF read of any
+intranet URL the office can reach. All of it readable by whatever page happened
+to be open in another tab. `/hq/` and `/fs` were already covered; the routes
+that answer with the office's *work* rather than its *files* were not. `/brave`
+had been added by hand for exactly this reason one entry at a time, which is
+how the rest came to be missed.
+
+**The fix.** `serve.py:388` stops naming the key-gated members by hand and
+derives them: `_HOST_DATA_PREFIXES` is now the explicit keyless-by-design
+entries (`/fs` reads, which the preview iframe fetches with no key, so no key
+gate would ever contribute them) *plus every prefix in
+`_KEY_PROTECTED_PREFIXES`*. Anything protected enough to want a key is host
+data by definition, and the next prefix someone adds is covered the moment they
+add it. The credentialed branch above is untouched, so the office's own origins
+— same-origin, `hq-ui`/`ai.cafreso.com`, and anything in
+`CAFRESOHQ_ALLOWED_WS_ORIGINS` — still get `ACAO: <origin>` with
+`Allow-Credentials: true`, and `/health` still answers `*` to anybody, because
+a load-balancer probe carries no host data.
+
+**The test.**
+`scripts/test_a_stranger_can_never_read_a_key_gated_route.py` boots a real
+`serve.py` *with no API key* — the shape a beta tester actually runs, and the
+shape in which the loopback fallback lets a visited page in — and asks seven
+key-gated data routes for their contents with an evil `Origin`. Each must
+answer 200 (so "no header" cannot be a 401 in disguise) and carry no
+`Access-Control-Allow-Origin`; urllib, like curl, ignores CORS, so the header's
+absence is the assertion. It then re-checks the app's own origin still gets the
+credentialed echo, that `/health` stays `*`, and finally imports `serve.py` in a
+subprocess and asserts the *invariant* — no key-protected prefix is left
+uncovered — so a hand-maintained list cannot drift back. On the old code 8 of
+its 20 checks fail; on the new code all 20 pass. Fire-tested by reverting the
+derivation in place with the editor (never `git checkout`), watching those 8
+fail, restoring from `/tmp`, and confirming `serve.py` md5
+`e617d6cef3f1467f6b65f72f79595967` byte-identical.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file a
+foreign session owns and this change never touches). This change covers
+`serve.py`, one new test and this entry; no existing test was weakened,
+`src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any kind
+was run.
