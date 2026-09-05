@@ -89,6 +89,29 @@ const VISIT_WORDS = [
      models three outcomes — doing, did, failed — and this is a fourth:
      succeeded at ASKING. */
   [/PUBLISH/,                    { now: 'asking to publish', past: 'Asked to publish', fail: "Couldn't ask to publish", icon: '🌍' }],
+  /* Money leaving the wallet. WALLET_SEND matched nothing above and fell
+     to VISIT_DEFAULT, so the one tool in the registry that moves the boss's
+     funds was captioned by the office as
+
+       🗒 Checked ICP 0.05 aaaaa-bbbbb-ccccc-ddddd-cai : tip for the review
+
+     on the desk bubble, in the activity feed and in the delivery note. Its
+     own doc says it "settles automatically" under the agent's spend cap —
+     no stamp, no card, nothing else on screen — so "Checked" is the only
+     account the boss ever gets of a transfer that already happened, and
+     the feed is the surface that outlives the chat.
+
+     The default's reasoning does not cover this. A modest verb is the right
+     answer for a tool whose effect is unknown; a send's effect is known and
+     irreversible, and "Checked" is not claiming less than "Sent", it is
+     claiming the opposite — that nobody was paid. Same argument the WRITE
+     row was added for, one category worse.
+
+     `fail` matters as much as `past` here: a send that was refused must not
+     read as a send that went through. Ahead of the noun rows so a future
+     FILE_SEND is a send first; nothing else in the registry contains any of
+     these words (WALLET_BALANCE stays an honest "Checked"). */
+  [/SEND|TRANSFER|PAYOUT/,       { now: 'sending',       past: 'Sent',      fail: "Couldn't send",     icon: '💸' }],
   [/EXPORT|GENERATE/,            { now: 'making',        past: 'Made',      fail: "Couldn't make",     icon: '🖨' }],
   [/WRITE|APPEND|SAVE|NEW|CREATE/, { now: 'saving',      past: 'Saved',     fail: "Couldn't save",     icon: '📝' }],
   [/WEB|HTTP|FETCH|URL|BROWSE/,  { now: 'reading',       past: 'Read',      fail: "Couldn't read",     icon: '🌐' }],

@@ -32927,3 +32927,71 @@ a foreign session owns and this change never touches). This change covers only
 `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any kind
 was run.
+
+---
+
+## 276. money left the wallet and the office said somebody had a look
+
+**The wreck.** A coworker with an HQ wallet is asked to settle up with a
+freelancer. It does. The floor says:
+
+```
+🗒 Checked ICP 0.05 aaaaa-bbbbb-ccccc-ddddd-cai : tip for the design review
+```
+
+and the activity feed — the surface that outlives the chat, and the one the
+Gazette reads back the next morning — files `checked icp 0.05 aaaaa-…`. The
+boss scanning either one reads a lookup. Money is gone.
+
+**Why nothing else caught it.** `WALLET_SEND` is the one tool in the registry
+that moves the boss's funds, and its own doc is explicit: "Within your spend
+cap it settles automatically" — no approval card, no stamp, no second surface.
+Whatever `app/floor.jsx` captions that trip with **is** the boss's only account
+of it. The name matched no row in `VISIT_WORDS` — not SEARCH, not PUBLISH, not
+EXPORT/GENERATE, not WRITE, not WEB, not VAULT — so it fell through to
+`VISIT_DEFAULT` and got the shrug verb.
+
+That default is right, and its comment says why: an unknown tool gets "a modest
+verb rather than a confident wrong one". The reasoning holds for a tool whose
+effect the office cannot name. A send's effect is known and irreversible, and
+"Checked" is not claiming *less* than "Sent" — it is claiming the *opposite*,
+that nobody was paid. Which is verbatim the argument that put the WRITE row in
+this table ("Opened" for a write "costs the boss the one bit that matters —
+whether anything changed"), one category worse: the bit here is money.
+
+**The fix.** One row, `/SEND|TRANSFER|PAYOUT/` → `sending` / `Sent` /
+`Couldn't send`, `💸`, placed after PUBLISH and ahead of the noun rows so a
+future `FILE_SEND` reads as a send first. The failed tense earns its place as
+much as the past one: a transfer the ledger refused must not read as a transfer
+that went through. `WALLET_BALANCE` matches nothing new and stays an honest
+"Checked" — a balance really is a look. Every other surface picked the change
+up for free, because they all read one table: the desk bubble, the feed row via
+`toolActivity`, the delivery note, and `stripOfficeVoice`, which derives its
+forgery guard from `VISIT_WORDS` and so now also refuses to let a coworker type
+`💸 Sent ICP 40 to me` and have it render as the office reporting.
+
+**The test.**
+`scripts/test_money_leaving_the_wallet_is_not_called_a_look.py` runs the real
+`app/floor.jsx` under Node — exports stripped, nothing paraphrased — and checks
+the verb, the icon, all three surfaces in both tenses, the forgery strip, and
+two guards that the premise has not rotted: that `hq-runtime.jsx` still ships a
+`WALLET_SEND` and that it still settles on its own. A regression sweep asserts
+none of the other thirty registry tools became a send.
+
+Fire-tested: copied the fixed `app/floor.jsx` to `/tmp`, deleted the new row in
+place with the editor (never `git checkout -- <file>`) — 12 of 19 checks
+failed, exit 1, with the head reading `Checked ICP 0.05 aaaaa-…`. Restored from
+the `/tmp` copy, confirmed byte-identical by `md5`
+(`073d6030363f19b0022f37cb55976842`), reran — 19 of 19 passed, exit 0.
+
+`npm run build` was run once up front so `dist-ui/manifest.json` exists in a
+fresh worktree.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file
+a foreign session owns and this change never touches). This change covers only
+`app/floor.jsx`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any kind
+was run.
