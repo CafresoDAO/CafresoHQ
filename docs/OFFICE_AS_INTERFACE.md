@@ -37000,3 +37000,84 @@ on the way through.
 draft box while the chain paid the stored row. This is the same panel and the
 same species — a number the boss reads and a number the chain holds, allowed
 to differ — one field over, in the field that says how often.
+
+---
+
+## 331. the first thing the office asks you to do, answered in JSON
+
+**The wreck.** `OnboardingKeyStep` is the first thing a new HQ asks anybody
+to *do*: paste a free OpenRouter key, press Save. `## 297.` found it drawing
+a green tick over a key the container had refused, and fixed the read —
+a falsy `serverStored` is a failure, not a save. Then it printed the reply's
+`detail` field, in brackets, under a fixed lead sentence.
+
+`detail` is a diagnostic. `hermesSetProvider` builds it as
+`server ${r.status}: ${t.slice(0, 120)}` — a status code, a colon, and 120
+raw bytes of whatever the response body happened to be. Driven live against
+a real `serve.py` (POST `/hermes/provider` with `sk-or-oops`, refused by the
+host's own regex gate before any driver runs), the tour card read:
+
+    ✕ Couldn't save — check the key and try again.
+      (server 400: {"error": "invalid OpenRouter key"})
+
+An HTTP status code and a JSON object, on the surface with the least
+experienced reader in the app standing in front of it — §7's raw dump, in
+the one place it costs the most. `## 325.` put a Google key in an error
+toast the same way, from the other end of the same habit: a field assembled
+for a machine, handed to a person.
+
+The second reading is worse than raw, because it is *wrong*. When the
+browser cannot reach the office at all, the catch returns
+`detail: 'offline — saved locally'`, and the same line rendered:
+
+    ✕ Couldn't save — check the key and try again. (offline — saved locally)
+
+Nothing is wrong with the key. Nobody ever looked at it. The sentence sends
+a tester away to re-copy a perfectly good key — the confident misdiagnosis
+`app/floor.jsx`'s own commentary calls worse than a vague honest answer —
+and then contradicts itself two words later by calling the thing it has just
+named a failure "saved locally". A beta tester whose office simply is not
+running is told the fault is theirs, and re-pastes a key all afternoon.
+
+**The fix.** The sibling pattern, again: the helper exists and this path did
+not use it. `app/floor.jsx` already holds five cause classifiers, one per
+*subject* — a brain, the office, a repo, Obsidian, and nothing-known-for-
+certain — each turning a raw failure into one honest sentence naming the
+cause and the way forward. A key save is a sixth subject, so `KEY_CAUSES` /
+`keyCause` / `keyOpener` join them, and the card renders
+`'✕ ' + keyOpener(saveDetail) + '.'`:
+
+    ✕ Your office read that key and turned it down as the wrong shape — copy
+      it again from openrouter.ai/keys, whole, including the sk-or-v1 prefix.
+
+    ✕ Couldn't reach your office to save that key — check it's still running,
+      then hit Save again.
+
+    ✕ Your office could not write that key down — that is the office, not
+      your key; the window it is running in will say why.
+
+The classifier matches the *whole* detail, status code included, because the
+status is the only thing that separates an office that broke from one that
+read the key and said no when the body is empty or is HTML from a proxy.
+`serverWords` is for the fallback alone: it drops the `server 400: ` envelope
+and lifts `error` out of the JSON, so an unclassifiable refusal still repeats
+a sentence a person wrote — "your office turned that key down — the office is
+a teapot" — rather than the wrapper a machine put round it. `## 297.`'s point
+that the container's own words must reach the reader survives there intact.
+What no longer reaches them is the envelope.
+
+The test boots a real `serve.py` on a scratch `HOME`, posts a malformed key,
+runs the shipped `hermesSetProvider` against the live reply, and evaluates the
+render expression lifted out of the card with the real `keyOpener` — then
+checks every rendered line for a status code, JSON shrapnel, a stack frame, an
+`[object Object]` and a bare `undefined`, and checks that each one names a next
+step. The scratch `HOME` is not politeness: this bug was found by posting a
+*well-formed* key at a live office, which rewrote the developer's own
+`~/.hermes/config.yaml` model block and appended the fake key to their `.env`.
+Both were restored by hand. A test that can do that is a test nobody runs twice.
+
+**Whose twin.** `## 325.`, which leaked a key by handing a caught exception's
+text to a rendered surface; `## 297.`, which owned this exact line one fix
+earlier and left the raw half in place; and every entry above `KEY_CAUSES` in
+`app/floor.jsx` — the patterns keep being right and the noun keeps being what
+changes.

@@ -1,4 +1,5 @@
 import { CafresoHQClient } from '../claude-client.jsx';
+import { keyOpener } from '../app/floor.jsx';
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, createContext, useContext } = React;
 const NOTIF_KIND_ICON = {
   receipt:  '📋',
@@ -436,8 +437,16 @@ function OnboardingKeyStep() {
                             + 'listening on 127.0.0.1:8642 yet. Run Start-CafresoHQ.sh, or pick a '
                             + 'different brain in Settings → Connections.'}
         {saved === 'have'  && '✓ A key is already set. Paste a new one to replace it.'}
-        {saved === 'err'   && ('✕ Couldn\'t save — check the key and try again.'
-                            + (saveDetail ? ' (' + saveDetail + ')' : ''))}
+        {/* One sentence, naming the cause AND the way out — keyOpener's job.
+            What stood here appended `r.detail` verbatim in brackets, and
+            that field is a diagnostic, not prose: the reader of a tour card
+            met `(server 400: {"error": "invalid OpenRouter key"})`, a status
+            code and a JSON body on the first surface in the app. Worse, the
+            lead sentence blamed their key whatever the cause, so an office
+            that was simply not running answered "check the key and try
+            again. (offline — saved locally)" — wrong diagnosis, and it
+            contradicts itself. See KEY_CAUSES in app/floor.jsx. */}
+        {saved === 'err'   && ('✕ ' + keyOpener(saveDetail) + '.')}
         {!saved && (onTrial
           ? 'Optional — your own key gives unlimited use and lets you pick the model.'
           /* No tab named here on purpose. This line is read on a managed

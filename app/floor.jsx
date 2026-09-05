@@ -587,6 +587,92 @@ function obsidianCause(raw) {
   return officeCause(text);
 }
 
+/* A sixth subject: the KEY the boss pastes on their FIRST run, and what
+   the office said when asked to keep it.
+
+   `hermesSetProvider` in claude-client.jsx has a documented contract — it
+   never throws and never returns ok:false; a refusal comes back as
+   `{serverStored: false, detail: 'server 400: {"error": "invalid
+   OpenRouter key"}'}`. That detail is a DIAGNOSTIC, assembled for a caller
+   to classify: an HTTP status code, a colon, and 120 bytes of whatever the
+   office's response body happened to be. #297 taught the tour step to read
+   `serverStored` correctly, which was the bug it was hunting, and then put
+   that diagnostic on the screen verbatim, in brackets, under a lead
+   sentence that names the tester's key as the cause whatever happened:
+
+       ✕ Couldn't save — check the key and try again.
+         (server 400: {"error": "invalid OpenRouter key"})
+       ✕ Couldn't save — check the key and try again.
+         (offline — saved locally)
+
+   Two §7 failures in one line, on the FIRST wall a beta tester meets. The
+   first reading is a JSON blob and a status code in a tour card — the same
+   raw dump §7 forbids on the floor, here on the surface with the least
+   experienced reader in the app in front of it. The second is worse than
+   raw, it is WRONG: the office was never reached, the key is fine, and the
+   sentence sends the tester back to re-copy a key that was never the
+   problem — then contradicts itself two words later by saying the thing it
+   just called a failure was "saved locally".
+
+   So the same split as every subject above: the patterns are right, the
+   NOUN is what changes. Here the subject is a save, and the honest answer
+   turns on WHO refused it — the office's key check, the office's disk, or
+   nothing at all because nobody answered. Every sentence names a way
+   forward, because on this surface there always is one: re-copy the key,
+   start the office, or look at the window the office is running in.
+
+   Matched against the FULL detail, status code and all, because the status
+   is the only thing that distinguishes an office that broke (5xx) from one
+   that read the key and said no (400) when the body is empty or is HTML
+   from a proxy. serverWords() is used for the FALLBACK only, where the
+   office's own authored prose is the best thing left to repeat. */
+const KEY_CAUSES = [
+  [/offline|no connection|failed to fetch|network ?error|load failed|econnrefused|enotfound/i,
+   "couldn't reach your office to save that key — check it's still running, then hit Save again"],
+  [/\b5\d\d\b|internal server error|service unavailable|write \.env|no space left|enospc/i,
+   'your office could not write that key down — that is the office, not your key; the window it is running in will say why'],
+  [/invalid[^\n]{0,24}key|key[^\n]{0,24}(?:is )?(?:invalid|malformed|not valid)/i,
+   'your office read that key and turned it down as the wrong shape — copy it again from openrouter.ai/keys, whole, including the sk-or-v1 prefix'],
+  [/unknown provider/i,
+   "your office doesn't know that brain — pick a different one in Settings → Connections"],
+];
+
+/* The office's own words, dug out of the diagnostic wrapper: drop the
+   `server 400: ` prefix and lift `error` out of the JSON body, so the
+   fallback repeats a sentence a person wrote rather than the envelope a
+   machine wrapped it in. cleanCause still runs over the result — it is the
+   sanctioned sanitiser, and an office that answers with an HTML error page
+   instead of JSON must not put a page of markup in a tour card. */
+function serverWords(raw) {
+  const t = String(raw || '').replace(/^\s*server\s+\d{3}\s*:\s*/i, '');
+  const m = /"error"\s*:\s*"([^"]{1,200})"/.exec(t);
+  return m ? m[1] : t;
+}
+
+function keyCause(raw) {
+  const text = String(raw || '').trim();
+  /* An office that refused and said nothing at all. cleanCause's own
+     fallback ("something went wrong on the last run") is a floor line with
+     no way out in it, and a card the reader is standing in front of, having
+     just pressed a button, has to leave them somewhere to go. */
+  if (!text) {
+    return 'your office turned that key down without saying why — check it is running, then hit Save again';
+  }
+  for (const [re, sentence] of KEY_CAUSES) {
+    if (re.test(text)) return sentence;
+  }
+  return 'your office turned that key down — ' + cleanCause(serverWords(text));
+}
+
+/* The clause as its own sentence, for a card whose subject is already the
+   save the reader just asked for. Same shape and same reason as
+   snagOpener: capitalising a clause by hand at the call site is exactly
+   how the three snag shapes drifted apart the first time. */
+function keyOpener(raw) {
+  const c = keyCause(raw);
+  return c.charAt(0).toUpperCase() + c.slice(1);
+}
+
 function cleanCause(raw) {
   const first = String(raw || '').split('\n')[0]
     .replace(/https?:\/\/\S+/g, '')            // URLs are noise in a bubble
@@ -891,4 +977,4 @@ function toolActivity(agent, ev, extra) {
   };
 }
 
-export { attachVisit, chainHoldLine, cleanCause, deskKit, doneLine, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, obsidianCause, officeCause, repoCause, shortfallLine, snagCause, snagOpener, snagSentence, stripOfficeVoice, toolActivity, toolProp, toVisit, uploadReceipt, visitLine, visitPlace, visitSubject, visitTense, visitWhere, visitWords };
+export { attachVisit, chainHoldLine, cleanCause, deskKit, doneLine, FLOOR_EVENT, floorEmit, floorOn, keyCause, keyOpener, PROP_PLACARD, obsidianCause, officeCause, repoCause, serverWords, shortfallLine, snagCause, snagOpener, snagSentence, stripOfficeVoice, toolActivity, toolProp, toVisit, uploadReceipt, visitLine, visitPlace, visitSubject, visitTense, visitWhere, visitWords };

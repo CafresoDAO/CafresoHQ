@@ -24,7 +24,8 @@ The boss asked for the tour and got a blank office minus the checklist.
 Fix: one effect keyed on `open` — `if (open) setIdx(0)`.
 
 This drives the REAL OnboardingTour: ui/onboarding.jsx bundled with the
-project's own esbuild, its one import stubbed, hooks driven by a small React
+project's own esbuild, its client import stubbed (app/floor.jsx goes in
+real — it is import-free), hooks driven by a small React
 stand-in. A re-implementation of the step counter would happily agree with
 itself while the shipped component kept resuming.
 
@@ -39,6 +40,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / 'ui' / 'onboarding.jsx'
+FLOOR = ROOT / 'app' / 'floor.jsx'
 APP = ROOT / 'app.jsx'
 ESBUILD = ROOT / 'node_modules' / '.bin' / 'esbuild'
 FAILS = []
@@ -231,8 +233,17 @@ def run_probe():
     tmp = ROOT / '.tour-replay-probe-tmp'
     shutil.rmtree(tmp, ignore_errors=True)
     (tmp / 'ui').mkdir(parents=True)
+    (tmp / 'app').mkdir(parents=True)
     try:
         (tmp / 'claude-client.jsx').write_text(STUB_CLIENT, encoding='utf-8')
+        # app/floor.jsx goes in REAL, not stubbed: it is import-free pure
+        # string helpers (that is a stated property of the file, and what
+        # lets scripts/test_floor.py run it verbatim), so there is nothing
+        # to fake and a stub would only be a second copy to keep in step.
+        # #330 gave the key step a second import; before that the harness
+        # only had claude-client.jsx to stand in for.
+        (tmp / 'app' / 'floor.jsx').write_text(
+            FLOOR.read_text(encoding='utf-8'), encoding='utf-8')
         (tmp / 'ui' / 'onboarding.jsx').write_text(
             SRC.read_text(encoding='utf-8'), encoding='utf-8')
         (tmp / 'probe.mjs').write_text(PROBE, encoding='utf-8')
