@@ -36530,3 +36530,92 @@ including `test_terminal_cwd_wired`, `test_pty_reconnect_applies_new_dimensions`
 and this entry; `src/cafresohq_state/main.mo` was never staged or edited, no II
 or `derivationOrigin` value was read or written, and no dfx/IC action of any
 kind was run.
+
+---
+
+## 324. two coworkers called Vera, and LET GO is a coin flip
+
+#317 found two live terminal tabs both labelled "Hermes #1" — two real PTYs,
+one name, nothing else on the row, and a close button that works by id. The
+boss ending "the other Hermes" was guessing. The front desk had the same
+shape on a worse row, and it had it for everything the office does.
+
+`hireNeedsNote` was the whole door on the NAME box, and it asked one
+question: is the box blank? So HIRE ✓ was live and bright on a name somebody
+in this office already answers to.
+
+**What the boss would have clicked.** Save a role as a template — the form
+has a ★ SAVE AS TEMPLATE button and a TEMPLATES shelf to load it back from —
+hire Vera off it, then hire off it again a week later, having forgotten. The
+OPENSWARM shelf filters its candidates by `hiredNames` and the front desk
+filters its cards by `hiredIds`, so neither of those can hand you a
+duplicate; the templates shelf filters by neither. Two clicks, two Veras,
+same sprite, same role, same everything.
+
+Now open Settings → Coworkers. The ROSTER row is a sprite, a name, a role,
+and a LET GO button. Two rows, identical. Press one. `onDismiss` on a
+coworker with no assistants runs straight through with **no confirmation at
+all** — it aborts their in-flight stream, drops them off the roster, hands
+their cards back to the inbox unassigned, purges their approval cards, and
+fires `DELETE /missions/scheduled/<id>` at every night shift they had booked
+on the server. Their system prompt, their tools, their tokens, their history:
+gone, no undo. And because the row that remains looks exactly like the row
+that went, there is no way to tell which one you fired.
+
+The second half is quieter and worse. A NAME in this office is an ADDRESS.
+`@Vera` in the composer, a coworker's `[DM_TO: Vera]`, a `[HANDOFF_TO: Vera]`
+— every one resolves with `agents.find(a => a.name.toLowerCase() === …)`, in
+app.jsx and again in hq-runtime.jsx, and every one takes the FIRST match. So
+the second Vera is not a near-duplicate the boss has to squint at, she is
+unreachable. Measured: `Vera`, `vera` and `" Vera "` all resolve to `a_1`.
+She sits at a desk, holds a brain, costs tokens on hire, and no mention, DM
+or hand-off in the product can ever be aimed at her — and the office never
+says so, because from where it stands the name resolved fine.
+
+**The fix.** Refused at the door. `hireNeedsNote(name, currentAgents)` now
+carries the second sentence too — it names the coworker who already has the
+name and their role, says what it would cost (first-match routing, one LET GO
+button for two rows), and points back at the NAME box. It is the same one
+sentence the button's `disabled`, its tooltip and the visible footer hint all
+read, so those three can never drift apart, and it folds case and trims
+padding the same way the resolvers do, or a "vera" would walk past a door
+that `[DM_TO: Vera]` still collides with.
+
+Refused at the door rather than disambiguated on the row, and that is the
+whole difference from #317. A "#2" suffix works for terminal tabs because a
+tab is only ever acted on by clicking it. It cannot work here: `@Vera` has no
+row to point at.
+
+**The proof.**
+`scripts/test_two_coworkers_are_never_hired_under_one_name.py` strips
+comments first (this fix's own prose quotes the shape it fixes), lifts the
+real `hireNeedsNote` out of `modals/hire.jsx` and runs it under node against
+a roster that already holds Vera — exact, lower-cased, shouty and padded —
+and against an empty roster, a null one, a missing argument and a roster of
+half-built rows, so an unset prop cannot throw inside the render. It also
+lifts the resolver shape out of `app.jsx` and drives it over a roster that
+*did* take the second Vera, so the damage is measured rather than asserted.
+And it counts the `.find(… name.toLowerCase() ===)` resolvers still standing
+in `app.jsx`: if the office ever stops routing by name, this refusal is
+arguing with a premise that no longer holds and the test should say so.
+
+Fire-tested: copied the fixed `modals/hire.jsx` to `/tmp`, reverted the door
+in place with the editor (never `git checkout -- <file>`), the refusal checks
+failed, exit 1. Restored from `/tmp`, `md5` byte-identical, reran — all 16
+passed, exit 0.
+
+`.jsx` change, so `npm run build` after.
+
+**One existing test changed, and loudly.**
+`scripts/test_the_hire_button_says_what_it_is_waiting_for.py` (#312) pinned
+the helper's arity at exactly `function hireNeedsNote(name)`, and pinned the
+three call sites to the literal string `hireNeedsNote(name)`. That was never
+what it was testing for — the check's own failure message says "must be
+module-level and must not close over component state, or it cannot be driven
+here". Arity was scaffolding for that property, and pinning it ENCODED this
+bug: the only way to teach the NAME door about the roster was to break that
+line. Widened to `(name, currentAgents)`, not relaxed — `currentAgents` must
+still be a declared parameter, because a prop read out of the closure would
+be exactly the impurity the check exists to forbid. A new assertion was added
+alongside: every call site must pass the roster, so no door can quietly stop
+asking. No assertion was removed or weakened.

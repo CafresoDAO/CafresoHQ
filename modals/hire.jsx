@@ -80,14 +80,54 @@ const formToolIds = (ids) => {
    (NAME) rather than by the variable — the vocabulary rule §6 that
    `topic + agent required` broke in #299.
 
+   The blank box is not the only thing this door has to catch. A NAME in
+   this office is an ADDRESS, not a caption: `@Vera` in the composer, a
+   coworker's `[DM_TO: Vera]`, and a `[HANDOFF_TO: Vera]` are all resolved
+   with `agents.find(a => a.name.toLowerCase() === …)` — FIRST match wins,
+   in app.jsx and again in hq-runtime.jsx. So a second Vera is not a
+   near-duplicate, she is unaddressable: every mention, DM and hand-off
+   aimed at her lands on the first Vera, and the office says nothing,
+   because from where it stands the name resolved fine.
+
+   And the roster she lands on cannot tell the boss which is which. Two
+   hires off one saved template share sprite, name and role — the shelf
+   filters OPENSWARM candidates by `hiredNames` and the front desk filters
+   its cards by `hiredIds`, but the TEMPLATES shelf filters by neither, so
+   hiring the same saved role twice is one extra click. The Settings →
+   ROSTER row is sprite + name + role and a LET GO button; LET GO on a
+   coworker with no assistants runs `onDismiss` straight through with no
+   confirm at all. Two identical rows, one irreversible button, and the
+   boss picking between them is guessing — the #317 shape (two live PTYs
+   both labelled "Hermes #1") on a row where the wrong click takes a
+   coworker's prompt, tools, tokens and history with it, unassigns their
+   cards and DELETEs their night shifts off the server.
+
+   Refused at the door rather than disambiguated on the roster, because a
+   suffix on a row cannot fix routing: `@Vera` has no row to point at.
+
    Kept module-level, pure and import-free so
-   scripts/test_the_hire_button_says_what_it_is_waiting_for.py runs it
-   verbatim under node. */
-function hireNeedsNote(name) {
+   scripts/test_the_hire_button_says_what_it_is_waiting_for.py and
+   scripts/test_two_coworkers_are_never_hired_under_one_name.py run it
+   verbatim under node. The roster arrives as an argument for that reason —
+   the helper still closes over no component state. */
+function hireNeedsNote(name, currentAgents) {
   const typed = String(name == null ? '' : name).trim();
-  if (typed) return '';
-  return 'Give your new coworker a name first — type one in the NAME box '
-    + 'above, anything you would like to call them.';
+  if (!typed) {
+    return 'Give your new coworker a name first — type one in the NAME box '
+      + 'above, anything you would like to call them.';
+  }
+  /* Same comparison the resolvers use — trimmed and case-folded — or the
+     door would pass a "vera" that `[DM_TO: Vera]` still collides with. */
+  const taken = (currentAgents || []).find(a =>
+    String((a && a.name) || '').trim().toLowerCase() === typed.toLowerCase());
+  if (taken) {
+    return `${taken.name} already works here${taken.role ? ` — ${taken.role}` : ''}. `
+      + 'A name is how this office reaches somebody: @mentions, teammate DMs '
+      + 'and hand-offs all go to the first match, and two rows sharing one '
+      + 'name share one LET GO button. Give this hire a different name in the '
+      + 'NAME box above.';
+  }
+  return '';
 }
 
 /* ── The front desk (DRIVER_CONTRACT §3 · OFFICE_AS_INTERFACE §3) ─────────
@@ -485,7 +525,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
     /* Belt and braces: the button below is dark whenever this note is set,
        so this branch should be unreachable from the UI. It stays because a
        silent return is only acceptable when nothing could have got here. */
-    if (hireNeedsNote(name)) return;
+    if (hireNeedsNote(name, currentAgents)) return;
     if (elevated && !(await window.hqConfirm(
       `Hire ${name.trim()} with COMPUTER ACCESS?\n\n` +
       `This agent will be backed by an elevated CafresoHQ session that can read/write files and run shell commands on this machine.\n\n` +
@@ -518,13 +558,13 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
           research costing: while the form cannot go through, what it is
           waiting for outranks a fact about desk assignment. */}
       <div className="hint" style={{marginRight: 'auto'}}>
-        {hireNeedsNote(name) || 'A new desk will be assigned on spawn.'}
+        {hireNeedsNote(name, currentAgents) || 'A new desk will be assigned on spawn.'}
       </div>
       <button className="px-btn secondary" style={{fontSize: 'var(--text-9)'}} onClick={saveAsTemplate}>★ SAVE AS TEMPLATE</button>
       <button className="px-btn secondary" onClick={onClose}>Cancel</button>
       <button className="px-btn primary" onClick={submit}
-              disabled={!!hireNeedsNote(name)}
-              title={hireNeedsNote(name) || undefined}>HIRE ✓</button>
+              disabled={!!hireNeedsNote(name, currentAgents)}
+              title={hireNeedsNote(name, currentAgents) || undefined}>HIRE ✓</button>
     </>
   ) : null;
 

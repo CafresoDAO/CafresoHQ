@@ -68,8 +68,19 @@ def main():
     bare = strip_comments(src)
 
     # ── §1 the helper exists, is pure, and is module-level ──────────────
+    # #324 widened this helper: the roster now arrives as a SECOND argument
+    # so the same one sentence can also refuse a name somebody already
+    # answers to. The old assertion pinned the arity at exactly `(name)`,
+    # which was never what it was testing for — it was testing that the
+    # helper is module-level and closes over no component state. Pinning the
+    # arity ENCODED the gap: the only way to teach this door about the
+    # roster was to break this line. It is widened here, not weakened —
+    # `currentAgents` must be a declared parameter (a prop read from a
+    # closure would still be impure and still unliftable), and §2 below now
+    # additionally demands every call site actually pass it.
     check('one helper answers "why can HIRE ✓ not go through"',
-          re.search(r'^function hireNeedsNote\(name\)', bare, re.M) is not None,
+          re.search(r'^function hireNeedsNote\(name, currentAgents\)', bare, re.M)
+          is not None,
           'hireNeedsNote must be module-level and must not close over '
           'component state, or it cannot be driven here')
 
@@ -79,12 +90,14 @@ def main():
     check('the HIRE ✓ button is still there to be found', hire_btn is not None)
     btn = hire_btn.group(0) if hire_btn else ''
     check('HIRE ✓ goes dark while the note stands',
-          'disabled={!!hireNeedsNote(name)}' in btn,
+          'disabled={!!hireNeedsNote(name, currentAgents)}' in btn,
           'a live button is a promise it can do the thing: ' + btn[:200])
     check('…and carries the note as its tooltip',
-          'title={hireNeedsNote(name) || undefined}' in btn, btn[:200])
+          'title={hireNeedsNote(name, currentAgents) || undefined}' in btn,
+          btn[:200])
     check('…and the note is also VISIBLE, not hover-only',
-          re.search(r'className="hint"[\s\S]{0,120}hireNeedsNote\(name\)', bare)
+          re.search(r'className="hint"[\s\S]{0,120}'
+                    r'hireNeedsNote\(name, currentAgents\)', bare)
           is not None,
           'a tooltip alone is unreachable on a touch screen and invisible to '
           'anyone not hunting for it')
@@ -92,6 +105,12 @@ def main():
     # The bare guard is what the bug was. It may stay as a backstop, but the
     # handler must not be the ONLY thing standing between the click and
     # nothing happening — §2 above is what proves that.
+    # A call site that forgets the roster is a door that silently stops
+    # asking the #324 question, so no call site may drop it.
+    check('every reader of the note hands it the roster',
+          re.search(r'hireNeedsNote\((?!name, currentAgents\))', bare) is None,
+          'a hireNeedsNote(name) call site cannot see who already works here')
+
     check('submit no longer opens with the anonymous name check',
           'if (!name.trim()) return;' not in bare,
           'the silent early return is back in modals/hire.jsx')
