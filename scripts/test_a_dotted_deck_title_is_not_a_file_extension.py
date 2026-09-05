@@ -61,55 +61,63 @@ def _rel(root: str, p: pathlib.Path) -> str:
 def resolver_checks(exporters) -> None:
     """The shared resolver, straight from exporters.py."""
     print('the shared resolver, straight from exporters.py')
-    with tempfile.TemporaryDirectory() as td:
-        exporters._vault_root = lambda: td
-        exporters._vault_hidden_part = lambda rel: None
+    exporters._vault_hidden_part = lambda rel: None
 
-        def resolve(rel, allowed=('.pptx',)):
+    def resolve(rel, allowed=('.pptx',)):
+        # #386 made _vault_binary_path CLAIM its answer on disk (a 0-byte
+        # placeholder via fs_routes.claim_name), not just look it up — so a
+        # fresh temp dir per call keeps this a test of the extension/dotted-
+        # title logic, not of #386's own (separately tested) collision
+        # behavior. Without this, resolving 'q3.pptx' then 'q3.PPTX' in the
+        # same dir now legitimately collide on a case-insensitive filesystem
+        # (both claim the same inode) and the second answer correctly bumps
+        # to a numbered variant — that's the fix working, not a regression.
+        with tempfile.TemporaryDirectory() as td:
+            exporters._vault_root = lambda: td
             try:
                 return _rel(td, exporters._vault_binary_path(None, rel, allowed))
             except ValueError as e:
                 return 'REFUSED: ' + str(e)
 
-        got = resolve('Slides/Q3 v1.2 plan')
-        check('a versioned title keeps its dots and gains a real extension',
-              got == 'Slides/Q3 v1.2 plan.pptx', got)
+    got = resolve('Slides/Q3 v1.2 plan')
+    check('a versioned title keeps its dots and gains a real extension',
+          got == 'Slides/Q3 v1.2 plan.pptx', got)
 
-        got = resolve('Decks/Meeting 2026.08.30')
-        check('a dated title is filed, not refused as ".30"',
-              got == 'Decks/Meeting 2026.08.30.pptx', got)
+    got = resolve('Decks/Meeting 2026.08.30')
+    check('a dated title is filed, not refused as ".30"',
+          got == 'Decks/Meeting 2026.08.30.pptx', got)
 
-        got = resolve('Docs/Q3 report v2', ('.docx',))
-        check('…and the same holds at the EXPORT_DOCX extension',
-              got == 'Docs/Q3 report v2.docx', got)
+    got = resolve('Docs/Q3 report v2', ('.docx',))
+    check('…and the same holds at the EXPORT_DOCX extension',
+          got == 'Docs/Q3 report v2.docx', got)
 
-        got = resolve('Research/Findings 1.5', ('.pdf',))
-        check('…and at the EXPORT_PDF one',
-              got == 'Research/Findings 1.5.pdf', got)
+    got = resolve('Research/Findings 1.5', ('.pdf',))
+    check('…and at the EXPORT_PDF one',
+          got == 'Research/Findings 1.5.pdf', got)
 
-        got = resolve('Media/Frame 2026.08.30', ('.png', '.jpg'))
-        check('…and the generators take the first allowed type',
-              got == 'Media/Frame 2026.08.30.png', got)
+    got = resolve('Media/Frame 2026.08.30', ('.png', '.jpg'))
+    check('…and the generators take the first allowed type',
+          got == 'Media/Frame 2026.08.30.png', got)
 
-        # Nothing about the ordinary cases may move.
-        got = resolve('Docs/report')
-        check('a plain bare title still gains the extension',
-              got == 'Docs/report.pptx', got)
-        got = resolve('Slides/q3.pptx')
-        check('a name that already carries the right extension is untouched',
-              got == 'Slides/q3.pptx', got)
-        got = resolve('Slides/q3.PPTX')
-        check('…in either case',
-              got == 'Slides/q3.PPTX', got)
-        got = resolve('Notes/deck.7z')
-        check('a genuinely wrong extension is still refused out loud',
-              got.startswith('REFUSED:') and '.7z' in got, got)
-        got = resolve('Notes/deck.docx')
-        check('…including a neighbouring export format',
-              got.startswith('REFUSED:') and '.docx' in got, got)
-        got = resolve('v1.2/notes/deck')
-        check('a dotted FOLDER never counted and still does not',
-              got == 'v1.2/notes/deck.pptx', got)
+    # Nothing about the ordinary cases may move.
+    got = resolve('Docs/report')
+    check('a plain bare title still gains the extension',
+          got == 'Docs/report.pptx', got)
+    got = resolve('Slides/q3.pptx')
+    check('a name that already carries the right extension is untouched',
+          got == 'Slides/q3.pptx', got)
+    got = resolve('Slides/q3.PPTX')
+    check('…in either case',
+          got == 'Slides/q3.PPTX', got)
+    got = resolve('Notes/deck.7z')
+    check('a genuinely wrong extension is still refused out loud',
+          got.startswith('REFUSED:') and '.7z' in got, got)
+    got = resolve('Notes/deck.docx')
+    check('…including a neighbouring export format',
+          got.startswith('REFUSED:') and '.docx' in got, got)
+    got = resolve('v1.2/notes/deck')
+    check('a dotted FOLDER never counted and still does not',
+          got == 'v1.2/notes/deck.pptx', got)
 
 
 def full_door_checks(exporters) -> None:
