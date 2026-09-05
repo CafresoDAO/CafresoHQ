@@ -3213,10 +3213,25 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             handle = drv.start_task(task)
         except _DriverError as e:
             return self._send_json(e.status, {'error': str(e)})
-        self.send_response(200)
-        self.send_header('content-type', 'text/event-stream')
-        self.send_header('cache-control', 'no-store')
-        self.end_headers()
+        # A client that is already gone by the time the subprocess has
+        # started (the browser aborted a slow /agent/stream — fetchStreamHead
+        # gives up after headMs and retries on ANY network fault, including
+        # this one) used to leave `handle` — and the real CLI subprocess
+        # behind it, already running with Bash/Edit/Write — with no reader
+        # and no reaper: the mid-stream dead-pipe path below only exists
+        # AFTER these three lines succeed, so a broken pipe here skipped the
+        # `finally: drv.cancel(handle)` entirely and the task ran to
+        # completion unsupervised while the retry started a SECOND, fully
+        # independent one — the exact same coding task run twice for real,
+        # not merely billed twice. See ## 387 in docs/OFFICE_AS_INTERFACE.md.
+        try:
+            self.send_response(200)
+            self.send_header('content-type', 'text/event-stream')
+            self.send_header('cache-control', 'no-store')
+            self.end_headers()
+        except (BrokenPipeError, ConnectionResetError):
+            drv.cancel(handle)
+            return
         try:
             for ev in drv.events(handle):
                 try:
@@ -3240,10 +3255,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             handle = drv.start_task(task)
         except _DriverError as e:
             return self._send_json(e.status, {'error': str(e)})
-        self.send_response(200)
-        self.send_header('content-type', 'text/event-stream')
-        self.send_header('cache-control', 'no-store')
-        self.end_headers()
+        # Same gap as /agent/stream's _agent_stream, and the same fix: a
+        # client already gone (headMs abort, tab closed) by the time the
+        # subprocess is up used to skip the finally below entirely — no
+        # reader, no reaper, and claude-client.jsx's fetchStreamHead retries
+        # this exact failure, so the abandoned CLI process and the retry's
+        # fresh one both ran the SAME task for real. ## 387.
+        try:
+            self.send_response(200)
+            self.send_header('content-type', 'text/event-stream')
+            self.send_header('cache-control', 'no-store')
+            self.end_headers()
+        except (BrokenPipeError, ConnectionResetError):
+            drv.cancel(handle)
+            return
 
         # A failed write means the client is GONE (tab closed, Stop pressed).
         # write_sse latches that here so the loop head below can break on the

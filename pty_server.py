@@ -960,10 +960,23 @@ def _terminal_stream(self):
         except Exception: pass
         return self._send_json(500, {'error': f'stdin: {e}'})
 
-    self.send_response(200)
-    self.send_header('content-type', 'text/event-stream')
-    self.send_header('cache-control', 'no-store')
-    self.end_headers()
+    # A client already gone (headMs abort, tab closed) by the time the CLI
+    # subprocess is up used to leave it running with nobody reading its
+    # stdout and nobody killing it — the read loop and its `finally: kill`
+    # (a few lines below) only exist once these headers land, so a broken
+    # pipe here fell through the gap entirely. claude-client.jsx's
+    # fetchStreamHead retries this exact failure, so the orphaned CLI
+    # process and the retry's fresh one both ran the SAME editor/terminal
+    # task for real — same shape as the /agent/stream family's ## 387 fix.
+    try:
+        self.send_response(200)
+        self.send_header('content-type', 'text/event-stream')
+        self.send_header('cache-control', 'no-store')
+        self.end_headers()
+    except (BrokenPipeError, ConnectionResetError):
+        try: proc.kill()
+        except Exception: pass
+        return
 
     def write_sse(obj):
         try:

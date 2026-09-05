@@ -40153,3 +40153,74 @@ receipt holder's own request). Restored (md5
 `1472ba71943d8fcb1ce3d2b96496c23d`), green again on two repeated runs.
 
 No `.jsx`/`.js`/`.css` touched — no build required.
+
+## 387. a client that left before "here it comes" left the coworker running alone
+
+**The lead.** This hunt went looking for the OTHER retry-shaped bug: not two
+writers racing (closed six times over `#337`–`#386`), but one caller's retry
+firing without checking whether its own first attempt already went through.
+Night Shift's own retries (`llm_call`'s 429/5xx backoff, `#384`'s due-fire
+guard) checked out clean — every one of them retries a plain text completion
+with no side effect until the CALLER acts on the reply, so a retry there
+replaces a failed attempt rather than duplicating a landed one.
+`resendMessage`'s own one-live-child double-send guard was already closed. The real gap was one door over, in the three routes that
+hand a browser tab a REAL coding agent: `/agent/stream`, the
+`/claudecode/stream` · `/cafresohq/stream` · `/codex/stream` trio (one
+shared function, `_agent_stream_legacy`), and `/terminal/stream`.
+
+**The bug.** All three do the same three things in the same order: spawn the
+real CLI subprocess (`claude`/`codex`/`gemini`, already holding Bash/Edit/
+Write on the caller's own directories) via `Popen`, THEN
+`self.send_response(200)` / `send_header` / `end_headers`, and only THEN
+enter the try/finally that reads the driver's events and reaps the process
+on the way out. The mid-stream half of this was already fixed — a broken
+write inside that loop is caught, latched, and reaches `finally:
+drv.cancel(handle)` (the closed-tab fix a few entries back). Nothing
+protected the three lines BEFORE that loop starts. A client already gone by
+the time headers went out — claude-client.jsx's `fetchStreamHead` aborts a
+stream whose headers don't arrive within `headMs`, and by its own docstring
+retries on the resulting network fault, the identical policy `night_runner`'s
+`llm_call` cites for its own retries, "keep the two in step" — turned that
+broken pipe into an uncaught exception that skipped the reaper entirely: the
+real subprocess kept running, unread by anyone and unkillable by anything,
+while the retry spawned a second, fully independent one. Two live CLI agents
+on the same task, each doing the real thing — not double-billed tokens, a
+duplicated deliverable: two edits, two commits, whatever the model decided
+to do, done twice.
+
+Reproduced by driving the real `_agent_stream`, `_agent_stream_legacy` and
+pty_server's `_terminal_stream` directly against a client stand-in whose
+`send_response` raises `BrokenPipeError` (exactly how a peer that already
+sent an RST presents) and a driver/subprocess that is a REAL child process —
+not a mock — writing a `started:` marker the instant it's up and a
+`finished:` marker after a short sleep, standing in for a CLI run already
+doing its work by the time anyone could stop it. Pre-fix, all three calls
+raised straight out with the reaper never invoked; the child was left to run
+its full course exactly as an independent retry's own child would.
+
+**The fix.** The header-sending trio in all three functions now sits inside
+its own `try`, catching `(BrokenPipeError, ConnectionResetError)` and
+cancelling the task — `drv.cancel(handle)` for the two driver-based routes,
+`proc.kill()` for `_terminal_stream`'s raw `Popen` — before returning. This
+doesn't retroactively undo whatever the subprocess did in the instant
+between `Popen` and the failed write (nothing can), but it closes the
+exposure window from "however long the task takes to finish unsupervised"
+down to essentially nothing, the same trade every other reaper in this file
+already makes.
+
+**Fire-tested.** New
+`scripts/test_a_client_gone_before_headers_does_not_leave_the_task_running.py`:
+a structural check that all three functions guard the header write; three
+repeated rounds driving each of the three functions with a client already
+gone, checking every round that the call itself doesn't propagate the broken
+pipe, that the reaper actually ran, and that the real child process was
+killed before its sleep elapsed rather than reaching its `finished:` marker;
+plus a plain healthy call with no disconnect, confirming the fix changes
+nothing about an ordinary request. Reverted the fix in place (md5
+`c7ff2ebb98c1461f7f8c818c626a51a9` serve.py /
+`c6d3eeeb4fa6b2b9ce438c6248fa4ce1` pty_server.py) — 18 checks failed on all
+three repeated runs, every one of them the reaper never running and the call
+raising straight out. Restored (md5 `c291af72e4d4e3ead9e603bc36b11d96` /
+`2293941c5024ef6581fb1684d6524105`), green again on two repeated runs.
+
+No `.jsx`/`.js`/`.css` touched — no build required.
