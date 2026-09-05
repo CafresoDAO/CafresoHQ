@@ -752,7 +752,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
        is the guard that has to tell them apart. */
     const ceoVisits = [];
     const onTool = (ev) => {
-      if (ev.echo) ceoVisits.push({ name: ev.name, arg: ev.arg, echo: ev.echo, failed: !!ev.failed });
+      if (ev.echo) ceoVisits.push({ name: ev.name, arg: ev.arg, echo: ev.echo, failed: !!ev.failed, outcome: ev.outcome || '' });
       if (ev.phase === 'dm') ceoDms.push({ to: ev.arg, body: ev.body });
       else if (ev.phase === 'handoff') ceoHandoff = { to: ev.arg, body: ev.body };
       /* The visit rides on the message, not in its text — see floor.jsx.
@@ -1072,7 +1072,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
                 await HQ.ceoStream(synthPrompt, synthFlush, { agents, signal: controller.signal,
                      onUsage: u => onCeoUsage && onCeoUsage(u),
                      onTool: ev => {
-                       if (ev.echo) synthVisits.push({ name: ev.name, arg: ev.arg, echo: ev.echo, failed: !!ev.failed });
+                       if (ev.echo) synthVisits.push({ name: ev.name, arg: ev.arg, echo: ev.echo, failed: !!ev.failed, outcome: ev.outcome || '' });
                        if (ev.phase === 'done') attachVisit(setChat, synthId, ev);
                      },
                      onHint: synthFlush.note });

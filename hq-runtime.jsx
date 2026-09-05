@@ -2331,7 +2331,14 @@ const TOOL_REGISTRY = {
       '  When you have an HQ wallet, published pages automatically include a tip jar paying into it —\n' +
       '  append " : tip=off" to publish without one (e.g. [PUBLISH_SITE: site/dist : tip=off]).',
     docShort: 'Ask the boss to publish a built site (one stamp; tip jar rides along unless tip=off).',
-    run: async (arg) => {
+    /* `ctx` for `meta`, same reason as WALLET_SEND below. The PUBLISH row in
+       VISIT_WORDS already reads "Asked to publish" rather than "Published",
+       so this tool's SUCCESS is captioned honestly — but a dispatch that
+       threw is not a request that was made, and with no flag it was filed as
+       one. The boss then waits for a stamp on an approval card that was
+       never queued. */
+    run: async (arg, ctx) => {
+      const meta = (ctx && ctx.meta) || {};
       const raw = String(arg || '').replace(/\s*:\s*tip\s*=\s*(on|off)\s*$/i, '').trim();
       try {
         window.dispatchEvent(new CustomEvent('cafresohq:publishRequest', {
@@ -2341,7 +2348,7 @@ const TOOL_REGISTRY = {
              approval card falls back on its own. */
           detail: { agentId: null, agentName: null, path: raw, tip: false },
         }));
-      } catch (e) { return `Couldn't queue that publish — ${e && e.message || e}`; }
+      } catch (e) { meta.failed = true; return `Couldn't queue that publish — ${e && e.message || e}`; }
       return `Asked the boss to publish "${raw}" — waiting for the stamp. Nothing is public yet.`;
     },
   },
@@ -3002,13 +3009,23 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
     });
     out.push({
       ...TOOL_REGISTRY.memory_read,
-      run: async (rel) => {
+      /* `ctx` for `meta`. This handler CATCHES the 404 and answers normally,
+         which is right for the coworker — it needs the sentence to go and
+         list its memory instead — and was wrong for the boss, because
+         swallowing the throw also swallowed the only signal the runtime had.
+         The caption read "📁 Opened work/plans.md" over "(no memory saved at
+         work/plans.md)": verbatim the "Opened ./site" / "Not a directory:
+         ./site" shape `meta.failed` was built for, just routed around it.
+         An empty LIST is a real answer; a read of a file that isn't there is
+         not a read. */
+      run: async (rel, ctx) => {
         try {
           const text = await CafresoHQClient.vaultRead(scope(rel));
           return text.length > 4000 ? text.slice(0, 4000) + '\n\n…(truncated)' : text;
         } catch (e) {
           if (String(e.message || '').includes('404') || String(e.message || '').toLowerCase().includes('not found')) {
             // Same two-reader problem as memory_list above.
+            if (ctx && ctx.meta) ctx.meta.failed = true;
             return `(no memory saved at "${rel}" — list your memory to see what is there)`;
           }
           throw e;
@@ -3060,7 +3077,36 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
     });
     out.push({
       ...TOOL_REGISTRY.wallet_send,
-      run: async (arg) => {
+      /* `ctx` — and the ONLY reason it is here is `meta`.
+
+         This handler answers every one of its six statuses with an ordinary
+         string and no exception, which is precisely the case `meta.failed`
+         was invented for ("Did it actually work? Not the same question as
+         'did it return'"). Without it the runtime read "it returned" as "it
+         worked" and stamped the past tense over all six. A send the boss had
+         just DECLINED was captioned, in the office's own voice, one line
+         above its own contradiction:
+
+           💸 Sent 0.05 ICP → aaaaa-bbbbb-ccccc-ddddd-cai
+           The boss declined the 0.05 ICP send to aaaaa-…
+
+         — on the desk bubble, in the activity feed, and in the filed
+         delivery note, the two of which outlive the chat and are the only
+         places anyone looks before deciding whether to send it again.
+
+         `meta.outcome` carries the half `failed` cannot: WHY it did not
+         happen, in the three flavours that change what the boss should do
+         next. Anything not spelled out here reads as a plain failure, which
+         is the direction that claims less. */
+      run: async (arg, ctx) => {
+        const meta = (ctx && ctx.meta) || {};
+        /* One place where a not-sent send is marked, so a status added later
+           cannot be routed to the caption and forget the flag. */
+        const notSent = (outcome, text) => {
+          meta.failed = true;
+          if (outcome) meta.outcome = outcome;
+          return text;
+        };
         // <token> <amount> <to-principal> : <memo>
         const [mainPart, ...memoParts] = String(arg || '').split(':');
         const memo = memoParts.join(':').trim();
@@ -3071,15 +3117,26 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
            that vocabulary on the floor and the coworker already has the form
            in its system prompt — so name what is MISSING instead, which is
            the part they actually got wrong. */
-        if (bits.length < 3) return 'That send was incomplete — it needs a token, an amount and a destination, in that order. Nothing was sent.';
+        if (bits.length < 3) return notSent('', 'That send was incomplete — it needs a token, an amount and a destination, in that order. Nothing was sent.');
         const [token, amount, to] = bits;
         const res = await CafresoHQChain.wallet.send(walletAgentId, token, amount, to, memo);
         switch (res.status) {
+          /* The only status that may keep the past tense. */
           case 'ok': return `Sent ${amount} ${token} → ${to} (block ${res.block}).`;
-          case 'needsApproval': return `Awaiting the boss's approval to send ${amount} ${token} → ${to} (${res.reason || 'over cap'}). Nothing sent yet.`;
-          case 'declined': return `The boss declined the ${amount} ${token} send to ${to}.`;
-          case 'paused': return `Wallet spending is paused — ask the boss to un-pause before sending.`;
-          case 'noWallet': return `You don't have a wallet yet — the boss can set one up in Settings → ICP Services.`;
+          /* LIVE, not finished. The stamp can still land, so the one thing
+             the boss must not be nudged into is sending it again — the payee
+             is then paid twice and the second one is as irreversible as the
+             first. "Couldn't send" would nudge exactly that way. */
+          case 'needsApproval': return notSent('pending', `Awaiting the boss's approval to send ${amount} ${token} → ${to} (${res.reason || 'over cap'}). Nothing sent yet.`);
+          /* A decision, not a breakage. Re-sending overrules the boss. */
+          case 'declined': return notSent('refused', `The boss declined the ${amount} ${token} send to ${to}.`);
+          /* Also a decision, just a standing one rather than one taken on
+             this send. Retrying cannot help until the boss un-pauses, which
+             is what `refused` tells them and `fail` does not. */
+          case 'paused': return notSent('refused', `Wallet spending is paused — ask the boss to un-pause before sending.`);
+          /* Neither decided nor pending — there is no wallet to send from.
+             A plain failure, and the body says what to do about it. */
+          case 'noWallet': return notSent('', `You don't have a wallet yet — the boss can set one up in Settings → ICP Services.`);
           /* Attributed, not classified. snagCause read "insufficient funds"
              as "that brain's account is out of credit — top it up" — an AI
              billing sentence for a TOKEN LEDGER failure, which is the worst
@@ -3088,8 +3145,13 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
              Also deliberately does not add "nothing was sent": a failed send
              is not proof the ledger was untouched, and this office does not
              guess about money. */
-          case 'error': return `That send didn't go through — the ledger said: "${res.error}"`;
-          default: return `Send result: ${JSON.stringify(res)}`;
+          case 'error': return notSent('', `That send didn't go through — the ledger said: "${res.error}"`);
+          /* A status this office has never heard of is not a receipt. It
+             gets the flag but no outcome: the office does not know which of
+             the three this is, and inventing one would be the same mistake
+             as "Sent", one size smaller. What it does know is that it cannot
+             say the money arrived, so it does not. */
+          default: return notSent('', `Send result: ${JSON.stringify(res)}`);
         }
       },
     });
@@ -3107,17 +3169,22 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
     const pubAgentName = String(agent.name || 'a coworker');
     out.push({
       ...TOOL_REGISTRY.publish_site,
-      run: async (arg) => {
+      /* The per-agent twin of the registry entry above, and it carried the
+         identical defect — a fix that lands on one of these two and not the
+         other is worth nothing, because this is the copy every real coworker
+         actually runs. */
+      run: async (arg, ctx) => {
+        const meta = (ctx && ctx.meta) || {};
         let raw = String(arg || '').trim();
         let tip = icpWalletEnabled();
         const flag = /\s*:\s*tip\s*=\s*(on|off)\s*$/i.exec(raw);
         if (flag) { tip = flag[1].toLowerCase() === 'on' && icpWalletEnabled(); raw = raw.slice(0, flag.index).trim(); }
-        if (!raw) return 'PUBLISH_SITE needs a folder or index.html path — nothing queued.';
+        if (!raw) { meta.failed = true; return 'PUBLISH_SITE needs a folder or index.html path — nothing queued.'; }
         try {
           window.dispatchEvent(new CustomEvent('cafresohq:publishRequest', {
             detail: { agentId: pubAgentId, agentName: pubAgentName, path: raw, tip },
           }));
-        } catch (e) { return `Couldn't queue that publish — ${e && e.message || e}`; }
+        } catch (e) { meta.failed = true; return `Couldn't queue that publish — ${e && e.message || e}`; }
         return `Asked the boss to publish "${raw}" — waiting for the stamp. Nothing is public yet.`;
       },
     });
@@ -4241,8 +4308,11 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
          differ from `call.arg` (the marker's own text) when the model left
          the extension off and the server appended it. Every other tool
          leaves `meta.filedAs` unset, so this is a no-op for them. */
+      /* `outcome` rides alongside `failed`, never instead of it: it is the
+         optional second half of a failure, and a tool that only knows
+         whether it worked leaves it empty and keeps the words it had. */
       onTool({ phase: 'done', name: call.tool.name, arg: (meta.filedAs || call.arg), result,
-               failed: !!meta.failed,
+               failed: !!meta.failed, outcome: meta.outcome || '',
                echo: `\n\n${toolEchoHead(call.tool.name, call.arg)}\n${result}\n\n` });
     }
 
@@ -4619,8 +4689,9 @@ FILE-DELIVERY RULE: There is no Library wired up this session, so there is nowhe
     if (onTool) {
       /* `meta.filedAs || call.arg` — see the note on the sibling emission
          above (and the comment above export_pptx/docx/pdf in TOOLS). */
+      /* `outcome` — see the note on the sibling emission above. */
       onTool({ phase: 'done', name: call.tool.name, arg: (meta.filedAs || call.arg), result,
-               failed: !!meta.failed, cwd,
+               failed: !!meta.failed, outcome: meta.outcome || '', cwd,
                echo: `\n\n${toolEchoHead(call.tool.name, call.arg)}\n${result}\n\n` });
     }
 

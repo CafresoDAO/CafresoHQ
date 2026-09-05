@@ -110,8 +110,19 @@ const VISIT_WORDS = [
      `fail` matters as much as `past` here: a send that was refused must not
      read as a send that went through. Ahead of the noun rows so a future
      FILE_SEND is a send first; nothing else in the registry contains any of
-     these words (WALLET_BALANCE stays an honest "Checked"). */
-  [/SEND|TRANSFER|PAYOUT/,       { now: 'sending',       past: 'Sent',      fail: "Couldn't send",     icon: '💸' }],
+     these words (WALLET_BALANCE stays an honest "Checked").
+
+     `refused` and `pending` are this row's own two extra tenses, and they
+     exist because "not sent" is three different facts to whoever has to
+     decide what to do next. A send the boss DECLINED is finished business —
+     sending it again means overruling them. A send waiting on their stamp
+     is live and must not be re-issued, or the payee gets paid twice when
+     the stamp lands. A send that broke on the ledger may be worth another
+     attempt. Collapsing all three into "Couldn't send" is honest about the
+     money and useless about the next move; only WALLET_SEND can currently
+     tell them apart, so only WALLET_SEND spells them out. */
+  [/SEND|TRANSFER|PAYOUT/,       { now: 'sending',       past: 'Sent',      fail: "Couldn't send",     icon: '💸',
+                                   refused: 'Refused, so did not send', pending: 'Asked the boss to send' }],
   [/EXPORT|GENERATE/,            { now: 'making',        past: 'Made',      fail: "Couldn't make",     icon: '🖨' }],
   [/WRITE|APPEND|SAVE|NEW|CREATE/, { now: 'saving',      past: 'Saved',     fail: "Couldn't save",     icon: '📝' }],
   [/WEB|HTTP|FETCH|URL|BROWSE/,  { now: 'reading',       past: 'Read',      fail: "Couldn't read",     icon: '🌐' }],
@@ -119,11 +130,29 @@ const VISIT_WORDS = [
 ];
 /* Anything we don't recognise still gets an ACTION, never the tool's name.
    "Checked X" claims less than a wrong-but-confident verb would. */
-const VISIT_DEFAULT = { now: 'checking', past: 'Checked', fail: "Couldn't check", icon: '🗒' };
+const VISIT_DEFAULT = { now: 'checking', past: 'Checked', fail: "Couldn't check", icon: '🗒',
+                        refused: 'Was refused, so did not', pending: 'Asked the boss about' };
 /* One icon for every failed trip, whatever the prop. The verb is the honest
    part, but a boss skims icons first, and six different icons for six ways
    of not working is six chances to miss that nothing happened. */
 const VISIT_FAIL_ICON = '⚠';
+/* The two exceptions to that rule, and they earn it: neither is a thing
+   that broke. A refusal is a decision, and a wait is not over yet — ⚠ over
+   the second one would read as an outcome when there isn't one. Both still
+   fall on the not-a-success side of the icon, which is the bit that matters
+   at skim distance. */
+const VISIT_OUTCOME_ICON = { refused: '🚫', pending: '⏳' };
+
+/* Which of the tenses above a finished trip should be told in. A tool that
+   only knows whether it worked keeps the two it always had; a tool that
+   knows more says so on `meta.outcome` and gets the words for it. Unknown
+   outcomes read as a plain failure rather than as a success — a caption the
+   office cannot justify must claim less, never more. */
+function visitTense(ev) {
+  if (!ev || !ev.failed) return 'past';
+  const o = String(ev.outcome || '');
+  return (o === 'refused' || o === 'pending') ? o : 'fail';
+}
 
 function visitWords(name) {
   const n = String(name || '').toUpperCase();
@@ -176,18 +205,24 @@ function visitWhere(name) {
 }
 
 /* The one-liner each surface composes from. `tense` is 'now' for a live
-   bubble, 'past' for a log line or a filed note. Returns null when there's
-   no subject to name — a visit with no argument has nothing honest to say
-   beyond the walk the sprite is already doing. */
+   bubble, 'past' for a log line or a filed note, and 'fail' / 'refused' /
+   'pending' for the three ways a trip can end without having happened.
+   Returns null when there's no subject to name — a visit with no argument
+   has nothing honest to say beyond the walk the sprite is already doing. */
 function visitLine(name, arg, tense, cap) {
   const subject = visitSubject(arg, cap);
   if (!subject) return null;
   const w = visitWords(name);
-  const verb = tense === 'now' ? w.now : tense === 'fail' ? w.fail : w.past;
-  /* Not on a failed trip. "Couldn't save x in their notes" reads as a
-     place the attempt got to and a save that then failed there; the honest
-     shape for a trip that did not happen is the one without a destination. */
-  const where = tense === 'fail' ? '' : visitWhere(name);
+  /* A row that never spelled out the newer tenses borrows the default's
+     words rather than falling back to `past`: a missing entry must not
+     turn a refusal into "Sent". */
+  const verb = tense === 'now' ? w.now
+    : tense === 'past' ? w.past
+    : (w[tense] || VISIT_DEFAULT[tense] || w.fail);
+  /* Not on a trip that didn't happen. "Couldn't save x in their notes"
+     reads as a place the attempt got to and a save that then failed there;
+     the honest shape is the one without a destination. */
+  const where = (tense === 'now' || tense === 'past') ? visitWhere(name) : '';
   return `${verb} ${subject}${where ? ' ' + where : ''}`;
 }
 
@@ -202,9 +237,12 @@ function visitLine(name, arg, tense, cap) {
    the same words, in the same voice, for the same trip. */
 function visitPlace(name, tense) {
   const prop = toolProp(name);
-  /* A failed trip must not borrow the placard: "the bookshelf" reads as a
-     place they got to. Say plainly that they didn't. */
-  if (tense === 'fail') return "couldn't do that";
+  /* A trip that did not happen must not borrow the placard: "the bookshelf"
+     reads as a place they got to. Say plainly that they didn't. Every tense
+     except the two that describe a trip that ARRIVED lands here — an
+     unlisted one must fall on the honest side, or a `refused` with no
+     argument walks the boss back to the placard. */
+  if (tense !== 'now' && tense !== 'past') return "couldn't do that";
   if (prop && PROP_PLACARD[prop]) return PROP_PLACARD[prop];
   return tense === 'now' ? 'looking something up' : 'looked something up';
 }
@@ -216,7 +254,7 @@ const VISIT_RESULT_CAP = 600;
 
 function toVisit(ev) {
   if (!ev || !ev.name) return null;
-  const tense = ev.failed ? 'fail' : 'past';
+  const tense = visitTense(ev);
   const head = visitLine(ev.name, ev.arg, tense, 60) || visitPlace(ev.name, tense);
   const raw = String(ev.result === undefined || ev.result === null ? '' : ev.result);
   const body = raw.length > VISIT_RESULT_CAP
@@ -233,8 +271,14 @@ function toVisit(ev) {
      uncapped, unlike `body` — an arg is a path or a query, short by
      nature, and a path cut short is a different path. */
   return {
-    icon: ev.failed ? VISIT_FAIL_ICON : visitWords(ev.name).icon,
+    icon: ev.failed ? (VISIT_OUTCOME_ICON[tense] || VISIT_FAIL_ICON) : visitWords(ev.name).icon,
     head, body: body.trim(), at: ev.at || null, failed: !!ev.failed,
+    /* Carried, not just consumed. `failed` alone was enough while there was
+       one way to not-work; now the FILED note re-derives its own tense from
+       this record long after the event is gone, and dropping the outcome
+       here would leave that surface — the one that outlives everything —
+       reading "Couldn't send" over a send still waiting for a stamp. */
+    outcome: ev.outcome ? String(ev.outcome) : '',
     name: ev.name, arg: ev.arg === undefined || ev.arg === null ? '' : String(ev.arg).trim(),
   };
 }
@@ -837,7 +881,7 @@ function uploadReceipt(res, opts) {
 }
 
 function toolActivity(agent, ev, extra) {
-  const tense = ev && ev.failed ? 'fail' : 'past';
+  const tense = visitTense(ev);
   const line = visitLine(ev.name, ev.arg, tense, 40) || visitPlace(ev.name, tense);
   return {
     agentId: agent && agent.id, agentName: agent && agent.name,
@@ -847,4 +891,4 @@ function toolActivity(agent, ev, extra) {
   };
 }
 
-export { attachVisit, chainHoldLine, cleanCause, deskKit, doneLine, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, obsidianCause, officeCause, repoCause, shortfallLine, snagCause, snagOpener, snagSentence, stripOfficeVoice, toolActivity, toolProp, toVisit, uploadReceipt, visitLine, visitPlace, visitSubject, visitWhere, visitWords };
+export { attachVisit, chainHoldLine, cleanCause, deskKit, doneLine, FLOOR_EVENT, floorEmit, floorOn, PROP_PLACARD, obsidianCause, officeCause, repoCause, shortfallLine, snagCause, snagOpener, snagSentence, stripOfficeVoice, toolActivity, toolProp, toVisit, uploadReceipt, visitLine, visitPlace, visitSubject, visitTense, visitWhere, visitWords };

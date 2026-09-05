@@ -35691,3 +35691,170 @@ touches). This change covers `serve.py`, `.env.example`, one new test, one
 relocated decoy and this entry; `src/cafresohq_state/main.mo` was never staged
 or edited, no II or `derivationOrigin` value was read or written, and no
 dfx/IC action of any kind was run.
+
+---
+
+## 316. the boss declined the payment and the office filed it as paid
+
+**The wreck.** A coworker with an HQ wallet is asked to settle a 0.05 ICP tip.
+The amount is over its cap, so the bridge comes back `needsApproval` and puts a
+card in front of the boss. The boss reads it and presses Decline. The bridge
+comes back `declined`. Nothing moves. The office writes, in its own voice, on
+the desk bubble:
+
+```
+💸 Sent 0.05 ICP → aaaaa-bbbbb-ccccc-ddddd-cai : tip for the design review
+The boss declined the 0.05 ICP send to aaaaa-bbbbb-ccccc-ddddd-cai
+```
+
+Two lines, one event, opposite claims, and the heading is the half a boss
+skims. The activity feed files `sent icp 0.05 aaaaa-…` and the delivery note
+files `- Sent ICP 0.05 aaaaa-…`, which are the two surfaces that outlive the
+chat and the only ones anyone consults weeks later before deciding whether to
+send it again. So the boss's own refusal is recorded as a payment they made,
+and the payee — who was never paid — appears in the books as settled.
+
+The same caption, verbatim, sat over a send still waiting for that stamp, over
+a send the ledger threw out on insufficient funds, over a send blocked by a
+paused wallet, and over a malformed call that never reached the bridge at all.
+Five ways of not paying somebody, one sentence saying they were paid.
+
+**Why `#276` did not catch it.** It did the vocabulary half and did it
+correctly. `VISIT_WORDS` gained a `/SEND|TRANSFER|PAYOUT/` row with a `fail`
+tense whose comment says exactly what this entry is about — "a send that was
+refused must not read as a send that went through" — and every surface reads
+that one table, so every surface was ready. Nothing in the app could select it.
+
+`wallet_send`'s handler was declared `run: async (arg) => {`. Two parameters
+short. The runtime calls every tool as `run(arg, { signal, meta }, body)` and
+then reads `meta.failed`, because — in the words of the note sitting directly
+above that call — "Did it actually work? Not the same question as 'did it
+return'." This handler answers all six of its bridge statuses with an ordinary
+string and never raises, which is precisely the case that mechanism exists for,
+and having never taken `ctx` it had no `meta` to write to. The runtime read "it
+returned" as "it worked" and stamped the past tense over all six. A tense the
+office owns and cannot reach is the same as a tense it does not have.
+
+**The fix, and why "not sent" needed three words rather than one.** The handler
+takes `ctx` and marks every not-sent path through one `notSent(outcome, text)`
+helper, so a status added later cannot be routed to a caption and forget the
+flag. `meta.outcome` rides beside `meta.failed` carrying the half `failed`
+cannot, because "not sent" is three different instructions to whoever decides
+what happens next:
+
+- `declined` and `paused` → **refused**, `🚫`, "Refused, so did not send". A
+  decision, not a breakage. Re-sending overrules the boss; a paused wallet is
+  the same decision taken as a standing one, and retrying cannot help until
+  they un-pause.
+- `needsApproval` → **pending**, `⏳`, "Asked the boss to send". LIVE. The stamp
+  can still land, so this is the one that must not be nudged toward a retry:
+  captioned "Couldn't send", it invites a second send, and when the stamp lands
+  the payee is paid twice and the second transfer is as irreversible as the
+  first. This is the case where the *old* fix's own `fail` tense would have
+  been wrong in the opposite direction.
+- `error`, `noWallet`, a malformed call, and any status this office has never
+  heard of → the plain `fail`, `⚠`, "Couldn't send". Possibly worth another
+  attempt. An unknown status gets the flag but no outcome: the office cannot
+  say the money arrived, and it cannot say which of the three this is either,
+  so it says the smaller thing. `ok` is the only status that keeps "Sent".
+
+`outcome` is then plumbed the whole way rather than consumed where it was
+born — both of the runtime's `done` emissions, `toVisit`, which now *stores* it
+on the visit record, the five `…Visits.push` sites in `app.jsx` and
+`ui/chat.jsx`, and `workingNotes` in `app/artifacts.jsx`, which re-derives its
+own tense long after the event is gone. That last one is the filed note, and it
+is the surface this bug hurt most. `visitPlace` was widened from `tense ===
+'fail'` to "anything but `now` and `past`", so an unlisted tense falls on the
+honest side instead of handing a refused trip the placard of a place it never
+reached.
+
+**The twins, which is this codebase's dominant bug class.** Three others in the
+same registry answered a failure with an ordinary string and no `ctx`. Both
+copies of `publish_site` — the registry entry and the per-agent bound one every
+real coworker actually runs — filed a `dispatchEvent` that threw as a request
+that was made, so the boss waited for a stamp on a card that was never queued;
+the bound copy did the same for an empty path. `memory_read` catches its own
+404 and answers normally, which is right for the coworker and swallowed the one
+signal the runtime had: `📁 Opened work/plans.md` above `(no memory saved at
+work/plans.md)`, which is verbatim the `Opened ./site` / `Not a directory:
+./site` shape `meta.failed` was built for, just routed around it. All four
+fixed here. The rest were checked and left alone on purpose: `memory_list`,
+`vault_search`, `search` and `wallet_balance` return *honest empties* — the
+list really did run and really is empty — and an empty answer is not a failure.
+`peer_journal`'s "No coworker named X" is a lookup that genuinely happened.
+`memory_write`, `memory_append` and `vault_read` throw, so the runtime's own
+`catch` already sets the flag. `toolEchoHead`'s hardcoded past tense was left
+as it is: the echo is no longer rendered anywhere, it survives only as the
+exact-match key `stripToolEcho` uses to remove legacy banners from old
+histories, and changing a removal key is churn with a regression attached.
+
+**The test.**
+`scripts/test_a_send_the_boss_refused_is_not_filed_as_money_that_moved.py`
+lifts the real handler verbatim out of `hq-runtime.jsx` — anchored on the
+registry spread that names the tool, so it cannot drift onto a sibling `run:` —
+and runs it under `node` against a stubbed bridge for all seven statuses
+including an invented one, then feeds whatever it actually set on `meta`
+through the real floor vocabulary and the real `workingNotes`. Nothing is
+paraphrased. It asserts the three headings are three different sentences, that
+the pending one is not the retry-inviting "Couldn't send", the icons, all three
+surfaces per status, the malformed call, the plumbing at every joint, and the
+four twins. Guards against the premise rotting: `WALLET_SEND` still exists and
+still settles on its own, `ok` still reads "Sent", the live bubble still reads
+"sending", and `WALLET_BALANCE` is still an honest "Checked". Its source greps
+strip comments first — the fix is documented in prose directly above the code
+it fixes, in the words of the bug, and would otherwise match the pattern the
+test is hunting for.
+
+**Four EXISTING tests were changed, and this needs saying out loud.** None was
+weakened, and none of them caught a real regression — all four pinned the
+*literal source text* of an expression this entry legitimately extended, and
+each assertion is now stricter than the one it replaces:
+
+- `test_failed_tools_arent_wins.py` pinned `const tense = ev.failed ? 'fail' :
+  'past';`. That ternary WAS the whole tense decision when a trip could only
+  have arrived or not; it cannot carry three answers, so it moved into
+  `visitTense`. The check is now in two parts — `toVisit` must read the shared
+  decision rather than hardcode one, **and** that decision must grant the past
+  tense only to a trip that did not fail — which is more than the old line
+  asserted. Its `visitPlace` pin moved from naming the one tense that meant
+  "did not arrive" to naming the only two that mean "did", so a tense added
+  later is refused the placard by default rather than handed it, the same
+  allowlist-over-exclusion reasoning as `#280`. Its icon pin gained the two new
+  marks while keeping the success icon on the `ev.failed` false branch.
+- `test_a_refused_page_was_not_read.py` pinned the same ternary in
+  `workingNotes`, and gained a second check that the filed note takes its tense
+  from the same import the live surfaces use, so the two cannot drift.
+- `test_floor.py` pins the visit's key set exactly, on purpose, "so a third
+  field cannot arrive unexamined". `outcome` arrived and was examined: it is
+  the office's own vocabulary word, never model text, and never re-enters a
+  prompt. The pin stays exact, with one more key in it.
+- `test_export_visit_reports_the_saved_path.py` anchors on `meta.filedAs ||
+  call.arg` and disambiguates the two `done` emissions by the presence of
+  `cwd`. Both anchors quoted the adjacent `failed:` text verbatim; both moved
+  with it. What they assert is untouched.
+
+Every one of these would have *banned the fix* rather than caught a bug in it.
+The four were re-run individually alongside `test_the_coworker_can_pick_it_up`
+(which owns the replay half of the visit shape) and `#276`'s own test before
+the suite.
+
+Fire-tested: copied the fixed `hq-runtime.jsx`, `app/floor.jsx` and
+`app/artifacts.jsx` to `/tmp`, reverted the handler signature and both tense
+reads in place with the editor (never `git checkout -- <file>`) — 34 of 68
+checks failed, exit 1, the failure detail reading back `Sent ICP 0.05 aaaaa-…`
+over `The boss declined the 0.05 ICP send`. Restored from the `/tmp` copies,
+confirmed all three byte-identical by `md5` (`bd40354265c5a51bc0acd998d802b614`,
+`3562fa6e2171dfa48a9f23da37149b9b`, `13ed9f6454cad7eb9471239bbd4f3b4f`),
+reran — 68 of 68 passed, exit 0.
+
+`npm run build` was run after the `.jsx` changes.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file
+a foreign session owns and this change never touches). This change covers
+`hq-runtime.jsx`, `app/floor.jsx`, `app/artifacts.jsx`, `app.jsx`,
+`ui/chat.jsx`, the one new test file and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any kind
+was run.

@@ -180,15 +180,22 @@ def main() -> int:
     # a few lines above the emission). Anchoring ON the fix itself
     # (`meta.filedAs || call.arg`) means a revert to bare `call.arg` makes
     # the anchor vanish — exactly the failure this test is for.
+    #
+    # `outcome: meta.outcome || ''` was added to both emissions by `#313`,
+    # which taught WALLET_SEND to say WHY a send did not happen (refused /
+    # pending / plain failure) instead of captioning all six of its bridge
+    # statuses "Sent". The anchors move with it, and nothing this test
+    # asserts changed: `meta.filedAs || call.arg` is still what is anchored
+    # on, and `cwd` is still the one token telling the two sites apart.
     site_no_cwd = extract_or_fail(
         "ceoStream's 'done' emission still prefers meta.filedAs over call.arg",
         _extract_on_tool_call, hq_src,
-        "arg: (meta.filedAs || call.arg), result,\n               failed: !!meta.failed,\n               echo:")
+        "arg: (meta.filedAs || call.arg), result,\n               failed: !!meta.failed, outcome: meta.outcome || '',\n               echo:")
     site_with_cwd = extract_or_fail(
         "agentStream's 'done' emission (the cwd-carrying sibling) still prefers "
         "meta.filedAs over call.arg",
         _extract_on_tool_call, hq_src,
-        "arg: (meta.filedAs || call.arg), result,\n               failed: !!meta.failed, cwd,\n               echo:")
+        "arg: (meta.filedAs || call.arg), result,\n               failed: !!meta.failed, outcome: meta.outcome || '', cwd,\n               echo:")
 
     if export_pdf_block is None or site_no_cwd is None or site_with_cwd is None:
         print()

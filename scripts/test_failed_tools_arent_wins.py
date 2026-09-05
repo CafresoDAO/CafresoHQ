@@ -168,14 +168,34 @@ check(
 )
 check('const VISIT_FAIL_ICON' in floor,
       "failed visits need their own icon — a boss skims icons before words.")
+# CHANGED by `#313`, and the assertion is stricter than the one it replaces,
+# not looser. It used to pin the literal `const tense = ev.failed ? 'fail' :
+# 'past';`, which was the whole of the tense decision at the time. `#313`
+# moved that decision into `visitTense(ev)` because WALLET_SEND can now
+# distinguish three ways of not-sending — a send the boss REFUSED, a send
+# PENDING their stamp (re-issuing it double-pays the payee), and a plain
+# failure — and one ternary cannot carry three answers. So the requirement
+# this check has always enforced is now enforced in two parts: toVisit reads
+# the shared decision rather than hardcoding one, AND that decision still
+# yields the past tense ONLY when nothing failed. Pinning the old ternary
+# would have banned the fix.
 check(
-    re.search(r"const tense = ev\.failed \? 'fail' : 'past';", floor),
-    "toVisit must pick its tense from ev.failed — this is the single line "
-    "that decides whether the office tells the truth about the trip.",
+    re.search(r"const tense = visitTense\(ev\);", floor),
+    "toVisit must pick its tense from the outcome, not assume the past one — "
+    "this is the single decision that says whether the office tells the "
+    "truth about the trip.",
 )
 check(
-    re.search(r"icon: ev\.failed \? VISIT_FAIL_ICON", floor),
-    "a failed visit must not wear the prop's success icon.",
+    re.search(r"function visitTense\(ev\) \{\s*if \(!ev \|\| !ev\.failed\) return 'past';", floor),
+    "...and that decision must grant the past tense ONLY to a trip that did "
+    "not fail. Everything else — including an outcome word this office has "
+    "never seen — has to claim less, never more.",
+)
+check(
+    re.search(r"icon: ev\.failed \? \(VISIT_OUTCOME_ICON\[tense\] \|\| VISIT_FAIL_ICON\)", floor),
+    "a failed visit must not wear the prop's success icon. (`#313`: a "
+    "refusal and a pending stamp get their own marks, but the success icon "
+    "stays on the `ev.failed` false branch, which is the bit that matters.)",
 )
 check(
     re.search(r"for \(const v of \[w\.past, w\.now, w\.fail\]\)", floor),
@@ -184,10 +204,15 @@ check(
     "render as the office reporting. A forged failure blames the tools for "
     "work they never declined to do.",
 )
+# Also widened by `#313`, in the strict direction: the guard used to name the
+# one tense that meant "did not arrive" and now names the only two that mean
+# "did". A tense added later is refused the placard by default instead of
+# being handed it by default, which is the same reasoning `#280` used to pick
+# an allowlist over a one-off exclusion.
 check(
-    re.search(r"if \(tense === 'fail'\) return \"couldn't do that\";", floor),
-    "visitPlace must not hand a failed trip the prop placard — \"the "
-    "bookshelf\" reads as a place they got to.",
+    re.search(r"if \(tense !== 'now' && tense !== 'past'\) return \"couldn't do that\";", floor),
+    "visitPlace must not hand a trip that never arrived the prop placard — "
+    "\"the bookshelf\" reads as a place they got to.",
 )
 
 # ── 5. every surface that files a record must check it ──────────────────────

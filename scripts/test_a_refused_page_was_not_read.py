@@ -96,9 +96,22 @@ def main():
           f'{missing} — a site that drops it silently reverts the filed '
           'footer to claiming every refused page was read')
 
+    # CHANGED by `#313`, stricter rather than looser. This used to pin the
+    # literal `v.failed ? 'fail' : 'past'`, which was the whole tense
+    # decision when a trip could only have arrived or not. It can now also
+    # have been REFUSED by the boss or be PENDING their stamp — three facts
+    # that the filed note, read weeks later by someone deciding whether to
+    # send money again, must not collapse into one. `visitTense` is the same
+    # reading the desk bubble and the feed take, so the requirement is
+    # unchanged and now includes "and it agrees with the live surfaces".
+    # The old pattern would have banned that.
     check('the footer picks its tense from the visit',
-          re.search(r"const tense = v\.failed \? 'fail' : 'past';", src),
+          re.search(r"const tense = visitTense\(v\);", src),
           "workingNotes asks for 'past' unconditionally again")
+    check('...from the same reading the live surfaces take',
+          re.search(r"import \{[^}]*visitTense[^}]*\} from '\./floor\.jsx';", src),
+          'a second copy of the tense rule here is how the filed record and '
+          'the desk bubble end up disagreeing about the same event')
     check('...and asks the shared phrasing table for both',
           re.search(r'visitLine\(v\.name, v\.arg, tense\) \|\| visitPlace\(v\.name, tense\)', src),
           'a hand-written "Couldn\'t read" here would drift from the verb '

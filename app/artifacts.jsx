@@ -1,5 +1,5 @@
 import { CafresoHQClient, VaultBridge } from '../claude-client.jsx';
-import { visitLine, visitPlace } from './floor.jsx';
+import { visitLine, visitPlace, visitTense } from './floor.jsx';
 
 /* ── Artifact landing (OFFICE_AS_INTERFACE §1 "out-tray → filing cabinet",
    §3 step 6) ──────────────────────────────────────────────────────────────
@@ -190,7 +190,15 @@ function workingNotes(visits) {
        telling the truth. The note four lines up says the filed note least of
        all should be the surface that forgets; it was forgetting the other
        half of the same fact. */
-    const tense = v.failed ? 'fail' : 'past';
+    /* Same argument one turn further on. `failed` split the record in two,
+       and two was one too few for money: a send the boss DECLINED, a send
+       still waiting on their stamp and a send the ledger threw out all filed
+       as "Couldn't send". This note is read weeks later by someone deciding
+       whether to send again, and those three answers are "no", "absolutely
+       not, they will be paid twice" and "probably". `visitTense` is the same
+       reading the live surfaces take, so the filed record and the desk
+       bubble cannot drift apart. */
+    const tense = visitTense(v);
     const line = visitLine(v.name, v.arg, tense) || visitPlace(v.name, tense);
     const row = `- ${line}`;
     if (seen.indexOf(row) === -1) seen.push(row);

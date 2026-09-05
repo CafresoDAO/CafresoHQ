@@ -468,8 +468,16 @@ console.log(JSON.stringify(R));
     # exact so a third field cannot arrive unexamined; see
     # scripts/test_the_coworker_can_pick_it_up.py, which owns the replay
     # and checks that only these two ever leave the message.
-    check('the visit shape is exactly {arg, at, body, failed, head, icon, name}',
-          out['tvKeys'] == 'arg,at,body,failed,head,icon,name', out['tvKeys'])
+    # `outcome` joined the shape in `#313`. `failed` alone was enough while
+    # there was one way for a trip not to work; WALLET_SEND can distinguish a
+    # send the boss REFUSED, a send PENDING their stamp and a send that broke,
+    # and the FILED note re-derives its own tense from this stored record long
+    # after the event is gone. This pin stays exact — it is here so a field
+    # cannot arrive unexamined, and this one was examined: it is the office's
+    # own vocabulary word, never model text, and it does not go back into a
+    # prompt.
+    check('the visit shape is exactly {arg, at, body, failed, head, icon, name, outcome}',
+          out['tvKeys'] == 'arg,at,body,failed,head,icon,name,outcome', out['tvKeys'])
     check('…and the two the transcript replays hold the real call',
           out['tvRecord'] == 'MEMORY_READ|facts/france.md',
           [out['tvRecord'], '— trimmed but never truncated: `body` is capped '
