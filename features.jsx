@@ -570,7 +570,33 @@ function MeetingRoom({ participants, agents, onClose, onRemove, onAdd, onUpdateA
      controller). Same shape as the StandupModal leak just above. */
   useEF(() => () => { if (abortRef.current) abortRef.current.abort(); }, []);
 
+  /* This room's one-live-round lock. `streaming` (React state) is what the
+     round below checks and what swaps SEND for ■ STOP, but a state value
+     only tells the truth about the round on the NEXT render — `moderate`
+     closes over THIS render's `streaming`, `input` and `msgs`, and the SEND
+     button carries no `disabled` and no debounce. A second call landing
+     before React commits `setStreaming(true)` (a fast double-click, or a
+     duplicate synthetic click off a double-tap — the exact shape `## 388`
+     fixed for the approval stamps, `## 389` for ↻ RE-SEND and `## 390` for
+     ▶ START on a task card) reads the same stale `streaming: false` and
+     runs the WHOLE round again: one `HQ.agentStream` per seat plus a
+     closing `HQ.ceoStream`, all of it real model spend, on top of a
+     clobbered `abortRef.current` that leaves ■ STOP able to reach only the
+     second controller. A ref is the only thing in this component that is
+     true the instant the round starts, so the claim lives here. */
+  const roundRunningRef = useRF(false);
+
   const moderate = async () => {
+    /* Claim SYNCHRONOUSLY, before `input`/`streaming` are read — see
+       roundRunningRef above. Released in the `finally` below on every
+       ending (finished, stopped, threw), so the next SEND is a legitimate
+       new round rather than a permanently dead button. */
+    if (roundRunningRef.current) return;
+    roundRunningRef.current = true;
+    try { await _moderate(); } finally { roundRunningRef.current = false; }
+  };
+
+  const _moderate = async () => {
     if (!input.trim() || streaming) return;
     const you = input.trim();
     setInput('');
@@ -980,7 +1006,33 @@ function StandupModal({ open, onClose, agents, onArchive, onHire }) {
   const isLocal = (a) => /^(lmstudio|ollama):/.test(a.model || '');
   const localCount = participating.filter(isLocal).length;
 
+  /* This modal's one-live-stand-up lock. `phase` is React state, and the
+     `phase === 'running' || phase === 'summarizing'` line below reads THIS
+     render's copy of it — `setPhase('running')` further down only tells the
+     truth on the NEXT render. Neither ▶ START (`{phase === 'idle' && …}`)
+     nor RE-RUN (`{phase === 'done' && …}`) carries a `disabled` for the run
+     or any debounce, so a second call landing before React commits sees the
+     same stale `phase` and runs the ENTIRE stand-up a second time: one
+     `HQ.agentStream` per participating coworker plus the closing
+     `HQ.ceoStream`, every one of them real model spend, for a boss who
+     clicked once. It also clobbers `abortRef.current`, so ■ STOP reaches
+     only the second run and the first keeps burning up to
+     STANDUP_TIMEOUT_MS per agent invisibly — the very leak the `open`
+     effect above exists to prevent. Same shape as `## 388`'s stamps,
+     `## 389`'s ↻ RE-SEND and `## 390`'s ▶ START on a task card; a ref is
+     the only thing here that is true the instant the run begins. */
+  const standupRunningRef = useRF(false);
+
   const start = async () => {
+    /* Claim SYNCHRONOUSLY, before `phase` or `participating` are read —
+       see standupRunningRef above. Released in the `finally` on every
+       ending (done, stopped, threw), so RE-RUN still works afterwards. */
+    if (standupRunningRef.current) return;
+    standupRunningRef.current = true;
+    try { await _start(); } finally { standupRunningRef.current = false; }
+  };
+
+  const _start = async () => {
     if (phase === 'running' || phase === 'summarizing') return;
     if (participating.length === 0) return;
     setArchived(false);

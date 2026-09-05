@@ -40474,3 +40474,219 @@ recorded) — 11 checks failed reliably across 3 repeated runs (9 structural,
 plus both the double- and triple-drop scenarios showing `agentStream`
 firing twice). Restored (byte-identical), green again on three repeated
 runs. `npm run build` succeeds.
+
+## 391. the whole stand-up ran twice, and the sweep that says so
+
+`## 388`, `## 389` and `## 390` each fixed one "has this already happened"
+guard that read a value which does not update synchronously — and each one
+discovered that the PREVIOUS fix's cited already-safe example was itself
+broken. Three for three. This hunt is the exhaustive sweep meant to close
+that class out rather than hand the next session a fourth deferred door: an
+inventory of EVERY such guard in `app.jsx`, `features.jsx`, `views/*.jsx`,
+`app/*.jsx` and `hq-runtime.jsx`, each one classified with its reason, plus
+a fix for the two biggest exposures it turned up.
+
+**The bug.** `StandupModal.start` (features.jsx) opens with
+`if (phase === 'running' || phase === 'summarizing') return;` and
+`MeetingRoom.moderate` with `if (!input.trim() || streaming) return;`.
+`phase` and `streaming` are React state. The `setPhase('running')` /
+`setStreaming(true)` that would flip them runs further down the SAME
+handler and only tells the truth on the next render — the handler closes
+over this render's copy, exactly the way `onApprove` closed over a stale
+`approvals` in `## 388` and `resendMessage` over a stale
+`messagesRef.current` in `## 389`. Neither button carries a `disabled` for
+the run or any debounce: the stand-up's is
+`{phase === 'idle' && <button onClick={start}>▶ START ({participating.length})}`
+with `{phase === 'done' && <button onClick={start}>RE-RUN}` beside it, and
+the meeting's is `{streaming ? ■ STOP : <button onClick={moderate}>SEND}`.
+A second call landing before React commits — a fast double-click, or a
+duplicate synthetic click off a double-tap, the same physical shape as
+`## 388`'s stamp and `## 390`'s ▶ START on a task card — reads the same
+stale guard value and runs the entire round a second time.
+
+What a round costs makes this the largest duplicate the series has found.
+The stand-up fans out one `HQ.agentStream` per participating coworker and
+then a closing `HQ.ceoStream`: on a five-person office one extra click is
+twelve real model calls instead of six, and RE-RUN is a button the boss
+clicks having just watched the last run finish. The meeting room does the
+same, one turn per seated attendee plus the CEO's synthesis. Both also
+assign `abortRef.current = controller` for their own run, so the second
+round clobbers the first's controller and ■ STOP can reach only one of
+them — the other keeps burning up to `STANDUP_TIMEOUT_MS` per agent with no
+UI left that can stop it, which is precisely the invisible-orphan leak the
+modal's own `open`-edge abort effect exists to prevent.
+
+Reproduced by lifting the REAL `start`/`_start` and `moderate`/`_moderate`
+function bodies out of features.jsx — brace-balanced text extraction of the
+actual committed source, not a re-implementation — via new
+`scripts/harness_standup_meeting_race.mjs`, and calling each twice (then
+three times) against one unchanged snapshot. Pre-fix, with three
+participants: `HQ.agentStream` fired 6 times and `HQ.ceoStream` twice for
+one click's worth of intent; 9 and 3 for a triple-click.
+
+**The fix.** A `standupRunningRef` / `roundRunningRef` — a live ref, the
+only thing in either component that is true the instant the round begins —
+is checked-and-claimed as the very FIRST thing the button's own handler
+does, synchronously, before `phase`/`streaming`/`input` are read at all.
+The round itself moves behind that claim into `_start` / `_moderate`, so
+the claim is released in a `finally` on every ending (finished, stopped,
+threw) rather than at each of the four terminal points, which is what keeps
+an unexpected throw from deadening the button permanently. Unlike
+`## 388`'s `approvedIdsRef`, `## 389`'s `resendingIdsRef` and `## 390`'s
+`startingTaskIdsRef` there is no id to key a `Set` on — those Sets held the
+id of the one thing being acted on, and a modal has exactly one live round —
+so the claim is the ref itself. The original state guards stay exactly
+where they are, demoted from the only line of defence to the second one.
+
+**Fire-tested.** New
+`scripts/test_a_second_click_on_start_does_not_run_the_meeting_twice.py`:
+round 1 — structural, confirming both refs exist, both claims sit with
+NOTHING executable before them, both release in a `finally`, and both
+original state guards survive. Rounds 2-4 — the real extracted bodies via
+the new harness: `agentStream` fires exactly 3 times (one per participant)
+and `ceoStream` exactly once for the double- and triple-click scenarios and
+for a plain single click, while a second round started AFTER the first one
+ended still runs in full — the release check, this fix's analogue of
+`## 390`'s "a genuinely different taskId still starts". Reverted in place
+(md5 `b65460803060802a246b3265f7453854`) — 18 checks failed reliably across
+3 repeated runs, 8 of them the real race counts. Restored (byte-identical),
+green again on three repeated runs. The thirteen existing tests that lift
+or pin `StandupModal` / `MeetingRoom` / `FocusMode` source
+(`test_standup_close_aborts_the_run`, `test_meeting_room_aborts_on_close`,
+`test_report_gate_race`, `test_a_stopped_round_leaves_no_stuck_typing_bubble`
+and the rest) were run standalone and all still pass — the wrapper is
+additive and none of their markers moved. `npm run build` succeeds.
+
+### The inventory
+
+Every guard in the five swept files that decides "has this already happened
+/ is this already in flight / has this already been handled" before a real
+side effect. This is the durable half of the hunt: the point is that a
+future session can tell this class was actually closed rather than merely
+quiet.
+
+**EXPOSED — fixed here.**
+
+- `StandupModal.start` (features.jsx) — guards on `phase`, React state,
+  flipped by a `setPhase` inside the same handler. Doubled: one
+  `agentStream` per coworker plus a `ceoStream`. Fixed above.
+- `MeetingRoom.moderate` (features.jsx) — guards on `streaming`, React
+  state, flipped by a `setStreaming` inside the same handler. Doubled: one
+  `agentStream` per seat plus a `ceoStream`. Fixed above.
+
+**EXPOSED — real, unfixed, named precisely so the next hunt does not have
+to re-derive them.** Each was read to the same standard as the two above;
+none was fixed here only because a hunt that fixes five things at once
+fire-tests none of them properly.
+
+- `ui/chat.jsx`'s `send` (line 357, `if (!text || streaming) return;`) —
+  the same shape on the single most-used surface in the product. A doubled
+  boss message is a doubled `ceoStream` plus a doubled fan-out to every
+  @mentioned coworker. Outside this hunt's stated five-file sweep, found
+  while chasing the `features.jsx` siblings; it is the largest remaining
+  one and should be the next fix.
+- `FocusMode.send` (features.jsx line ~790, `if (!text || streaming)
+  return;`) — third sibling of the two fixed here, same file, same shape.
+  Smaller blast radius (one `ceoStream`, one doubled chat message) which is
+  the only reason it is not fixed here.
+- `TerminalChat.send` (views/terminal.jsx line 450, `if (!text || busy ||
+  !project) return;`) — `busy` is React state; the Enter handler
+  (`if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }`)
+  adds no guard of its own. A doubled send is two real `claude`/`codex`/
+  `gemini` non-interactive turns on the user's own subscription, a
+  clobbered `ctrlRef.current`, and two writers racing the same `asstIdx`
+  slot in the transcript.
+- `publishOpen` (views/projects.jsx line ~584) — no in-flight guard AT
+  ALL. `setPubMsg({ kind: 'busy' })` is written and never read as a guard,
+  and 🚀 Publish carries no `disabled`. Two clicks are two `publishSite`
+  calls, unconditionally — this one does not even depend on React's commit
+  timing, which makes it the easiest of the four to prove and the only one
+  in the family that is a doubled PUBLISH rather than a doubled spend.
+- `submitGithub` (views/projects.jsx line ~1836) — `setBusy(true)` with no
+  busy guard above it. Two clicks are two `cloneRepo` calls and two
+  `onCommit`s, i.e. two project rows for one repo.
+- `onPin` (app.jsx line 1409, `pins.some(p => p.sourceId === …)`) — a
+  textbook `## 388` state-array dedup: the thing that would add the entry
+  goes through `setPins`. Listed for completeness and deliberately not
+  fixed: the duplicate is one extra corkboard row the boss can remove, no
+  dispatch, no spend, no deliverable.
+
+**SAFE — with the specific reason.**
+
+- `approvedIdsRef` / `resendingIdsRef` / `startingTaskIdsRef` (app.jsx) —
+  `## 388`/`## 389`/`## 390`'s own fixes. Re-read here: all three are
+  ref-backed `Set`s claimed as the first statement of their handler, before
+  any state or ref read. Correct.
+- `pendingHiresRef` (app.jsx 4025 → 4058), `pendingAssistantHiresRef`
+  (4107 → 4146), `pendingElevationRef` (4180 → 4185) — the check and the
+  `.add` are 33, 39 and 5 lines apart, which looks like a window, but every
+  statement between them is synchronous (regex parsing, `setChat`,
+  `continue`): no `await`, no callback boundary. A live ref claimed within
+  one synchronous run of the loop body. Correct.
+- `onDelegate`'s busy-desk door (app.jsx 4623,
+  `agentAbortersRef.current.has(a.id)`) — this is `## 390`'s shape and it
+  survives it. `agentAbortersRef` is written SYNCHRONOUSLY by
+  `beginAgentRun` (4671), and the whole path from the handler's entry to
+  that line is synchronous when the desk is idle, so a second click reads
+  a ref that is already true. Unlike `## 390`'s `chatCut` branch, the
+  dialog it then raises is accurate ("`X` is mid-reply right now. Hand this
+  off anyway? Their current answer will be stopped.") and the ▶-labelled
+  lie that made `## 390` dangerous is absent.
+- `dispatchToAgent`'s busy-desk WAIT (app.jsx 2662-2668) — same live ref,
+  read correctly. Noted but not in this class: two office-initiated notes
+  polling `while (agentAbortersRef.current.has(agent.id))` can both wake on
+  the same clear tick and both proceed, but that is two DISTINCT messages
+  where one gets evicted (lost work), not one message dispatched twice
+  (duplicated work). Different bug, different hunt.
+- The chain/wallet poll (app.jsx 4377) — `if (dead || polling ||
+  document.hidden) return; polling = true;` on a plain closure boolean,
+  written synchronously in the next statement. Textbook re-entrancy guard.
+  It is also what makes the render-assigned `payoutSeenRef` /
+  `walletDirtyRef` reads inside it safe: the poll is serialised against
+  itself, so no second pass ever reads the same stale snapshot.
+- The night-run XP guard (app.jsx 1352,
+  `experienceRef.current.some(e => e.taskId === r.id)`) — `experienceRef`
+  IS effect-assigned (`useEffectA(() => { experienceRef.current =
+  experience; }, [experience])`), which is the `## 389` smell exactly. Safe
+  for two independent reasons: it runs inside the serialised poll above,
+  and `xpRecord` enforces one-`done`-per-taskId append-only at WRITE time —
+  a pure reducer refusing the duplicate as it lands, which is a real guard
+  and not a `## 390`-style abort that arrives after the effect. Flagged
+  here because if either backstop is ever removed this becomes a live bug.
+- `_registryCache.inflight` (hq-runtime.jsx 4187) — module-scope promise
+  memoisation, assigned on the statement after the check with nothing
+  between. Correct, and it guards a read, not a spend.
+- `saveNote` (views/vault.jsx 869, `if (!note || !note.dirty) return;`) —
+  reads a render-assigned `openNoteRef` whose `dirty` is cleared through
+  `setOpenNote`, so a double-save is genuinely possible; it is a second
+  `vaultWrite` of the identical path with the identical body, which is a
+  no-op by construction. Skipped under the "harmless duplicate" rule.
+- `onDeleteTask`, `onCoffee`, `onStopMission`, `onResumeMission`,
+  `onClearMission`, `onStopAll` — re-verified against `## 389`'s sweep and
+  its conclusions still hold: each is either a `setState(prev => …)` over
+  an id that finds nothing the second time, or an abort of an
+  already-aborted run, which `agentAbortersRef` makes a no-op by
+  construction. No second real side effect.
+- `views/core.jsx`'s `AgentInbox` — its ✓ Approve / ✕ Reject / ↻ Retry
+  rows are mirrors that call `onApprove`/`onReject`/`onRetry` straight
+  through, so they inherit `## 388`'s and `## 389`'s refs. No guard of its
+  own to audit.
+- `app/*.jsx` — the entire directory (`floor`, `cast`, `artifacts`,
+  `commands`, `worklog`, `attention`, `patience`, `agents`, `approvals`,
+  `experience`, `storage`, `windows`) contains no `*Ref.current` read used
+  as an already-happening check at all. `fileDelivery`'s `pathIsFree` loop
+  in `app/artifacts.jsx` is a check-then-act across an `await`, but it is a
+  name-collision walk already covered by `## 386`, not a double-click
+  guard.
+- `hq-runtime.jsx` — one guard of this shape in the whole file, the
+  `_registryCache` above. The module holds tool definitions and pure
+  helpers, not handlers; there is nothing else here to expose.
+
+**The claim this closes.** Every guard above was read against the actual
+committed source, and the six EXPOSED ones are named with the line and the
+exact stale value each reads. What made `## 388`→`## 390` a chain was that
+each sweep asserted safety from a comment or from a downstream mechanism it
+had not driven; nothing in the SAFE list above rests on either. The four
+remaining EXPOSED doors are not deferred judgements — they are diagnosed
+bugs with the fix shape already established, waiting only for a hunt that
+can fire-test them properly.
