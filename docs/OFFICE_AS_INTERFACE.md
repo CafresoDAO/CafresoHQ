@@ -36874,3 +36874,74 @@ half, where the process dying is the page closing. The server half has the same
 premise — a run lives in a process — and had no equivalent, so the half of the
 Night Shift that exists precisely because the browser is *not* running was the
 half that could never notice it had stopped.
+
+---
+
+## 329. two coworkers wrote to the same note and only one of them had been there
+
+**The wreck.** Two coworkers streaming at once, both told to keep their notes
+in the same file — the pattern the product encourages, because `memory_append`
+scopes every agent's memory to a shared folder and the night shift's
+`VAULT_APPEND` lands in the same Library. Ada finishes her turn and appends a
+paragraph. Bran finishes his a fraction of a second later and appends his.
+Both tools return `Appended 42 chars → Daily/standup.md (now 913 bytes)`. The
+receipts tray shows two deliverables. The note on disk has one paragraph in
+it.
+
+Here is the order it happens in. `PUT /vault/note?mode=append` on the fs
+backend read the whole note into memory, decided whether it needed a leading
+newline, and then wrote the concatenation back:
+
+    existing = target.read_text()
+    sep = '' if existing.endswith('\n') else '\n'
+    target.write_text(existing + sep + body)
+
+A read, then a write, and nothing at all holding the two together. `serve.py`
+is a `ThreadingMixIn` server, so Ada's PUT and Bran's PUT are two threads in
+that branch on the same path. Ada reads `existing`. Bran reads the same
+`existing` — Ada has not written yet. Ada writes `existing + Ada`. Bran writes
+`existing + Bran`, over the top of it, from the copy he took before Ada
+existed. Bran's file is the file. Ada's paragraph was never on disk for longer
+than the few microseconds between the two `write_text` calls, and her byte
+count looked right because the note she was measuring really was that long —
+it just wasn't the note that survived. `write_text` truncates before it writes,
+too, so a `VAULT_READ` that landed in the same window read the note empty or
+cut in half.
+
+This is the shape of `## 304.` — a check and an act in two holds with a gap
+between them — and of `## 319.` — an unattended writer holding a stale copy of
+everything else and writing it back as current. The difference is what is in
+the gap. In `## 319.` it was two hundred rows of activity ticker. Here it is
+prose the boss asked a coworker to write, gone with no error anywhere, and
+irrecoverable: the vault has no versions.
+
+The door directly above it in the same file had already learned this. The
+`/hq/state` PUT carries a paragraph of comment about two concurrent writers
+sharing one `.tmp` name, and it ends "matching `_night_save` above" — the
+append branch was never brought along.
+
+**The fix.** Move "seek to end" inside the write. `_vault_append_local` opens
+the note `a+b`, so the kernel resolves the offset as part of the write itself
+and no writer can land on an offset another writer has already moved past,
+however the threads interleave. The trailing-newline probe and the write are
+held together by `_vault_append_lock` so a second appender in this process
+cannot get between them. `target.exists()` went away with it — `a+b` creates
+the note, so the first-append check-then-act (two coworkers, one note that
+does not exist yet) is gone too.
+
+**The test.** A race asserted is worth nothing, so this one is forced. The
+real `ThreadedServer` and the real `Handler` run in the test's own process,
+and `pathlib.Path.read_text` is wrapped so that a reader of the note parks on
+a two-thread barrier *after* it has read and *before* it can write. Against
+the old code that is not a likely lost update, it is a guaranteed one: both
+threads are provably holding the same `existing` before either is allowed to
+continue. Against the fixed code the barrier is never reached, because the
+append branch does not read the file at all — so the test aborts the barrier
+after half a second rather than waiting out a timeout. Then eighty appends
+from two clients through the same HTTP door, all eighty of which have to be on
+disk at the end.
+
+**Still open.** The `oci` branch of the same door does the identical
+`get_object` → concatenate → `put_object` against object storage, where a
+process lock would not help anyway; it needs an ETag precondition on the put,
+and it is not what this ticket bought.

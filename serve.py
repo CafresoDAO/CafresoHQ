@@ -1468,6 +1468,46 @@ def _vault_resolve_dir(rel: str) -> pathlib.Path:
     return candidate
 
 
+_vault_append_lock = threading.Lock()
+
+
+def _vault_append_local(target: pathlib.Path, body) -> None:
+    """Append to a note on the fs backend WITHOUT a read-modify-write.
+
+    The append door used to do `existing = target.read_text()` and then
+    `target.write_text(existing + sep + body)`. Every writer in the product
+    goes through it — memory_append in hq-runtime.jsx (one per streaming
+    coworker, and several coworkers stream at once), VAULT_APPEND from the
+    night shift, the boss's own editor — and this is a ThreadingMixIn
+    server, so two of them land in this branch at the same time on the same
+    note. Both read the same `existing`; both write `existing + their own
+    line`; whichever write_text runs second is the file. The first
+    coworker's paragraph is gone from disk, and its tool still reported
+    "Appended N chars" with a byte count that looked right. write_text also
+    truncates before it writes, so a concurrent VAULT_READ of the same note
+    could see the file empty or half-written.
+
+    Opening with O_APPEND moves "seek to end" inside the write itself, so a
+    second writer cannot land on a stale offset no matter how the threads
+    interleave; the lock is only there to keep the trailing-newline probe
+    and the write from being split by another appender in THIS process.
+    fsync because the whole point of a note is that it survives.
+    """
+    data = body.encode('utf-8') if isinstance(body, str) else (body or b'')
+    with _vault_append_lock:
+        with open(target, 'a+b') as fh:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            sep = b''
+            if size:
+                fh.seek(size - 1)
+                if fh.read(1) != b'\n':
+                    sep = b'\n'
+            fh.write(sep + data)          # O_APPEND: lands at the real end
+            fh.flush()
+            os.fsync(fh.fileno())
+
+
 def _vault_rewrite_wikilinks(src: str, dst: str):
     """After a rename src→dst (fs backend), rewrite inbound [[wikilinks]]
     across every .md in the vault so links follow the file. Handles
@@ -4770,10 +4810,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return self._send_json(400, {'error': str(e)})
             try:
                 target.parent.mkdir(parents=True, exist_ok=True)
-                if mode == 'append' and target.exists():
-                    existing = target.read_text(encoding='utf-8')
-                    sep = '' if existing.endswith('\n') else '\n'
-                    target.write_text(existing + sep + body, encoding='utf-8')
+                if mode == 'append':
+                    # Not read-then-write: see _vault_append_local. It also
+                    # creates a missing note, so the old `and target.exists()`
+                    # check-then-act (two coworkers, one first append) is gone
+                    # with it.
+                    _vault_append_local(target, body)
                 else:
                     target.write_text(body, encoding='utf-8')
             except Exception as e:
