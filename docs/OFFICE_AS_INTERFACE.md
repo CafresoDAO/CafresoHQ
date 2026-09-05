@@ -36036,3 +36036,76 @@ file a foreign session owns and this change never touches. This change covers
 `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any kind
 was run.
+
+---
+
+## 319. a failed read of the activity feed was written back as an empty feed
+
+**The wreck.** The boss opens the office in the morning and the activity feed
+starts at 3:07am, with one line: *"night shift: 3 note(s) on pricing tiers"*.
+Everything before it — up to two hundred rows of deliverables, snags,
+approvals, hires, every trace the office had of what it had been doing — is
+gone. Nothing was deleted by anybody. Nothing reports an error. The only entry
+left is the night shift saying it did fine.
+
+**What was actually happening.** `_night_post_activity` runs after every
+unattended run, and only when no browser is watching, precisely so it can own
+the file for one read-modify-write. The read did not check whether it had
+worked:
+
+```python
+s, raw = _nr._self_call(ctx, 'GET', '/hq/state/activity')
+cur = json.loads(raw.decode('utf-8', 'replace')) if s == 200 else []
+if not isinstance(cur, list):
+    cur = []
+...
+_nr._self_call(ctx, 'PUT', '/hq/state/activity',
+               body=json.dumps([entry] + cur[:199]))
+```
+
+Any answer that was not a 200 became `[]`, and `[]` was then written back over
+the file. One 500 out of `_hq_handler`'s read, one 503 from its state-dir
+guard, one `HTTPError` that `_self_call` faithfully returns as a status instead
+of raising — and the ticker's whole history was replaced by a single cheerful
+line. It is the same shape as `## 205.` and `## 302.`: the unattended shift
+treating a bad read as a good one and writing its optimism to disk at 3am. The
+difference is that those two produced a false report. This one produced
+deletion, and there is no other copy of `activity.json`.
+
+The fix is to say nothing. A read that failed is not a feed that is empty, and
+the run is already in `mission-runs.json`, which the Gazette reads — so the
+entire cost of skipping is one ticker line, against up to two hundred rows.
+`null` keeps its old meaning and must: `_hq_handler` answers a missing state
+file with `200` + `null` on purpose (*"nothing saved yet is a NORMAL state"*),
+and a first night genuinely is writing into an empty feed. Any other non-list
+body now also bails, for the reason the 500 does — overwriting what we cannot
+read is the same bug wearing a 200.
+
+**The proof.**
+`scripts/test_a_failed_read_of_the_activity_feed_is_not_an_empty_feed.py`
+drives it rather than grepping it: a real `HTTPServer` on localhost holding a
+real 200-row feed, reached through `night_runner`'s own shipped `_self_call`,
+with the real `_night_post_activity` lifted verbatim out of `serve.py` and
+executed. It asserts the rows survive a 500, a 503, a 404 and a 403 with
+nothing written at all; that a healthy read still puts the night line on the
+front and keeps the history behind it; that `null` still opens an empty feed;
+that an unreadable body is left alone; and that a live browser still owns the
+file. Comments are stripped before the two source checks, because the fix is
+explained in a comment that names the bug.
+
+Fire-tested: copied the fixed `serve.py` to `/tmp`, reverted both hunks in
+place with the editor back to `… if s == 200 else []` (never `git checkout --
+<file>`) — the 200-row feed came back as one row on every failing status, 11
+checks failed, exit 1. Restored, `md5` byte-identical, reran — all 22 passed,
+exit 0.
+
+Pure `.py` change — no `npm run build` needed for it.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`, on a
+file a foreign session owns and this change never touches. This change covers
+`serve.py` (the `_night_post_activity` region only — another session owns the
+filesystem-allowlist and route-gating edits elsewhere in that file), one new
+test file, and this entry; `src/cafresohq_state/main.mo` was never staged or
+edited, no II or `derivationOrigin` value was read or written, and no dfx/IC
+action of any kind was run.

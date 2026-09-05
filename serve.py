@@ -728,9 +728,27 @@ def _night_post_activity(run):
         import night_runner as _nr
         ctx = _night_ctx()
         s, raw = _nr._self_call(ctx, 'GET', '/hq/state/activity')
-        cur = json.loads(raw.decode('utf-8', 'replace')) if s == 200 else []
-        if not isinstance(cur, list):
+        # A read that FAILED is not a feed that is empty. This used to fall
+        # back to [] on any non-200 and then PUT [entry] + cur[:199] over the
+        # file — so one 500, one 503 from the mkdir guard, or one timed-out
+        # self-call in the middle of the night deleted up to 200 rows of the
+        # office's activity history and replaced them with a single line
+        # announcing the night shift had gone fine. Same family as ledger
+        # ## 205. and ## 302.: the unattended shift treating a bad read as a
+        # good one and writing its optimism to disk. Say nothing instead —
+        # the run is already in mission-runs.json, which the Gazette reads,
+        # so the only thing lost by skipping is one ticker line.
+        if s != 200:
+            return
+        cur = json.loads(raw.decode('utf-8', 'replace'))
+        # `null` is the handler's own "nothing saved yet" (see _hq_handler's
+        # GET: a missing file is 200 + null on purpose), and that genuinely
+        # is an empty feed. Anything else non-list is a body we do not
+        # understand, and overwriting what we cannot read is the same bug.
+        if cur is None:
             cur = []
+        elif not isinstance(cur, list):
+            return
         entry = {
             'id': 'act_night_%s' % run.get('id', ''),
             'ts': int(time.time() * 1000),
@@ -760,7 +778,8 @@ def _night_run_one(sched):
             'agentId': sched.get('agentId', ''), 'agentName': sched.get('agentName', ''),
             'topic': sched.get('topic', ''), 'vaultFolder': sched.get('vaultFolder', ''),
             'startedAt': now_ms, 'finishedAt': now_ms, 'iterations': 0, 'writes': [],
-            'tokensUsed': 0, 'errors': 1, 'lastError': str(e)[:300], 'summary': ''})
+            'tokensUsed': 0, 'errors': 1, 'lastError': str(e)[:300],
+            'stoppedByBoss': False, 'summary': ''})
     finally:
         _night_running.pop(sid, None)
         _night_abort.discard(sid)
