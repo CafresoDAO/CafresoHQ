@@ -37535,3 +37535,34 @@ added later inherits the answer instead of re-typing a condition and getting
 it slightly wrong. Re-measured after the change: the forged origin gets no
 `ACAO` and no `Allow-Credentials`, the body still relays, and `/health` is
 still public to anyone.
+
+---
+
+## 342. the search quota ledger is not public reading
+
+The beta re-audit that produced `#340` turned up two loose ends alongside its
+verdict. `## 341.` was the serious one. This is the other.
+
+`/gap/status` and `/news/status` proxy the standalone search worker's status
+listener — the quota counters and the cron ledger, which is to say what this
+office has been looking up and how much of its allowance is left. Neither
+appears in `_KEY_PROTECTED_PREFIXES` nor in `_HOST_DATA_PREFIXES`, so the key
+gate passed over them and `## 333.`'s sweep of the second list did not reach
+them either. `_cors` fell through to its public branch: measured against a
+real `serve.py` with no configuration at all, `Origin: https://evil.example`
+got `200` and `Access-Control-Allow-Origin: *` on both.
+
+They are named literally rather than derived, which is worth saying out loud
+after two entries in a row argued the opposite. There is no table to iterate
+here: these are the only two routes under either prefix, and — unusually —
+nothing in the UI calls them. They exist so an operator's `curl
+localhost:8787/gap/status` habit kept working after the crons moved out to
+`search_worker_service/worker.py`, and curl has never needed an ACAO header.
+Withholding it costs the office nothing.
+
+Three findings in a row have now landed in this one list, and every one was
+found by measuring rather than by reading it. So the test measures too: it
+boots a real server with no configuration, asks with a stranger's Origin, and
+checks the answer that actually comes back — and it pins `/health` still
+public and the `## 333.` and `## 315.` neighbours still closed, so a later
+edit to the list cannot quietly reopen one of them while fixing another.

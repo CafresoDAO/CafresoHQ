@@ -499,9 +499,19 @@ _KEY_PROTECTED_PREFIXES = (
 # than its two keys re-typed, and a third passthrough is covered the day it
 # is added. The office's own picker is unaffected: it fetches same-origin,
 # which needs no ACAO, and an app origin still gets the credentialed header.
+#
+# `/gap/` and `/news/` join them by the same reading, found by the beta
+# re-audit measuring rather than reading the list. They proxy the search
+# worker's status — quota counters and the cron ledger, i.e. what this office
+# has been searching for and how much of its allowance is left. Under no
+# prefix list, so both `#333`'s sweep and the key gate passed over them. They
+# are named literally because there is no table to iterate: they are the only
+# two routes under either prefix, and no part of the UI calls them at all —
+# they exist so an operator's `curl localhost:8787/gap/status` keeps working,
+# and curl has never needed an ACAO header.
 _HOST_DATA_PREFIXES = (
     '/fs', '/vault', '/projects', '/export', '/tools', '/terminal', '/hq/',
-    '/brave',
+    '/brave', '/gap/', '/news/',
 ) + tuple(ROUTES) + tuple(p for p in _KEY_PROTECTED_PREFIXES
           if not p.startswith(('/fs', '/vault', '/projects', '/export',
                                '/tools', '/terminal', '/hq/', '/brave')))
