@@ -40296,3 +40296,104 @@ repeated runs, one for every side-effecting call plus grant-elevation's
 extra dispatch check, every one of them the real action firing twice.
 Restored (md5 `5c3f9c8fc4902142d998772a3735a988`, byte-identical), green
 again on two repeated runs. `npm run build` succeeds.
+
+## 389. the door `## 388` pointed to as the model had the same lock missing
+
+`## 388`'s own writeup, describing `approvedIdsRef`, said the new guard was
+"mirroring `resendMessage`'s own one-live-child guard" — treating
+`resendMessage`'s existing `messagesRef.current`-based "already retried"
+check as a working example of the pattern being newly added elsewhere. It
+wasn't. This hunt went looking for OTHER one-shot handlers with the
+`## 388` shape — read from state to find "the thing to act on," then run a
+real side effect, with no ref claimed first — and `resendMessage` itself
+was the first one found still exposed.
+
+**The bug.** `resendMessage(m, { confirm })` reads `messagesRef.current`
+and looks for a message whose `parentId` is `m.id` (the "already retried"
+check) before dispatching. `messagesRef.current` is kept in sync with React
+state by exactly one line, at render time: `messagesRef.current =
+messages;` (app.jsx, just above `MessageRegistry`). The dispatch that would
+eventually produce that child message runs through
+`MessageRegistry.createMessage`, which only calls `setMessages` — an async,
+batched React state update — never touching `messagesRef.current`
+directly. A second call landing before that update commits AND a render
+runs sees the exact same stale `messagesRef.current` the first call saw:
+"already" is still undefined, and it dispatches again. The exact same gap
+`## 388` closed for `onApprove`, in the door its own comment cited as
+already safe.
+
+The Inbox row's own ↻ RE-SEND button (wired through `onRetryActivity`)
+calls `resendMessage(named, { confirm: false })`. With `confirm: false` and
+a zero `bodyDropped`, the `(confirm || cut > 0)` gate is false, so
+`resendMessage` never awaits `window.hqConfirm` on that path — nothing
+serializes a fast double-click on that row the way the approval tray's
+async confirm dialogs incidentally do for some of `## 388`'s five kinds.
+The palette command's call (`resendMessage(failed[0])`, `confirm` defaults
+to `true`) does await a confirm dialog, but a double-click landing before
+that dialog paints is the identical race with an extra step.
+
+Reproduced by lifting the REAL `resendMessage` function body out of
+app.jsx — brace-balanced text extraction of the actual committed source,
+not a re-implementation — via new `scripts/harness_resend_race.mjs`, and
+calling it twice against one unchanged snapshot for the exact
+`{confirm:false}` Inbox-row shape. Pre-fix: `dispatchToAgent` — a real
+dispatch to a real coworker — fired twice for one failed message.
+
+**The fix.** A new `resendingIdsRef` (a `Set`, same shape as `## 388`'s
+`approvedIdsRef`) is checked-and-claimed as the very FIRST thing
+`resendMessage` does, synchronously, before `messagesRef.current` is even
+read. Unlike `approvedIdsRef` — a card is decided once, full stop —
+`resendMessage`'s claim is released again on the two paths that do NOT end
+in a real dispatch: recipient no longer hired, and the boss declining the
+confirm door. Those are exactly the cases where a LATER retry of the same
+message id should still legitimately succeed (the agent could be re-hired;
+the boss could reconsider), and leaving the claim in place on either path
+would have quietly turned "no this time" into "never again" for that
+message. Left claimed after a real dispatch, matching what `messagesRef`
+would show anyway once it catches up: this exact message id has now been
+retried, and any future retry acts on a new child message with its own id.
+
+**Fire-tested.** New
+`scripts/test_a_second_click_on_re_send_does_not_double_dispatch.py`:
+round 1 — structural, confirming `resendingIdsRef` exists, the claim sits
+before `messagesRef.current` is read, and both non-dispatch return paths
+call `release()`. Round 2 — the real extracted `resendMessage` body, called
+twice via the new `harness_resend_race.mjs`: the Inbox-row race scenario
+dispatches exactly once (was twice), a plain single call still dispatches
+exactly once, and a declined confirm followed by a second, accepted retry
+of the SAME message still goes through — proving the claim releases rather
+than permanently locking the id. Reverted the fix in place (md5
+`17a2872d06777b7a201f4222d020a209`) — 6 checks failed reliably across 3
+repeated runs (the 5 structural checks plus the race-scenario dispatch
+count). Restored (md5 `17a2872d06777b7a201f4222d020a209`, byte-identical),
+green again on three repeated runs. `npm run build` succeeds.
+
+**Swept and ruled out.** Every other one-shot handler with a real
+side effect in app.jsx was checked for the same shape (state-read-then-act,
+no synchronous claim) and found not exposed the same way:
+
+- `onDeleteTask` — no ref-based guard, but a double call is genuinely
+  idempotent here: `setTasks(prev => prev.filter(x => x.id !== id))` run
+  twice just filters an already-absent id the second time, and
+  `abortAgentRun` on an already-aborted desk is a no-op by construction
+  (`agentAbortersRef` only holds a live controller while a run is actually
+  in flight). No second real side effect fires.
+- `onCoffee` — same shape: `abortAgentRun` + `onUpdateAgent(..., {status:
+  'idle', ...})` both tolerate being called twice for the same agent with
+  the same (harmless) result; nothing sends, spends, or duplicates.
+- `onStopMission` / `onResumeMission` / `onClearMission` — all
+  `setState(prev => prev.map/filter(...))` over an id; a second call for an
+  already-paused/resumed/cleared mission writes the same state again or
+  finds nothing to filter. No externally-visible action beyond the state
+  itself.
+- `onStopAll` — gated behind its own `await window.hqConfirm`, and its
+  actual work (the shared abort-everything sweep) is naturally idempotent:
+  a second sweep over an already-empty aborter map and an already-0
+  running-mission count does nothing.
+- `onTaskDropOnAgent` — reads `tasks.find` like the fixed cases, but a
+  double-drop is bounded by `beginAgentRun`'s own eviction (a second
+  dispatch to the same agent aborts the first's in-flight controller
+  before it can do anything consequential) rather than by any guard in
+  this handler; flagged as worth its own harness pass in a future hunt
+  since the eviction-based safety net is closer to `## 389`'s than to
+  `## 388`'s.

@@ -4937,6 +4937,29 @@ ${d.text}` : d.text,
      are about to send before it goes. The guard, the recipient-gone toast
      and the dispatch all live in resendMessage now; this function only
      decides WHICH message and whether the boss is looking at it. */
+  /* resendMessage's own single-consumption lock, same shape as #388's
+     approvedIdsRef. `messagesRef.current` (the "already retried" check
+     below) LOOKS like the guard, but it only reflects a dispatched retry
+     after React commits the new message and re-renders — a second call for
+     the same failed message, landing before that commit, sees the exact
+     same stale messagesRef.current the first call saw and dispatches
+     again. Measured with the real resendMessage body lifted out of this
+     file (scripts/harness_resend_race.mjs) and called twice back-to-back
+     on one unchanged snapshot: the Inbox row's own ↻ RE-SEND — which calls
+     resendMessage with confirm:false, so nothing awaits between the two
+     calls — dispatched to the recipient coworker TWICE.
+
+     Claimed synchronously as the very first thing resendMessage does,
+     before messagesRef.current is even read. Released again on every path
+     that does NOT end in a real dispatch (recipient gone, or the boss
+     declined the confirm door) — those are exactly the cases where a
+     retry of the SAME message id should still be possible later (the
+     recipient could be re-hired, the boss could reconsider). Left claimed
+     after a real dispatch, matching what messagesRef would show anyway
+     once it catches up: this exact message id has now been retried, and
+     any FUTURE retry acts on a new child message with its own id. */
+  const resendingIdsRef = useRefA(new Set());
+
   const onRetryActivity = (entry) => {
     const agentId = entry && entry.agentId;
     const all = messagesRef.current || [];
@@ -4975,10 +4998,17 @@ ${d.text}` : d.text,
      fires on the MOST RECENT failure the boss may not be looking at. */
   const resendMessage = async (m, { confirm = true } = {}) => {
     if (!m) return;
+    /* Claim FIRST — see resendingIdsRef above. A second call for an id
+       already claimed is a silent no-op, same as a retry arriving for a
+       message the registry already shows as retried. */
+    if (resendingIdsRef.current.has(m.id)) return;
+    resendingIdsRef.current.add(m.id);
+    const release = () => resendingIdsRef.current.delete(m.id);
     const all = messagesRef.current || [];
     const already = all.find(x => x.parentId === m.id &&
       x.state !== 'failed' && x.state !== 'cancelled');
     if (already) {
+      release();
       const running = already.state !== 'completed';
       window.cafresohqToast && window.cafresohqToast.warn(running
         ? `${m.toAgentName || 'They'} are on the retry right now — give it a moment.`
@@ -4987,6 +5017,7 @@ ${d.text}` : d.text,
     }
     const agent = agents.find(a => a.id === m.toAgentId);
     if (!agent) {
+      release();
       window.cafresohqToast && window.cafresohqToast.error(
         `Recipient agent (${m.toAgentName}) is no longer hired — can't retry that message.`);
       return;
@@ -5012,7 +5043,7 @@ ${d.text}` : d.text,
           + `They'd get the ${(m.body || '').length.toLocaleString()}-character version:\n\n`
           + `"${(m.body || '').slice(0, 200)}…"`
         : `Retry message to ${agent.name}?\n\n"${(m.body || '').slice(0, 200)}"`,
-      cut > 0 ? { danger: true, okLabel: 'Send the short version' } : undefined))) return;
+      cut > 0 ? { danger: true, okLabel: 'Send the short version' } : undefined))) { release(); return; }
     // Fresh dispatch — the old record stays as history (stories are not
     // rewritten); the retry files its own record, chained via parentId.
     dispatchToAgent(agent, m.body, {
