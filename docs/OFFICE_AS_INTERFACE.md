@@ -37766,3 +37766,63 @@ never inside — the success line.
 and the count that survived became the whole truth. The tell here is that
 the number was not wrong. `1` really was how many links followed. It was
 just the only number the boss got, and the office knew a second one.
+
+---
+
+## 347. a throttled upstream can still say how long to wait
+
+**The wreck.** `## 341.` took the whole `access-control-*` family away from
+the upstream, on a rule that is exactly right: who may read this office's
+answers is the OFFICE's decision, made once in `_cors`, and an upstream does
+not get a vote. It took one thing too many with it. `Access-Control-Allow-
+Origin` answers *who may read*; `Access-Control-Expose-Headers` answers *which
+headers they may read*. `_cors` re-made the first decision and never made the
+second — so from the day of that fix, a cross-origin reader got the six
+CORS-safelisted response headers and nothing else.
+
+Three headers this office's own client reads are outside those six:
+
+* `Retry-After` — `claude-client.jsx`'s `_retryDelayMs`, whose own comment is
+  *"Honour Retry-After when the server sends one — it knows better than we
+  do."* **Every** LLM stream funnels through `fetchStreamHead` into it.
+* `X-File-Mtime` / `X-File-Hash` — `fsReadText`'s conflict metadata, which is
+  the stated reason the Workspace editor reads `/fs/file` instead of
+  `FILE_READ`.
+
+Measured against a real `serve.py` with a stub answering 429 the way a
+throttled provider does, from the allowlisted cross-origin the
+`ai.cafreso.com` → `hq.cafreso.com` split is what `_app_origins` exists for:
+
+```
+POST /lmstudio/chat/completions   Origin: https://ai.cafreso.com
+  → 429
+  → Retry-After: 42
+  → Access-Control-Allow-Origin: https://ai.cafreso.com
+  → Access-Control-Allow-Credentials: true
+  → (no Access-Control-Expose-Headers)
+```
+
+The number is on the wire and the browser hands back `null` for it. The
+upstream had said *forty-two seconds*; the office threw that away and guessed
+with jittered exponential backoff, on the one status code where guessing is
+how a rate limit turns into three of them. Before `## 341.` the upstream's own
+`Access-Control-Expose-Headers: Retry-After` rode through the relay loop and
+the header was readable — the fix that stopped an upstream voting on WHO also
+dropped its vote on WHICH, and nothing took over the second decision.
+
+**The fix.** `_cors` makes it, next to the one it already makes.
+`_EXPOSED_HEADERS` names the three literally — never `'*'`, which is ignored
+outright for credentialed requests, and credentialed is precisely the branch
+the split deployment uses — and is sent wherever an ACAO is sent and nowhere
+else. That widens no read the ACAO decision had not already granted: a reader
+allowed the body may have these three, and a reader who gets no ACAO gets no
+expose list either, because naming headers to an origin that may not read the
+reply is the same mistake one field over. `## 341.`, `## 333.` and `## 342.`
+are measured intact in the same test: the visited page still cannot POST to
+the local model, still gets no ACAO for the roster, and still never sees the
+upstream's own `Access-Control-Allow-Credentials`.
+
+**Whose twin.** `## 335.` and `## 337.` — a correct decision made in one place
+and quietly assumed in a second. Here the assumption was that withholding the
+upstream's answer left the office's own answer standing. It left no answer at
+all.

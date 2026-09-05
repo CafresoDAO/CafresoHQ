@@ -148,6 +148,38 @@ def _relayable(name):
     n = name.lower()
     return not (n in HOP_HEADERS or n == 'content-encoding'
                 or n.startswith('access-control-'))
+
+
+# The other half of "who may read this office's answers is the OFFICE's
+# decision". `#341` took the whole access-control-* family away from the
+# upstream and gave WHO back to _cors — and never said WHICH HEADERS, so a
+# cross-origin reader was left with the CORS-safelisted six and nothing else.
+#
+# That is not a theoretical loss. Three response headers this office's own
+# client reads are outside the safelist:
+#   * Retry-After — claude-client.jsx's _retryDelayMs honours it on a 429
+#     rather than guessing; every LLM stream funnels through that helper.
+#   * X-File-Mtime / X-File-Hash — fsReadText's conflict metadata, which is
+#     the whole reason the Workspace editor uses /fs/file instead of
+#     FILE_READ.
+# Measured through the office with the UI on an allowlisted CROSS-origin
+# (the ai.cafreso.com → hq.cafreso.com split `_app_origins` exists for),
+# against a stub answering 429 the way a throttled provider does:
+#     POST /lmstudio/chat/completions  Origin: https://ai.cafreso.com
+#     → 429, Retry-After: 42, ACAO: https://ai.cafreso.com — and no
+#       Access-Control-Expose-Headers at all, so `res.headers.get(
+#       'retry-after')` is null in the browser and the retry falls back to
+#       jittered backoff, ignoring an upstream that had just said 42.
+# Before `#341` the upstream's own `Access-Control-Expose-Headers:
+# Retry-After` rode through and the header was readable; the fix that
+# stopped an upstream voting on WHO also silently dropped its vote on WHICH.
+#
+# Named literally, not '*': the wildcard is ignored outright for credentialed
+# requests, which is exactly the branch the split deployment uses. Sent
+# wherever an ACAO is sent and nowhere else — this widens no read that the
+# ACAO decision above did not already grant, since a reader who may have the
+# body may have these three, and a reader who may not gets neither.
+_EXPOSED_HEADERS = 'Retry-After, X-File-Mtime, X-File-Hash'
 # Claude Code (Pro/Max subscription) — invoked as a subprocess so the user's
 # already-authenticated CLI does the auth. Binary resolution + the
 # CAFRESOHQ_CLAUDE_BIN override now live in drivers/claude_code.py.
@@ -2149,8 +2181,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if allowed:
             self.send_header('Access-Control-Allow-Origin', origin)
             self.send_header('Access-Control-Allow-Credentials', 'true')
+            self.send_header('Access-Control-Expose-Headers', _EXPOSED_HEADERS)
         elif not self.path.split('?', 1)[0].startswith(_HOST_DATA_PREFIXES):
             self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Access-Control-Expose-Headers', _EXPOSED_HEADERS)
         # else: no ACAO at all. The reasoning above — "a browser cannot send
         # cookies with ACAO:'*', so a malicious site can't read this
         # container's cookie-authenticated responses" — is sound for routes
