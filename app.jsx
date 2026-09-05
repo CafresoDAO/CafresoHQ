@@ -1085,14 +1085,30 @@ function App() {
      receipts inside a once-created closure) would otherwise see the stale
      pre-fetch snapshot in the >4h-away catch-up scenario. Union fetched with
      anything recorded in the first ~1.5s, newest-first by decidedAt. (Receipts
-     have no ts/unread fields, so mergeByIdCap is unsuitable here.) */
+     have no ts/unread fields, so mergeByIdCap is unsuitable here.)
+
+     RECEIPTS_CAP is the half mergeByIdCap already carries for the activity
+     log and this list never had: newest-first, keep the most recent N, let
+     the rest fall off. Without it the tray is the one store in the office
+     that only ever grows — every stamped decision, for the life of the
+     office, held in memory AND mirrored into localStorage AND re-serialised
+     in full on every new row. localStorage's ~5MB is per ORIGIN, not per
+     key, so the store that grows without a bound doesn't fail alone: it
+     takes the roster, the tasks and the chat down with it, and those have
+     no second copy to fall back on. Same number as the activity log beside
+     it, applied in the same two places — where a row is written, and where
+     the file is adopted on mount — because a cap on only one of them is
+     undone by the next reload. */
+  const RECEIPTS_CAP = 200;
   const receiptsRef = useRefA([]);
   const [receipts, setReceipts] = useFileStored(k('receipts'), 'state', 'receipts', [],
     (fetched) => {
       const byId = new Map();
       for (const r of (Array.isArray(fetched) ? fetched : [])) byId.set(r.id, r);
       for (const r of (Array.isArray(receiptsRef.current) ? receiptsRef.current : [])) byId.set(r.id, r);
-      return [...byId.values()].sort((a, b) => (b.decidedAt || 0) - (a.decidedAt || 0));
+      return [...byId.values()]
+        .sort((a, b) => (b.decidedAt || 0) - (a.decidedAt || 0))
+        .slice(0, RECEIPTS_CAP);
     });
   useEffectA(() => { receiptsRef.current = receipts; }, [receipts]);
   const [receiptsOpen, setReceiptsOpen] = useStateA(false);
@@ -6019,7 +6035,7 @@ ${d.text}` : d.text,
       cwd: ap.cwd,
       elevated: ap.elevated,
     };
-    setReceipts(prev => [r, ...prev]);
+    setReceipts(prev => [r, ...prev].slice(0, RECEIPTS_CAP));
     return r.id;
   };
   /* A stamp is a decision, and for `publish` the stamp is ALSO the act: the

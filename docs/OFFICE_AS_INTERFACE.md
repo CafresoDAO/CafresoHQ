@@ -37260,3 +37260,59 @@ this exact door and left a note saying the `oci` branch still needed an ETag
 precondition for concurrent appends; that is still true, and still not this.
 Two appenders racing is a lost update. One appender and one bad read was a
 deletion.
+
+---
+
+## 336. the tray that kept every stamp the office ever made
+
+**The wreck.** Every store the office keeps has a ceiling, or is a snapshot
+whose size is the size of the thing it describes. The activity log — the
+receipts tray's own neighbour in `app.jsx`, feeding the same bell — is
+bounded twice over: `logActivity` slices to 200 as it writes a row, and the
+mount-fetch transform is handed `mergeByIdCap(activityRef.current, fetched,
+200)` so a reload cannot undo it. Both halves, deliberately, because a cap
+on one of them is a cap on neither.
+
+`receipts` had neither half. `recordReceipt` was `setReceipts(prev => [r,
+...prev])`, and the load transform unioned the file with memory, sorted by
+`decidedAt`, and stopped. Nothing in the office ever removed a row. One
+stamped decision is about 220 bytes; a CLI agent running under the
+PreToolUse hook bridge asks for one every few seconds, all day, on an office
+the boss is meant to leave open. The array sat in memory, was mirrored into
+`localStorage`, was re-serialised WHOLE into `hq-state/receipts.json` on
+every new row, and was walked end to end by the bell's
+`mergedNotifications` memo on every render of every one of those rows.
+
+Measured on a live floor, 2026-09-05, with the real tray and a real
+browser: 255 approvals posted to `/approvals/external`, each one APPROVEd in
+the UI. `cafresohq_hq_v1:receipts` came back **256 entries, 57,039 bytes**,
+with no sign of levelling off, and the bell's own title read *"256 unread
+notifications"* — a bell that has stopped being a bell. Extrapolated on the
+same 220 bytes a row, an office left open through a working week reaches the
+quota rather than approaches it.
+
+And the quota is the part that does not stay local. `localStorage` is ~5MB
+per **origin**, not per key. The store with no bound is not the only
+casualty when it finally lands on that ceiling: the roster, the tasks and
+the chat are spending the same budget, `persist()` catches the throw and
+warns, and those three have no second copy to fall back on. An unbounded
+audit trail does not merely grow — it eventually takes the things being
+audited with it.
+
+**The fix.** `RECEIPTS_CAP`, applied in the two places the activity log
+applies its number: at the write, and at the mount-fetch merge. Newest
+first, oldest off the end, same rule and same 200. After the fix the same
+drive held at exactly 200 in `localStorage` **and** in the file, with the
+newest stamp still on top and a row stamped mid-fetch still surviving the
+trim.
+
+The tray does lose its oldest rows now, and that is the honest trade rather
+than a hidden one: the log beside it has made the same trade since it was
+written, and the alternative on offer was never "keep everything" — it was
+keep everything until the origin's quota is gone, and then keep nothing,
+including the roster.
+
+**Whose twin.** `## 317.`, which found the second terminal tab stamped `#1`
+because the writer counted a different set than the reader. Same species one
+layer down: two halves of one store, and a rule applied to only one of them
+is a rule the other half quietly undoes on the next reload.
