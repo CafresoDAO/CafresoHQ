@@ -38084,3 +38084,62 @@ and `## 344.` one ticket ago, the half-hour salary audited as hourly. All
 three are the office putting words somewhere it has no right to put them.
 The difference here is the audience: the wrong number was read by a boss who
 could argue with it, and this sentence was read by a model that cannot.
+
+---
+
+## 352. the two boxes nobody measured twice
+
+`## 338.` and `## 345.` were both found the same way: a phone viewport, a
+`getBoundingClientRect()`, and a `document.elementFromPoint` at a real
+coordinate. Both were then guarded by a test that reads `styles.css` and
+checks that a declaration appears in a selector list. Those suites are worth
+keeping — they say *why* each line is there, and they fail loudly when
+someone deletes one. But every fault in both tickets was a collision between
+two boxes, and neither suite had a box in it. Stretch a sibling of the
+ticker, make `.mobile-tabbar` taller, add an element to the office column,
+and the ticker goes back under the tab bar with every string those tests grep
+for still exactly where they left it.
+
+So the suite now measures. It boots the real app — the real `dist-ui` bundle,
+the real `styles.css`, `hq.html` assembled by the repo's own `ui_manifest`
+helper, the same one `serve.py` uses — in headless Chrome, emulates 375x812
+and 375x667, opens the Office tab, and reads the layout. On the fix: the
+ticker ends 2.0px above the tab bar at both sizes (740.0 against 742.0; 595.0
+against 597.0), `.pxhq` ends inside its own container at both, and at maximum
+scroll the lobby door is inside the scroll viewport and is the topmost thing
+on the floor under its own centre. Reverting `.office-wrap` out of the 72px
+clearance list puts the ticker back at 770.0 -> 804.0 and `elementFromPoint`
+back to `BUTTON.mtab`; reverting the flex column puts the scene 46.5px past
+`.pxhq`'s clipping edge and the door out of the hit stack entirely. Both
+numbers match what the original tickets recorded.
+
+No dependency was added for this. There is no puppeteer, playwright, jsdom or
+happy-dom in `node_modules`, and the test installs none: it drives a browser
+already on the machine over the DevTools Protocol with the standard library
+only — a ~60-line RFC 6455 client over `socket`. Where none is found it says
+so and skips, rather than passing quietly.
+
+One thing it deliberately does not assert. The door is *not* the topmost
+element on the page at either size: `.palette-fab`, the fixed command-palette
+button pinned at `bottom: calc(130px + safe-area)`, measures 638.0 -> 682.0
+against a door at 643.7 -> 677.7 at 812, and 493.0 -> 537.0 against 498.7 ->
+532.7 at 667. It covers the door's centre both times; only the door's left
+~12px is exposed. That is a real overlap and its own ticket. Hit-testing
+somewhere other than the centre to get a green would have been the same
+dishonesty as the grep — a check shaped around the answer it wanted — so it
+is measured, excluded on purpose, and written down.
+
+A test that names the fix is not the same as a test that has the fix's
+effect. The first survives any edit that keeps the name.
+
+One thing this suite had to learn on arrival: a toast is not a layout fault.
+The office's own `⚠ Office file save failed` banner fires on a cold start
+here — the harness serves the repo statically with nothing behind `/fs` —
+and it is `position: fixed`, so it floated over the ticker in about half of
+runs at 375x812 and failed the hit-test as "something is painted over it".
+Waiting it out made things worse: toasts re-fire, and a 20s wait gave the
+first-run dialogs time to reopen. So the hit-test reads `elementsFromPoint`
+and skips anything inside a `.toast`, which leaves the fault it exists to
+catch intact — reverting the `.office-wrap` clearance still reports
+`BUTTON.mtab` over the ticker at both sizes. Eight consecutive clean runs
+after the change.
