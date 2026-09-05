@@ -448,6 +448,54 @@ function fromBaseUnits(raw, decimals) {
   } catch { return '0'; }
 }
 
+/* ── The "per ___ h" boxes ────────────────────────────────────────────────
+   Two windows in this panel are typed in hours and stored on-chain in
+   seconds: the agent's rolling SPEND-CAP window, and the payroll PERIOD.
+   Neither is an amount, and both decide how much money moves.
+
+   Both used to be read straight out of the box with
+   `Math.round(parseFloat(hrs || '0') * 3600)` and written back with
+   `String(Math.round(secs / 3600) || 24)`, and that pair leaks in both
+   directions.
+
+   Clearing the spend-cap window box — or typing 0 — stored `windowSecs: 0`.
+   In the state canister that is not "zero hours", it is a documented MODE:
+   recordSpend treats `windowSecs == 0` as "per-transaction cap only" and
+   rolls the window on EVERY call, so `spent0` resets to 0 each time and the
+   gate degrades to `amount > spendCap` alone. A 0.1 ICP cap the boss set to
+   mean "0.1 ICP a day, autonomously" became 0.1 ICP PER TRANSFER with no
+   ceiling at all — ten sends in a minute is 1 ICP, and nothing stops the
+   eleventh. There is no affordance anywhere in this panel for that mode; it
+   was reachable only by emptying a text box.
+
+   And the read-back then covered it up. `Math.round(0 / 3600) || 24` is 24,
+   so the box the boss looked at afterwards said the stored window was
+   86400 seconds when it was 0 — the one control that limits autonomous
+   agent spending, displayed as in force while it was switched off. The same
+   `|| 24` mislabels every genuine sub-half-hour setting: a 900-second
+   window (15 minutes) also read back "24", and pressing SAVE on that screen
+   then wrote the 24 hours the boss had been shown.
+
+   `parseFloat('abc')` is NaN, and `Math.max(60, NaN)` is NaN, so a
+   non-numeric box also put NaN across the bridge as a period.
+
+   So: hours in, seconds out, and null when the box does not hold a positive
+   number — the callers refuse and say so rather than picking a schedule for
+   the boss. Nothing here rounds toward more spending. */
+function hoursToSecs(text) {
+  const n = parseFloat(String(text == null ? '' : text).trim());
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.round(n * 3600);
+}
+/* Seconds → the hours text that box should show. Never invents a 24: a
+   window this office cannot express in hours is shown as the number it
+   really is, so SAVE can only ever write back what is already stored. */
+function secsToHoursText(secs) {
+  const n = Number(secs);
+  if (!Number.isFinite(n) || n <= 0) return '0';
+  return String(Number((n / 3600).toFixed(4)));
+}
+
 /* What ⚡ NOW will actually pay, read off the SAVED salary row.
 
    `chain().payroll.run(agentId)` takes an agentId and nothing else:
@@ -505,7 +553,7 @@ function AgentWalletCard({ agent }) {
       if (p) {
         setCapTok(p.token);
         setCapAmt(fromBaseUnits(p.spendCap, WALLET_TOKEN_DECIMALS[p.token] ?? 8));
-        setCapHrs(String(Math.round((p.windowSecs || 0) / 3600) || 24));
+        setCapHrs(secsToHoursText(p.windowSecs));
       }
     } catch (_e) { /* not deployed / not signed in — leave defaults */ }
     try {
@@ -516,7 +564,7 @@ function AgentWalletCard({ agent }) {
         const dec = WALLET_TOKEN_DECIMALS[s.token] ?? 8;
         setPayTok(s.token); setPayMode(s.mode);
         setPayAmt(fromBaseUnits(s.amount, dec));
-        setPayHrs(String(Math.round(s.periodSecs / 3600) || 24));
+        setPayHrs(secsToHoursText(s.periodSecs));
         setPayWm(fromBaseUnits(s.lowWatermark, dec));
       }
     } catch (_e) { /* canister not upgraded yet — payroll row still usable later */ }
@@ -530,12 +578,20 @@ function AgentWalletCard({ agent }) {
     setBusy('');
   };
   const saveCap = async () => {
+    // A blank or 0 window is not "24 hours" and not "no limit typed yet" —
+    // on-chain it REMOVES the rolling ceiling (see hoursToSecs). Refuse it
+    // here rather than storing the most permissive setting in the panel.
+    const windowSecs = hoursToSecs(capHrs);
+    if (windowSecs === null) {
+      setMsg('Enter the cap window in hours (e.g. 24). A blank or 0 window would let this agent spend the full cap on every single transfer, with no daily ceiling.');
+      return;
+    }
     setBusy('cap'); setMsg('');
     try {
       const dec = WALLET_TOKEN_DECIMALS[capTok] ?? 8;
       await chain().wallet.put({
         agentId, token: capTok, spendCap: toBaseUnits(capAmt, dec),
-        windowSecs: Math.max(0, Math.round(parseFloat(capHrs || '0') * 3600)),
+        windowSecs,
         paused: policy?.paused || false,
       });
       setMsg('Saved.'); await load();
@@ -568,8 +624,12 @@ function AgentWalletCard({ agent }) {
       const dec = WALLET_TOKEN_DECIMALS[policy?.token || capTok] ?? 8;
       await chain().wallet.put({
         agentId, token: policy?.token || capTok,
-        spendCap: policy?.spendCap || toBaseUnits(capAmt, dec),
-        windowSecs: policy?.windowSecs || Math.round(parseFloat(capHrs || '0') * 3600),
+        /* ?? not || — pausing must re-write the SAVED policy verbatim. A
+           stored 0 (the per-transaction mode above) is a real value, and
+           replacing it here with a guess derived from the draft boxes would
+           change the ceiling as a side effect of pressing PAUSE. */
+        spendCap: policy?.spendCap ?? toBaseUnits(capAmt, dec),
+        windowSecs: policy?.windowSecs ?? (hoursToSecs(capHrs) || 86400),
         paused: !(policy?.paused),
       });
       await load();
@@ -578,12 +638,21 @@ function AgentWalletCard({ agent }) {
   };
 
   const savePay = async () => {
+    /* Same box, same leak, other direction: `Math.max(60, …)` turned an
+       empty period into a salary that pays every 60 seconds — the canister's
+       own floor — and the read-back then showed it as 24 h. Refuse; do not
+       pick a payday for the boss. */
+    const periodSecs = hoursToSecs(payHrs);
+    if (periodSecs === null || periodSecs < 60) {
+      setMsg('Enter how often this salary pays, in hours (minimum 60 seconds — 0.02 h). A blank or 0 period would pay every minute.');
+      return;
+    }
     setBusy('pay'); setMsg('');
     try {
       const dec = WALLET_TOKEN_DECIMALS[payTok] ?? 8;
       await chain().payroll.put({
         agentId, token: payTok, amount: toBaseUnits(payAmt, dec),
-        periodSecs: Math.max(60, Math.round(parseFloat(payHrs || '0') * 3600)),
+        periodSecs,
         lowWatermark: payMode === 'refill' ? toBaseUnits(payWm, dec) : '0',
         mode: payMode, active: true,
       });

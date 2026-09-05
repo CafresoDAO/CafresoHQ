@@ -36945,3 +36945,58 @@ disk at the end.
 `get_object` → concatenate → `put_object` against object storage, where a
 process lock would not help anyway; it needs an ETag precondition on the put,
 and it is not what this ticket bought.
+
+---
+
+## 330. the spend cap the boss switched off by clearing a box, and the panel still said 24
+
+**The wreck.** The one control that limits what a coworker can spend on its
+own is the rolling spend cap: an amount, and a window it applies over.
+Settings takes the window in hours and the state canister stores it in
+seconds. `saveCap` did the conversion as
+`Math.max(0, Math.round(parseFloat(capHrs || '0') * 3600))`, so an empty box —
+or a typed `0` — stored `windowSecs: 0`.
+
+Zero is not a zero-length window in `src/cafresohq_state/main.mo`. It is a
+documented mode. `recordSpend` computes `rolled = w.windowSecs == 0 or …` and
+on a rolled window `spent0` resets to `0`, so with a stored `0` the window
+rolls on **every single call** and the gate degrades to `amount > spendCap`
+alone. A 0.1 ICP cap the boss set meaning "0.1 ICP a day, autonomously"
+became 0.1 ICP *per transfer*, with nothing capping the day: ten sends in a
+minute is 1 ICP, and nothing stops the eleventh. Nowhere in the panel is
+there an affordance for that mode. It was reachable only by emptying a text
+box and pressing SAVE.
+
+Then the read-back covered it up. `load()` displayed the stored window as
+`String(Math.round(secs / 3600) || 24)`, and `Math.round(0 / 3600) || 24` is
+`24`. The box the boss looked at afterwards said the stored window was
+**86400 seconds** while the stored window was **0** — the ceiling reported as
+in force on the one screen that shows it, at the moment it had been removed.
+The same `|| 24` mislabelled every genuine sub-half-hour setting: a real 900
+second window (fifteen minutes) also read back "24", and pressing SAVE on
+that screen wrote the 86400 the boss had been shown over it, a 96× widening
+of a window nobody asked to change.
+
+The payroll period is the same box and leaked the other way. `savePay` wrote
+`Math.max(60, Math.round(parseFloat(payHrs || '0') * 3600))`, and 60 is
+exactly the floor `putSalary` enforces — so a blank period saved a salary due
+every 60 seconds against the signed payroll budget, which the timer pays out
+every scan (300 s), and the box then showed "24 h" for it too. And
+`parseFloat('abc')` is `NaN`, `Math.max(60, NaN)` is `NaN`, so a non-numeric
+box put `NaN` across the bridge as a schedule.
+
+**The fix.** Two pure helpers with one rule each. `hoursToSecs` returns
+`null` for anything that is not a positive finite number, and both callers
+refuse and say what a blank box would have meant rather than picking a
+setting for the boss. `secsToHoursText` never invents a 24: 0 s reads back
+`0`, 900 s reads back `0.25`, 60 s reads back `0.0167`, and 86400 s still
+reads back `24` — so what the panel shows is what SAVE writes back, for every
+stored value, which is the property the round trip never had. `togglePause`
+takes `??` instead of `||` for the same reason: pausing re-writes the saved
+policy, and it must not swap a stored value for a guess off the draft boxes
+on the way through.
+
+**Whose twin.** `## 311.`, which found the payroll consent dialog quoting the
+draft box while the chain paid the stored row. This is the same panel and the
+same species — a number the boss reads and a number the chain holds, allowed
+to differ — one field over, in the field that says how often.
