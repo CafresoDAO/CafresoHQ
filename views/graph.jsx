@@ -108,7 +108,6 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
     return () => ro.disconnect();
   }, []);
   const [ctxMenu, setCtxMenu] = useSV(null); // { id, x, y }
-  const [nodeCount, setNodeCount] = useSV(0);
   const [shareUrl, setShareUrl] = useSV(null);
   const [sharing, setSharing] = useSV(false);
   const [shareCopied, setShareCopied] = useSV(false);
@@ -244,7 +243,6 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
       eng.setActivePath(activePathRef.current);
       if (localModeRef.current !== 'global') eng.setLocalMode(activePathRef.current, parseInt(localModeRef.current, 10));
     }
-    setNodeCount(g.nodes.length);
     return eng;
   };
 
