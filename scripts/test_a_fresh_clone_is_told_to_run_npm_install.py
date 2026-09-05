@@ -88,13 +88,20 @@ def strip_sh_comments(src):
 
 
 def serve_not_built_message():
-    """The literal serve.py hands to send_error for a missing bundle."""
+    """The literal serve.py hands to send_error for a missing bundle.
+
+    `## 396.` split that call in two: the reason phrase is now the bare
+    'HQ UI not built' (the HTTP status line is latin-1 and cannot carry the
+    em dash), and the advice moved into the `explain` argument, which is
+    what the browser actually renders. There are therefore two constants
+    matching here and the first one ast.walk reaches is the short one, so
+    take the LONGEST — the advice is the half this test is about.
+    """
     tree = ast.parse(SERVE.read_text(encoding='utf-8'))
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Constant) and isinstance(node.value, str) \
-                and 'HQ UI not built' in node.value:
-            return node.value
-    return None
+    found = [node.value for node in ast.walk(tree)
+             if isinstance(node, ast.Constant) and isinstance(node.value, str)
+             and 'HQ UI not built' in node.value]
+    return max(found, key=len) if found else None
 
 
 def main():

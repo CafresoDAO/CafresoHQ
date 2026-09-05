@@ -1,5 +1,132 @@
 # Beta readiness — re-audit
 
+## 2026-09-05 (fourth pass) — the first-run path, actually walked
+
+Scope note first, because it matters for how much of this document it moves:
+this is **not** a re-audit. It is one thing the three passes below never did —
+a cold start from a genuinely empty machine — plus the honest list of what a
+beta tester cannot do for themselves. Verified against `4b22087` (`## 393.`)
+plus `## 396.`, this session's own fix. Everything under the third-pass
+heading stands; nothing here re-measures the security posture.
+
+Every hunt in the standing loop, and every pass of this document, has walked
+an office that already exists. Nobody had walked in as a stranger. That path
+decides whether beta testing produces feedback or a pile of "it didn't start,"
+and it is by construction the least-exercised code in the repo, because
+everyone developing it already has state.
+
+**Method.** `git archive HEAD | tar -x` into an empty directory — which is
+exactly what a tester has, since `dist-ui/` and `node_modules/` are both
+gitignored — a temp `HOME` with no `~/.hermes`, no `.env`, no `~/Documents`
+and no keys of any kind, and `python3 serve.py` on a port of my own. Then the
+same tree again with the bundle built. No mainnet call of any kind was made.
+
+### What a fresh tester hits, step by step
+
+1. **`python3 serve.py` starts.** The banner prints, `hq-state/` is created on
+   demand with its `vault/` and `tls/` subdirectories, and `/health` answers
+   `200` with `mode: local`, `auth_required: false`, `vault_backend: fs`,
+   `hermes: false`, `claude_code: false`, `brain: null`. No config file is
+   required to boot and no key is required to boot. Good.
+2. **`GET /hq.html` before the build returns nothing at all.** Not a 500 — an
+   empty reply, `ERR_EMPTY_RESPONSE` in the browser. **Fixed in `## 396.`**;
+   see below. This was the single hardest stop on the path and it was
+   invisible to every prior pass, because it is a runtime crash on a code path
+   only an unbuilt tree reaches.
+3. **After `npm install && npm run build`, `hq.html` is 200** and the office
+   loads. Confirmed on the fresh tree.
+4. **Empty state, server side, is deliberate and correct.**
+   `GET /hq/state/tasks|agents|projects|notes|receipts` on a never-written
+   store answers `200 null` rather than 404 — a decision `#142` made on
+   purpose and documented in place — so a first load produces no red console
+   and nothing downstream `.map`s an `undefined`. `/vault/list` answers
+   `{"files": []}`. `/missions/scheduled` answers
+   `{"schedules": [], "running": [], "browserActive": false}`.
+   `/agents` answers a real roster with `installed: false`. Client-side empty
+   states already have dedicated coverage in `scripts/`
+   (`test_an_empty_office_never_promises_a_brain_this_machine_lacks.py`,
+   `test_an_empty_library_greets_its_first_boss.py`,
+   `test_a_first_run_is_not_judged.py`,
+   `test_a_first_run_on_your_own_machine_is_not_told_its_session_expired.py`),
+   and this pass found no new empty-collection fault to add to them.
+5. **The first message needs a brain, and the tester has none.** On a machine
+   with no `hermes` CLI, `/hermes/*` is the fifteen seconds of silence already
+   written up as rough edge 5 below. This pass did not improve it and did not
+   re-measure it; a real fresh machine gets connection-refused, not the 401
+   my temp-`HOME` run saw from this developer's own already-running gateway.
+6. **Peripherals fail politely.** `/gap/status` and `/news/status` answer a
+   5-second `502` naming the exact compose command that starts the standalone
+   search worker.
+
+### What `## 396.` fixed
+
+`_serve_hq_html` passed its whole advisory sentence as `send_error`'s second
+argument — the HTTP **reason phrase**, which the stdlib encodes latin-1. The
+em dash in it raised `UnicodeEncodeError` *inside* `send_error`, after the
+handler had committed to replying, so the socket closed with no response.
+The `except` clause whose entire job is to teach a stranger the two commands
+was itself the failure, and had been since it was written. The same call
+interpolates `os.getcwd()`, so the crash also fires for any tester whose home
+directory is named in a non-latin-1 script, em dash or not. Two siblings of
+the same shape in `pty_server.py` (the nonce refusal, and the WS origin
+refusal, whose phrase interpolates a caller-supplied `Origin`) went with it.
+Full detail in `docs/OFFICE_AS_INTERFACE.md ## 396.`
+
+**Two claims in this document were wrong and are corrected here**, both under
+"What is *not* on the blocker list": the first-run path did **not** work from
+the tree in the order the README prints it, and `Start-CafresoHQ.sh` was not
+merely improving on "the 500 page" — there was no 500 page. `README.md:65`'s
+own "hq.html is 500 until dist-ui/ exists" was false for the same reason.
+
+### What a beta tester CANNOT self-serve
+
+These are not code fixes. They are the list of things a stranger will need a
+human for, and they should go in the invitation rather than be discovered.
+
+1. **A brain.** The default office has none. There is no bundled model, no
+   trial key, and no first-run screen that hands the tester one. They must
+   either install the `hermes` CLI and let it start a gateway, or run LM
+   Studio / Ollama locally, or bring their own API key. Until one of those is
+   true, every message fails — after fifteen seconds of silence. **This is the
+   largest single beta-blocker on the path and it is a product decision, not a
+   bug.** Whoever sends the invitation has to answer "what do I type my first
+   message *to*" in the invitation itself.
+2. **Node.js 18+ and Python 3.** Neither is bundled or checked for before the
+   fact; `Start-CafresoHQ.sh` explains a missing `npm`, but a tester on a
+   machine with neither has a prerequisites problem no page in the product can
+   solve.
+3. **Any hosted / ICP path at all.** A local office touches no canister and
+   needs no identity, and that is the path to hand a tester. The hosted face
+   needs a mainnet action, and a mainnet action is the user's alone — no
+   session in this loop may make one. Consequently nothing about the hosted
+   first run, Internet Identity sign-in, or per-user container provisioning
+   has been walked by any pass of this document, including this one. **If the
+   beta is meant to be hosted rather than local, this document does not yet
+   cover its first-run path.**
+4. **Internet Identity configuration.** Out of scope by policy for this loop —
+   `derivationOrigin` and the anchor whitelist are not to be touched or
+   changed by an agent. Any II-related first-run failure needs a human.
+5. **Cycles.** Unchanged from gate 3 below: `cafresohq_state` has no auto
+   top-up and has already been wiped once, on 2026-08-05. A hosted beta that
+   outlives its balance loses its testers' data, exactly once.
+6. **`mkcert`, for a warning-free HTTPS embed.** Optional — serve.py falls
+   back to a self-signed cert — but a tester who wants the `ai.cafreso.com`
+   embed or the iOS service worker has to install a third-party tool first.
+7. **The standalone search worker.** A separate `docker compose` and a Brave
+   key. The 502 says so clearly, which is the right behaviour; it is still a
+   thing the tester cannot produce on their own.
+
+### Verdict delta
+
+The second pass's verdict — shippable to an outside **local** beta tester —
+survives, but it was resting on an untrue sentence about the first-run path,
+and one of the two "cheap fixes before the invitation goes out" it named
+should now be three: the LAN URL, the fifteen seconds of silence, and a
+sentence in the invitation naming which brain to install. `## 396.` closed the
+one that was a genuine dead end.
+
+---
+
 **2026-09-05 (third pass, status update — not a re-audit).** The second pass
 below (verified against `#336`/`#337`, verdict: *"shippable to an outside beta
 tester today"*) still stands; nothing here changes that verdict. This is a
@@ -408,6 +535,15 @@ not to be problems:
   assets are 200. `Start-CafresoHQ.sh` does the npm steps itself if `dist-ui/`
   is missing, rather than handing the 500 page the job of teaching a stranger
   what to run.
+
+  > **Corrected by the fourth pass (`## 396.`).** This bullet was measured only
+  > in the right order, on a tree that had been built. Run in the wrong order —
+  > or after a build that failed part-way — `hq.html` did not serve a 500 page
+  > for `Start-CafresoHQ.sh` to improve upon: it served **nothing**, closing
+  > the connection mid-`send_error` on a latin-1 encode of its own advisory
+  > sentence. The claim above is true of the happy path and was false of the
+  > one a stranger is most likely to take. Fixed; see the fourth pass at the
+  > top of this document.
 - **Server-side durability.** `PUT /hq/state/<name>` → `GET` round-trips through
   `hq-state/`, written with `mkstemp` + `fsync` + `os.replace` under a per-name
   temp file. `## 335.` closed the one path that could *delete* data on a

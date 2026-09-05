@@ -41299,3 +41299,145 @@ cover `app.jsx` or `hq-runtime.jsx` (a concurrent hunt owns both) or
 `views/projects.jsx` (rewritten by `## 392` as this ran), and they do not
 cover `serve.py` or the drivers, where the same three shapes are very
 likely to live and nobody has counted them yet.
+## 396. the first page a beta tester sees was no page at all
+
+Every hunt in this series so far has walked the office of somebody whose
+office already exists — the existing coworkers, the existing projects, the
+existing tasks. This one walked the path an actual beta tester walks: a
+fresh clone, an empty home directory, nothing installed. The very first
+screen on that path does not render. It is not a 500, it is not a blank
+page, it is **nothing** — the connection closes with no response and the
+browser shows `ERR_EMPTY_RESPONSE`.
+
+**Driven, not read.** `git archive HEAD | tar -x` into an empty directory
+(which is exactly what a tester has: `dist-ui/` and `node_modules/` are both
+gitignored), a temp `HOME` with no `~/.hermes` and no `~/Documents`, and
+`python3 serve.py` on a port of my own. The office boots fine and the banner
+is correct. Then:
+
+```
+$ curl -sv http://127.0.0.1:8931/hq.html
+> GET /hq.html HTTP/1.1
+* Empty reply from server
+* Closing connection
+```
+
+and in the server log, at the moment of that reply:
+
+```
+FileNotFoundError: …/dist-ui/manifest.json
+During handling of the above exception, another exception occurred:
+  File "…/serve.py", line 2770, in _serve_hq_html
+    return self.send_error(
+  File ".../http/server.py", line 514, in send_response_only
+    self._headers_buffer.append(("%s %d %s\r\n" %
+UnicodeEncodeError: 'latin-1' codec can't encode character '—'
+  in position 185: ordinal not in range(256)
+```
+
+**The bug.** `send_error`'s second argument is not the body. It is the HTTP
+**reason phrase** — the tail of the status line — and
+`BaseHTTPRequestHandler.send_response_only` builds that line with
+`("%s %d %s\r\n" % …).encode('latin-1')`. `_serve_hq_html` passed the whole
+advisory sentence there, and the sentence contains an em dash. So
+`send_error` raises from *inside itself*, after the handler has committed to
+replying and before a single byte reaches the socket. The `except` clause
+that exists to explain the failure is itself the failure.
+
+The irony is exact and it is worth naming. `#295`/`#296` and
+`test_a_fresh_clone_is_told_to_run_npm_install.py` went to real trouble over
+this sentence — the comment above it argues, correctly, that `npm run build`
+alone is insufficient advice because `node_modules/` is gitignored too, and
+that *"someone reading only this sentence has to be able to get to a rendered
+page from it."* The test pins both commands and pins their order. Nobody
+checked that the sentence is ever delivered. It never has been. The test
+read the string out of the AST; the tester read an empty tab.
+
+`README.md` inherits the same false belief in as many words: *"npm run build
+— required: hq.html is 500 until dist-ui/ exists."* It is not 500. There is
+no status code at all.
+
+**The em dash is only the trigger that fires every time.** The same call
+interpolates `e` and `os.getcwd()`, and both carry the user's own home
+directory name. Strip the punctuation and the crash survives for every tester
+whose account is named in Cyrillic, Greek, Hebrew, or any CJK script — a
+class of user for whom the office's first screen is unconditionally blank and
+who has no way whatsoever to find out why. The fix has to cover the dynamic
+half, not just the literal one.
+
+**How likely is this?** It is the single most probable first-run mistake
+there is: running the server before the build, or after a build that failed
+part-way, or after an `npm install` that died on a network hiccup and left
+`dist-ui/` absent. `Start-CafresoHQ.sh` heads it off *when the tester uses
+the launcher* — but `README.md` lists `python3 serve.py` as its own step, on
+its own line, one line under `npm run build`, and a person who runs the two
+in the wrong order or whose build failed silently lands here. It is also
+where every tester who edits a `.jsx` and forgets `npm run build` on a
+machine that never built once ends up.
+
+**Two siblings, the same shape.** An AST sweep of every `send_error` call in
+`serve.py`, `pty_server.py`, `fs_routes.py` and `exporters.py` found exactly
+two more reason phrases that cannot survive latin-1, both in `pty_server.py`:
+the terminal's `'Missing or invalid nonce — fetch /terminal/nonce first'`,
+and the WebSocket origin refusal, whose phrase is an f-string interpolating a
+**caller-supplied `Origin` header** — a 403 that a non-latin-1 Origin turns
+into a dropped connection instead. Neither is a first-run blocker and both
+are one line of the same fix, so they go with it.
+
+**The fix.** In all three: the reason phrase becomes a short ASCII constant
+(`'HQ UI not built'`, `'Missing or invalid nonce'`, `'WebSocket origin not
+allowed'`) and the full sentence moves to `send_error`'s third argument,
+`explain`, which the stdlib HTML-escapes into the response body and encodes
+UTF-8 — so it carries any text there is, including the tester's own directory
+name. Nothing about the wording changes; it just arrives now. Measured on the
+same unbuilt clone:
+
+```
+HTTP/1.0 500 HQ UI not built
+Content-Type: text/html;charset=utf-8
+…
+Error code explanation: 500 - HQ UI not built: [Errno 2] No such file or
+directory: '…/dist-ui/manifest.json' — run `npm install` then
+`npm run build` in ….
+```
+
+**Test.** New `scripts/test_the_page_that_teaches_a_new_tester_the_two_
+commands_can_be_read.py`. Round 1 structural, and it is a general invariant
+rather than three pinned strings: every `send_error` reason phrase in the
+four server files must be a plain string constant (an f-string or a `%` can
+smuggle a runtime character into the status line) **and** must encode
+latin-1; plus the hq.html door specifically must pass an `explain` argument
+and must carry both commands in it. Round 2 boots a real `serve.py` from a
+directory with no `dist-ui/`, deliberately named `hq-firstrun-事務所-…` so
+one boot exercises the em dash and the user-named-directory half together,
+and reads the answer over raw `http.client` rather than urllib — because
+urllib flattens a `RemoteDisconnected` into a generic `URLError` and would
+erase the exact distinction this test exists to make. Fire-tested: reverted
+in place (md5 `33ef983138f0081a84613ce6fa2feb6c`,
+`74574145f4e4453488805532a5ca587a`), **6** checks failed reliably across 3
+runs — with `RemoteDisconnected: Remote end closed connection without
+response` printed as the evidence; restored byte-identical, green on 3
+repeated runs.
+
+**Fallout, one test, the usual shape.**
+`test_a_fresh_clone_is_told_to_run_npm_install.py` pulls the advisory
+sentence out of `serve.py` by walking the AST for the first string constant
+containing `'HQ UI not built'`. After the split there are two, and `ast.walk`
+reaches the short reason phrase first, so all three of its content checks
+failed against `'HQ UI not built'`. It now takes the **longest** match — the
+advice is the half that test is about — with a comment citing this entry.
+Every other test naming `serve.py` or `pty_server.py` that touches
+`send_error`, `_serve_hq_html`, the nonce or the origin refusal was run
+standalone and passes.
+
+**And the honest negative, since this hunt went looking for more.** The rest
+of the cold-start path is in better shape than the crash suggests. The office
+boots with no `.env`, no key and no `~/.hermes`; `hq-state/` and its `vault/`
+and `tls/` subdirectories are created on demand; `GET /hq/state/<name>` on a
+never-written store answers `200 null` on purpose (`#142`'s note is still
+right, and the client's `if (data == null) return` still honours it), so zero
+tasks, zero receipts and zero projects produce no red console and no
+`.map` of `undefined`; `/vault/list` answers `{"files": []}`; and
+`/gap/status` and `/news/status` fail with a 502 that names the compose
+command. `docs/BETA_READINESS.md` gets the first-run walkthrough this hunt
+produced, including the steps a tester genuinely cannot self-serve.

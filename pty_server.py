@@ -330,7 +330,12 @@ def _terminal_pty_ws(self):
     # so local dev tooling isn't broken.
     _origin = self.headers.get('Origin', '').strip()
     if _origin and _origin not in self._app_origins():
-        return self.send_error(403, f'WebSocket origin not allowed: {_origin}')
+        # Reason phrase in the status line is latin-1 (see _serve_hq_html's
+        # note in serve.py); `_origin` is whatever the caller sent, so it
+        # belongs in `explain`, which is UTF-8. Otherwise a non-latin-1
+        # Origin turns a 403 into a dropped connection.
+        return self.send_error(403, 'WebSocket origin not allowed',
+                               f'WebSocket origin not allowed: {_origin}')
 
     # Nonce validation — the frontend fetches /terminal/nonce first and
     # appends ?nonce=<value> to the WS URL.  Any connection without the
@@ -338,7 +343,8 @@ def _terminal_pty_ws(self):
     # because /terminal/nonce is same-origin-only for browser XHR).
     _provided_nonce = (params.get('nonce') or [''])[0]
     if not _provided_nonce or not secrets.compare_digest(_provided_nonce, _PTY_NONCE):
-        return self.send_error(403, 'Missing or invalid nonce — fetch /terminal/nonce first')
+        return self.send_error(403, 'Missing or invalid nonce',
+                               'Missing or invalid nonce — fetch /terminal/nonce first')
 
     # ── WebSocket handshake ─────────────────────────────────────────────
     ws_key = self.headers.get('Sec-WebSocket-Key', '')

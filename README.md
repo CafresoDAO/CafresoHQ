@@ -57,7 +57,8 @@ cd ../cafreso-pages && npm install && npm run dev
 **HQ browser app + backend**
 ```bash
 npm install                        # once — esbuild + the graph engine
-npm run build                      # required: hq.html is 500 until dist-ui/ exists
+npm run build                      # required: hq.html is a 500 page naming these
+                                   # two commands until dist-ui/ exists (## 396.)
 python3 serve.py                   # serve.py prints the URL *and* scheme — it is
                                    # https:// whenever mkcert is installed
                                    # (set PORT to change; default 8787)

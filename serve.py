@@ -2766,10 +2766,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             # advice: node_modules/ is gitignored too, so the build named by
             # this very page fails on its own missing dependencies. Someone
             # reading only this sentence has to be able to get to a rendered
-            # page from it.
+            # page from it — which is why the sentence rides in `explain` and
+            # not in the reason phrase. `send_error`'s second argument is the
+            # HTTP STATUS LINE, and BaseHTTPRequestHandler encodes that line
+            # latin-1; the em dash below (and any non-latin-1 character in the
+            # exception text or the cwd — a home directory is the user's to
+            # name) raises UnicodeEncodeError *inside* send_error, after the
+            # handler has committed to replying and before a single byte is
+            # written. The connection then closes with no response at all, so
+            # the one page whose entire job is to teach a stranger the two
+            # commands renders as ERR_EMPTY_RESPONSE. `explain` is HTML-escaped
+            # into the body and encoded UTF-8, which carries any text there is.
             return self.send_error(
-                500, 'HQ UI not built: %s — run `npm install` then `npm run build` in %s'
-                     % (e, os.getcwd()))
+                500, 'HQ UI not built',
+                'HQ UI not built: %s — run `npm install` then `npm run build` in %s'
+                % (e, os.getcwd()))
         body = html.encode('utf-8')
         self.send_response(200)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
