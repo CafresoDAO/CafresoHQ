@@ -292,9 +292,17 @@ def main():
     # git worktrees, each a full second copy of this tree. Globbing into them
     # counts every concurrent checkout as its own registrar (16 of them on the
     # machine this was written on), which says nothing about the repo's source.
+    # Both exclusions test the path RELATIVE to ROOT, never the absolute one.
+    # `.claude` holds git worktrees — full second copies of this tree — and
+    # globbing into them counts every concurrent checkout as its own registrar.
+    # But when ROOT *is* a worktree, `.claude` is an ANCESTOR of every file, so
+    # filtering on absolute parts excludes the whole tree and leaves this list
+    # empty. Relative parts name only what lies beneath ROOT, which is the
+    # question being asked either way.
     registrars = sorted(
-        str(p.relative_to(ROOT)) for p in ROOT.glob('**/*.jsx')
-        if 'node_modules' not in p.parts and '.claude' not in p.parts
+        str(rel) for p in ROOT.glob('**/*.jsx')
+        for rel in [p.relative_to(ROOT)]
+        if 'node_modules' not in rel.parts and '.claude' not in rel.parts
         and p != FEEDBACK_JSX
         and re.search(r"^\s*useCommands\(", p.read_text(encoding='utf-8'), re.M))
     check('app/commands.jsx is the ONLY registrar of palette commands, so '
