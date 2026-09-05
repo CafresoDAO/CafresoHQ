@@ -8361,6 +8361,43 @@ body.night .bn-item.active { background: rgba(0,212,181,0.15); color: var(--acce
     overflow-y: auto;
   }
 
+  /* Fourth instance of the collision, and the one that survived the fix for
+     the third. `.app:has(.mobile-chat-view) .gs-coach { top: 66px; bottom:
+     auto }` above takes the card off the composer's bottom anchor — but the
+     `max-height` two lines up is written for a card anchored at the BOTTOM.
+     Read from `top: 66px` it is no longer a ceiling on where the card ends,
+     it is a licence to grow downward: at 375x812 it resolves to 646px and
+     the card runs y66 to y712, straight across a composer dock that starts
+     at y576.
+
+     Measured at 375x812 on the first-run state a beta tester actually gets
+     (checklist expanded, 0/6, Chat is the landing view): the card covered
+     79% of the message textarea, and elementFromPoint at the textarea's
+     centre, its top-left, its 25% point and its bottom centre ALL returned
+     the coach — the 25% point returned a BUTTON inside it, so a tap meant
+     for the message box ticked off an onboarding step instead. The tester
+     opens the app on a phone and cannot type a message.
+
+     Two parts, and the second is the one that matters. The cap keeps the
+     card clear of the dock at the dock's MAXIMUM height — measured 237px
+     with the textarea pinned at its own 140px max-height, plus the actions
+     row and the thread-tab strip — so nothing the card says ends up hidden
+     under the composer. 72px is the view's tab-bar clearance, which is what
+     puts the dock's floor where it is. The z-index is the guarantee that
+     does not depend on 237 being right: whatever the dock's height turns
+     out to be, it wins the hit test, so the composer cannot go untappable
+     again the next time a row is added to it.
+
+     `dvh`, not `vh`: `.app` is `height: 100dvh` on mobile, so the dock's
+     floor moves with the dynamic viewport. `vh` is the LARGE viewport on a
+     phone — with the URL bar showing it over-measures by the height of the
+     browser chrome, and the cap would hand that difference straight back to
+     the overlap it exists to prevent. */
+  .app:has(.mobile-chat-view) .gs-coach:not(.gs-coach-mini) {
+    max-height: calc(100dvh - 66px - 237px - 72px - env(safe-area-inset-bottom, 0px));
+  }
+  .mobile-chat-view .composer { z-index: 45; }
+
   /* The coach pill is a single-line lozenge by design (border-radius 999).
      At 375px its text + CTA + ✕ cannot fit on one line, so it wrapped — and a
      999px radius on a 155px-tall box renders as a giant blob, which is exactly

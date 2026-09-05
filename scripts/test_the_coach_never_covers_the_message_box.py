@@ -141,14 +141,32 @@ def main():
 
     # --- §2: the rule --------------------------------------------------
     chat = [(s, d, m) for (s, d, m) in coach if 'mobile-chat-view' in s]
-    check('something scopes the coach to the Chat view', len(chat) == 1,
-          'expected exactly one chat-scoped .gs-coach rule, found %d'
-          % len(chat))
-    if not chat:
+    # The uniqueness below is about the rule that ANCHORS the card — the one
+    # §2, §3 and §4 go on to interrogate, and the one whose `bottom: auto`
+    # must not be contradicted by a second opinion. It used to be stated as
+    # `len(chat) == 1`, over the whole chat-scoped set, and that was scaffolding
+    # standing in for this: it made `chat[0]` unambiguous and nothing else.
+    #
+    # `#315` is why the difference matters. Releasing the bottom edge is only
+    # half of getting the card off the composer; the mobile `max-height` two
+    # rules further down was written for a card anchored at the BOTTOM, and
+    # read from `top: 66px` it let the card grow 646px downward to y712, back
+    # over a dock starting at y576 — measured, with four of four
+    # elementFromPoint probes inside the textarea returning the coach. The
+    # phone needs a second chat-scoped rule to re-cap it for a top anchor, and
+    # `len(chat) == 1` forbade the fix while every property this test is
+    # actually about stayed true. Narrowed to the anchoring rule: one rule
+    # still decides where the card starts and ends, and a rule that sets
+    # neither `top` nor `bottom` is not competing for that.
+    anchor = [(s, d, m) for (s, d, m) in chat if 'top' in d or 'bottom' in d]
+    check('something scopes the coach to the Chat view', len(anchor) == 1,
+          'expected exactly one chat-scoped .gs-coach rule to anchor it, '
+          'found %d (of %d chat-scoped rules)' % (len(anchor), len(chat)))
+    if not anchor:
         print()
         print('%d FAILED' % len(FAILS))
         return 1
-    csel, cdecls, cmedia = chat[0]
+    csel, cdecls, cmedia = anchor[0]
 
     check('it applies everywhere, not only on one screen size — the collision '
           'was measured on BOTH desktop and phone', cmedia == '',

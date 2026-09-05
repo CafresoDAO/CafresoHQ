@@ -36109,3 +36109,84 @@ filesystem-allowlist and route-gating edits elsewhere in that file), one new
 test file, and this entry; `src/cafresohq_state/main.mo` was never staged or
 edited, no II or `derivationOrigin` value was read or written, and no dfx/IC
 action of any kind was run.
+
+---
+
+## 320. the beta tester opened HQ on a phone and could not type a message
+
+A phone is the first thing a beta tester reaches for, and this app means to
+be reached that way: there is a mobile FILES tab, a bottom tab bar, and
+`serve.py` prints a `📱 Mobile / LAN` URL at startup for exactly this. Chat
+is the landing view. The Getting-started checklist is expanded by default and
+shows until all six steps are ticked, so first run is the only state a tester
+ever sees.
+
+At 375×812 that checklist covered the message box.
+
+    .gs-coach       x14..288   y66..712    (646px tall — its own max-height)
+    composer dock              y576..740
+    textarea        x13..362   y617..684
+
+79% of the textarea under the card, and `elementFromPoint` at the textarea's
+centre, its top-left, its 25% point and its bottom centre all returned the
+coach. The 25% probe returned a `BUTTON` inside it — so a tap aimed at the
+message box did not miss, it ticked off an onboarding step. The tester opens
+the app, lands on Chat, taps the one control the view exists for, and
+advances the checklist telling them to chat.
+
+**Why the existing fix did not hold.** This is the fourth time this card has
+collided with something bottom-anchored, and the third fix is still in the
+file and still correct: `.app:has(.mobile-chat-view) .gs-coach { top: 66px;
+bottom: auto }` takes the card off the composer's own bottom anchor. What it
+did not take with it was the `max-height: calc(100vh - 70px - 96px)` two
+rules up, which is written for a card anchored at the BOTTOM. Read from
+`top: 66px` that number stops being a ceiling on where the card ends and
+becomes a licence to grow downward: 646px from y66 is y712, and the dock
+starts at y576. The rule that moved the card and the rule that sizes it were
+written against opposite anchors, and only one of them was updated.
+
+**The fix.** Two rules, and the second is the one that matters. The cap
+re-sizes the expanded card for a top anchor, clearing the dock at the dock's
+*maximum* height — measured 237px with the textarea pinned at its own 140px
+`max-height`, plus the actions row and the thread-tab strip — so nothing the
+card says ends up hidden underneath. It is written in `dvh`, not `vh`,
+because `.app` is `height: 100dvh` on mobile and `vh` is the LARGE viewport
+on a phone: with the URL bar showing, `vh` over-measures by the height of the
+browser chrome and hands that difference straight back to the overlap. The
+`z-index` on `.mobile-chat-view .composer` is the guarantee that does not
+depend on 237 being right — whatever the dock's height turns out to be, it
+wins the hit test, so the composer cannot go untappable again the next time a
+row is added to it.
+
+**The proof.** `scripts/test_the_phone_onboarding_card_does_not_sit_on_the_message_box.py`
+strips CSS comments first (so its own prose cannot satisfy a pattern), lifts
+the ≤768px block that styles the coach, and evaluates the cap's `calc()`
+arithmetically at six viewport heights from 568 to 926 — asserting that
+`top + max-height` lands at or above `viewport - 72 - 237` at every one, which
+is what makes the cap height-independent rather than tuned to 812. It pins
+`dvh` over `vh`, the safe-area term, and reads the coach's own inline
+`zIndex` out of `ui/onboarding.jsx` rather than hard-coding 40, so the
+stacking assertion compares against the real constant.
+
+Measured after the fix on the built page at 375×812: the card ends at y503,
+which is exactly the dock's floor, and all four probes return the textarea —
+including with the textarea forced to its 140px cap.
+
+Fire-tested: copied the fixed `styles.css` to `/tmp`, reverted both rules in
+place with the editor (never `git checkout -- <file>`), the cap and the
+stacking check failed, exit 1. Restored from `/tmp`, `md5` byte-identical,
+reran — all 7 passed, exit 0.
+
+`.css` change, so `npm run build` after.
+
+**One existing test changed, and loudly.**
+`scripts/test_the_coach_never_covers_the_message_box.py` — the test written
+for the third collision — asserted `len(chat) == 1` over every `.gs-coach`
+rule whose selector mentions `mobile-chat-view`. That was scaffolding: it
+existed to make `chat[0]` unambiguous for the four checks that follow, all of
+which are about `top`, `bottom` and specificity. The property it stands for is
+that exactly one rule decides where the card starts and ends — and stated that
+broadly it forbade the rule that finishes its own job, while every assertion
+it actually makes stayed green either way. Narrowed to the rules that set
+`top` or `bottom`; a rule that sets only `max-height` is not competing to
+anchor anything. No assertion was removed or relaxed.
