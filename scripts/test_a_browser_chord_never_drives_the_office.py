@@ -12,10 +12,14 @@ Ctrl+H (history) opened the hire modal, Ctrl+N minted a sticky note. The
 boss reached for a browser habit and the office rearranged itself
 underneath it.
 
-Fix: one guard after the Cmd/Ctrl+K chord (the one chord the office owns on
-purpose) — a held meta/ctrl/alt returns before any letter branch can fire.
-Plain letters and the digit jumps behave exactly as before; Cmd+K still
-toggles the shortcuts HUD.
+Fix: one guard — a held meta/ctrl/alt returns before any letter branch can
+fire. Plain letters and the digit jumps behave exactly as before.
+
+(This handler used to claim Cmd/Ctrl+K for the shortcuts HUD as well, ahead
+of that guard. It no longer does: the command palette in ui/feedback.jsx
+binds the same chord on its own window listener, so both panels opened at
+once — see scripts/test_one_chord_never_opens_two_panels.py. The chord now
+falls through to the palette like any other browser-shaped combo.)
 
 This lifts the REAL onKey handler out of app.jsx (brace-balanced
 extraction) and drives it in Node with recording shims, firing plain and
@@ -138,10 +142,11 @@ console.log(JSON.stringify({
           f"got {got['plain_d']}")
     check("plain 3 still jumps to the third view", got['plain_3'] == ['goTo:vault'],
           f"got {got['plain_3']}")
-    # The one chord the office owns on purpose still works.
-    check("Cmd+K still toggles the shortcuts HUD", got['cmd_k'] == ['shortcuts'],
+    # ⌘K belongs to the command palette (ui/feedback.jsx) — this handler must
+    # leave it alone, or one press opens two panels.
+    check("Cmd+K leaves the chord to the command palette", got['cmd_k'] == [],
           f"got {got['cmd_k']}")
-    check("Ctrl+K still toggles the shortcuts HUD", got['ctrl_k'] == ['shortcuts'],
+    check("Ctrl+K leaves the chord to the command palette", got['ctrl_k'] == [],
           f"got {got['ctrl_k']}")
     # Browser chords belong to the browser — no office action fires.
     check("Cmd+F (find in page) does not flip focus mode", got['cmd_f'] == [],

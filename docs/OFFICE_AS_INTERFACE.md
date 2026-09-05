@@ -33932,3 +33932,83 @@ a foreign session owns and this change never touches). This change covers
 `views/core.jsx`, the new test and this entry; `src/cafresohq_state/main.mo`
 was never staged or edited, no II or `derivationOrigin` value was read or
 written, and no dfx/IC action of any kind was run.
+
+---
+
+## 290. one chord, two panels, and a different answer every time you pressed it
+
+**The reading.** Assigned area: `app/patience.jsx`, `ui/feedback.jsx`, and
+whatever they talk to. `patience.jsx` is 74 lines of pure policy and
+`scripts/test_patience.py` already holds it down at 31 checks, including every
+hostname that merely *looks* private. `ui/feedback.jsx` carries three surfaces —
+the toast stack, `DialogHost`, and the command palette — and the first two have
+been hunted before (`#258`-era stream errors, the double-dismiss guard, the
+danger-dialog autofocus, the Enter-on-Cancel resolve). The palette had not.
+
+**What was actually happening.** `CommandPaletteProvider` registers a `window`
+keydown listener and toggles the palette on Cmd/Ctrl+K. `app.jsx`'s office
+shortcut handler registers its own `window` keydown listener and, on the very
+same chord, toggled the ShortcutHud. Two listeners, one chord, neither stopping
+the other — and because they are separate booleans, they immediately fell out
+of phase:
+
+- press 1, focus on the page: the palette opens **and** the shortcuts panel opens.
+- press 2: focus now sits in the palette's own input, so `app.jsx`'s
+  `e.target.matches('input, textarea, select')` guard returns before its ⌘K
+  branch. Only the palette closes. The shortcuts panel is left stuck open —
+  it has no Escape handler of its own, only a floppy button in the corner.
+- press 3: the palette re-opens and the shortcuts panel closes.
+
+So ⌘K did a different thing on each press, and the boss had no way to predict
+which. Worse, the two owners disagreed *in writing*: the ShortcutHud's own list
+read `⌘K — Toggle shortcuts`, while the palette footer, `DESIGN_SYSTEM.md`, and
+`app/commands.jsx`'s own hint all said ⌘K meant the palette. A chord that opens
+two panels cannot say what it did, and this one was printed on screen telling
+the boss the wrong half.
+
+The collision was invisible from either side. `#`-era work on the letter
+shortcuts even wrote the ⌘K branch down as "the one chord the office owns on
+purpose" and guarded every other modifier combo *after* it — a comment that was
+true of `app.jsx` read on its own and false of the app.
+
+**The fix.** The palette owns the chord. The duplicate branch in `app.jsx`'s
+shortcut handler is gone (one line), so every chorded key now falls through to
+the palette's listener untouched, and the existing modifier guard below it is
+unchanged. Nothing is lost: the ShortcutHud is still one click away on its own
+floppy button and one entry down in the palette itself ("Keyboard shortcuts",
+`app/commands.jsx`). Its `<kbd>⌘K</kbd>` row now names what the chord actually
+does, so the office's only printed shortcut list stops contradicting the
+office.
+
+**The test.** `scripts/test_one_chord_never_opens_two_panels.py` lifts *both*
+real handlers out of `app.jsx` and `ui/feedback.jsx` by brace-balanced slice,
+fires one synthetic ⌘K (with the target shimmed as a non-field, the case where
+`app.jsx`'s guard does not short-circuit) into each, and asserts exactly one
+panel reacts. It also greps every `.jsx` surface for the binding and asserts a
+single owner, and reads the HUD's own `<kbd>` row so the printed claim cannot
+drift back. On the old code it fails 5 of 10 checks — both handlers fire, two
+files own the chord, and the row still claims the panel toggles itself; on the
+new code all 10 pass. Fire-tested by reverting both edits in place with the
+editor (never `git checkout`), watching those 5 fail, restoring from `/tmp`, and
+confirming `app.jsx` md5 `a4ad9301776396ed6173267bdcab8a94` and `ui/panels.jsx`
+md5 `709efd101007c5679dc6e6b61d41f52f` byte-identical.
+
+`scripts/test_a_browser_chord_never_drives_the_office.py` had two checks
+asserting the old ownership ("Cmd+K still toggles the shortcuts HUD"). They were
+written against `app.jsx` alone, by someone who had no reason to know a second
+listener existed; they now assert the chord is left to the palette. The property
+that test exists for — a held modifier hands the keystroke back to the browser —
+is untouched and still green. `scripts/test_shortcuts_command_matches_real_shortcuts.py`
+pinned the HUD's `⌘K` row verbatim as part of "the redirect target's entries are
+all real" — the entry is still real, it just names the right panel now, so the
+expected string moved with the copy and its ⌘K exemption note says why that one
+key is not looked up in `app.jsx`'s handler.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file a
+foreign session owns and this change never touches). This change covers
+`app.jsx`, `ui/panels.jsx`, one new test, four assertions across two existing
+tests, and this entry; `src/cafresohq_state/main.mo` was never staged or edited, no II
+or `derivationOrigin` value was read or written, and no dfx/IC action of any
+kind was run.

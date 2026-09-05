@@ -129,7 +129,12 @@ console.log(JSON.stringify({ called, toasted, label: cmd.label, section: cmd.sec
           'command would run stale/closed-over-undefined after a re-render)',
           re.search(r'onStopAll,\s*\n\s*onShortcuts,\s*\n\s*agents,', commands) is not None,
           'app/commands.jsx: dependency array changed shape')
-    check('app.jsx wires onShortcuts to the SAME state ⌘K already toggles',
+    # ⌘K no longer toggles this panel — the command palette owns that
+    # chord (see scripts/test_one_chord_never_opens_two_panels.py), so the
+    # palette entry and the HUD's own floppy button are now the two ways in.
+    # The wiring that matters is unchanged: this command drives the real
+    # ShortcutHud state rather than printing a second list of its own.
+    check('app.jsx wires onShortcuts to the real ShortcutHud state',
           'onShortcuts={() => setShortcutsOpen(true)}' in app,
           'app.jsx: AppGlobalCommands call site changed shape')
 
@@ -138,13 +143,13 @@ console.log(JSON.stringify({ called, toasted, label: cmd.label, section: cmd.sec
     #        retired (locks the underlying facts, not just the copy) ──────
     check('ShortcutHud (the redirect target) still exists with its real '
           'entries intact',
-          '<kbd>⌘K</kbd><span>Toggle shortcuts</span>' in panels
+          '<kbd>⌘K</kbd><span>Command palette</span>' in panels
           and '<kbd>/</kbd><span>Focus chat</span>' in panels,
           'ui/panels.jsx: ShortcutHud changed shape')
     hud_keys = re.findall(r'<kbd>([^<]+)</kbd><span>', panels[panels.index('SHORTCUTS'):panels.index('SHORTCUTS') + 1200])
     check('every key ShortcutHud advertises maps to a real handler in '
-          "app.jsx's onKey (⌘K is checked separately, it toggles the HUD "
-          'itself)',
+          "app.jsx's onKey (⌘K is exempt: it belongs to the command "
+          'palette in ui/feedback.jsx, not to this handler)',
           all(k == '⌘K' or re.search(r"e\.key === '%s'" % re.escape(k.lower()), app)
               for k in hud_keys),
           hud_keys)

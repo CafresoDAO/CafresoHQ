@@ -345,7 +345,14 @@ function ShortcutHud({ open, setOpen }) {
         <div className="shortcut-panel">
           <h5>⌨ SHORTCUTS</h5>
           <div className="kbrow">
-            <kbd>⌘K</kbd><span>Toggle shortcuts</span>
+            {/* ⌘K opens the command palette — the one thing it has ever
+                actually done twice. This row used to claim it toggled THIS
+                panel, which was half true (app.jsx toggled the HUD on ⌘K
+                too) and therefore a lie about a chord: the boss pressed it
+                and got two panels. The office now has one owner for ⌘K, so
+                this row names it. Reach this panel from the floppy button
+                beside it, or from the palette's "Keyboard shortcuts". */}
+            <kbd>⌘K</kbd><span>Command palette</span>
             <kbd>H</kbd><span>Hire a coworker</span>
             <kbd>S</kbd><span>Open settings</span>
             <kbd>M</kbd><span>Memory shelf</span>

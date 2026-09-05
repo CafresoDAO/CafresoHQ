@@ -6426,8 +6426,24 @@ ${d.text}` : d.text,
   useEffectA(() => {
     const onKey = (e) => {
       if (e.target.matches('input, textarea, select')) return;
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setShortcutsOpen(v => !v); return; }
-      /* A held modifier means the keystroke belongs to the BROWSER, not the
+      /* No ⌘K branch here any more. This handler used to toggle the
+         ShortcutHud on ⌘K while CommandPaletteProvider (ui/feedback.jsx)
+         independently toggled the command palette on the SAME chord — two
+         window keydown listeners, neither stopping the other. One press
+         opened BOTH panels; the second press only closed the palette (by
+         then focus sat in the palette's own input, so the guard on the line
+         above returned early here), leaving the shortcuts panel stuck open
+         with no Escape of its own; a third press re-opened the palette and
+         closed the HUD. The two toggles drifted out of phase, so ⌘K did
+         something different every time it was pressed — and the HUD's own
+         list told the boss ⌘K meant "Toggle shortcuts" while the palette's
+         footer and DESIGN_SYSTEM told them it meant the palette. The
+         palette owns the chord; the HUD is still one click away on its
+         floppy button and one entry down in the palette itself
+         ("Keyboard shortcuts", app/commands.jsx). A chord that opens two
+         panels is a control that cannot say what it did.
+
+         A held modifier means the keystroke belongs to the BROWSER, not the
          office. The digit branch below has known this since it was written
          (`!e.metaKey && !e.ctrlKey && !e.altKey`); the letter shortcuts never
          did, so every browser combo that shares a letter also drove the
@@ -6435,8 +6451,9 @@ ${d.text}` : d.text,
          opened Settings under the save dialog, ⌘D (bookmark) toggled night,
          Ctrl+H (history) opened the hire modal, Ctrl+N minted a sticky note.
          The boss reached for a browser habit and the office rearranged
-         itself underneath it. One guard here, after ⌘K (the one chord the
-         office owns on purpose), covers every branch below. */
+         itself underneath it. One guard here covers every branch below —
+         and now every chorded key, ⌘K included, falls through to the
+         palette's listener untouched. */
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === 'h') setHireOpen(true);
       else if (e.key === 's') setSettingsOpen(true);
