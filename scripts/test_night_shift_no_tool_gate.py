@@ -22,9 +22,24 @@ drifts into the other:
 
   · The Night Shift runs server-side in night_runner.py, whose `run_tool()`
     grants VAULT_NEW/VAULT_APPEND unconditionally — it never reads
-    `agent.tools`. Its picker matches: every hire selectable, no `disabled`
-    on 🌙 SCHEDULE or ▶ RUN NOW. Adding a gate here would block a path that
-    demonstrably works.
+    `agent.tools`. Its picker matches: every hire selectable, and no TOOL
+    gate on 🌙 SCHEDULE or ▶ RUN NOW. Adding one here would block a path
+    that demonstrably works.
+
+NARROWED BY #301, deliberately, and stated here so nobody has to guess.
+The three assertions below used to read `'disabled' not in <slice>` — a
+blanket ban on the attribute, standing in for the rule this file actually
+holds, which is "no PER-AGENT TOOL gate". #301 found the other thing that
+slice was silently promising: with an EMPTY roster the picker painted an
+option-less `<select>` and both buttons stayed live, taking a click and
+answering `topic + agent required`. Gating on "is anybody hired at all" is
+not a tool gate — it is not per-agent, it cannot block a coworker the
+server would have accepted, and it refuses only the case where there is no
+coworker to accept. So the checks now name the tool-gating machinery
+(`canDoMode`, `missingTools`, `agent.tools`) and pin the one `disabled`
+that is allowed to appear, instead of banning the word. The original rule
+is intact and, if anything, harder to get past: `disabled={!canDoMode(...)}`
+in either place still fails, where before only the substring mattered.
 
 Run: python3 scripts/test_night_shift_no_tool_gate.py
 """
@@ -69,11 +84,16 @@ def main():
     # ── the Night Shift picker stays ungated, matching the runner ──────────
     ns = missions[missions.find('function NightShiftSection('):]
     ns = ns[:ns.find('\nfunction MissionsModal(')]
-    picker = re.search(r'<label>COWORKER</label>\s*\n\s*<select[\s\S]*?</select>', ns)
+    # `[\s\S]*?` rather than an immediate `<select>`: since #301 the picker
+    # sits behind a no-crew note, so the <select> is no longer the first
+    # thing after the label. What matters is that it is still in there.
+    picker = re.search(r'<label>COWORKER</label>[\s\S]*?</select>', ns)
     check('the Night Shift COWORKER picker exists', bool(picker))
     picker_body = picker.group(0) if picker else ''
-    check('...and lists every hire with no disabled option',
-          'disabled' not in picker_body,
+    check('...and lists every hire with no tool-gated option',
+          not re.search(r'<option[^>]*\bdisabled', picker_body)
+          and 'canDoMode' not in picker_body
+          and 'missingTools' not in picker_body,
           'missions.jsx: night_runner grants vault access to whoever runs, so '
           'gating this picker would block a path that demonstrably works')
     # The two action buttons live in one flex row; scope to it exactly rather
@@ -84,9 +104,17 @@ def main():
           '🌙 SCHEDULE' in action_row and '▶ RUN NOW' in action_row,
           'test scoping is wrong — the slice below would be meaningless')
     check('neither 🌙 SCHEDULE nor ▶ RUN NOW is tool-gated',
-          'disabled' not in action_row,
+          'canDoMode' not in action_row
+          and 'missingTools' not in action_row
+          and '.tools' not in action_row,
           'missions.jsx: same reason as the picker — the server side has no '
           'per-agent gate to enforce, so blocking here would be a lie')
+    # The one gate these buttons ARE allowed: an office with nobody hired.
+    # Pinned by exact text so a tool gate cannot arrive wearing its clothes.
+    stray = [d for d in re.findall(r'disabled=\{[^}]*\}\}?', action_row)
+             if d != 'disabled={!!noCrewNote(agents)}']
+    check('...and the only gate on them is "nobody is hired yet"',
+          not stray, stray)
 
     # ── in-tab Research keeps its gate (the failure it was built for) ──────
     modal = missions[missions.find('function MissionsModal('):]

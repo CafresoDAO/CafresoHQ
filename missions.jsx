@@ -53,6 +53,31 @@ function useValidAgentId(agents, agentId, setAgentId, prefer) {
     if (next !== agentId) setAgentId(next);
   }, [agents, agentId, setAgentId, prefer]);
 }
+/* Why neither mission form can start anything yet, in office words — or ''
+   when there is a roster and the forms are live.
+
+   A mission is one coworker working alone for hours, so an office with
+   nobody hired cannot have one. Both forms in this file said so only by
+   going quiet: the COWORKER row rendered `agents.map(...)` into a `<select>`
+   with ZERO options, which paints as an empty box with a dropdown arrow —
+   indistinguishable from a picker that failed to load. Around that box the
+   research half then costed a run that could not happen ("24 rounds × ~3
+   brain calls each") over a START button disabled with no reason given,
+   and the night-shift half left 🌙 SCHEDULE and ▶ RUN NOW fully enabled,
+   answering a click with `topic + agent required` — developer shorthand
+   naming a field ("agent") that has no label on this screen.
+
+   §7: a block states the reason AND the route. Kept module-level and
+   import-free so scripts/test_a_mission_form_with_nobody_hired_says_so.py
+   runs it verbatim under node. */
+function noCrewNote(agents) {
+  const roster = Array.isArray(agents) ? agents : [];
+  if (roster.length) return '';
+  return 'No coworkers yet — a mission is one coworker working on their own for '
+    + 'hours, so there has to be somebody to give it to. Close this and click an '
+    + 'empty desk in the Office to hire your first.';
+}
+
 const { Modal: OcModalM } = CafresoHQModals;
 
 const MIN = 60_000;
@@ -857,7 +882,12 @@ function NightShiftSection({ agents }) {
 
   const schedule = async (startAtMs) => {
     const ag = agents.find(a => a.id === agentId);
-    if (!topic.trim() || !ag) { setMsg('topic + agent required'); return; }
+    /* Two refusals, said apart. `topic + agent required` covered both and
+       named neither honestly: with an empty roster it answered a filled-in
+       topic with a sentence implying the topic was the problem, and "agent"
+       is not a word this screen uses anywhere (the label says COWORKER). */
+    if (!ag) { setMsg(noCrewNote(agents) || 'Pick the coworker who should take this shift.'); return; }
+    if (!topic.trim()) { setMsg('Give them a topic first — what should get researched overnight?'); return; }
     setMsg('');
     try {
       const res = await nsFetch('/missions/schedule', {
@@ -957,9 +987,11 @@ function NightShiftSection({ agents }) {
         </div>
         <div className="form-row">
           <label>COWORKER</label>
-          <select value={agentId} onChange={e => setAgentId(e.target.value)}>
-            {agents.map(a => <option key={a.id} value={a.id}>{a.name} · {a.role}</option>)}
-          </select>
+          {noCrewNote(agents)
+            ? <span className="hint">{noCrewNote(agents)}</span>
+            : <select value={agentId} onChange={e => setAgentId(e.target.value)}>
+                {agents.map(a => <option key={a.id} value={a.id}>{a.name} · {a.role}</option>)}
+              </select>}
           {/* Every other surface in the office ties a coworker to their OWN
               brain (the "powered by" chip, the model picker, the front-desk
               card) — this is the one picker that doesn't. night_runner.py's
@@ -971,7 +1003,9 @@ function NightShiftSection({ agents }) {
               was the one place that didn't say so. Tool restriction is
               already disclosed a few rows down ("night tools only");
               honesty about the brain deserved the same treatment. */}
-          <span className="hint">writes under this name — all night shifts share one brain (each coworker's own model in Settings → Roster doesn't apply here)</span>
+          {/* Gated with the picker it explains: "writes under this name"
+              describes a choice, and there is no choice to describe. */}
+          {!noCrewNote(agents) && <span className="hint">writes under this name — all night shifts share one brain (each coworker's own model in Settings → Roster doesn't apply here)</span>}
         </div>
         <div className="form-row">
           <label>LIBRARY FOLDER</label>
@@ -1004,7 +1038,12 @@ function NightShiftSection({ agents }) {
         </div>
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
+        {/* Both buttons go dark with an empty roster. A control that is
+            live is a promise it can do the thing; these two took the click,
+            reached `schedule()`, and bounced it. */}
         <button className="px-btn primary" style={{ fontSize: 9 }}
+          disabled={!!noCrewNote(agents)}
+          title={noCrewNote(agents) || undefined}
           onClick={() => {
             /* An unparseable/blank time must NOT silently become startAt=0
                (= run immediately). Kicking off an agent run is a real action;
@@ -1015,7 +1054,9 @@ function NightShiftSection({ agents }) {
             schedule(t);
           }}>🌙 SCHEDULE</button>
         <button className="px-btn secondary" style={{ fontSize: 9 }}
-          onClick={() => schedule(0)} title="starts within ~30s on the next scheduler scan">▶ RUN NOW</button>
+          disabled={!!noCrewNote(agents)}
+          onClick={() => schedule(0)}
+          title={noCrewNote(agents) || 'starts within ~30s on the next scheduler scan'}>▶ RUN NOW</button>
         {msg && <span className="hint">{msg}</span>}
       </div>
 
@@ -1330,14 +1371,16 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
                   the sentence directly under it correctly said only Vault
                   Notes — one dropdown disagreeing with itself about one
                   coworker. */}
-              <select value={agentId} onChange={e=>setAgentId(e.target.value)}>
-                {agents.map(a => (
-                  <option key={a.id} value={a.id} disabled={!canDoMode(a)}>
-                    {a.elevated ? '🛡 ' : ''}{a.name} · {a.role}
-                    {!canDoMode(a) ? ` (needs ${missingTools(a).map((t) => TOOL_LABEL[t]).join(' + ')})` : ''}
-                  </option>
-                ))}
-              </select>
+              {noCrewNote(agents)
+                ? <span className="hint">{noCrewNote(agents)}</span>
+                : <select value={agentId} onChange={e=>setAgentId(e.target.value)}>
+                    {agents.map(a => (
+                      <option key={a.id} value={a.id} disabled={!canDoMode(a)}>
+                        {a.elevated ? '🛡 ' : ''}{a.name} · {a.role}
+                        {!canDoMode(a) ? ` (needs ${missingTools(a).map((t) => TOOL_LABEL[t]).join(' + ')})` : ''}
+                      </option>
+                    ))}
+                  </select>}
               {/* §7: a failure is one honest sentence PLUS a way forward.
                   This line had two faults, and the first is the worse one.
 
@@ -1461,8 +1504,14 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
             paddingTop:'var(--sp-4)',
             borderTop:'1px dashed var(--rule)',
           }}>
+            {/* The blocker outranks the costing. This line quoted the size
+                of a run ("24 rounds × ~3 brain calls each") next to a START
+                button that was disabled for a reason it never mentioned —
+                so the only sentence on the row described work the office
+                had already decided it could not do. */}
             <div className="hint" style={{marginRight:'auto'}}>{
-              mode === 'project-study'
+              noCrewNote(agents) ? noCrewNote(agents)
+              : mode === 'project-study'
                 ? (projectId ? `${Math.round(duration / interval)} rounds × file reads + Library writes${isElevated ? ' · 🛡 file and shell access' : ''}` : 'select a project to start')
                 : (topic.trim() ? `${Math.round(duration / interval)} rounds × ~3 brain calls each${isElevated ? ' · 🛡 file & shell access' : ''}` : 'enter a topic to start')
             }</div>

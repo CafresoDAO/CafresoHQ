@@ -34574,3 +34574,37 @@ covers only `drivers/claude_code.py`, the one new test file, and this entry;
 no existing test was changed, `src/cafresohq_state/main.mo` was never staged
 or edited, no II or `derivationOrigin` value was read or written, and no
 dfx/IC action of any kind was run.
+
+---
+
+## 299. a brand-new office was handed two live buttons to schedule overnight work
+
+The Missions modal is on the topbar ROOMS menu and in the command palette
+from the very first page load, so a beta tester reaches it long before they
+have hired anybody. With an empty roster both of its forms — 🔬 RESEARCH and
+🌙 NIGHT SHIFT — rendered their COWORKER row as `agents.map(...)` into a
+`<select>`, which paints as a box with a dropdown arrow and nothing in it. A
+new boss cannot tell that from a picker that failed to load, and the office
+never said which it was.
+
+Around that empty box the two halves failed in opposite directions. The
+research half disabled ▶ START RESEARCH and put no reason anywhere, while the
+line beside it costed the run that could not happen — "24 rounds × ~3 brain
+calls each", a confident description of work the office had already decided
+it would refuse. The night-shift half did the reverse and left 🌙 SCHEDULE
+and ▶ RUN NOW fully live: they took the click, reached `schedule()`, and came
+back with `topic + agent required`. Developer shorthand, on the surface that
+promises unattended overnight work — and it named a field that has no label
+on this screen (the row says COWORKER), so a boss who had just typed a topic
+was told the topic was the problem.
+
+`noCrewNote(agents)` is one sentence saying what is missing and where to go,
+and every one of those surfaces now reads it: both COWORKER rows show it in
+place of the empty picker, the research footer leads with it instead of the
+costing, the night-shift refusal uses it, and both night-shift buttons go
+dark behind it. A live control is a promise that it can do the thing; these
+two were making it to an office with nobody in it.
+
+The one refusal that stayed is the split of `topic + agent required` into its
+two halves, said separately, because they are two different problems and only
+one of them is the boss's fault.
