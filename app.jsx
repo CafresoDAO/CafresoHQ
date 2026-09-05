@@ -388,7 +388,26 @@ function App() {
      storm of failures lands at once. The cooldown is in-memory (not
      persisted) so it resets on page reload — appropriate for "live alert"
      semantics rather than "permanent log." Permanent record is in the
-     inbox (every failure has a message record + structured failureCause). */
+     inbox (every failure has a message record + structured failureCause).
+
+     `lastSeenIds` is the same story, in-memory, and that WAS fine while it
+     only had to stop one failure being counted twice inside a single
+     session. But it is also the only thing standing between a failed
+     message and `newFails` re-electing it — and a reload hands every rule
+     in this effect a blank `escalationStateRef`, `lastEscalatedFor` and
+     `lastSeenIds` both, while `messages` (useFileStored) comes back exactly
+     as it was, failureCause and all. Driven live: send one message with no
+     brain signed in, get the `critical`-rule escalation and its one system
+     chat row, reload — the same still-`failed` message reads as "unseen"
+     again to a fresh Set, the 90s cooldown a fresh Map has never heard of
+     doesn't block it, and a second identical row lands in the same thread.
+     Reload again and there's a third. Nothing here ever un-fails or
+     retries the message; every load after the first is pure duplication.
+     `escalatedAt` on the message record itself is the fix — set once, the
+     moment a rule actually fires (not merely evaluates) for that message,
+     and persisted right alongside `failureCause` since it lives on the
+     same object. A message already carrying it is never a candidate again,
+     on this load or the next one. */
   const escalationStateRef = useRefA({
     lastEscalatedFor: new Map(),  // key → ts of last escalation
     lastSeenIds: new Set(),       // message ids we've already evaluated
@@ -405,6 +424,7 @@ function App() {
     const newFails = list.filter(m =>
       m.state === 'failed' &&
       m.failureCause &&
+      !m.escalatedAt &&
       !state.lastSeenIds.has(m.id));
     for (const m of newFails) {
       state.lastSeenIds.add(m.id);
@@ -495,6 +515,9 @@ function App() {
             + ' Open 📬 INBOX → Needs attention to see it and retry.',
           thread: escThread,
         }]);
+        // Stamp the message itself so a reload's blank escalationStateRef
+        // can't re-elect it — see the note above `escalationStateRef`.
+        setMessages(prev => prev.map(x => x.id === m.id ? { ...x, escalatedAt: now } : x));
       }
     }
     // Garbage-collect lastSeenIds for messages no longer in the registry

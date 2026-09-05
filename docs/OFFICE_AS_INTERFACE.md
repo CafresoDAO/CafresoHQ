@@ -39206,3 +39206,74 @@ inside the root's own box. Fire-tested by reverting the CSS in place: with
 `overflow-y` back to the inherited `hidden`, the suite's "column offers a
 scrollbar instead of clipping" assertion fails at all three short-window
 sizes, and passes once the rule is restored.
+
+---
+
+## 374. the same stuck coworker, announced on every visit
+
+**The lead.** `## 372.`'s own drive left a smaller ticket on the table: the
+Getting-Started checklist's "Chat with your team" tick reads live off
+`(chat || []).some(m => m.from === 'user')`, and `chat` is `useStored` —
+plain localStorage, debounced 300ms. Chasing it live (fresh scratch `$HOME`,
+real `python3 serve.py`, real Chrome): send the CEO one message, wait for
+the 401, reload. The user message and the failure both came back exactly as
+sent — `chat`'s debounce had long since fired by the time a real tester
+reloads — and the checklist read 3/6, not 2/6. That lead was already fixed
+by the time this drive reached it.
+
+**What the same drive found instead.** The escalation watcher two hundred
+lines above `## 372.`'s fourth door — the one that turns a `critical`
+auth/billing failure into its own persisted "N need you" system row — has a
+comment directly above it explaining that its cooldown is "in-memory (not
+persisted) so it resets on page reload — appropriate for 'live alert'
+semantics rather than 'permanent log.'" True of `lastEscalatedFor`, the
+90-second anti-spam Map. Not true of `lastSeenIds`, the Set riding on the
+exact same in-memory ref, whose only job is recognizing a message this
+effect has already acted on — a question with a durable right answer, not
+a live one.
+
+**Measured**, on the same fresh install: hire nobody, no key configured, say
+hi to the CEO. The `critical` rule fires once, one system row lands — so
+far identical to `## 372.`. Reload. `messages` (`useFileStored`) comes back
+from disk precisely as it was: same id, `state: 'failed'`, same
+`failureCause`. `escalationStateRef` comes back blank, the way every
+`useRef` does on a fresh mount. The fresh `lastSeenIds` has never heard of
+that message id; the fresh `lastEscalatedFor` has never heard of its
+cooldown key. The still-failed message reads as brand new and escalates
+again — a second, word-for-word-identical system row. Reload again: a
+third. Nothing about the failure changed between any of the three loads;
+every load after the first was pure duplication, and a boss who reloads a
+few times while trying to fix their brain configuration watches the office
+tell them the same coworker is stuck, over and over, in an ever-growing
+column of identical warnings.
+
+**The fix.** `escalatedAt` on the message record itself, set in the same
+`setMessages` call that already persists `state`/`failureCause` — the
+moment a rule actually fires, not merely evaluates. `newFails`'s filter
+gains `!m.escalatedAt` alongside the existing `lastSeenIds` check. A message
+stamped once stays excluded from every future mount's `newFails`, so the
+blank ref a reload always hands the effect no longer matters — the durable
+half of the question moved off it, onto the object that was already being
+persisted for an unrelated reason.
+
+**No collateral.** The 90-second same-session cooldown (`lastEscalatedFor`)
+is untouched and still resets per the comment's own stated intent — a storm
+of DIFFERENT failures inside one session still gets the anti-spam treatment
+it always did. Only a message already carrying its own permanent
+`escalatedAt` stops being a candidate, on this load or the next one.
+
+**Fire-tested.** New `scripts/test_a_reload_does_not_re_escalate_a_failure.py`
+lifts the real effect body out of `app.jsx` (from `const escalationStateRef
+= useRefA({` to the first `}, [messages]);` after it — the same
+brace/marker-lift pattern `test_a_standing_search_stays_fresh.py` uses) and
+runs it under node three times against one persisted `messages` array with
+a fresh `useRefA` each time, standing in for three page loads with no new
+failure between them. Copied the fixed `app.jsx` to `/tmp`, reverted the
+`escalatedAt` filter and the `setMessages` stamp in place, confirmed all
+three duplication checks fail (`systemRows: 3, toasts: 3`, matching the live
+drive digit for digit), restored from the `/tmp` copy, and confirmed the
+restored file is byte-identical (md5) to the fixed one.
+`scripts/test_cast.py` — the suite that already pins the neighboring
+`if (escalate) { … }]);` block by regex for `## 372.` — still passes
+unchanged; the new `setMessages` line sits after that block's closing
+`}]);` and outside the regex it pins.
