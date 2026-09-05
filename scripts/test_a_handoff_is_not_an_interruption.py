@@ -162,6 +162,12 @@ async function drive(scene) {
   const opts = scene.opts;
   const HQ = { displacedTask };
   const agentAbortersRef = { current: new Map(scene.registry || []) };
+  /* #390 added startingTaskIdsRef (a Set claimed synchronously at the top of
+     onTaskDropOnAgent) and its releaseStartClaim() helper, called on every
+     path that doesn't end in a real dispatch. The prelude lifted below starts
+     after the claim, so the harness only needs the release to exist; a no-op
+     keeps this a test of the hand-off guards. */
+  const releaseStartClaim = () => {};
   const setTasks = (fn) => {
     const out = fn(tasks);
     for (const t of out) {

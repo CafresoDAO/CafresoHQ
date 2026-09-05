@@ -118,6 +118,12 @@ def main():
         '  const task = tasks.find(t => t.id === taskId);\n'
         '  const opts = s.opts || {};\n'
         '  const agentAbortersRef = { current: new Map(s.running ? [["a1", 1]] : []) };\n'
+        # #390 added startingTaskIdsRef (a Set claimed synchronously at the top
+        # of onTaskDropOnAgent) and its releaseStartClaim() helper, called on
+        # every path that doesn't end in a real dispatch. The lifted segment
+        # below starts after the claim, so the harness only needs the release
+        # to exist; a no-op keeps this a test of the two desk guards.
+        '  const releaseStartClaim = () => {};\n'
         '  const window = { hqConfirm: async (msg) => { log.dialogs.push(msg); return s.ok !== false; } };\n'
         '  const setTasks = (fn) => { fn(tasks).forEach(t => { if (t.stalledNote) log.notes.push([t.id, t.stalledNote]); }); };\n'
         '  const logActivity = (row) => log.activity.push(row.text || "");\n'
