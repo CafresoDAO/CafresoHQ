@@ -186,9 +186,14 @@ async function drive(scenario) {
   const dispatchToAgent = (agent, body, opts) => calls.dispatches.push({ to: agent.name, body, opts });
   const m = { id: 'msg_1', toAgentId: 'a_v', toAgentName: 'Vera', body: 'the ask',
               fromAgentId: scenario === 'peerOrigin' ? 'a_k' : 'boss', fromAgentName: 'You' };
+  // #389 added resendingIdsRef — a Set claimed synchronously at the top of
+  // resendMessage so a second rapid click can't dispatch twice. A fresh Set
+  // per drive() keeps each scenario independent (each drives one id once).
+  const resendingIdsRef = { current: new Set() };
   const fn = new Function('messagesRef', 'agents', 'window', 'dispatchToAgent',
-    'return (async () => { ' + RESEND_SRC + ' await resendMessage(arguments[4]); })();');
-  await fn(messagesRef, agents, window, dispatchToAgent, m);
+    'resendingIdsRef',
+    'return (async () => { ' + RESEND_SRC + ' await resendMessage(arguments[5]); })();');
+  await fn(messagesRef, agents, window, dispatchToAgent, resendingIdsRef, m);
   return calls;
 }
 

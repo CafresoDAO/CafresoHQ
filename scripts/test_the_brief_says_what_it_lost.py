@@ -189,6 +189,12 @@ const window = {{
   hqConfirm: async (msg, opts) => {{ ASKED.push({{ msg, danger: !!(opts && opts.danger) }}); return ANSWER; }},
   cafresohqToast: {{ warn: (t) => TOASTS.push(t), error: (t) => TOASTS.push(t), success: (t) => TOASTS.push(t) }},
 }};
+/* #389 added resendingIdsRef — a Set claimed synchronously at the top of
+   resendMessage so a second rapid click can't dispatch twice. retry() below
+   re-uses the one id 'msg_x' across independent scenarios, so it clears the
+   Set each time (see retry()); this is per-scenario isolation, not a second
+   click on one record. */
+const resendingIdsRef = {{ current: new Set() }};
 {resend}
 
 const file = (chars) => {{
@@ -206,6 +212,7 @@ const retry = async (dropped, confirmFlag, answer) => {{
              toAgentName: 'Kip', fromAgentId: 'boss',
              body: 'y'.repeat(200), bodyDropped: dropped }}];
   ASKED = []; SENT = []; TOASTS = []; ANSWER = answer;
+  resendingIdsRef.current.clear();   /* fresh scenario, same id — see above */
   await resendMessage(STORE[0], {{ confirm: confirmFlag }});
   return {{ asked: ASKED.length, danger: ASKED[0] ? ASKED[0].danger : null,
            says: ASKED[0] ? ASKED[0].msg : '', sent: SENT.length }};
