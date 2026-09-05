@@ -465,10 +465,20 @@ _KEY_PROTECTED_PREFIXES = (
 # it: anything protected enough to want an API key is host data by definition.
 # The keyless-by-design entries ('/fs' reads for the preview iframe) stay
 # listed explicitly, since no key gate would ever add them.
+#
+# `#332` gated the ROUTES fall-through for state changes and left this list
+# alone, because a proxied GET changes nothing. It still ANSWERS with the
+# host's own data: GET /lmstudio/models hands back the roster of models
+# installed on this machine, measured at ACAO:'*' with a readable body from
+# Origin: evil.example. That is an inventory of the box, and it is host data
+# by the same reading as everything else here — so ROUTES is iterated rather
+# than its two keys re-typed, and a third passthrough is covered the day it
+# is added. The office's own picker is unaffected: it fetches same-origin,
+# which needs no ACAO, and an app origin still gets the credentialed header.
 _HOST_DATA_PREFIXES = (
     '/fs', '/vault', '/projects', '/export', '/tools', '/terminal', '/hq/',
     '/brave',
-) + tuple(p for p in _KEY_PROTECTED_PREFIXES
+) + tuple(ROUTES) + tuple(p for p in _KEY_PROTECTED_PREFIXES
           if not p.startswith(('/fs', '/vault', '/projects', '/export',
                                '/tools', '/terminal', '/hq/', '/brave')))
 

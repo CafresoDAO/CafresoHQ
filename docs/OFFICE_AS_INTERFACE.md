@@ -37134,3 +37134,38 @@ through, and `OPTIONS` still proxies.
 **Whose twin.** `## 294.`, `## 315.`, `#320`, `#321` — the same family, and the
 first one where the hand-maintained list was not the thing that drifted. The
 list was derived exactly as intended; the intent was one list short.
+
+---
+
+## 333. a visited page cannot read the local model roster
+
+`## 332.` closed the ROUTES fall-through against state changes — a page the
+user merely visited could POST through the office to the local LM Studio or
+Ollama and read the answer. It stopped there on a reasonable-sounding line:
+a proxied GET changes nothing, so it is not a state change, so it is not the
+state-change gate's business.
+
+It is not, and it was still the other list's business. `GET /lmstudio/models`
+changes nothing and *answers* with the roster of models installed on this
+machine. Neither proxy prefix appeared in `_HOST_DATA_PREFIXES`, so `_cors`
+fell through to its public branch and stamped `Access-Control-Allow-Origin:
+*` on the reply. Measured against a real `serve.py` with a stub model server
+on a private port: `Origin: https://evil.example` came back `200`, `ACAO: *`,
+and the full roster readable by that page. An inventory of what is on the box
+— which local models, under what names — handed to any site the boss happens
+to have open in another tab.
+
+The two lists have always answered different questions. `#332`'s asks what a
+stranger may *fire*; this one asks what a stranger may *read*. The proxy is
+correctly absent from the key list (the office's own model picker sends no
+`X-API-Key`, by design), and being keyless is exactly why nothing else was
+standing in front of it here.
+
+So `_HOST_DATA_PREFIXES` now iterates `ROUTES` rather than naming its two
+keys, the same shape `#332` used one list over: a third passthrough is
+covered the day it is added, instead of on the day someone remembers. The
+office's own picker is untouched — it fetches same-origin, which needs no
+`ACAO` at all, and a configured app origin still gets the credentialed
+header. Re-measured after the fix: the forged origin gets no `ACAO` header,
+`/health` is still public to anyone, and the same-origin fetch still returns
+the roster.
