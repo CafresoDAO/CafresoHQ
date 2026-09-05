@@ -55,7 +55,11 @@ npm --prefix frontend run dev      # prebuild syncs assets/ → static/assets/
 
 **HQ browser app + backend**
 ```bash
-python serve.py                    # http://localhost:8787  (set PORT to change)
+npm install                        # once — esbuild + the graph engine
+npm run build                      # required: hq.html is 500 until dist-ui/ exists
+python3 serve.py                   # serve.py prints the URL *and* scheme — it is
+                                   # https:// whenever mkcert is installed
+                                   # (set PORT to change; default 8787)
 # or, with the elevated vault tools enabled (edit the allowlist first):
 bash start-elevated.sh
 ```
@@ -78,7 +82,7 @@ dfx deploy cafreso_pages      --network ic --identity default
 dfx deploy cafresohq_ui --network ic --identity default
 ```
 
-> Gateway/oracle deploy scripts read config from a gitignored `.env` — copy [`.env.example`](.env.example) and set `GATEWAY_IP` first.
+> Machine-specific config lives in a gitignored `.env` — copy [`.env.example`](.env.example). Gateway/oracle deploy config (`GATEWAY_*`, `OCI_*`, …) moved to the **cafreso-fleet** repo with the scripts that read it.
 
 ## Conventions
 
