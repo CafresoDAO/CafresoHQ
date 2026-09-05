@@ -39721,3 +39721,67 @@ copies, confirmed both byte-identical (md5,
 ones, test green again on three repeated runs.
 
 No `.jsx`/`.js`/`.css` touched — no build required.
+
+## 382. two coworkers wrote the same note and the office kept a splice of both
+
+**The lead.** `#381`'s own hunt for the ask-then-write shape (`#337`
+closed it on the upload doors, `/fs/rename` still had it) went looking
+for the SAME shape somewhere that wasn't a filesystem path at all: does a
+concurrent write to one FILE'S CONTENT — not its name — corrupt on this
+server the way a concurrent claim on its NAME used to? `PUT /hq/state/
+<name>`'s own comment already answers this for the state-store door
+(mkstemp + fsync + os.replace, landed after "129 spurious 500s out of
+240 concurrent PUTs" turned up two writers sharing one tmp filename).
+`PUT /vault/note` never got the same look. Its `mode='append'` arm was
+already safe (`_vault_append_local`, an earlier hunt). Its `mode='write'`
+arm — the Library's Save, and the night shift's own VAULT_WRITE, either
+of which can land on a note mid-autosave from the other — was not.
+
+**The wreck.**
+
+    target.write_text(body, encoding='utf-8')
+
+`write_text` opens with `O_TRUNC`, which truncates the file the instant
+it opens — not at close — and every writer opens its own file
+description. serve.py is a ThreadingMixIn server, so two `PUT`s to one
+note at the same moment each truncate and then write from offset 0 on
+independent descriptions of the same inode, and nothing stops one
+writer's later bytes from landing at an offset the other writer already
+passed. Measured against a real running server: five rounds of twelve
+concurrent 50MB `PUT /vault/note?mode=write` calls onto one note — three
+rounds came back holding exactly one writer's complete 50MB body, but two
+came back holding a byte-level mix of two or three different writers,
+one of them only 20MB long (shorter than any single writer's body, with
+no error surfaced to either caller — both PUTs still answered 200). A
+coworker who just typed a paragraph and a night-shift note both believing
+they'd been saved, with the file on disk matching neither.
+
+**The fix.** A new `_vault_write_local` (serve.py, beside
+`_vault_append_local`) writes the body to a `tempfile.mkstemp` tmp file
+unique to this call, in the note's own directory, fsyncs it, then
+`os.replace()`s it into place — the identical tmp + fsync + os.replace
+shape `_hq_handler`'s `PUT /hq/state/<name>` already uses. `os.replace`
+is atomic on the same filesystem, so a reader always sees either the note
+as it stood before this write or one writer's complete new body; no
+second writer's truncate can land inside a half-written file because
+there is no half-written file at the note's own path — only a private
+tmp name until the swap. The `mode='write'` branch of `PUT /vault/note`
+now calls this instead of `target.write_text(body, ...)` directly.
+
+**Fire-tested.** New
+`scripts/test_two_note_writes_at_once_do_not_splice_two_bodies.py` drives
+a real `python3 serve.py` subprocess with real concurrent HTTP requests
+(same pattern as `#381`'s own rename test): five rounds of twelve
+coworkers writing different 50MB bodies to one note at once, checking
+that the note the office keeps is byte-identical to exactly one writer's
+full body every round and is never left shorter than a full body; plus a
+static check that the write goes through `mkstemp`/`os.replace` rather
+than a bare `write_text`; plus a plain single-write sanity pass. Reverted
+the fix in place (back to the bare `target.write_text(body, ...)`) — the
+structural check failed by name on every run, and the race check failed
+on two of three repeated runs (a 3-byte mix on one, a 2-byte mix on
+another), matching the wreck above. Restored `serve.py` from a `/tmp`
+copy, confirmed byte-identical (md5, `6675c7dc7b6bcd18bdad83f563777b7e`)
+to the fixed one, test green again on three repeated runs.
+
+No `.jsx`/`.js`/`.css` touched — no build required.

@@ -1710,6 +1710,44 @@ def _vault_append_local(target: pathlib.Path, body) -> None:
             os.fsync(fh.fileno())
 
 
+def _vault_write_local(target: pathlib.Path, body) -> None:
+    """PUT /vault/note (mode='write', fs backend) — replace a note's whole
+    body without corrupting it if a second write lands at the same moment.
+
+    This used to be a bare `target.write_text(body)`. write_text opens with
+    O_TRUNC, so it truncates the file the instant it opens — not at close —
+    and two coworkers' streaming saves (or a coworker's editor autosave
+    racing the night shift's VAULT_WRITE) landing in this branch together
+    both truncate the SAME note to empty and then write from offset 0 on
+    their own independent file descriptions. Measured against a real
+    running server: 12 concurrent 50MB PUTs to one note, 5 rounds — 2 of
+    the 5 came back holding neither writer's full body: one 20MB stub built
+    from two different writers' bytes, another mixing three. Same family as
+    the mkstemp fix `_hq_handler`'s PUT (this file) already carries for
+    `/hq/state/<name>` — a bare write_text has no crash-safety and no
+    concurrency-safety, it just has neither writer notice the other.
+
+    Fix: write to a tmp file unique to THIS call (mkstemp, same dir so
+    os.replace stays same-filesystem) and swap it into place — the same
+    tmp + fsync + os.replace shape `_hq_handler`'s PUT uses, so the readable
+    file on disk is always either the old note or one writer's complete new
+    one, never a splice of two.
+    """
+    import tempfile as _tf
+    data = body.encode('utf-8') if isinstance(body, str) else (body or b'')
+    tfd, tmp = _tf.mkstemp(dir=str(target.parent), prefix=f'.{target.name}.', suffix='.tmp')
+    try:
+        with os.fdopen(tfd, 'wb') as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, target)
+    except Exception:
+        try: os.unlink(tmp)
+        except OSError: pass
+        raise
+
+
 def _vault_rewrite_wikilinks(src: str, dst: str, stranded=None):
     """After a rename src→dst (fs backend), rewrite inbound [[wikilinks]]
     across every .md in the vault so links follow the file. Handles
@@ -5166,7 +5204,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     # with it.
                     _vault_append_local(target, body)
                 else:
-                    target.write_text(body, encoding='utf-8')
+                    _vault_write_local(target, body)
             except Exception as e:
                 return self._send_json(500, {'error': str(e)})
             return self._send_json(200, {'path': rel, 'mode': mode, 'size': target.stat().st_size})
