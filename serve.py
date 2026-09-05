@@ -5183,8 +5183,27 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return self._send_json(400, {'error': str(e)})
             if not s_path.exists():
                 return self._send_json(404, {'error': 'source not found'})
+            # "Something answers to that name" is not "a second note lives
+            # there". On macOS/APFS and on Windows the filesystem opens
+            # names case-insensitively, so a bare exists() was true for
+            # every case-variant of the SOURCE — and the single most
+            # ordinary edit this door gets (the ✎ prompt is pre-filled
+            # with the note's own path, so people fix a capital letter)
+            # came back 409 "target already exists", naming the note
+            # itself as the obstacle. The note kept the wrong title
+            # forever. Ask whether the destination is a DIFFERENT file;
+            # os.replace does a case-only rename correctly once let past.
+            # A symlink is its own directory entry even when it points
+            # here, so it still counts as occupied.
             if d_path.exists():
-                return self._send_json(409, {'error': 'target already exists'})
+                same = False
+                if not d_path.is_symlink():
+                    try:
+                        same = os.path.samefile(str(s_path), str(d_path))
+                    except OSError:
+                        same = False
+                if not same:
+                    return self._send_json(409, {'error': 'target already exists'})
             if s_path.is_dir() and (d_path == s_path
                                     or s_path in d_path.parents):
                 # refuse before mkdir plants the target INSIDE the source

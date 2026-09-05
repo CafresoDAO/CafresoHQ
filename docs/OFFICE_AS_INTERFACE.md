@@ -38143,3 +38143,43 @@ and skips anything inside a `.toast`, which leaves the fault it exists to
 catch intact — reverting the `.office-wrap` clearance still reports
 `BUTTON.mtab` over the ticker at both sizes. Eight consecutive clean runs
 after the change.
+
+---
+
+## 353. the rename that said the note already existed, and meant that note
+
+**The wreck.** The Library's ✎ opens a prompt pre-filled with the note's own
+path, so the most ordinary edit anyone ever makes there is a capital letter:
+`meeting notes.md` → `Meeting Notes.md`. On this Mac — and on every Windows
+machine — that came back as
+
+    409 {"error": "target already exists"}
+
+and the Library said *"Couldn't move that note — target already exists."* The
+note it was pointing at was **the note being renamed**. macOS/APFS and Windows
+open filenames case-insensitively, so `d_path.exists()` was true for every
+case-variant of the source, and the collision guard in front of `os.replace`
+refused the move before `os.replace` — which performs a case-only rename
+perfectly well — ever got a chance to do it. The body of the note was never in
+danger; only its title, which is the one thing the boss was trying to change,
+and the message named a second note that has never existed.
+
+**Measured, not reasoned.** A real server on `PORT=11352` over a two-note
+vault: `POST /vault/rename {"from":"meeting.md","to":"Meeting.md"}` →
+`{"error": "target already exists"}`, `ls` still showing `meeting.md`. The same
+volume, straight `os.replace('meeting.md','Meeting.md')` → `['Meeting.md']`.
+The filesystem was willing the whole time.
+
+**The fix.** The guard now asks whether the destination is a *different* file —
+`os.path.samefile` — instead of merely whether the name resolves to something.
+A symlink pointing back at the source still counts as occupied, because it is
+its own entry in the drawer. Two genuinely distinct notes still collide with a
+409, which the fire test checks in the same breath as the fix, because a
+collision guard that has stopped guarding would eat one of them silently — and
+that is a far worse day than a title you cannot capitalize.
+
+**What follows the rename.** Everything already built for renames comes along
+for free once the door opens: the file carries the new spelling, `/vault/list`
+titles it the new way, and the inbound `[[meeting]]` in another note is rewritten
+to `[[Meeting]]` by the same pass that follows any other move. The office was
+never missing the machinery. It was refusing to start it.
