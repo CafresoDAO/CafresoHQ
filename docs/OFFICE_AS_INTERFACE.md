@@ -39053,3 +39053,85 @@ alongside the revoke, the same shape `## 360.`'s own test insists on. The
 existing `## 360.` test's own `FakeCtx` — a hand-rolled stand-in for
 `NightContext`, not the real class — needed `current_agent_tools()` added
 to keep imitating it; nothing about what that test measures changed.
+
+---
+
+## 372. the fourth door §7 never reached
+
+**The drive.** Not a bug hunt this time — a walk. Fresh scratch `$HOME`, a
+real `python3 serve.py` with no prior state, `hq.html` in headless Chrome
+(puppeteer-core against the real installed Chrome, since the shared Browser
+pane's tab pool was full of other sessions' work): first load, onboarding,
+hire, first message, exactly the order the Getting-Started checklist itself
+prescribes.
+
+Steps 1 and 2 went well — the front desk correctly found this machine's
+Ollama and offered **Llama** as a zero-setup hire (`## 364.`'s fix holding).
+Step 3, verbatim from the checklist: *"Chat with your team — Say hi to your
+CEO — ask for anything."* Typed exactly that, to the CEO, in DIRECT. The CEO
+runs on the default provider (hermes), which is not signed in on a bare
+self-hosted box, so the call 401'd — the single most common first-message
+failure this product has, and the one `## 350`–`## 353`'s neighborhood exists
+for. The live CEO bubble handled it correctly: `withRouteOut` named Llama,
+"@mention them and they can pick this up."
+
+But the SAME failure also crossed the escalation watcher's `critical` rule
+(auth/billing always escalates), which writes its OWN persisted chat row —
+and that row was built by hand, in app.jsx, years away from `app/cast.jsx`'s
+ladder. It printed the bare SNAG_CAUSES clause and stopped: *"⚠ CafresoHQ is
+stuck — that brain isn't signed in yet — add it in Settings, or give this to
+someone else. Open 📬 INBOX → Needs attention to see it and retry."* No name,
+on the one screen a brand-new office's first message can produce, while
+Llama stood idle at a desk two feet away — the retry loop pointed the boss
+at Settings → Connections, never at the coworker already sitting on a
+working brain.
+
+**Why this one was missed three times over.** `## 350.`'s neighborhood
+(`app/cast.jsx`) already carries a whole ladder — `handoffHint`, `withHandoff`,
+`routeOut`, `withRouteOut` — built specifically because the CEO's own bubble
+and `chatErrorText`'s agent-dispatch bubble used to say the same
+dead-ended thing. `scripts/test_cast.py` already pins both of those call
+sites by source-regex, with comments naming them "the front door" and "the
+same trap, second door." Both comments describe the fix as complete. Neither
+mentions the escalation watcher, which speaks about the exact same failures
+(it reads `messages.json`'s `failureCause`, the same registry the CEO stream
+and the dispatch catches populate) through a third, untested, unrouted
+sentence. Three call sites were fixed and believed to be all of them; a live
+drive found the fourth because a fresh install exercises the escalation path
+on literally the first message it can send.
+
+**The fix.** `app.jsx`'s escalation `setChat` now builds its bubble the same
+way the other three do:
+
+    text: withRouteOut(`⚠ ${title} — ${detail}`, agents, CafresoHQClient, agents)
+      + ' Open 📬 INBOX → Needs attention to see it and retry.',
+
+with `withRouteOut` added to the existing `app/cast.jsx` import already in
+`app.jsx`. Re-driven live on the same fresh install: the persisted row now
+reads *"...or give this to someone else. Llama is still working, though —
+@mention them and they can pick this up. Open 📬 INBOX..."* — and following
+that route out, typing `@Llama can you write one short sentence about
+coffee?`, dispatched a real run to the hired coworker (`agentId:
+a_local_ollama`, status `WORKING`) rather than hitting the same wall twice.
+
+**Fire-tested.** `scripts/test_cast.py` gained a fourth section mirroring
+the existing "front door" / "second door" checks: a `withRouteOut` call
+reproducing this exact scenario (one ready Ollama coworker, unconfigured
+default provider) must name the coworker, and a source check pins the
+escalation `setChat` block to calling `withRouteOut(…, agents,
+CafresoHQClient, agents)`. Copied the fixed `app.jsx` to `/tmp`, reverted the
+import and the bubble text in place, confirmed the three new checks fail
+(`withRouteOut is imported into app.jsx`, `the escalation bubble climbs the
+same ladder as the other three`, `...and is handed the full roster on both
+sides`), restored from the `/tmp` copy, and confirmed the restored file is
+byte-identical (md5) to the fixed one. Full `scripts/test_cast.py` and
+`scripts/run_tests.py` both green afterward, module the one pre-existing
+foreign-owned failure this session does not own.
+
+**What else the drive found, and left alone.** The onboarding checklist's
+step 3 tick ("Chat with your team") is computed from the live in-memory
+`chat` array, not persisted — a page reload after a failed first message
+drops it back to 2/6 even though the chat history (and the failure) survived
+the reload. Cosmetic — it costs a returning tester one re-read of a step
+they already completed, never blocks anything — and is a different, smaller
+ticket than this one.

@@ -7,7 +7,7 @@ import { CafresoHQModals } from './modals.jsx';
 import { CafresoHQUI } from './ui.jsx';
 import { CafresoHQViews } from './views.jsx';
 import { downgradeElevatedModel } from './app/agents.jsx';
-import { brainName, emptyOfficeNote, officeHasBrain } from './app/cast.jsx';
+import { brainName, emptyOfficeNote, officeHasBrain, withRouteOut } from './app/cast.jsx';
 import { AppGlobalCommands } from './app/commands.jsx';
 import { agentFiledPath, cabinetIsEncrypted, fileDelivery, hasSubstance, officeDate, stripToolEcho } from './app/artifacts.jsx';
 import { applyStatus } from './app/worklog.jsx';
@@ -475,8 +475,24 @@ function App() {
           name: 'HQ',
           /* Pointed at "Failed", a tab that does not exist — the inbox's
              three tabs are Needs attention / Activity / Done. Directions
-             to a room that isn't there are worse than no directions. */
-          text: `⚠ ${title} — ${detail}. Open 📬 INBOX → Needs attention to see it and retry.`,
+             to a room that isn't there are worse than no directions.
+
+             §7's third route again, and this is the fourth place it was
+             missing. Driven live: hire Llama off the front desk (a real,
+             ready Ollama brain — agentBrainReady says so), say hi to the
+             CEO per the onboarding checklist's own step 3, and the CEO's
+             default brain (hermes, unsigned-in on a self-hosted box) fails
+             with a 401. That failure is `critical` by this watcher's own
+             rule, so it escalates here — and until now this was the one
+             surface `withRouteOut` never reached: the live CEO-stream catch
+             (ui/chat.jsx) and chatErrorText (app/storage.jsx) both name a
+             ready coworker, but this escalation note built its own text by
+             hand and only ever printed the generic SNAG_CAUSES boilerplate
+             ("...or give this to someone else") with nobody named — while
+             Llama sat idle at a desk two feet away. Routed through the same
+             ladder as the other three now, so all four agree. */
+          text: withRouteOut(`⚠ ${title} — ${detail}`, agents, CafresoHQClient, agents)
+            + ' Open 📬 INBOX → Needs attention to see it and retry.',
           thread: escThread,
         }]);
       }

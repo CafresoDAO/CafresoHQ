@@ -194,6 +194,16 @@ R.rungKeyShared = withRouteOut(DIAG, DEAD,
 // sentence, not to an unhandled throw that eats the whole route-out.
 R.rungKeyBadProbe = withRouteOut(DIAG, DEAD,
   Object.assign({}, fakeC, { managedBrain: () => { throw new Error('x'); } }), DEAD);
+// The fourth surface: app.jsx's escalation watcher, which builds the
+// persisted "N need you" chat bubble for a critical (auth/billing) failure.
+// Reproduced live: hire Llama off the front desk (a real, ready Ollama
+// brain), say hi to the CEO per the onboarding checklist's own step 3 —
+// the CEO runs on the unconfigured default (hermes) and the escalation
+// bubble printed the bare SNAG_CAUSES clause with nobody named, while Llama
+// sat idle at a desk two feet away.
+R.escalationRoute = withRouteOut(
+  '⚠ CafresoHQ is stuck — that brain isn\'t signed in yet — add it in ' +
+  'Settings, or give this to someone else', [ROSTER[0]], fakeC, [ROSTER[0]]);
 // ── what a coworker can DO, in the boss's words ─────────────────────────
 // Grammar is tested with every condition satisfied, so the joining rules
 // are exercised on their own. The gating gets its own fixtures below.
@@ -475,6 +485,36 @@ console.log(JSON.stringify(R));
           'app/storage.jsx: filter `selfId` out, hint from the remainder — and '
           'hand the FULL roster as the fourth argument, or a one-coworker '
           'office tells a boss who has hired somebody that nobody is hired')
+
+    # ── the fourth door: the escalation bubble ───────────────────────────
+    # ui/chat.jsx's CEO stream and app/storage.jsx's chatErrorText both
+    # climb the ladder; the escalation watcher in app.jsx (the "N need you"
+    # notification for a critical auth/billing failure) built its bubble
+    # text by hand and never climbed it at all — driven live, hiring Llama
+    # (a real, ready Ollama brain) and saying hi to the CEO produced a
+    # persisted chat row reading "...or give this to someone else" with no
+    # one named, while Llama sat idle at a desk two feet away.
+    check('a ready coworker is named even from the escalation bubble',
+          'Llama is still working, though — @mention them and they can '
+          'pick this up.' in out['escalationRoute'],
+          repr(out['escalationRoute']))
+
+    check('withRouteOut is imported into app.jsx',
+          "withRouteOut } from './app/cast.jsx'" in app
+          or re.search(r"import \{[^}]*\bwithRouteOut\b[^}]*\} from '\./app/cast\.jsx'", app),
+          "app.jsx must import withRouteOut alongside officeHasBrain/brainName")
+
+    esc = re.search(r"if \(escalate\) \{[\s\S]{0,3000}?\}\]\);", app)
+    check('the escalation bubble builder is still where it was', bool(esc),
+          'app.jsx: could not find the escalation watcher\'s setChat call')
+    ecb = esc.group(0) if esc else ''
+    check('the escalation bubble climbs the same ladder as the other three',
+          'withRouteOut(' in ecb,
+          "app.jsx: the persisted chat row was built by hand and never "
+          "named a ready coworker")
+    check('...and is handed the full roster on both sides',
+          bool(re.search(r'withRouteOut\([\s\S]{0,220}?agents, CafresoHQClient, agents\)', ecb)),
+          'app.jsx: the third and fourth arguments must both be the live roster')
 
     # A real LM Studio shelf turned these up falling through to the generic
     # row: a model whose own name says nano is the small-and-quick class.
