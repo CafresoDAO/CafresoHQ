@@ -36255,3 +36255,118 @@ relying on. A row that ran out of time is neither of the two shapes that file
 described, so the fixture set could not have caught this. Both of its
 counting assertions ("an error row is not counted as a report", "mixed run
 counts only the answers") still hold, unchanged and unrelaxed.
+
+---
+
+## 322. the tab could not read the answer, so it stopped asking questions and started giving orders
+
+**What a visited page could do.** Same beta tester as `## 315.`, same
+`python3 serve.py` with nothing configured, same idle tab open somewhere else
+in the browser. That page could write a file. Anywhere on the disk. Measured,
+from `Origin: https://evil.example` with `Content-Type: text/plain`:
+
+    POST /tools/exec  {"tool":"FILE_WRITE","arg":"/tmp/PWNED","body":"OWNED"}
+      → 200  {"ok": true, "result": "Wrote 5 chars → /tmp/PWNED"}
+
+and `/tmp/PWNED` was there afterwards. Note where it landed. `/tmp` is nowhere
+near the `$HOME/Documents` default that `## 315.` so carefully narrowed —
+`_validate_path` skips the allowlist outright in local mode when
+`CAFRESOHQ_ALLOWED_DIRS` is unset, on the reasoning that the user is
+developing locally and can access their own files. Which is true of the user
+and not true of the stranger's tab making the request on their behalf. So:
+arbitrary file write, anywhere the tester can write, which includes `~/.zshrc`
+and `~/Library/LaunchAgents`. That is a shell, from a web page, with no click
+and nothing on screen. On the same forged `Origin`, `POST /projects/clone` ran
+a real `git clone` into `~/Documents`.
+
+**Why the existing defences all watched the wrong door.** Three of them, and
+each one is correct about the thing it was built for.
+
+`## 294.` withheld `Access-Control-Allow-Origin` from the routes that hand
+back the office's own work, so a stranger's tab cannot **read** the reply.
+That is a fine defence against a page asking questions. It is no defence at
+all against a page giving orders. A cross-origin `fetch` with a simple
+content-type is not preflighted: the browser sends the request, this server
+runs the handler, and only *then* does the browser discard a response the page
+is not allowed to see. On a `GET` the discarded response was the whole prize.
+On a `POST` it is a receipt for something that already happened.
+
+The key gate did not stop it either, for the third entry running. With no
+`CAFRESOHQ_API_KEY` — the default a tester runs — `_api_key_ok` degrades to
+"loopback callers only", and the attacking page's `fetch` leaves the victim's
+own `127.0.0.1`. `## 315.` said this about `/fs`. `#320` said it about the PTY
+nonce and an absent `Origin`. It is the same sentence every time: **loopback
+is a property the real app has, and so does any page the tester happened to
+open.** A fact that is true of the office is not thereby evidence of the
+office.
+
+And `_fs_host_gate`, the rebinding gate `## 315.` built, was pointed at
+exactly one family of routes. The helper underneath it, `_host_gate_ok`, was
+already general. Nothing else called it.
+
+**The fix.** `_state_change_gate`, in front of every `POST`, `PUT` and
+`DELETE` that reaches a key-protected prefix. Two conditions, because there
+are two attacks and each is blind to the other.
+
+The `Host` check catches DNS rebinding, where the attacker's name resolves to
+`127.0.0.1` and their page is genuinely same-origin with this server — it can
+send any `Origin` it likes, or none, and an `Origin` check waves it straight
+through. What it cannot forge is a `Host` naming a loopback literal or a bare
+IP, because the browser sends whatever is in the address bar, and that is the
+attacker's own hostname.
+
+The `Origin` allowlist catches plain CSRF, where the `Host` is a perfectly
+honest `127.0.0.1:8787` and sails past the host gate. Here the browser is
+*compelled* to attach the attacker's real `Origin`, and that is what gives it
+away.
+
+An **absent** `Origin` is allowed, and that is not `#320`'s mistake repeated.
+Absence is only ever reached after the host gate has already established that
+the `Host` is loopback-or-literal. No browser omits `Origin` on a cross-origin
+`POST`; what omits it is `curl`, the night runner's self-calls, and a
+same-origin `XHR`, none of which a hostile page can be. `#320`'s bug was
+treating absence as proof *on its own*. Here it is a residue, after the thing
+that actually discriminates has already run.
+
+The route list is **derived** — `_KEY_PROTECTED_PREFIXES`, the same tuple the
+key gate reads — for the reason written over `_HOST_DATA_PREFIXES`, which
+drifted to eleven of twenty-four entries precisely because someone maintained
+it by hand. A route dangerous enough to want a key is dangerous enough that a
+stranger must not be able to fire it, and the next prefix anyone adds is
+covered without them having to know this entry exists.
+
+**The half that decides whether a gate is right or merely strict.** The first
+version of this fix refused the LAN URL the startup banner prints. A phone on
+`http://10.0.0.131:8787/` sends `Origin` and `Host` both naming
+`10.0.0.131`, and `_app_origins` only ever self-adds a *loopback* `Host`, so
+that origin is in nobody's allowlist. The test caught it before the commit
+did. An `Origin` equal to this request's own `Host` is now accepted — safe
+exactly because the host gate ran first, so that shape is only reachable when
+the `Host` is a literal a rebinding page cannot produce.
+
+The production gateway needed the same care, in the opposite direction. Caddy
+terminates TLS and proxies here over plain HTTP, so
+`isinstance(self.connection, ssl.SSLSocket)` is `False` on precisely the
+request that arrived as `https://hq.cafreso.com/…`; the socket-derived scheme
+built `http://hq.cafreso.com`, which matches nothing. `_request_scheme` now
+honours `X-Forwarded-Proto`, which cannot launder anything — it only swaps
+`http`↔`https` on a hostname that still has to be allowlisted on its own
+merits, and a page cannot set the header cross-origin without a preflight
+`Access-Control-Allow-Headers` does not answer. This was already true of
+`_host_gate_ok` before today, which means `## 315.`'s `/fs` gate had been
+answering `403` to the real gateway; the same one-line change fixes both.
+
+`GET` is deliberately untouched. Reads are what `## 294.` and `## 315.` are
+for, the app shell has to bootstrap, and the preview iframe's keyless `/fs`
+fetches must keep working. This entry is only about the difference between a
+tab that can hear the office and a tab that can move it.
+
+One note on where that helper lives, because the suite made the argument
+better than the design did. It began as a method, and
+`scripts/test_security_boundaries.py` failed instantly: that test drives these
+gates through a stub documented as exposing "just what the boundary methods
+read" — `.headers`, `.client_address`, `.path`, `.connection`. A stub can
+supply an attribute. It cannot supply a method it has never heard of. The test
+was right and the shape was wrong, so `_request_scheme` is a module-level
+function taking the handler, reading only those four attributes. No assertion
+in that test was touched.

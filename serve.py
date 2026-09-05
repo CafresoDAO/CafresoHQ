@@ -153,6 +153,37 @@ _extra_app_origins = {o.strip() for o in
 # always arrives carrying the attacker's own hostname, never one of these.
 _LOOPBACK_HOSTS = {'localhost', '127.0.0.1', '::1', '[::1]', '0.0.0.0'}
 
+
+def _request_scheme(handler):
+    """The scheme the BROWSER used, which is not always the scheme this socket
+    is speaking.
+
+    #321: the production Caddy gateway terminates TLS and proxies to this
+    server over plain HTTP, so `isinstance(handler.connection, ssl.SSLSocket)`
+    is False on exactly the request that arrived as `https://hq.cafreso.com/…`.
+    Deriving the scheme from the socket alone therefore builds the string
+    `http://hq.cafreso.com`, which matches nothing in _app_origins — and
+    _host_gate_ok, which #318 put in front of every /fs route, answers 403 to
+    the real gateway. Trusting X-Forwarded-Proto here cannot grant anything
+    new: it only ever swaps http↔https on a hostname that still has to be in
+    the allowlist on its own merits, and a page cannot set the header on a
+    cross-origin fetch without a preflight Access-Control-Allow-Headers does
+    not answer.
+
+    A module-level function taking the handler, not a method on it, and that
+    is deliberate: scripts/test_security_boundaries.py drives these gates
+    through a duck-typed stub documented as exposing "just what the boundary
+    methods read" — .headers, .client_address, .path, .connection. A stub can
+    supply an attribute; it cannot supply a method it has never heard of. So
+    the shared logic reads only those four attributes and stays callable by
+    anything that has them."""
+    fwd = (handler.headers.get('X-Forwarded-Proto', '') or '').split(',')[0].strip().lower()
+    if fwd in ('http', 'https'):
+        return fwd
+    return 'https' if isinstance(getattr(handler, 'connection', None),
+                                 ssl.SSLSocket) else 'http'
+
+
 # API contract version between the (canister-served) UI and this backend. Bump
 # only on a BREAKING change to an endpoint the UI depends on; the UI reads it
 # from /health and degrades gracefully rather than hard-failing across a
@@ -2292,6 +2323,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
         if not self._api_key_ok():
             return self._send_json(401, {'error': 'API key required'})
+        # #321: the key gate above is not a gate at all on a default install —
+        # see _state_change_gate. A POST is where a stranger's tab stops being
+        # a reading problem and becomes a writing one.
+        if not self._state_change_gate():
+            return
         _touch_activity(self.path)
         if self.path == '/hermes/capability':
             return self._hermes_set_capability()
@@ -2369,6 +2405,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def do_PUT(self):
         if not self._api_key_ok():
             return self._send_json(401, {'error': 'API key required'})
+        if not self._state_change_gate():
+            return
         if self.path.startswith('/hq/'):
             return self._hq_handler('PUT')
         if self.path.startswith('/vault/'):
@@ -2378,6 +2416,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def do_DELETE(self):
         if not self._api_key_ok():
             return self._send_json(401, {'error': 'API key required'})
+        if not self._state_change_gate():
+            return
         if self.path.startswith('/vault/'):
             return self._vault('DELETE')
         if self.path.startswith('/missions/scheduled/'):
@@ -3742,7 +3782,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         } | _extra_app_origins
         host = self.headers.get('Host', '').strip()
         if host:
-            scheme   = 'https' if isinstance(self.connection, ssl.SSLSocket) else 'http'
+            scheme   = _request_scheme(self)
             hostname = host.rsplit(':', 1)[0] if not host.startswith('[') \
                        else host.split(']', 1)[0] + ']'
             if hostname.lower() in _LOOPBACK_HOSTS or f'{scheme}://{host}' in origins:
@@ -3788,7 +3828,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return True
         except Exception:
             pass
-        scheme = 'https' if isinstance(self.connection, ssl.SSLSocket) else 'http'
+        scheme = _request_scheme(self)
         return f'{scheme}://{host}' in self._app_origins()
 
     def _fs_host_gate(self):
@@ -3803,6 +3843,96 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return True
         self._send_json(403, {'error': 'host not allowed'})
         return False
+
+    def _state_change_gate(self):
+        """Guard for every state-changing request (POST/PUT/DELETE) to a
+        key-protected prefix. Returns True when the request may proceed;
+        otherwise answers 403 and returns False.
+
+        `## 294.` withheld Access-Control-Allow-Origin from these routes so a
+        stranger's tab could not READ the reply. That was never a defence
+        against a stranger's tab making the CALL. A cross-origin fetch with a
+        simple content-type is not preflighted at all: the browser sends the
+        request, runs the handler, and only then discards the response the
+        page is not allowed to see. The write already happened.
+
+        Measured against a default `python3 serve.py` — no CAFRESOHQ_API_KEY,
+        no CAFRESOHQ_ALLOWED_DIRS, exactly what a beta tester runs — from a
+        page whose only relationship to the office is that the tester had the
+        tab open:
+            POST /tools/exec  Origin: https://evil.example
+                              Content-Type: text/plain
+                              {"tool":"FILE_WRITE","arg":"/tmp/PWNED",…}
+            → 200, and /tmp/PWNED existed afterwards.
+        Not inside the allowlist — /tmp is nowhere near ~/Documents — because
+        _validate_path skips the whitelist entirely in local mode with no
+        explicit CAFRESOHQ_ALLOWED_DIRS. Arbitrary file write anywhere the
+        tester can write, which is ~/.zshrc, which is a shell, from a web
+        page. `/projects/clone` likewise ran a real `git clone` into
+        ~/Documents on the same forged Origin.
+
+        The key gate does not stop it: with no key configured _api_key_ok
+        degrades to "loopback callers only", and the attacking page's fetch()
+        leaves the victim's own 127.0.0.1. That is the same mistake as
+        `## 315.` and `#320` — loopback, and an absent Origin, are properties
+        the real app has and a hostile page has too.
+
+        Two conditions, because there are two attacks and each one is blind
+        to the other:
+          * _host_gate_ok() — DNS rebinding, where the attacker's name
+            resolves to 127.0.0.1 and the page is genuinely same-origin with
+            this server. It sends whatever Origin it likes, or none, and an
+            Origin check waves it through; what it CANNOT forge is a Host of
+            a loopback literal or a bare IP.
+          * the Origin allowlist — plain cross-origin CSRF, where Host is a
+            perfectly honest `127.0.0.1:8787` and sails past the host gate.
+            Here the browser is compelled to attach the attacker's real
+            Origin, and that is what gives it away.
+
+        An ABSENT Origin is allowed, and that is not the `#320` mistake
+        repeated: absence is only reached after _host_gate_ok has already
+        established the Host is loopback-or-literal, and no browser omits
+        Origin on a cross-origin POST. What omits it is curl, the night
+        runner's self-calls, and a same-origin XHR — none of which a hostile
+        page can be. The legitimate callers all survive: same-origin fetch
+        from http://localhost:8787 sends that Origin (allowlisted); the
+        LAN/mobile banner URL is accepted by the same-origin clause below;
+        the production gateway and the canister shells are in the base set;
+        operators extend it with CAFRESOHQ_ALLOWED_WS_ORIGINS.
+
+        That same-origin clause is load-bearing and is not a loophole.
+        _app_origins only ever self-adds a Host that is a LOOPBACK name, so
+        the phone on the LAN opening `http://10.0.0.131:8787/` — the URL the
+        startup banner prints — sends Origin and Host both naming
+        10.0.0.131 and is in nobody's allowlist. Refusing it would lock out
+        a legitimate caller, which is a wrong gate, not a strict one. It is
+        safe to accept precisely because _host_gate_ok ran first: an Origin
+        that equals this request's own Host is only reachable when that Host
+        is a loopback literal or a bare IP, and a rebinding page cannot
+        produce either — its Host is the attacker's hostname, and it was
+        already turned away one branch up.
+
+        Derived from _KEY_PROTECTED_PREFIXES rather than hand-listed, for the
+        reason spelled out over _HOST_DATA_PREFIXES: a route dangerous enough
+        to want a key is dangerous enough that a stranger must not be able to
+        fire it, and the hand-maintained list is the thing that drifts."""
+        path = self.path.split('?', 1)[0]
+        if not path.startswith(_KEY_PROTECTED_PREFIXES):
+            return True
+        if not self._host_gate_ok():
+            self._send_json(403, {'error': 'host not allowed'})
+            return False
+        origin = (self.headers.get('Origin', '') or '').strip()
+        if not origin:
+            return True
+        allowed = {o.lower() for o in self._app_origins()}
+        host = (self.headers.get('Host', '') or '').strip()
+        if host:
+            allowed.add(f'{_request_scheme(self)}://{host}'.lower())
+        if origin.lower() not in allowed:
+            self._send_json(403, {'error': 'origin not allowed'})
+            return False
+        return True
 
 
     # ---- Export / generate endpoints (extracted to exporters.py) ---------
