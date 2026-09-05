@@ -502,7 +502,9 @@ _KEY_PROTECTED_PREFIXES = (
 # An unknown browser origin gets NO Access-Control-Allow-Origin for these, so
 # a page the user happens to be visiting cannot read the response. The /fs
 # read routes are the load-bearing case: they are deliberately keyless and
-# _cafresohq_allowed_dirs defaults to $HOME. The key-gated members are listed
+# _cafresohq_allowed_dirs defaults to $HOME/Documents (`## 315.` narrowed it
+# from $HOME; this comment kept quoting the old default). The key-gated
+# members are listed
 # too — the key already stops them, and defence in depth costs nothing here.
 #
 # "The key-gated members are listed too" was the intent, not the code: only 11
@@ -2190,12 +2192,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         # container's cookie-authenticated responses" — is sound for routes
         # that need credentials, and has a hole exactly where they don't. The
         # /fs read routes are deliberately keyless (see the note in
-        # _KEY_PROTECTED_PREFIXES) and _cafresohq_allowed_dirs defaults to
-        # $HOME, so ACAO:'*' let ANY page a user visited read any file under
-        # their home directory cross-origin. Measured against a local instance
-        # WITH an API key configured:
+        # _KEY_PROTECTED_PREFIXES) and _cafresohq_allowed_dirs defaulted to
+        # $HOME at the time, so ACAO:'*' let ANY page a user visited read any
+        # file under their home directory cross-origin. Measured against a
+        # local instance WITH an API key configured:
         #   curl -H 'Origin: https://evil.example' '/fs/file?path=$HOME/<decoy>'
         #   → 200, Access-Control-Allow-Origin: *, decoy contents in the body.
+        # `## 315.` has since narrowed the default to $HOME/Documents, so the
+        # reachable blast radius is that tree rather than all of $HOME — the
+        # hole this branch closes is the same one either way.
         # Allowlisted app origins keep credentialed access through the branch
         # above (that is what CAFRESOHQ_ALLOWED_WS_ORIGINS is for in a
         # cross-origin UI/API split); everyone else now gets no ACAO header,

@@ -129,7 +129,7 @@ ai.cafreso.com  ──POST /fleet/provision {principal}──▶  Caddy ──�
 
 ## 6. Tech stack at a glance
 
-- **Frontend:** React 18 (CDN + in-browser Babel, no bundler) · SvelteKit shell (ICP asset canister)
+- **Frontend:** React 18, bundled at build time by esbuild (`npm run build` → `dist-ui/`; no in-browser Babel) · SvelteKit shell (ICP asset canister)
 - **Identity:** Internet Identity, ecosystem-shared principal via derivationOrigin
 - **Edge:** Caddy 2 (auto-TLS)
 - **Container:** Debian 12 slim · Python 3.11 (`serve.py`, stdlib http.server + ThreadingMixIn) · Node 20 (Claude Code, Codex) · `hermes-agent==0.15.1`

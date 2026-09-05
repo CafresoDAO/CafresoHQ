@@ -1,9 +1,12 @@
 # Frontend image assets — status & what to replace
 
 The SvelteKit Pages/HQ frontend references images at `/assets/<name>`. Those files
-must live in the repo-root **`assets/`** directory; `frontend/scripts/sync-static-assets.mjs`
-(wired as `prebuild`/`predev`) mirrors them into `frontend/static/assets/` so the
-asset canister (ai.cafreso.com / v4tdv) serves them. **Drop a real file into repo-root
+must live in the repo-root **`assets/`** directory here; the frontend's own
+`scripts/sync-static-assets.mjs` (wired as `prebuild`/`predev` in the **sibling
+`../cafreso-pages` repo** — `frontend/` was deleted from this checkout in
+`8dbcc6f`, and this repo's `package.json` has only `build`/`watch`/`lint`)
+mirrors them into that repo's `static/assets/` so the asset canister
+(ai.cafreso.com / v4tdv) serves them. **Drop a real file into repo-root
 `assets/` and the next build publishes it automatically** — no code change needed.
 
 ## Why images were broken on v4tdv (root cause)
@@ -40,5 +43,10 @@ badges — **not** final art). Regenerate any with `python3 scripts/gen_placehol
 
 ## To replace a placeholder
 1. Put the real file (same name) into repo-root `assets/`.
-2. `npm --prefix frontend run build` (prebuild sync copies it into `static/assets/`).
-3. Deploy: `dfx deploy cafresohq_frontend --network ic --identity default`.
+2. Build from the sibling frontend repo — `cd ../cafreso-pages && npm run build`
+   (its prebuild sync copies the file into `static/assets/`). There is no
+   `frontend/` directory and no `npm --prefix frontend` script in this repo.
+3. Deploy with that repo's own script: `cd ../cafreso-pages && ./scripts/deploy.sh`
+   (it ships v4tdv **and** dqcmv together). `dfx deploy cafresohq_frontend` cannot
+   run from this checkout — `dfx.json` here declares only `cafresohq_ui`,
+   `cafresohq_keys` and `cafresohq_state`.

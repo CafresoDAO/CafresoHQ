@@ -28,7 +28,7 @@ User → ai.cafreso.com (II login)
      → fleet-api /fleet/lookup or /fleet/provision  (principal → container)
      → SvelteKit iframes  hq.cafreso.com/u/<slug>/hq.html
         → Caddy → container:8787 (serve.py serves hq.html + .jsx)
-     → HQ app boots (React via CDN+Babel), window.CafresoHQClient.stream()
+     → HQ app boots (React, prebuilt dist-ui/ bundle), window.CafresoHQClient.stream()
         → serve.py /hermes/v1/* proxy (injects API_SERVER_KEY)
         → hermes gateway :8642 → Groq (default) / Anthropic / Gemini (BYOK)
      → vault ops bridge via postMessage → SvelteKit → ICP canister (E2E encrypted)
@@ -47,10 +47,10 @@ User → ai.cafreso.com (II login)
 │  ├─ vault store (E2E crypto) ◄── postMessage bridge ──┐  │                 │
 │  └─ routes/hq/app → <iframe src=.../hq.html>          │  │                 │
 │                                                       │  ▼                 │
-│  HQ app (CDN React + in-browser Babel, no bundler)    │  hq.html           │
+│  HQ app (React, esbuild-prebuilt bundle in dist-ui/)  │  hq.html           │
 │  ├─ window.CafresoHQClient (claude-client.jsx) ────────┼─ stream()          │
 │  ├─ window.CafresoHQUI / V2 / Views / Modals (globals) │  (8 providers)     │
-│  ├─ OfficeView pixel-art agents (ui.jsx + sprites)    │                    │
+│  ├─ OfficeView pixel-art agents (ui/office.jsx + sprites) │                │
 │  └─ custom events: cafresohq:agentAction / :activity   │                    │
 └───────────────────────────────────────────────────────┼────────────────── ┘
                          │ https                          │ postMessage(vault:*)
@@ -64,7 +64,7 @@ User → ai.cafreso.com (II login)
                          ▼  (also reachable DIRECTLY via public IP :8787 ⚠)
 ┌─────────────────────────────────────────────────────────────────────────┐
 │ OCI CONTAINER (per user, 1 vCPU / 6 GB, ALWAYS ON)                         │
-│  serve.py :8787  (BaseHTTPRequestHandler + ThreadingMixIn, ~5400 LOC)      │
+│  serve.py :8787  (BaseHTTPRequestHandler + ThreadingMixIn, ~6400 LOC)      │
 │   ├─ /hermes/v1/* ─► hermes gateway :8642 ─► Groq/Anthropic/Gemini         │
 │   ├─ /claudecode /cafresohq /codex (spawn CLIs, SSE)  ← 4× duplicated       │
 │   ├─ /vault/* ─► OCI Object Storage (no encryption at FS layer)            │
@@ -92,7 +92,7 @@ Severity: 🔴 critical · 🟠 high · 🟡 medium
 | A2 | **Secrets in `fleet.json`** — per-principal `api_server_key`, container IPs, OCI namespace, gateway SSH key path, all plaintext in one unencrypted file. One leak = full fleet breach. | 🔴 |
 | A3 | **`fleet-api.py` dev-mode bypass** — if `FLEET_API_SECRET` is unset, *all* auth is skipped. A forgotten env var in prod opens provisioning to the world. | 🟠 |
 | A4 | **Shared backend key** — all users share the operator's `GROQ/ANTHROPIC/GOOGLE` key. Rate limits + billing hit the operator; one compromised container exposes the key to all. | 🟠 |
-| A5 | **No build pipeline** — HQ app ships raw `.jsx` transpiled by **in-browser Babel** on every load (~640 KB Babel + ~900 KB JSX). 1–2 s blank screen; far worse on mobile. | 🟠 |
+| A5 | ~~**No build pipeline** — HQ app ships raw `.jsx` transpiled by **in-browser Babel** on every load (~640 KB Babel + ~900 KB JSX). 1–2 s blank screen; far worse on mobile.~~ **FIXED.** There is no in-browser Babel and no CDN React transpile: `npm run build` → `scripts/build_ui_bundle.mjs` pre-transforms every JSX at build time into `dist-ui/`, and `hq.html` injects the tags from `dist-ui/manifest.json` ("no @babel/standalone, no unpkg"). `hq.html` 500s until `dist-ui/` exists. | ✅ |
 | A6 | **Always-on per-user containers** — 1 vCPU/6 GB each (~$14/mo) with no auto-pause. 100 users ≈ $1.4 k/mo for mostly-idle compute. | 🟠 |
 | A7 | **`shell=True` BASH tool** in `/tools/exec` — RCE surface if the tool allowlist includes Bash. | 🟠 |
 | A8 | **HTTP/1.0 + `Connection: close`** forced — no keep-alive; a handler thread is tied up for the whole life of each streamed CLI/agent call. | 🟡 |
@@ -101,7 +101,7 @@ Severity: 🔴 critical · 🟠 high · 🟡 medium
 
 | # | Finding | Sev |
 |---|---|---|
-| D1 | **4× near-identical stream handlers** in serve.py: `_claudecode_stream`, `_cafresohq_stream`, `_codex_stream`, `_terminal_stream` (~200 lines each). Same parse→validate→spawn→SSE shape. | 🟠 |
+| D1 | **3× near-identical stream handlers** in serve.py: `_claudecode_stream`, `_cafresohq_stream`, `_codex_stream` (~200 lines each). Same parse→validate→spawn→SSE shape. (This row used to say 4× and name a `_terminal_stream`; no such function exists — the terminal path is `_terminal_spawn`/`_terminal_pty_ws`.) | 🟠 |
 | D2 | **BYOK env-injection** repeated in all 4 stream handlers; **path validation** repeated 3×; **configure** endpoints duplicated. | 🟡 |
 | D3 | **`_render_caddyfile()` + `_principal_slug()` duplicated** across `fleet-manager.py` and `fleet-api.py` — and they've **already diverged** (fleet-api's version is missing the `/u/<slug>` redirect rules, so a gateway-side re-render can silently break routing). | 🟠 |
 | D4 | **Provider stream parsing** in `claude-client.jsx` repeats the SSE/`usage` decode across claudecode/cafresohq/codex. | 🟡 |
@@ -110,7 +110,7 @@ Severity: 🔴 critical · 🟠 high · 🟡 medium
 
 | # | Finding | Sev |
 |---|---|---|
-| P1 | **In-browser Babel** (A5) — biggest user-facing perf hit. | 🟠 |
+| P1 | ~~**In-browser Babel** (A5) — biggest user-facing perf hit.~~ **FIXED** — see A5; the bundle is pre-built. | ✅ |
 | P2 | **`useFileStored` sync storms** — every state mutation PUTs the *entire* collection to `/hq/state/*`. During token streaming this can fire 20–50 PUT/s of the full 80-msg history. | 🟠 |
 | P3 | **Graph view O(n²)** force layout re-running on every mousemove with no rAF/worker — lags at 500+ vault nodes. | 🟠 |
 | P4 | **Blocking subprocess per request** — each agent/CLI call holds its handler thread; concurrency caps out at the thread pool. | 🟠 |
@@ -129,7 +129,7 @@ Severity: 🔴 critical · 🟠 high · 🟡 medium
 
 | # | Finding | Sev |
 |---|---|---|
-| M1 | **God files**: `views.jsx` ~6.4 k LOC, `app.jsx` ~3.8 k, `ui.jsx` ~3.4 k, `serve.py` ~5.4 k. No code-splitting, hard to test. | 🟠 |
+| M1 | **God files** — partly addressed. `views.jsx` (23 LOC) and `ui.jsx` (50 LOC) are now barrels re-exporting `views/*.jsx` and `ui/*.jsx`. Still large: `app.jsx` ~8.2 k LOC and `serve.py` ~6.4 k. | 🟠 |
 | M2 | **`window.*` global namespaces** (CafresoHQUI/V2/Views/...) instead of modules — zero static analysis, fragile load-order coupling, crashes if one script fails. | 🟠 |
 | M3 | **Magic numbers everywhere** (TTLs, buffer caps, size limits) — should be named constants/config. | 🟡 |
 | M4 | **Mutable globals without locks** (`_vault_root`, `_vault_backend`, …) — reconfigure races. | 🟡 |

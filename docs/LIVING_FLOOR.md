@@ -1,7 +1,8 @@
 # The Living Floor — HQ desktop (window) mode
 
 > Shipped 2026-07 (feat/living-floor), ported from the VM branch `feat/workspace-os`
-> (built 2026-06-26) onto trunk after the Open Floor revamp. **On by default.**
+> (built 2026-06-26) onto trunk after the Open Floor revamp. **Off by default** —
+> a boss opts in from the dock or the command palette.
 
 ## What it is
 
@@ -32,8 +33,9 @@ macOS-style dock.
 
 ## Defaults & escape hatches
 
-`windowsEnabled` defaults to **true** (localStorage `k('windowsEnabled')`).
-Users can exit via the dock power button, the command palette, or the mobile
+`windowsEnabled` defaults to **false** (`app.jsx`: `useStored(k('windowsEnabled'), false)`,
+localStorage-backed) — a fresh browser lands in classic single-view mode and
+turns the desktop on deliberately. Users can exit via the dock power button, the command palette, or the mobile
 switcher's "Exit desktop mode" — the choice persists per browser. Classic
 single-view mode is unchanged and fully supported.
 

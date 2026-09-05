@@ -14,7 +14,7 @@ anonymous visitor (cafreso.com /library page or the AI Search modal)
   POST <state>.icp0.io/search/submit              queue a job
   GET  <state>.icp0.io/search/job/<id>.json       poll (~3s, ≤200s)
 
-worker container (serve.py, SEARCH_WORKER=1)      HMAC-signed HTTPS POSTs
+worker container (search_worker_service/worker.py, SEARCH_WORKER=1)
   /worker/heartbeat · /worker/claim · /worker/fulfill · /worker/fail
   per job: Brave (own key) → local LLM (operator's backend, direct) → graph → fulfill
 
@@ -134,7 +134,7 @@ claim. Deep jobs draw on a **separate daily budget** (`deepDailyBudget`, default
 worker has room for several searches. A spent deep budget rejects with
 `budget` — distinct from the fast lane, which is untouched.
 
-**Worker loop** (`serve.py` `_sw_deep`): `_sw_deep_plan` breaks the question into
+**Worker loop** (`search_worker_service/worker.py` `_sw_deep`): `_sw_deep_plan` breaks the question into
 ≤`WORKER_DEEP_TOPICS` (5) angles; each angle runs a Brave search on the **`deep`
 reserve lane** (see the quota table below) and `_sw_deep_note` writes a 100–160
 word note page citing its sources; `_sw_deep_synth` writes the top-level answer
@@ -174,7 +174,10 @@ Brave's plan allows **1000 queries per month** (~33/day). 500/day is 15,000/mont
 protect the key at all. Brave's 50/s rate limit is irrelevant next to the monthly
 volume; nobody is going to hit 50/s.
 
-`serve.py` keeps the real ledger (`hq-state/brave-usage.json`, calendar month
+`search_worker_service/worker.py` keeps the real ledger — the worker was split
+out of `serve.py` into its own standalone service, and `serve.py` now only
+proxies its `/gap/status` and `/news/status` (`_cron_status_proxy`).
+The ledger is `hq-state/brave-usage.json`, calendar month
 UTC, cap via `BRAVE_MONTHLY_CAP`). Every Brave call spends against it *before*
 going to the wire, and each spender has a **reserve floor it may not dip below**,
 so scarcity degrades in a fixed order rather than first-come-first-served:
@@ -183,7 +186,8 @@ so scarcity degrades in a fixed order rather than first-come-first-served:
 |---|---|---|
 | `human` | 0% | never — a person is waiting; it gets the last query in the month |
 | `deep` | 15% | month has <15% left |
-| `gap` | 35% | month has <35% left — **always starves first** |
+| `gap` | 35% | month has <35% left |
+| `news` | 40% | month has <40% left — **starves first**, ahead of `gap` |
 
 That table *is* the "human questions weigh more" policy. It's enforced in the
 budget because a prompt can't enforce it.
@@ -197,9 +201,10 @@ operator with quota could have answered. Leaving them pending costs nothing.
 
 ## The gap cron — the library asks its own questions
 
-Daily at **10:00 America/New_York** (`GAP_HOUR_ET`/`GAP_TZ`), the worker reads
+Every **`GAP_INTERVAL_MIN` minutes (default 60)**, the worker reads
 the public library, works out what it doesn't cover, and submits up to
-`GAP_DAILY_MAX` (10) questions through the ordinary anonymous
+`GAP_PER_RUN_MAX` (default 5, `GAP_DAILY_MAX` still honoured as a fallback
+name) questions through the ordinary anonymous
 `POST /search/submit`. Human questions outrank machine ones twice over: the
 proposal prompt is anchored on what **people** recently asked (a previously
 AI-asked question is never counted as demand — that's how a feedback loop
@@ -207,10 +212,12 @@ starts), and `gap` holds the largest Brave reserve.
 
 > **Do not schedule this through `_night_scan`.** That scheduler rolls a daily
 > job with `nextRunAt += 86_400_000`, which holds *UTC* constant — so a job
-> pinned to 10:00 New York silently becomes 11:00 for half the year, and is
-> wrong every day after a DST boundary until someone re-saves it. `_gap_next_run_ms`
-> recomputes from the zone each time. `scripts/test_gap_cron.py` pins both
-> transitions.
+> pinned to a wall-clock hour silently drifts by one after a DST boundary and
+> stays wrong until someone re-saves it. The cron sidesteps the question
+> entirely: `_gap_next_run_ms` is a fixed-interval schedule
+> (`_hourly_next_run_ms(..., interval_min=GAP_INTERVAL_MIN)`) and is
+> **timezone-invariant on purpose**. `GAP_TZ` survives for display and logs
+> only. `scripts/test_gap_cron.py` pins the behaviour.
 
 The batch is **reserved up front and refunded on every exit path** — dedup and
 validation drop most proposals on a mature library, so a day that reserves 10 and
@@ -219,10 +226,18 @@ against its own reserve having done no work.
 
 Answers become **permanent, append-only public entries**, so the worker marks
 them: `engine` reads `brave · ai-gap` and the library drawer shows *"Asked by
-Cafreso to fill a gap"*. This rides the engine field because the entry has no
+Cafreso to fill a gap"*. The canister-side `askedBy` this section used to list as
+missing has since shipped: the worker appends it as a **trailing, optional line**
+on fulfill (`main.mo`, after `graphJson`), the canister stores it in
+`libraryAskedBy`, and it is emitted on **both** the full entry JSON and the
+`LibrarySummary` — so the list cards can show the badge without fetching the
+entry. Only `"ai-gap"` is honoured; absent (an old worker) reads `"human"`.
+
+The paragraph below is the pre-upgrade limitation, kept for the reasoning:
+**(historical)** it rode the engine field because the entry had no
 `askedBy` — same trick the token count uses on `model`. **Limit:** only the node
-that submitted the question knows it was a gap question, so another operator's
-worker fulfilling it writes plain `brave`. And `LibrarySummary` carries no
+that submitted the question knew it was a gap question, so another operator's
+worker fulfilling it wrote plain `brave`. And `LibrarySummary` carried no
 provenance at all, so the list cards can't show the badge. Both want a real
 `askedBy` on the job + summary, which is a canister upgrade.
 

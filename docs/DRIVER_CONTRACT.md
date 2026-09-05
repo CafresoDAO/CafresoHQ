@@ -12,7 +12,7 @@
 ## 0. Why a contract, and why now
 
 CafresoHQ's promise is model-agnosticism, but today the promise is enforced by
-nothing. `serve.py` (5,147 lines) hard-wires each backend differently:
+nothing. `serve.py` (6,375 lines as of `#351`) hard-wires each backend differently:
 
 - Claude Code: `_claudecode_stream` spawns the CLI with `--output-format stream-json`.
 - Codex: `_codex_stream` spawns `codex exec --json` with different flags, different event parsing.

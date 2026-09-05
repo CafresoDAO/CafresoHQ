@@ -105,5 +105,7 @@ dfx deploy cafresohq_ui --network ic --identity default
 ## Conventions
 
 - Frontend deploys use the **`default`** dfx identity (a controller), not `ic_admin`.
-- PRs target the active integration branch (**`merge/pages-cafresohq`**), not `master`.
+- PRs target the active integration branch (**`merge/pages-cafresoai`**), not `master`.
+  (The branch name is the pre-rename spelling and is load-bearing — `git branch`
+  lists `merge/pages-cafresoai`; there is no `merge/pages-cafresohq`.)
 - Secrets and machine-specific config go in `.env` (gitignored), never committed.

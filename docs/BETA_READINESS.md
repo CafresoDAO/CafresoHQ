@@ -49,7 +49,8 @@ are real but are not this session's to close.
 This is the section the last audit's verdict turned on, so it is the section I
 re-derived from nothing rather than diffing.
 
-Startup banner on a bare `python3 serve.py`:
+Startup banner on `python3 serve.py` (run here with `PORT=8974` to sidestep an
+already-occupied port — **the default port is 8787**, `serve.py:59`):
 
 ```
 CafresoHQ -> http://localhost:8974/hq.html
@@ -294,7 +295,13 @@ Settings → Connections instead of out of the product.
 The residue is the fifteen seconds of silence, and it is the largest thing
 standing between a first-run tester and their first reply.
 
-### 6. `/gap/status` and `/news/status` are readable cross-origin — new, minor
+### 6. `/gap/status` and `/news/status` are readable cross-origin — ✅ FIXED
+
+> **Resolved.** `/gap/` and `/news/` are now literal members of
+> `_HOST_DATA_PREFIXES` (`serve.py`), so a foreign Origin gets no ACAO header at
+> all. Re-measured on a live local instance: `GET /gap/status` with
+> `Origin: https://evil.example` returns **no** `Access-Control-Allow-Origin`.
+> The finding below is kept as the record of what was measured then.
 
 Not in the last audit, and not in any prefix list. `## 333.` made
 `_HOST_DATA_PREFIXES` iterate `ROUTES` so a proxied GET stops handing the local

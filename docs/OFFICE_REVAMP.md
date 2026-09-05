@@ -58,8 +58,10 @@ purely with styling:
 
 - `styles.css` — `.rooms`/`.room`/nameplate/CEO/glass/partition restyle (~line 2220+),
   open-floor fixtures + live layer + night + mobile revert (one section near EOF).
-- `ui.jsx` — OfficeView: liveTools listener, P&L state, wall fixtures, meeting table +
-  floor decals, per-room z-depth, tool chip (~line 1666+).
+- `ui/office.jsx` — OfficeView: liveTools listener, P&L state, wall fixtures, meeting
+  table + floor decals, per-room z-depth, tool chip. (It used to live in `ui.jsx`;
+  that file is now a 50-line barrel re-exporting `ui/*.jsx`, so the old ~line 1666
+  anchor no longer exists.)
 - `app.jsx` — event attribution (`pulseGraph`), quiet auto-pin (`recordToolReceipt`).
 
 ## Invariants (don't break these)

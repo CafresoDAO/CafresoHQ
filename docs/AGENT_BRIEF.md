@@ -17,16 +17,20 @@ flight so you build on it instead of re-discovering it.
 
 A unified **SvelteKit** dapp + **Motoko** canisters + an **OCI** compute fleet:
 
-- `frontend/` — one SvelteKit app (adapter-static SPA), two route groups:
+- **the SvelteKit app — NOT in this repo.** It lives in the sibling
+  `../cafreso-pages` checkout; `frontend/` was deleted here in `8dbcc6f`, so
+  every `frontend/…` path below is a path in *that* repo. One app
+  (adapter-static SPA), two route groups:
   - `(pages)` → **cafreso.com** "Pages": blog, forums, shop/subscriptions, governance, leaderboard, profile/wallet.
   - `(hq)` → **ai.cafreso.com** "CafresoHQ": the per-user AI agent SaaS.
 - `src/cafresohq_keys/` — vetKeys (BLS12-381 threshold) vault key derivation (Motoko).
-- `src/cafresohq_state/` — **new**, Phase 2 on-chain per-user state (HQ docs + vault ciphertext). Scaffolded, **not yet deployed** (PR #6).
+- `src/cafresohq_state/` — Phase 2 on-chain per-user state (HQ docs + vault ciphertext). **Deployed and funded** as `ydacz-riaaa-aaaal-qxeja-cai` (see `canister_ids.json`).
 - `docker/` — the serve.py container image. Fleet provisioning (container fleet, Caddy TLS gateway, Stripe oracle) moved to the separate cafreso-fleet repo.
 - `serve.py` / `scripts/` — container API + HQ-UI asset build.
 
 **Identity:** one Internet Identity principal across the ecosystem via a shared
-`derivationOrigin` anchored at Banking.Brave (`cqyto-…`). See `frontend/src/lib/stores/auth.js`.
+`derivationOrigin` anchored at Banking.Brave (`cqyto-…`). See `src/lib/stores/auth.js`
+in the **cafreso-pages** repo.
 
 **Architectural direction:** *maximize on-chain* — keep only what must be off-chain
 (LLM inference, PTY, agent runtime) on OCI; move state/registry/metering/governance
@@ -38,8 +42,9 @@ onto canisters so the container becomes stateless ("cattle, not pets"). Full pla
 ## 2. Branch model — READ BEFORE OPENING PRs
 
 - GitHub default branch is `master`, but the **active integration branch is
-  `merge/pages-cafresohq`**. All recent PRs target it. **Base your PRs on
-  `merge/pages-cafresohq`, not `master`.**
+  `merge/pages-cafresoai`**. All recent PRs target it. **Base your PRs on
+  `merge/pages-cafresoai`, not `master`.** (Pre-rename spelling; `git branch`
+  has no `merge/pages-cafresohq`.)
 - One concern per branch/PR (the existing PRs follow this).
 
 ## 3. Open PRs (don't duplicate these)
@@ -60,11 +65,11 @@ onto canisters so the container becomes stateless ("cattle, not pets"). Full pla
 
 | Canister | ID | Role | Status |
 |----------|----|------|--------|
-| cafresohq_frontend | `v4tdv-riaaa-aaaab-agtfa-cai` | Unified Pages+HQ frontend → **ai.cafreso.com** | ✅ active pipeline |
+| cafresohq_frontend | `v4tdv-riaaa-aaaab-agtfa-cai` | Unified Pages+HQ frontend → **ai.cafreso.com** | ✅ live — but **not a target in this repo's `dfx.json`**; it ships from cafreso-pages |
 | (old Pages) | `dqcmv-zqaaa-aaaab-agp2a-cai` | Pre-merge Pages canister → **cafreso.com** | ⚠️ superseded, retire (see §5) |
 | cafresohq_keys | `vhw7q-lqaaa-aaaab-agthq-cai` | vetKeys vault key derivation | ✅ live |
 | cafresohq_ui | `vhoil-eyaaa-aaaal-qxc7q-cai` | HQ UI asset canister | ✅ live |
-| cafresohq_state | *(not deployed)* | Phase 2 per-user state (HQ docs + vault ciphertext) | 🟡 PR #6, deploy-gated on cycles |
+| cafresohq_state | `ydacz-riaaa-aaaal-qxeja-cai` | Phase 2 per-user state (HQ docs + vault ciphertext); also hosts published sites | ✅ live (in `canister_ids.json`) |
 | IndexCanister | `bek5d-2qaaa-aaaab-agqrq-cai` | blog/forum/products/orders/burns/leaderboard | ✅ live |
 | Banking.Brave / Minegold | `cqyto-tiaaa-aaaau-agppa-cai` | II derivationOrigin anchor; `/mine` dapp | ✅ live |
 | Blog/devlog content | `dff5y-yyaaa-aaaab-agpzq-cai` | authoritative blog content (per `lib/data/blog.js`) | ✅ live |

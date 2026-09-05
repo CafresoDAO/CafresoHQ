@@ -37886,3 +37886,63 @@ badge, this one left a dead run wearing a finished one. The board learned to
 close its orphans at import; the thread had no such moment, because a chat has
 no status field to be wrong about. Its only field is what the coworker said,
 and silence is a thing a colleague can mean.
+
+---
+
+## 349. the sandbox the comments were still describing
+
+**The wreck.** `## 340.` shipped the app and, on its way past, caught the README
+telling a beta tester that the `/fs` read routes "default to serving your home
+directory" — false since `## 315.` narrowed them to `$HOME/Documents`. That
+sentence was fixed. The belief behind it was not. Two comments in `serve.py`
+still said `_cafresohq_allowed_dirs` "defaults to `$HOME`": the header over
+`_HOST_DATA_PREFIXES`, and the long note inside `end_headers` explaining why a
+foreign Origin gets no ACAO. Both are the load-bearing prose for a security
+boundary, and both were quoting a default that had not existed for thirty-five
+entries.
+
+Measured on a live instance, `PORT=8947` with a key configured:
+`/fs/file?path=$HOME/_decoy` → **403**; the same read under
+`$HOME/Documents/_decoy` → **200**, no credential; with
+`Origin: https://evil.example` → **no `Access-Control-Allow-Origin` at all**.
+The code is right. Only the sentences over it were wrong, and a sentence over a
+security check is the one a reviewer trusts instead of reading the check.
+
+**The worse one.** `.env.example` said the API key protects "`/tools`, `/fs/*`,
+and the PTY WebSocket". `/fs/*` is exactly what it does *not* protect — the read
+routes are keyless by design so the preview iframe can fetch assets, and only
+the mutation prefixes are gated. Same instance, no key supplied: `/fs/delete`
+and `/tools/exec` → **401**, `/fs/browse` and `/fs/file` → **200**. That is a
+doc overstating the sandbox, which is the direction that gets someone hurt: an
+operator reads it, believes the key is the boundary, and puts the port on a LAN.
+It now names the mutation routes explicitly and says in as many words that
+`CAFRESOHQ_ALLOWED_DIRS` is the only boundary the read routes have.
+
+**The rest of the sweep.** Every other checked claim was run against the code
+rather than against another document, and the drift was everywhere the code had
+moved and the prose had not. `LIVING_FLOOR` said desktop mode is "on by
+default"; `app.jsx` seeds `windowsEnabled` **false**. `SEARCH_NETWORK` still
+housed the worker in `serve.py` (it is `search_worker_service/worker.py` since
+the split), scheduled the gap cron "daily at 10:00 America/New_York" via a
+`GAP_HOUR_ET` that exists nowhere — it is `GAP_INTERVAL_MIN`, hourly and
+deliberately timezone-invariant — omitted the `news` spender from the Brave
+reserve table and so named the wrong lane as first to starve, and listed an
+`askedBy` upgrade as pending that has shipped on both the entry and the summary.
+`AGENT_BRIEF` and `ASSETS_NEEDED` still told a newcomer to build and deploy out
+of a `frontend/` directory deleted in `8dbcc6f`, with a `dfx deploy
+cafresohq_frontend` that cannot run here at all — `dfx.json` declares three
+canisters and that is not one of them — and called `cafresohq_state` "not
+deployed" while `canister_ids.json` has been carrying `ydacz-…` the whole time.
+The architecture review's headline perf finding was in-browser Babel, removed
+when the esbuild bundle landed. And the README and `AGENT_BRIEF` both sent PRs
+to `merge/pages-cafresohq`, a branch that does not exist; the real integration
+branch keeps the pre-rename spelling, `merge/pages-cafresoai`.
+
+**Whose twin.** `## 340.`, which found the first of these in passing while
+judging the app shippable. The lesson is that a doc bug found in passing is a
+sample, not an incident: the README sentence and the two `serve.py` comments
+were one belief written down in three places, and fixing the copy a reader
+happens to hit leaves the two a reviewer will trust. Nothing here changes
+behaviour — the suite is run precisely to prove that — which is the point.
+A tester decides whether it is safe to run this from the prose, and the prose
+had been describing a machine we stopped shipping in `## 315.`
