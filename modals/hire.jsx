@@ -105,12 +105,36 @@ const formToolIds = (ids) => {
    Refused at the door rather than disambiguated on the roster, because a
    suffix on a row cannot fix routing: `@Vera` has no row to point at.
 
+   The BRAIN is the third thing this door has to catch, and the one a first
+   run actually walks into. Measured 2026-09-05 on a cold boot with nothing
+   configured: `candidateBrain([])` is null, so every card on the shelf the
+   office opens BY ITSELF reads "no brain yet — add one in Settings →
+   Connections", `candidates` rewrites each template's model to `''`, and
+   `loadCandidate` puts that empty string into the form. What the boss then
+   saw was NAME "Vera", BRAIN "— pick a model —", the footer cheerfully
+   reading "A new desk will be assigned on spawn.", and HIRE ✓ live. They
+   pressed it, and `{"name":"Vera","model":""}` went onto the roster — a
+   coworker at a desk, in the ticker, with onboarding step 2 ticked, who can
+   never answer anything.
+
+   Two surfaces on that same screen already knew. ⚡ SEED SWARM, one tile
+   away, refuses the identical hire out loud ("There is no brain on this
+   machine yet, so these 7 would sit at their desks unable to work"), and
+   the BRAIN row's own warning opens `if (!provider) return null;` — written
+   for a brain that exists and is not signed in, so on the one state a fresh
+   install actually produces it said nothing at all. A total failure slipped
+   through the check built for the partial one.
+
+   Deliberately silent about a brain that is merely UNSIGNED: the BRAIN row
+   owns that sentence, and two blocks over one field is worse than one.
+
    Kept module-level, pure and import-free so
-   scripts/test_the_hire_button_says_what_it_is_waiting_for.py and
-   scripts/test_two_coworkers_are_never_hired_under_one_name.py run it
-   verbatim under node. The roster arrives as an argument for that reason —
-   the helper still closes over no component state. */
-function hireNeedsNote(name, currentAgents) {
+   scripts/test_the_hire_button_says_what_it_is_waiting_for.py,
+   scripts/test_two_coworkers_are_never_hired_under_one_name.py and
+   scripts/test_a_coworker_is_never_hired_with_no_brain_at_all.py run it
+   verbatim under node. The roster and the brain arrive as arguments for
+   that reason — the helper still closes over no component state. */
+function hireNeedsNote(name, currentAgents, model) {
   const typed = String(name == null ? '' : name).trim();
   if (!typed) {
     return 'Give your new coworker a name first — type one in the NAME box '
@@ -126,6 +150,12 @@ function hireNeedsNote(name, currentAgents) {
       + 'and hand-offs all go to the first match, and two rows sharing one '
       + 'name share one LET GO button. Give this hire a different name in the '
       + 'NAME box above.';
+  }
+  if (!String(model == null ? '' : model).trim()) {
+    return `${typed} has no brain yet, so they would sit at their desk unable `
+      + 'to work. Pick one in the BRAIN box above, or add a free local brain '
+      + '(LM Studio, Ollama) in Settings and come back — the shelf will fill '
+      + 'their brain in for you once this machine has one.';
   }
   return '';
 }
@@ -525,7 +555,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
     /* Belt and braces: the button below is dark whenever this note is set,
        so this branch should be unreachable from the UI. It stays because a
        silent return is only acceptable when nothing could have got here. */
-    if (hireNeedsNote(name, currentAgents)) return;
+    if (hireNeedsNote(name, currentAgents, model)) return;
     if (elevated && !(await window.hqConfirm(
       `Hire ${name.trim()} with COMPUTER ACCESS?\n\n` +
       `This agent will be backed by an elevated CafresoHQ session that can read/write files and run shell commands on this machine.\n\n` +
@@ -558,13 +588,13 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
           research costing: while the form cannot go through, what it is
           waiting for outranks a fact about desk assignment. */}
       <div className="hint" style={{marginRight: 'auto'}}>
-        {hireNeedsNote(name, currentAgents) || 'A new desk will be assigned on spawn.'}
+        {hireNeedsNote(name, currentAgents, model) || 'A new desk will be assigned on spawn.'}
       </div>
       <button className="px-btn secondary" style={{fontSize: 'var(--text-9)'}} onClick={saveAsTemplate}>★ SAVE AS TEMPLATE</button>
       <button className="px-btn secondary" onClick={onClose}>Cancel</button>
       <button className="px-btn primary" onClick={submit}
-              disabled={!!hireNeedsNote(name, currentAgents)}
-              title={hireNeedsNote(name, currentAgents) || undefined}>HIRE ✓</button>
+              disabled={!!hireNeedsNote(name, currentAgents, model)}
+              title={hireNeedsNote(name, currentAgents, model) || undefined}>HIRE ✓</button>
     </>
   ) : null;
 

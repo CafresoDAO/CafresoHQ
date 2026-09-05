@@ -91,13 +91,22 @@ def main():
           f'expected the DM/@mention resolvers in app.jsx, found {len(resolvers)}')
 
     # ── §2 the door is one sentence and it knows who already works here ─
+    # #356 widened this door a third time: the BRAIN now arrives too, so
+    # the same one sentence can also refuse a coworker with no brain at all
+    # (the state a first run on a bare machine actually produces). The
+    # arity is asserted, as before, to prove the helper is module-level and
+    # closes over no component state — the roster and the brain must be
+    # DECLARED parameters or this suite cannot drive it. Widened, not
+    # weakened: every call site must still hand over the roster, and §4
+    # below still measures the NAME answers themselves.
     check('the NAME door is a module-level, liftable helper',
-          re.search(r'^function hireNeedsNote\(name, currentAgents\)',
+          re.search(r'^function hireNeedsNote\(name, currentAgents, model\)',
                     hire_bare, re.M) is not None,
           'the roster must arrive as an argument, or the door cannot be '
           'driven here and cannot see who is already hired')
     check('…and every reader of it hands over the roster',
-          re.search(r'hireNeedsNote\((?!name, currentAgents\))', hire_bare) is None,
+          re.search(r'hireNeedsNote\((?!name, currentAgents, model\))', hire_bare)
+          is None,
           'a call site that drops the roster is a door that stops asking')
 
     # ── §3 the roster cannot itself tell two of them apart ──────────────
@@ -125,7 +134,14 @@ def main():
     ]
     js = ('const SRC = ' + json.dumps(fn) + ';\n'
           + 'const ROSTER = ' + json.dumps(roster) + ';\n' + r'''
-const hireNeedsNote = new Function(SRC + ' return hireNeedsNote;')();
+const raw = new Function(SRC + ' return hireNeedsNote;')();
+/* A brain, so the NAME answers are what is under test here. #356 taught
+   the same door to refuse a hire with no brain at all, and that refusal
+   has its own suite
+   (scripts/test_a_coworker_is_never_hired_with_no_brain_at_all.py); a
+   blank third argument here would mask every NAME answer below with it. */
+const BRAIN = 'ollama:llama3.1:latest';
+const hireNeedsNote = (name, roster, model = BRAIN) => raw(name, roster, model);
 /* The resolver every mention, DM and hand-off goes through, in the shape
    app.jsx uses it. Driven over a roster that DID take a second Vera. */
 const collided = [

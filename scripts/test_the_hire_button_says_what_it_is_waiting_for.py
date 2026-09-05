@@ -78,9 +78,14 @@ def main():
     # `currentAgents` must be a declared parameter (a prop read from a
     # closure would still be impure and still unliftable), and §2 below now
     # additionally demands every call site actually pass it.
+    # #356 widened it again, for the same reason and in the same way: the
+    # BRAIN is now a third declared parameter, so the one sentence can also
+    # refuse the brainless hire a bare first run actually produces. Pinning
+    # the arity at two would have encoded THAT gap exactly as pinning it at
+    # one encoded #324's.
     check('one helper answers "why can HIRE ✓ not go through"',
-          re.search(r'^function hireNeedsNote\(name, currentAgents\)', bare, re.M)
-          is not None,
+          re.search(r'^function hireNeedsNote\(name, currentAgents, model\)',
+                    bare, re.M) is not None,
           'hireNeedsNote must be module-level and must not close over '
           'component state, or it cannot be driven here')
 
@@ -90,14 +95,14 @@ def main():
     check('the HIRE ✓ button is still there to be found', hire_btn is not None)
     btn = hire_btn.group(0) if hire_btn else ''
     check('HIRE ✓ goes dark while the note stands',
-          'disabled={!!hireNeedsNote(name, currentAgents)}' in btn,
+          'disabled={!!hireNeedsNote(name, currentAgents, model)}' in btn,
           'a live button is a promise it can do the thing: ' + btn[:200])
     check('…and carries the note as its tooltip',
-          'title={hireNeedsNote(name, currentAgents) || undefined}' in btn,
+          'title={hireNeedsNote(name, currentAgents, model) || undefined}' in btn,
           btn[:200])
     check('…and the note is also VISIBLE, not hover-only',
           re.search(r'className="hint"[\s\S]{0,120}'
-                    r'hireNeedsNote\(name, currentAgents\)', bare)
+                    r'hireNeedsNote\(name, currentAgents, model\)', bare)
           is not None,
           'a tooltip alone is unreachable on a touch screen and invisible to '
           'anyone not hunting for it')
@@ -108,7 +113,8 @@ def main():
     # A call site that forgets the roster is a door that silently stops
     # asking the #324 question, so no call site may drop it.
     check('every reader of the note hands it the roster',
-          re.search(r'hireNeedsNote\((?!name, currentAgents\))', bare) is None,
+          re.search(r'hireNeedsNote\((?!name, currentAgents, model\))', bare)
+          is None,
           'a hireNeedsNote(name) call site cannot see who already works here')
 
     check('submit no longer opens with the anonymous name check',
@@ -138,7 +144,12 @@ def main():
 
     fn = lift(bare, 'function hireNeedsNote', 'const FRONT_DESK')
     js = ('const SRC = ' + json.dumps(fn) + ';\n' + r'''
-const hireNeedsNote = new Function(SRC + ' return hireNeedsNote;')();
+const raw = new Function(SRC + ' return hireNeedsNote;')();
+/* A brain, so the NAME answers are what is under test here — #356 taught
+   the same door to refuse a hire with no brain at all, and that refusal
+   has its own suite. */
+const BRAIN = 'ollama:llama3.1:latest';
+const hireNeedsNote = (name, roster = [], model = BRAIN) => raw(name, roster, model);
 console.log(JSON.stringify({
   fresh:   hireNeedsNote(''),
   spaces:  hireNeedsNote('   '),

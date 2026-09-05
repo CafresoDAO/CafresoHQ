@@ -38383,3 +38383,48 @@ neither is a reason to hold this one.
 The lesson is the older one, in a new axis. A layout that fits by
 construction has a viewport at which the construction fails, and every
 breakpoint in this file names a width. None of them named a height.
+
+---
+
+## 358. the first coworker a brand-new office hires, with no brain at all
+
+**What happened.** Open CafresoHQ for the first time on a machine with nothing
+configured — no key, no local model, no CLI signed in, exactly the state a beta
+tester arrives in. The CEO says hello, checks what there is to work with,
+reports honestly that "we don't have a shared brain here", and then opens the
+candidate book by itself. Seven cards. Every one of them says, in its own
+words, `no brain yet — add one in Settings → Connections`.
+
+Click Vera. The form fills in: NAME Vera, ROLE Virtual Assistant, a job
+description, tools ticked — and BRAIN reading `— pick a model —`, with no note
+of any kind beside it. The footer says `A new desk will be assigned on spawn.`
+HIRE ✓ is bright, live, and has no tooltip. Press it, and the office takes the
+hire: `{"name":"Vera","model":""}` on the roster, a sprite at a desk, a line in
+the ticker, and step 2 of Getting Started ticked green. Vera can never answer
+anything. Nothing on the way in said so.
+
+**Measured, not reasoned.** The real `hq.html` and the real `dist-ui/bundle`,
+served the way `serve.py` assembles them, driven in headless Chrome at
+1280×900 with nothing behind the API — so `candidateBrain([])` is genuinely
+null and the shelf is genuinely brainless. Every line above is a reading off
+that run, including the roster entry, which came out of `localStorage` after
+the click.
+
+**The office already knew — twice, on that same screen.** One tile away,
+⚡ SEED SWARM refuses the identical hire out loud: *"There is no brain on this
+machine yet, so these 7 would sit at their desks unable to work."* And the
+BRAIN row has its own warning, `⚠ this brain isn't signed in yet`, which opens
+`if (!provider) return null;` — it was written for a brain that exists and has
+not been signed into, so on the one state a fresh install actually produces it
+returned nothing. The check built for the partial failure was silent on the
+total one. So the boss most likely to hit this — the one with nothing set up —
+was the only boss the door did not stop.
+
+**The fix.** `hireNeedsNote` already is the single sentence that carries both
+the reason HIRE ✓ cannot go through and the way out, read by the button's
+`disabled` state and by the hint the boss can see without hovering. It now
+takes the brain as well as the name and the roster, and a coworker with no
+brain gets the same treatment a nameless one already got: the button goes dark
+and the footer says why, naming the box by the label printed above it. A brain
+that merely needs signing in is left alone — the BRAIN row owns that sentence,
+and two blocks over one field is worse than one.
