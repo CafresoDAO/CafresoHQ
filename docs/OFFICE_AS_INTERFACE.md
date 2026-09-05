@@ -38486,3 +38486,63 @@ reads SCHEDULED, and a shift in flight still reads RUNNING NOW. The mark is
 written on the schedule rather than derived in the browser because the run log
 is capped and rolls over: a card must not start claiming DONE again the week
 the evidence scrolls off the end of the list.
+
+---
+
+## 360. the coworker who could file into the Library after the office closed
+
+**The wreck.** By day, hiring someone without ticking "read your Library" in
+Settings → Roster means exactly that — `hq-runtime.jsx`'s `toolsForAgent` only
+puts `VAULT_APPEND`/`VAULT_NEW` in a coworker's toolbox `if
+(claimed.has('vault'))`. By night, the same coworker on the same schedule had
+no such door. `run_tool` accepted a Night Shift mission's `VAULT_APPEND` and
+`VAULT_NEW` unconditionally, so what the boss ticked on the Roster decided
+what a coworker could reach in the daytime office and decided nothing at all
+after dark. Measured against this machine's own roster: three hired
+coworkers, granted `files, shell` / `web` / `web, files, code` — not one of
+them granted `vault` — every one of them able to write into the Library on an
+overnight mission.
+
+**Where it was.** `NightContext` never carried a coworker's grants at all;
+`run_tool`'s vault branch and `run_mission`'s setup checked only that the
+Library was reachable (`vault_can_take_a_note`), never who was asking.
+
+**The fix.** `NightContext` gains an `agent_tools` field, three-valued on
+purpose: a list means granted (or not); `None` means the lookup itself
+failed — a coworker fired after their schedule was made, an unreadable
+roster — and on this question, unlike most places in this codebase where an
+unknown must not be read as "they have nothing", the unknown has to be spent
+the other way, because this is an authorization decision rather than a
+description. `may_write_to_vault(agent_tools)` is the one predicate both
+call sites share. `serve.py`'s new `_night_agent_tools(agent_id)` resolves it
+per dispatch, straight off `hq-state/memory/agents.json` rather than through
+`_self_call`, so an authorization check cannot fail because the office is
+busy answering itself — and per dispatch rather than once at schedule-create
+time, so a grant the boss revoked this afternoon is gone from tonight's run
+instead of being honoured from a snapshot.
+
+Two places had to change, not one. `run_tool` still refuses a lone stray call
+shaped as a `vault_write_status` failure — `Vault write failed (403): …` —
+because `run_iteration` reads `status is None` as a note that landed; a
+refusal phrased any other way would have been counted as a write, and the
+morning report would have named a note the Library never saw. But
+`run_mission`'s own setup gates first, before the first brain call, because
+every mission type's `build_prompt` ends in a mandatory vault write: an
+ungranted coworker cannot ever finish an iteration, and without the early
+door the night would spend real tokens producing the same refusal every round
+until `ERROR_STREAK_AUTO_PAUSE` finally stopped it — an outcome knowable
+before the first dispatch. Fire-tested removing each gate in turn: the
+`run_tool` gate missing surfaces as a wrong status (503, the wire refusing a
+mission with no vault to reach); the `run_mission` gate missing doesn't fail
+fast at all — it hangs trying to reach the vault, which is itself the cost
+the early door exists to avoid paying.
+
+**Measured**, against a temp roster of a librarian (`web, vault`), a coder
+(`files, code`), and a coworker with no `tools` key at all: the librarian may
+file, the coder may not, an entry with no key at all is EMPTY and refused
+(granted nothing is a different fact from not found), and an id matching
+nobody on the roster is UNKNOWN and refused the same way — with its own
+sentence, since "you weren't granted this" and "we can't find who's asking"
+are different fixes for the boss. A `vault`-granted coworker is not
+collateral: they still reach the wire and meet the ordinary 503 of nothing
+listening in the test.

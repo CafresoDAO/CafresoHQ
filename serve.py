@@ -937,11 +937,40 @@ def _night_browser_active():
     return (time.time() - _LAST_UI_ACTIVITY[0]) < 180
 
 
-def _night_ctx():
+def _night_agent_tools(agent_id):
+    """What the boss granted this coworker, or None if we could not tell.
+
+    Read straight off disk rather than over _self_call: this is the same
+    process that serves /hq/memory/agents, the roster is the file it would
+    answer with, and an authorization check should not be able to fail
+    because the office is busy answering itself.
+
+    None is deliberate and is NOT the same as []. It means the roster is
+    missing or unreadable, or nobody on it has this id — see
+    night_runner.may_write_to_vault, which refuses on both and says which.
+    """
+    if not agent_id:
+        return None
+    try:
+        with open(str(_hq_memory_dir / 'agents.json'), 'r', encoding='utf-8') as f:
+            roster = json.load(f)
+    except Exception:
+        return None
+    if not isinstance(roster, list):
+        return None
+    for a in roster:
+        if isinstance(a, dict) and str(a.get('id', '')) == str(agent_id):
+            tools = a.get('tools')
+            return [str(t) for t in tools] if isinstance(tools, list) else []
+    return None
+
+
+def _night_ctx(agent_tools=None):
     import night_runner as _nr
     return _nr.NightContext(
         _night_base_url[0] or ('http://127.0.0.1:%d' % PORT),
-        api_key=CAFRESOHQ_API_KEY)
+        api_key=CAFRESOHQ_API_KEY,
+        agent_tools=agent_tools)
 
 
 def _night_post_activity(run):
@@ -994,7 +1023,8 @@ def _night_run_one(sched):
     sid = sched.get('id', '')
     try:
         import night_runner as _nr
-        run = _nr.run_mission(_night_ctx(), sched, on_progress=_night_log_run,
+        ctx = _night_ctx(_night_agent_tools(sched.get('agentId', '')))
+        run = _nr.run_mission(ctx, sched, on_progress=_night_log_run,
                                should_abort=lambda: sid in _night_abort)
         _night_log_run(run)
         _night_post_activity(run)

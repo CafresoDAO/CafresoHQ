@@ -215,6 +215,57 @@ def vault_write_status(result):
     return int(m.group(1)) if m else None
 
 
+NIGHT_VAULT_TOOL = 'vault'
+# Status for a write this office refused on its own, before any wire. 403 is
+# the honest word and it is unambiguous here: the only OTHER way a night vault
+# PUT can come back 403 is the state-change gate, and that gate documents in
+# its own docstring that an ABSENT Origin is allowed precisely because "what
+# omits it is curl, the night runner". So a 403 on this path is always ours.
+NIGHT_VAULT_FORBIDDEN = 403
+
+
+def may_write_to_vault(agent_tools):
+    """Was this coworker granted the Library?
+
+    The daytime office already answers this question and has for a long time:
+    hq-runtime.jsx's `toolsForAgent` puts VAULT_APPEND and VAULT_NEW in a
+    coworker's prompt only inside `if (claimed.has('vault'))`. The night shift
+    never asked. Every scheduled mission could file into the Library
+    regardless of what its coworker was hired with — measured on this machine,
+    where all three hired coworkers (`files, shell` / `web` / `web, files,
+    code`) have no 'vault' grant between them and every one of them could
+    write to it after dark.
+
+    Absent is not empty, and here that cuts toward refusing rather than
+    allowing. Elsewhere in this codebase "we did not look" must never render
+    as "they have nothing" — but that rule is about DESCRIBING a coworker to
+    the boss, and this is an authorization decision, where the same unknown
+    has to be spent the safe way. The concrete unknowns are a roster that
+    cannot be read and an agentId matching nobody on it; the second is a
+    coworker who was fired since the schedule was made, and letting a fired
+    coworker's night mission keep filing is the exact leak this gate exists
+    to stop. Both are named at the door (see run_mission) rather than
+    discovered three iterations deep.
+    """
+    if agent_tools is None:
+        return False
+    return NIGHT_VAULT_TOOL in agent_tools
+
+
+def vault_not_granted_sentence(agent_tools):
+    """§7: what happened, and the way out. Two endings, because the two
+    unknowns above have different fixes — a coworker who was never granted
+    the Library is a checkbox on the Roster, and a coworker nobody can find
+    is not."""
+    if agent_tools is None:
+        return ('this coworker is not on the roster — the night shift will '
+                'not file for someone it cannot look up. Re-pick the '
+                'coworker on this mission in Night Shift.')
+    return ('this coworker was not granted your Library — tick "read your '
+            'Library" for them in Settings → Roster, or give the mission to '
+            'someone who has it.')
+
+
 def vault_refused_sentence(status):
     """§7 shape, inside NIGHT_ERROR_MAX: what happened, plus the way forward.
 
@@ -227,6 +278,15 @@ def vault_refused_sentence(status):
     """
     if status in (502, 503):
         return 'vault is not reachable — check Connections'
+    # A third door. 502/503 is the wiring and everything else was the vault
+    # answering, but 403 on this path is neither: it is THIS office declining
+    # on the coworker's behalf, and sending the boss to inspect a note path
+    # over a permissions decision would be the wrong door twice over. The
+    # sentence has to serve both unknowns may_write_to_vault refuses on, since
+    # only the status reaches here — so it names the Roster, which is where
+    # the grant lives either way.
+    if status == NIGHT_VAULT_FORBIDDEN:
+        return 'this coworker is not allowed your Library — check Settings → Roster'
     return 'vault refused the write — check the note path'
 
 
@@ -303,9 +363,19 @@ def strip_unsupported_markers(text):
 class NightContext(object):
     """Everything a run needs to reach the host serve.py + providers."""
 
-    def __init__(self, base_url, api_key='', hermes_home='', brave_key=''):
+    def __init__(self, base_url, api_key='', hermes_home='', brave_key='',
+                 agent_tools=None):
         self.base_url = base_url.rstrip('/')
         self.api_key = api_key or ''
+        # What the boss actually granted the coworker this run belongs to,
+        # as a list of TOOLS_CATALOG ids. THREE-valued on purpose:
+        #   ['vault', …] — granted, may file notes
+        #   []            — we looked; they were granted nothing
+        #   None          — we did not look, or could not tell
+        # Resolved per DISPATCH rather than stored on the schedule, so a
+        # permission the boss revoked this afternoon is gone from tonight's
+        # run instead of being honoured from a snapshot taken at create time.
+        self.agent_tools = agent_tools
         self.hermes_home = hermes_home or os.environ.get('HERMES_HOME', '').strip() \
             or os.path.expanduser('~/.hermes')
         self.brave_key = brave_key or os.environ.get('BRAVE_API_KEY', '').strip()
@@ -680,6 +750,19 @@ def run_tool(ctx, name, arg, body):
             text = raw.decode('utf-8', 'replace')
             return text[:4000] + '\n\n…(truncated)' if len(text) > 4000 else text
         if name in ('VAULT_APPEND', 'VAULT_NEW'):
+            # The grant, before the wire. run_mission turns this mission away
+            # at the door, so reaching here means something got past that --
+            # a caller building its own ctx, or a mission type that learns to
+            # write later. Shaped as a vault_write_status failure ON PURPOSE:
+            # run_iteration reads `status is None` as A NOTE THAT LANDED, so a
+            # refusal phrased any other way would be counted as a write, and
+            # the morning report would name a note the Library never saw --
+            # the exact fabrication the comments all through this file exist
+            # to prevent.
+            if not may_write_to_vault(ctx.agent_tools):
+                return '%s (%d): %s' % (_VAULT_FAIL_PREFIX,
+                                        NIGHT_VAULT_FORBIDDEN,
+                                        vault_not_granted_sentence(ctx.agent_tools))
             mode = 'append' if name == 'VAULT_APPEND' else 'write'
             try:
                 s, raw = _self_call(ctx, 'PUT', '/vault/note?path=%s&mode=%s' % (
@@ -1138,6 +1221,19 @@ def run_mission(ctx, sched, on_progress=None, should_abort=None):
     # one that should not have started, and saying so at the door costs one
     # GET instead of ERROR_STREAK_AUTO_PAUSE iterations of paid tokens
     # against a vault that will refuse every one of them.
+    # The grant is checked at the same door and for the same reason as the
+    # vault's reachability directly below: every mission type build_prompt
+    # writes ends in a MANDATORY vault write, so a coworker who may not file
+    # has no way to finish. Left to run_tool alone this would still be safe --
+    # nothing would land -- but the night would spend real tokens producing a
+    # refusal every iteration until ERROR_STREAK_AUTO_PAUSE ended it, and the
+    # boss would pay for a night whose outcome was knowable before the first
+    # brain call. One local lookup instead.
+    if not may_write_to_vault(ctx.agent_tools):
+        run['errors'] = 1
+        run['lastError'] = vault_not_granted_sentence(ctx.agent_tools)
+        run['finishedAt'] = int(time.time() * 1000)
+        return run
     ready, why = vault_can_take_a_note(ctx)
     if not ready:
         run['errors'] = 1
