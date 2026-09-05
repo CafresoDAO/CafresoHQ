@@ -7828,15 +7828,10 @@ body.night .bn-item.active { background: rgba(0,212,181,0.15); color: var(--acce
   }
 
   /* Office: mobile-friendly flow layout — rooms stack vertically as
-     compact horizontal cards instead of absolute-positioned grid. */
-  .mobile-agent-strip { display: block; position: sticky; top: 0; z-index: 10; background: var(--paper); border-bottom: 1px solid var(--rule); padding: 6px 0; }
-  .mas-scroll { display: flex; overflow-x: auto; gap: 12px; padding: 0 12px; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
-  .mas-scroll::-webkit-scrollbar { display: none; }
-  .mas-item { min-width: 56px; display: flex; flex-direction: column; align-items: center; gap: 2px; scroll-snap-align: start; cursor: pointer; }
-  .mas-item .sprite-wrap { width: 40px; height: 40px; border-radius: 50%; overflow: hidden; border: 2px solid var(--rule); }
-  .mas-item .mas-name { font-family: 'Press Start 2P'; font-size: 7px; color: var(--ink-2); white-space: nowrap; max-width: 56px; overflow: hidden; text-overflow: ellipsis; text-align: center; }
-  .mas-item .mas-status { width: 8px; height: 8px; border-radius: 50%; margin-top: -4px; border: 1px solid var(--paper); }
-  .mas-plus { width: 36px; height: 36px; border-radius: 50%; border: 2px dashed var(--rule-2); display: flex; align-items: center; justify-content: center; color: var(--ink-3); font-size: 18px; cursor: pointer; flex-shrink: 0; }
+     compact horizontal cards instead of absolute-positioned grid.
+     (The agent strip's own rules used to live here; they are now in
+     their own 768px block just below this one, because office.jsx
+     renders the strip at 768px and not at 640px. See #361.) */
   .office { min-height: auto; max-height: 50vh; overflow-y: auto; }
   .office-wrap { min-height: auto; padding: 8px; }
   .office .floor { display: none; }
@@ -7938,6 +7933,45 @@ body.night .bn-item.active { background: rgba(0,212,181,0.15); color: var(--acce
     border-bottom: none;
     box-shadow: 0 -4px 0 0 var(--ink);
   }
+}
+
+/* The mobile agent strip — the row of tappable coworker faces that stands
+   in for the desktop rail once the rail is gone.
+
+   Its gate has to be the SAME 768px that decides whether it exists at all.
+   `office.jsx ~417` renders it at `innerWidth <= 768`; these rules used to
+   sit in the `@media (max-width: 640px)` block above, so between 641px and
+   768px the strip was in the DOM with no styling on it whatsoever. Measured
+   at 660x900, 700x500 and 767x600 before this fix: `position: static` (so
+   it did not stick to the top of the scrolling floor), no background, no
+   padding, no bottom rule, `.mas-scroll` fell back to `display: block` so
+   the faces stacked instead of scrolling sideways, each `.mas-item` ran the
+   full 656-763px width of the column, and `.sprite-wrap` — 40x40 and round
+   by design — stretched to the whole width at 24px tall, which is a
+   coworker's portrait squashed into a letterbox. The name label rendered at
+   the browser default 15px instead of 7px.
+
+   That band is not hypothetical. It is where a landscape phone sits (667x375
+   is inside it, and it is the size #354 was reported at), and where small
+   tablets and half-width split-screen windows sit.
+
+   Aligning the CSS to the render gate rather than the render gate to the CSS
+   is deliberate: at 641–768px the app is already fully in its mobile shell —
+   the desktop rail is hidden and the bottom tab bar is up, both on the same
+   768px test — so there is no other surface offering the coworker faces. The
+   other candidate fix (stop rendering the strip above 640px) would have
+   taken the feature away from exactly the phones that have nowhere else to
+   get it. Measured in
+   scripts/test_the_agent_strip_is_styled_everywhere_it_is_rendered.py. */
+@media (max-width: 768px) {
+  .mobile-agent-strip { display: block; position: sticky; top: 0; z-index: 10; background: var(--paper); border-bottom: 1px solid var(--rule); padding: 6px 0; }
+  .mas-scroll { display: flex; overflow-x: auto; gap: 12px; padding: 0 12px; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
+  .mas-scroll::-webkit-scrollbar { display: none; }
+  .mas-item { min-width: 56px; display: flex; flex-direction: column; align-items: center; gap: 2px; scroll-snap-align: start; cursor: pointer; }
+  .mas-item .sprite-wrap { width: 40px; height: 40px; border-radius: 50%; overflow: hidden; border: 2px solid var(--rule); }
+  .mas-item .mas-name { font-family: 'Press Start 2P'; font-size: 7px; color: var(--ink-2); white-space: nowrap; max-width: 56px; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+  .mas-item .mas-status { width: 8px; height: 8px; border-radius: 50%; margin-top: -4px; border: 1px solid var(--paper); }
+  .mas-plus { width: 36px; height: 36px; border-radius: 50%; border: 2px dashed var(--rule-2); display: flex; align-items: center; justify-content: center; color: var(--ink-3); font-size: 18px; cursor: pointer; flex-shrink: 0; }
 }
 
 /* ---- Medium screens (641px – 900px) ---- */
@@ -11480,6 +11514,36 @@ body.night .px-lobby .px-int, body.night .px-lobby { filter: brightness(0.85); }
   .office.pxhq-root { overflow-y: auto; overscroll-behavior: contain; }
   .pxhq { min-height: 0; max-height: none; flex: 0 0 auto; overflow: visible; }
   .px-scene { height: auto; flex: 0 0 auto; overflow-y: visible; }
+}
+
+/* The other half of the same short-viewport problem, which #354 measured
+   and deliberately left: a BIG phone in landscape (926x428, 932x430) is
+   wider than 768, so none of the phone CSS above applies and it gets the
+   desktop office. There `.pxhq` keeps its desktop `min-height: 480px`
+   inside an office column that is only 265px tall, and the column is
+   `overflow: hidden`. Measured at 926x428 before this fix: `.pxhq` 174.3
+   -> 654.3 against a root ending 374.0 — 280.3px of the office hanging
+   below its own container with no user-reachable way to get at it, since
+   an `overflow: hidden` box does not scroll to a wheel or a finger. The
+   scene inside it scrolled 390px, but only within a 480px box whose bottom
+   215px were already clipped away, so the last chunk of that scroll range
+   moved the building into a region nothing paints.
+
+   The fix is only to drop the floor. `.pxhq` is `flex: 1 1 0%` in a column
+   that already sizes itself to the viewport, so with no `min-height` it
+   simply takes what the root has and `.px-scene` scrolls inside it — one
+   scroller, nothing clipped, no new pixel constant to be wrong about at
+   the next screen size. This is a smaller change than #354's because at
+   this width the column is not starved: it has 265px to give, which is
+   nearly four times the lobby.
+
+   `min-width: 769px` is what keeps the five phone sizes the office suites
+   guard — 375x812, 375x667, 320x568, 667x375, 568x320 — byte-for-byte
+   untouched: every one of them is 768px wide or narrower and is answered
+   by the rule above, not this one. Measured in
+   scripts/test_the_agent_strip_is_styled_everywhere_it_is_rendered.py. */
+@media (min-width: 769px) and (max-height: 460px) {
+  .pxhq { min-height: 0; }
 }
 
 /* Paper stack — sheets accumulate with the real filed-report count. */

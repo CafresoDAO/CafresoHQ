@@ -38617,3 +38617,74 @@ only — your office is still running on that OpenRouter key*.
 A malformed key is still refused, a local backend's empty key is still a URL
 push and not a removal, and saving a real key still reads *applied · gateway
 reloading*.
+
+---
+
+## 362. the strip of faces that was drawn, but never dressed
+
+`## 357.` fixed the landscape office and, on its way out, wrote down two
+things it had found and deliberately not touched. This is both of them.
+
+**The strip.** `.mobile-agent-strip` is the sideways-scrolling row of tappable
+coworker faces that stands in for the desktop rail once the rail is gone.
+`office.jsx` renders it at `innerWidth <= 768`. Every rule that gave it a
+shape lived in `@media (max-width: 640px)`. Between those two numbers the
+strip was in the DOM with nothing whatever on it.
+
+Measured at 640x900, the last width that worked: `position: sticky`, a paper
+background, 6px of padding and a bottom rule, `.mas-scroll` at `display: flex`
+with `overflow-x: auto`, each face a 56px column, each portrait a round 40x40,
+each name 7px. Twenty pixels wider, at 660x900: `position: static`, no
+background, no padding, no rule, `.mas-scroll` fallen back to `display: block`
+so the faces stacked down the column instead of scrolling across it, each
+`.mas-item` running the full 656px width, and `.sprite-wrap` — 40x40 and round
+by design — stretched the whole width at 24px tall. A coworker's portrait
+letterboxed flat. The name label came out at the browser's default 15px. The
+same at 700x500, at 767x600, and at 667x375, which is the landscape phone `##
+357.` was reported at and which sits squarely inside the band, along with
+small tablets and half-width split-screen windows.
+
+Two fixes were available and they are not the same fix. Move the CSS gate up
+to 768 and the strip appears, properly dressed, everywhere it is already
+rendered. Move the render gate down to 640 and it stops being rendered
+between 641 and 768. The stylesheet moved, because at those widths the app is
+already fully in its mobile shell — the desktop rail hidden, the bottom tab
+bar up, both decided on that same 768px test — so the strip is the *only*
+surface offering the coworker faces there. The other fix would have taken the
+feature away from precisely the phones with nowhere else to get it.
+
+**The big phone.** The second thing `## 357.` left. A large phone in landscape
+— 926x428, 932x430 — is *wider* than 768, so no phone rule reaches it and it
+gets the desktop office, where `.pxhq` keeps its desktop `min-height: 480px`.
+At 926x428 that is a 480px floor sitting in an office column 265.2px tall:
+`.pxhq` 174.3 -> 654.3 against a column ending 374.0, with 280.3px hanging
+below it. The column is `overflow: hidden`, and a hidden box does not scroll
+to a wheel or a finger, so that was not off-screen, it was unreachable.
+`.px-scene` inside it scrolled 390px — but only within a 480px box whose
+bottom 215px were already clipped, so the tail of its own scroll range moved
+the building into a region nothing paints.
+
+The same shape as `## 357.` with the arithmetic reversed: there the column had
+136px of box for 153px of furniture, here it has 265px of box and a rule
+insisting on 480. The fix drops the floor and nothing else — `min-height: 0`
+at `(min-width: 769px) and (max-height: 460px)`. `.pxhq` is `flex: 1 1 0%` in
+a column already sized to the viewport, so with no floor it takes the 265px
+that exist and `.px-scene` scrolls inside it: one scroller, nothing clipped,
+and no new pixel constant to be wrong about at the next screen size. After:
+`.pxhq` 174.8 -> 372.0, inside a column ending 374.0, one scroller with 673px
+of room, the lobby door at 245.8 -> 279.8 inside the column's own painted box.
+
+Nothing below 641px moved and nothing above 768px did. The five sizes `##
+338.`, `## 345.` and `## 357.` guard — 375x812, 375x667, 320x568, 667x375,
+568x320 — are every one of them 768px wide or narrower, so the first change
+reaches only 667x375 (which gains the styling it should always have had) and
+the second reaches none of them. 1024x768 and 1280x800 still report
+`min-height: 480px`. Both older suites are run unchanged.
+
+Measured in
+`scripts/test_the_agent_strip_is_styled_everywhere_it_is_rendered.py`, which
+imports `## 352.`'s browser harness rather than copying it, and which reads
+the office at **rest** rather than after scrolling. That last part matters:
+the first draft of the overhang check scrolled the column before measuring,
+which pulled `.pxhq`'s bottom back inside the container and made a box 215px
+too tall report as though it fit. It did not fit. It had been dragged.
