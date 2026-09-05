@@ -37081,3 +37081,56 @@ text to a rendered surface; `## 297.`, which owned this exact line one fix
 earlier and left the raw half in place; and every entry above `KEY_CAUSES` in
 `app/floor.jsx` — the patterns keep being right and the noun keeps being what
 changes.
+
+---
+
+## 332. the one door in the office nobody thought to lock, because it had no name
+
+**The wreck.** `#321` put `_state_change_gate` in front of every POST, PUT and
+DELETE and — deliberately, and correctly — refused to hand-list the routes it
+covers, deriving them from `_KEY_PROTECTED_PREFIXES` so the next dangerous
+route added would be covered on the day it was added. That derivation is only
+as complete as the thing it derives from, and `_KEY_PROTECTED_PREFIXES` is a
+list of routes `do_POST` names **explicitly**. `do_POST` has one arm that names
+nothing: after the last `if self.path == …`, whatever is left falls through to
+`self._route()` and is proxied verbatim to whatever `ROUTES` points at —
+`/lmstudio/` to LM Studio on 1234, `/ollama/` to Ollama on 11434.
+
+Those two are keyless on purpose. The model picker's own fetches
+(`listLMStudioModels`, `listOllamaModels`) send no `X-API-Key`, so putting them
+behind the key would 401 the office against itself the moment an operator set
+one. Being off the key list was right. Inheriting the gate list *from* the key
+list was what turned that into a hole.
+
+Measured against a default `python3 serve.py` with a model server behind
+`/lmstudio/`, from a page whose only relationship to the office is that the
+tester had the tab open:
+
+    POST /lmstudio/chat/completions   Origin: https://evil.example
+                                      Content-Type: text/plain
+      → 200, the prompt arrived at the model,
+      → and the reply came back with Access-Control-Allow-Origin: *,
+        so the page read it.
+
+`POST /tools/exec` with the identical request shape answered 403. Same server,
+same request, four lines apart in the same dispatch — the gate was never about
+how dangerous the route is, only about which list it happened to be on. And a
+`text/plain` body is not preflighted, so the browser never gets a chance to
+refuse on the office's behalf: it sends, the office asks the model, and only
+then would it think about who is allowed to read the answer.
+
+What a stranger's tab got is a free seat at the local model: the tester's GPU
+answering the attacker's prompts, on the machine whose model is loaded locally
+*precisely because* it is the one trusted with what must not leave the house.
+
+**The fix.** `_state_change_gate` reads the union —
+`_KEY_PROTECTED_PREFIXES + tuple(ROUTES)` — taking the passthrough prefixes by
+iterating the table rather than re-typing its two keys, so a third proxy added
+to `ROUTES` is gated on the day it is added. Nothing about the key gate moves:
+the model picker still lists models with no key, the phone on `10.0.0.131`
+still talks to the model, the night runner's Origin-less self-calls still go
+through, and `OPTIONS` still proxies.
+
+**Whose twin.** `## 294.`, `## 315.`, `#320`, `#321` — the same family, and the
+first one where the hand-maintained list was not the thing that drifted. The
+list was derived exactly as intended; the intent was one list short.

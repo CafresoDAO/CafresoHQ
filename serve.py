@@ -4102,9 +4102,38 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         Derived from _KEY_PROTECTED_PREFIXES rather than hand-listed, for the
         reason spelled out over _HOST_DATA_PREFIXES: a route dangerous enough
         to want a key is dangerous enough that a stranger must not be able to
-        fire it, and the hand-maintained list is the thing that drifts."""
+        fire it, and the hand-maintained list is the thing that drifts.
+
+        `#331`: key-protected is a subset of what belongs here, not the whole
+        of it. _KEY_PROTECTED_PREFIXES covers every dangerous route do_POST
+        names EXPLICITLY, and misses the one arm of do_POST that names
+        nothing: the ROUTES fall-through. A path matching no `if` above lands
+        on self._route() and is proxied verbatim to the local model server,
+        and `/lmstudio/` and `/ollama/` are keyless BY DESIGN — the UI's own
+        model-picker fetches (listLMStudioModels / listOllamaModels in
+        claude-client.jsx) send no X-API-Key, so key-protecting them would
+        401 the office against itself the moment an operator set a key.
+
+        Measured against a default `python3 serve.py` with a local model
+        server behind /lmstudio/, from a page whose only relationship to the
+        office is that the tester had the tab open:
+            POST /lmstudio/chat/completions  Origin: https://evil.example
+                                             Content-Type: text/plain
+            → 200, the prompt reached the model, and the reply came back
+              carrying Access-Control-Allow-Origin: * — so the page read it.
+        `/tools/exec` with the identical request shape answered 403. Same
+        server, same request, four lines apart in do_POST: the gate was never
+        about how dangerous the route is, only about which list it was on.
+        Whoever runs a local model has a machine that will answer any prompt
+        a stranger's tab cares to put to it, on the office's hardware, with
+        whatever the office's system prompt and loaded context contain.
+
+        So the gate takes the union, and takes ROUTES by iterating the table
+        rather than re-typing its keys: a third passthrough added there is
+        covered on the day it is added, which is the entire point of not
+        hand-listing."""
         path = self.path.split('?', 1)[0]
-        if not path.startswith(_KEY_PROTECTED_PREFIXES):
+        if not path.startswith(_KEY_PROTECTED_PREFIXES + tuple(ROUTES)):
             return True
         if not self._host_gate_ok():
             self._send_json(403, {'error': 'host not allowed'})
