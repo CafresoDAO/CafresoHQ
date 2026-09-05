@@ -19,11 +19,16 @@ const { useState: useSV, useMemo: useMV, useRef: useRV } = React;
    Used by TerminalSession to keep msgs/model/authMethod alive across
    project switches and reloads so the orchestrator context survives. */
 function useStoredV(key, initial, persistTransform) {
-  const [v, set] = React.useState(() => {
+  /* What the key held when this hook READ it, and whether anything in this
+     component has changed the value since. Both feed the write guard below. */
+  const seenRaw = React.useRef(null);
+  const touched = React.useRef(false);
+  const [v, _set] = React.useState(() => {
     const fallback = () => (typeof initial === 'function' ? initial() : initial);
     if (!key) return fallback();
     try {
       const raw = localStorage.getItem(key);
+      seenRaw.current = raw;
       if (raw == null) return fallback();
       const parsed = JSON.parse(raw);
       /* Same shape guard as app.jsx's useStored: "null"/schema-drifted
@@ -49,12 +54,36 @@ function useStoredV(key, initial, persistTransform) {
      A ref mirrors the latest value so an unmount flushes instead of drops. */
   const latest = React.useRef(null);
   latest.current = { key, v, persistTransform };
+  /* Writing back a value this component never CHANGED is at best a no-op and
+     at worst a clobber, and one call site makes it the latter. terminal.jsx
+     reads the global `cafresohq_terminal:popoutAllowed` through this hook
+     with no setter at all — Settings → Appearance → Advanced is the only
+     writer, and it writes localStorage directly. Flip that switch ON with a
+     terminal on screen and this hook is still holding the `false` it read at
+     mount; leaving the Terminal view unmounts it and the flush below wrote
+     that stale `false` straight back over the boss's brand-new setting. The
+     switch was on when they left Settings and off the next time they looked,
+     with nothing anywhere saying why — and the native-terminal tab it gates
+     simply never appeared.
+     So: an untouched value is persisted only while the key still holds
+     exactly what we read. The seed write for a key nobody else touches
+     survives; the revert-someone-else's-write does not. */
+  const mayWrite = (s) => {
+    if (!s || !s.key) return false;
+    if (touched.current) return true;
+    try { return localStorage.getItem(s.key) === seenRaw.current; } catch (_e) { return false; }
+  };
   React.useEffect(() => {
     if (!key) return;
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => {
-      try { localStorage.setItem(key, JSON.stringify(persistTransform ? persistTransform(v) : v)); }
-      catch (_e) { /* quota exceeded, etc */ }
+      const s = latest.current;
+      if (!mayWrite(s)) return;
+      try {
+        const out = JSON.stringify(s.persistTransform ? s.persistTransform(s.v) : s.v);
+        localStorage.setItem(s.key, out);
+        seenRaw.current = out;
+      } catch (_e) { /* quota exceeded, etc */ }
     }, 250);
     return () => { if (timer.current) clearTimeout(timer.current); };
   }, [key, v]);
@@ -62,11 +91,20 @@ function useStoredV(key, initial, persistTransform) {
     /* Unmount only. Runs after the debounce effect's own cleanup, so the
        timer is already cancelled — this writes what it would have written. */
     const s = latest.current;
-    if (!s || !s.key) return;
-    try { localStorage.setItem(s.key, JSON.stringify(s.persistTransform ? s.persistTransform(s.v) : s.v)); }
-    catch (_e) { /* quota exceeded, etc */ }
+    if (!mayWrite(s)) return;
+    try {
+      const out = JSON.stringify(s.persistTransform ? s.persistTransform(s.v) : s.v);
+      localStorage.setItem(s.key, out);
+      seenRaw.current = out;
+    } catch (_e) { /* quota exceeded, etc */ }
   }, []);
-  return [v, set];
+  /* Stable identity, the way useState's own setter is — callers pass it into
+     effects and memo deps. Flags the value as this component's before it
+     changes, which is what lets writeThrough tell an edit from an echo. */
+  const setRef = React.useRef(null);
+  setRef.current = _set;
+  const setStable = React.useRef((u) => { touched.current = true; setRef.current(u); });
+  return [v, setStable.current];
 }
 
 function hexToRgb(hex) {

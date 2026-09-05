@@ -33889,3 +33889,46 @@ a foreign session owns and this change never touches). This change covers
 entry; `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any kind
 was run.
+
+---
+
+## 289. the terminal switched a setting back off on its way out
+
+Settings → Appearance → Advanced has one switch for native terminal pop-outs.
+Turn it on with a terminal on screen, go back to the Office, and the next time
+you open Settings it is off again. Nothing said so. The PTY tab it gates never
+appeared either, which is how you find out.
+
+`useStoredV` (views/core.jsx) persists its value on a 250ms debounce and again
+on unmount — the flush added earlier so switching projects mid-stream could not
+drop the boss's typing. Both wrote unconditionally, which is harmless for a
+value the component owns and is not harmless for one it merely reads.
+views/terminal.jsx:384 reads the global `cafresohq_terminal:popoutAllowed`
+through this hook and destructures no setter at all. The only writer is the
+Settings toggle, which writes localStorage directly. So the hook sat there
+holding the `false` it read at mount, learned nothing when the switch flipped,
+and wrote that stale `false` back over the boss's brand-new setting the moment
+the Terminal view unmounted. A control that reports what it did and then has it
+quietly undone by an unrelated panel is worse than a control that refuses.
+
+The fix is a write guard, not a new listener: remember the raw string the hook
+READ, and whether this component's own setter has been called since. A touched
+value always writes, so the unmount flush keeps doing the job it was built for.
+An untouched value writes only while the key still holds exactly what was read
+— so seeding a key nobody else owns still happens, and reverting somebody
+else's write does not.
+
+`scripts/test_a_terminal_never_reverts_a_setting_it_only_read.py` runs the real
+`useStoredV` under the same hooks shim, fake timers and fake localStorage the
+sibling flush suite uses: mount untouched, let Settings write `true`, unmount —
+the key must still say `true`. Same through the debounce. And the two things
+that must not regress: an edit this view made still flushes on unmount, even
+against a racing write, and an untouched default still seeds an unowned key.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file
+a foreign session owns and this change never touches). This change covers
+`views/core.jsx`, the new test and this entry; `src/cafresohq_state/main.mo`
+was never staged or edited, no II or `derivationOrigin` value was read or
+written, and no dfx/IC action of any kind was run.
