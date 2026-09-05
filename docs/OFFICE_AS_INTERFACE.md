@@ -34925,3 +34925,91 @@ spawn verdicts for one id; in the fixed code the construction happens while
 the lock is held, only one thread can ever reach the barrier, and it breaks
 on its timeout. Same test, two outcomes, no sleeps and no luck.
 `scripts/test_two_terminals_resuming_one_session_id_never_leave_a_pty_behind.py`
+
+---
+
+## 305. day two opened on day one minus its final act
+
+Everything a beta tester makes on their first visit — the coworker they hire,
+the tasks they tick off, the conversation they have, the project they start —
+goes through `useFileStored` in app/storage.jsx. It keeps two copies: a
+localStorage mirror written synchronously the instant the value changes, and
+the server file (`hq-state/<name>.json`, `memory/agents.json`) written on a
+1500ms debounce so a streaming reply doesn't PUT once per token.
+
+Nothing ever flushed that debounce when the page went away. A tab close is not
+an unmount — React runs no cleanup for it — so the pending PUT simply
+evaporated and the file kept whatever it held *before* the tester's last
+action. On its own that would be survivable, because localStorage still had the
+edit. It was not survivable, because of what the mount fetch does on the next
+visit. It adopts the FILE whenever this session hasn't edited anything yet —
+which is precisely the state of a tab that has only just finished loading:
+
+```js
+let untouched = false;
+try { untouched = JSON.stringify(valRef.current) === seedRef.current; } catch (_e) {}
+...
+const merged = transform ? transform(data) : data;
+setVal(merged);
+localStorage.setItem(lsKey, JSON.stringify(merged));
+```
+
+So the stale file won, and won *hard*: it was written straight back over the
+newer local copy. The tester's last action was gone from both halves at once,
+with no error, no toast, no console line. Nothing to notice at the time and
+nothing to find afterwards. Day two opened on day one minus its final act — and
+the final act is the one a person remembers, because it is the last thing they
+were looking at when they closed the laptop.
+
+The window is not the sliver "1500ms" suggests. `persist()` re-arms the timer
+on every call, so for `messages` the countdown does not even begin until 1.5
+seconds after a streamed reply stops moving. Close the tab on a finished answer
+and the whole exchange never reached disk. `activity` is worse: app.jsx's own
+comment records that the agent_runner shim writes it on every vault action, so
+the log is perpetually mid-debounce for as long as anyone is working. The two
+stores the office calls its system-of-record were the two most exposed.
+
+**The fix.** `persist()` now writes down what the debounce owes — scope, name,
+body and a `Date.now()` stamp — and a `pagehide` / `visibilitychange`-to-hidden
+listener pays it before the document is torn down, with `keepalive: true` so
+the browser completes the request after the page is gone. `pagehide` rather
+than `unload`, which does not fire on a bfcache-eligible page; the visibility
+half catches the phone and tab-switch route that often never comes back.
+
+Two things it deliberately does not do. It does not touch the debounce timer's
+own body: that body is the error-reporting path added earlier, and a dying page
+has no surface to report on, so the last-gasp write is its own quiet code. And
+it does not fire when nothing is owed — a second timer, armed right after the
+write one for the same delay, tears up the note as soon as the debounce pays,
+with the `at` stamp as a backstop. Without that, thirteen file-backed stores
+would each send a redundant PUT every time the boss glanced at another tab.
+
+`hydratedRef` still rules: an edit made before the mount fetch settles is
+withheld from the flush exactly as it is withheld from the timer, so a fresh
+browser cannot PUT its empty seed over a real office on its way out. Sensitive
+stores (API keys) have no file half and get no flush.
+
+`scripts/test_the_last_thing_you_did_before_closing_the_tab_survives_the_night.py`
+lifts the real `useFileStored` out of app/storage.jsx and runs it under Node
+with fake timers, a fake localStorage that survives a reload, a fetch that
+actually stores what it is PUT, and a window/document that can fire `pagehide`.
+It plays the whole two-session story: hydrate, edit, close the tab without ever
+letting the debounce fire, then mount a second session against the file the
+first one left behind and check that the tick-box is still ticked — in state
+and in localStorage both. Plus the three controls above.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file
+a foreign session owns and this change never touches). One existing suite
+needed a two-line HARNESS change, said out loud here:
+`scripts/test_the_roster_file_never_lists_a_helper.py` lifts the `persist()`
+body and runs it under Node against hand-declared stand-ins for the hook's
+refs, so it now declares `pendingRef` and `paidRef` alongside `writeRef`. No
+assertion in it was touched, relaxed or removed — the shim simply has to
+supply every slot the lifted body reads. This change covers
+`app/storage.jsx`, that shim, the rebuilt `dist-ui/` bundle, the new test and
+this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any kind
+was run.

@@ -118,6 +118,10 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
   if (seedRef.current === null) { try { seedRef.current = JSON.stringify(val); } catch (_e) { seedRef.current = ''; } }
 
   const writeRef = useRefA(null);
+  /* The debounced file write that has been scheduled but not yet paid. See
+     persist() below and the unload flush under it. */
+  const pendingRef = useRefA(null);
+  const paidRef = useRefA(null);
   // Set as soon as anything in this session mutates the value. The mount fetch
   // below resolves ~100-300ms after first render, so without this flag it
   // overwrites whatever the user typed (or an agent wrote) in that window, and
@@ -168,7 +172,21 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
     if (sensitive) return;
     /* Never write the file we have not read. See hydratedRef above. */
     if (!hydratedRef.current) return;
+    /* What the debounce below still OWES disk, and when it was promised.
+       A tab that closes inside the 1500ms window takes the pending PUT with
+       it — React never unmounts on a tab close, so there is no cleanup to
+       lean on — and the file keeps the contents it had before the boss's
+       last action. That would be survivable if localStorage were the winner
+       next time, but it is not: the mount fetch above adopts the FILE
+       whenever this session hasn't edited anything yet, which is exactly
+       what a freshly reloaded tab looks like. So the stale file is written
+       back over the newer local copy and the last thing the boss did is
+       gone from BOTH halves, silently. `at` is what lets the unload flush
+       tell a promise still owed from one already paid, without touching the
+       write body below. */
+    pendingRef.current = { scope: fileScope, name: fileName, body: JSON.stringify(out), at: Date.now() };
     clearTimeout(writeRef.current);
+    clearTimeout(paidRef.current);
     writeRef.current = setTimeout(() => {
       /* Unlike the localStorage.setItem above, a failed PUT here used to
          vanish into a bare .catch(() => {}) — the UI looked fine (localStorage
@@ -187,7 +205,60 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
         try { window.dispatchEvent(new CustomEvent('cafresohq:storage-error', { detail: { key: lsKey, error: err, target: 'file' } })); } catch (_e) {}
       });
     }, 1500);
+    /* The debt is settled the moment the timer above runs, and a tab switch
+       must not then re-send it — thirteen file-backed stores would each pay a
+       redundant PUT every time the boss looked at another tab. A SECOND timer,
+       armed right after the write one and for the same delay, clears the note:
+       equal-deadline timers fire in the order they were registered, so this
+       lands immediately after the write. Kept separate rather than folded into
+       the callback above so that write body stays byte-for-byte what it was.
+       The `at` stamp in the flush is the backstop if the ordering ever fails
+       us — the cost of a miss is one duplicate PUT of identical content, never
+       a lost one. */
+    paidRef.current = setTimeout(() => { pendingRef.current = null; }, 1500);
   }, [lsKey, fileScope, fileName, sensitive, persistTransform]);
+
+  /* Pay what the debounce still owes before the page goes away.
+     `pagehide` is the close/navigate signal that actually fires (`unload`
+     does not, on a bfcache-eligible page), and `visibilitychange` to hidden
+     covers the phone/tab-switch route that often never comes back. The PUT
+     goes out with `keepalive` so the browser finishes it after the document
+     is gone. No toast on failure here — there is no surface left to show one
+     on, and localStorage still holds the value either way.
+     Only ever fires while a write is genuinely outstanding: `at` is stamped
+     when the 1500ms timer is armed, so anything older than that window has
+     already been written by the timer itself and a tab switch costs nothing.
+     Deliberately does not touch the timer body above — that body is the
+     error-reporting path, and this one is the last-gasp path. */
+  useEffectA(() => {
+    if (sensitive) return;
+    const flush = () => {
+      const p = pendingRef.current;
+      if (!p || (Date.now() - p.at) > 1500) return;
+      pendingRef.current = null;
+      clearTimeout(writeRef.current);
+      clearTimeout(paidRef.current);
+      try {
+        fetch(`${window._API_BASE || ''}/hq/${p.scope}/${p.name}`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: p.body,
+          keepalive: true,
+        }).catch(() => {});
+      } catch (_e) {}
+    };
+    const onHidden = () => {
+      if (typeof document === 'undefined' || document.visibilityState === 'hidden') flush();
+    };
+    const w = (typeof window !== 'undefined' && window.addEventListener) ? window : null;
+    const d = (typeof document !== 'undefined' && document.addEventListener) ? document : null;
+    if (w) w.addEventListener('pagehide', flush);
+    if (d) d.addEventListener('visibilitychange', onHidden);
+    return () => {
+      if (w) w.removeEventListener('pagehide', flush);
+      if (d) d.removeEventListener('visibilitychange', onHidden);
+    };
+  }, [sensitive]);
 
   useEffectA(() => {
     if (sensitive) return;

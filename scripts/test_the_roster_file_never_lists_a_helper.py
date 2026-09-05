@@ -121,6 +121,13 @@ def main():
         'const sensitive = false;\n'
         'const hydratedRef = { current: true };\n'
         'const writeRef = { current: null };\n'
+        # #305 added an unload flush: persist() now notes what the debounce
+        # still owes disk (pendingRef) and arms a second timer that tears the
+        # note up once the debounce pays (paidRef). Both are useRef slots in
+        # the real hook; this shim only has to declare them so the lifted body
+        # runs. No assertion here depends on either.
+        'const pendingRef = { current: null };\n'
+        'const paidRef = { current: null };\n'
         'const window = { _API_BASE: "" };\n'
         'const sinks = { ls: null, put: null };\n'
         'const localStorage = { setItem: (k, v) => { sinks.ls = v; } };\n'
