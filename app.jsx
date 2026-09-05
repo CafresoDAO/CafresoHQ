@@ -1275,6 +1275,14 @@ function App() {
      This poll is the fix — same endpoint, same 15s cadence NightShiftSection
      already uses, lifted one level so the floor can see it too. */
   const [nightShiftBoard, setNightShiftBoard] = useStateA([]);
+  /* #400 — the same mirror `agentsRef`/`tasksRef` are, for the same reason,
+     on the one board that STOP ALL sweeps by iterating rather than through a
+     functional updater. `onStopAll` awaits a confirm the boss can sit on and
+     then fires one DELETE per schedule from the array its render closed
+     over; a night shift that came up on the 15s poll's shoulder while that
+     dialog was open is invisible to that array and keeps burning tokens
+     server-side after the office has said it stopped everything. */
+  const nightShiftBoardRef = useRefA(nightShiftBoard);  nightShiftBoardRef.current = nightShiftBoard;
   /* Recently finished Night Shift runs (night_runner.py's mission-runs.json,
      ring-capped server-side at 100) — same gap as nightShiftBoard above, one
      surface over: CalendarView's own tag line promises "missions when they
@@ -1526,6 +1534,14 @@ function App() {
        outbox read the emptied map as "desk free": measured 2026-08-16, a
        waiting note dispatched and completed six seconds after this very
        handler announced "aborted 1 stream". */
+    /* #400: the three numbers above describe the office as the DIALOG found
+       it, which is right — the dialog is a question about now. Everything
+       under it has to describe the office as the SWEEP finds it, and did
+       not. `agentAbortersRef` is a ref, so the true count is one free read
+       here, on the statement before the sweep that empties it; a desk that
+       lit up or went quiet while the boss read makes the pre-dialog number
+       a fact about a moment that has passed. */
+    const swept = agentAbortersRef.current.size;
     abortAllAgentRuns();
     /* 'active' as well as 'busy'. Missions leave a coworker at `active ·
        on mission` between iterations, so filtering on 'busy' alone meant
@@ -1551,16 +1567,39 @@ function App() {
        either way if one of these doesn't land. Cleared optimistically so
        the floor doesn't sit there "running" for up to 15s after the boss
        was just told they were paused. */
-    if (nightShiftBoard.length) {
+    /* #400 — `nightShiftBoardRef.current`, not the closure. This is the one
+       arm of the sweep that acts by ITERATING a pre-dialog array instead of
+       through a functional updater, so it is the one arm the await can leave
+       incomplete: `setMissions`/`setAgents` read at commit time and pick up
+       anything that started while the dialog was open, and
+       `abortAllAgentRuns` reads a ref. `## 398` filed this handler
+       visible-only on the strength of "the sweep it performs is
+       unconditional and correct" — true of every arm but this one. A
+       schedule reaching its start time during the dialog is picked up by the
+       15s poll above and then missed by every DELETE below it: the big red
+       button's own sentence says the office stopped, and the night shift
+       runs on server-side. */
+    const nightNow = nightShiftBoardRef.current || [];
+    if (nightNow.length) {
       const base = (CafresoHQClient && CafresoHQClient.backendBase()) || '';
-      nightShiftBoard.forEach(n => {
+      nightNow.forEach(n => {
         fetch(base + `/missions/scheduled/${n.id}`, { method: 'DELETE', credentials: 'include' }).catch(() => {});
       });
       setNightShiftBoard([]);
     }
+    /* Reported as swept, not as counted: `nightRunning` above is what the
+       dialog promised, `nightNow.length` is what actually got a DELETE, and
+       when they differ the second one is the true sentence. `localRunning`
+       stays as-is deliberately — its sweep is a functional updater, so a
+       mission that started inside the gap IS paused, and the only thing
+       stale about it is the number. Mirroring `missions` into a ref to make
+       one word of one line prettier buys less than it costs; named in the
+       ledger rather than fixed. */
+    const nightSwept = nightNow.length;
+    const stopped = localRunning + nightSwept;
     setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
-      text: `■ STOP ALL — aborted ${inflight} stream${inflight===1?'':'s'}, paused ${running} mission${running===1?'':'s'}${nightRunning ? ` (${nightRunning} night shift${nightRunning===1?'':'s'})` : ''}.` }]);
-    say(`Stopped ${inflight + running} thing${inflight+running===1?'':'s'}`, 'STOP');
+      text: `■ STOP ALL — aborted ${swept} stream${swept===1?'':'s'}, paused ${stopped} mission${stopped===1?'':'s'}${nightSwept ? ` (${nightSwept} night shift${nightSwept===1?'':'s'})` : ''}.` }]);
+    say(`Stopped ${swept + stopped} thing${swept+stopped===1?'':'s'}`, 'STOP');
   };
 
   /* One-time migration: bump every existing agent to elevated + cafresohq:sonnet.
@@ -5321,6 +5360,37 @@ ${d.text}` : d.text,
     } else if (t.result && !(await window.hqConfirm(`Delete "${t.title}"? Your coworker's work on it will be lost.`, { danger: true }))) {
       return;
     }
+    /* #400 — the same window as #398's, pointed the other way, and the one
+       that re-opens the failure the comment below says was fixed.
+
+       #398 closed the case where `running` was TRUE and the desk changed
+       hands while the boss read the dialog. The other case is `running`
+       FALSE at observe time, the boss answering the RESULT-GUARD confirm
+       instead ("Your coworker's work on it will be lost"), and this card
+       getting STARTED inside that gap. Nothing above re-reads anything, so
+       `if (running)` below is still false, the card is removed and the run
+       is left alive — verbatim the "filed a delivery for work the boss had
+       explicitly removed" failure the next comment claims was closed.
+       That claim held only for the desk as it was BEFORE the ask.
+
+       The starter needs no boss: `triggerChainStep` → `onTaskDropOnAgent`
+       with `opts.auto`, which never asks and never stops to check whether a
+       modal is open. It fires from the tail of the predecessor step's own
+       run (autoDispatch chains) and from the workflow-step stamp, on any
+       successor sitting in `inbox` — and an inbox card carries the `result`
+       of an earlier run (a finished card dragged back, a dismissal release,
+       the reload scrub), which is exactly the field that raises this dialog.
+
+       Re-derived against `tasksRef.current` — the live board, not this
+       render's closure, which cannot have moved — with the SAME witness the
+       observation used, and only when it names a desk the abort below is
+       not already stopping. Nothing awaitable between here and the two
+       statements that act on it, for #394's reason. */
+    const afterAsk = tasksRef.current.find(x => x.id === id) || t;
+    const stopping = running ? t.assignedTo : null;
+    const lateDesk = (afterAsk.status === 'doing' && !afterAsk.blockedReason
+      && !!afterAsk.assignedTo && afterAsk.assignedTo !== stopping
+      && agentAbortersRef.current.has(afterAsk.assignedTo)) ? afterAsk.assignedTo : null;
     /* Stop the run, don't just drop the card. Deleting a running task used to
        leave the stream alive: measured, the desk stayed lit (WORKING 1, status
        busy) for a task that no longer existed, and a minute later the run
@@ -5352,6 +5422,23 @@ ${d.text}` : d.text,
        test_a_delete_stops_only_its_own_run.py pins does not move. */
     if (running) displaceDeskNote(t.assignedTo, who, priorRun, `deleting "${t.title}"`);
     if (running) abortAgentRun(t.assignedTo);
+    /* #400's own statement, below the pinned marker rather than folded into
+       it, for the same reason #398's report is above it: the
+       `if (running) abortAgentRun(t.assignedTo);` line is pinned verbatim by
+       test_a_delete_stops_only_its_own_run.py and must not move.
+
+       The boss's gesture still wins — they asked for the card to go — and
+       the work it actually stopped gets named, through the ticker the office
+       already has rather than a channel invented for it. Not `stalledNote`
+       and not a re-run: the card is being deleted, so there is nothing left
+       to park a note on, and re-running work the boss just removed is the
+       contradiction this whole door exists to prevent. */
+    if (lateDesk) {
+      const lateWho = ((agentsRef.current || agents).find(a => a.id === lateDesk) || {}).name || 'someone';
+      logActivity({ agentId: lateDesk, agentName: lateWho, action: 'progress', priority: 'attention', taskId: id,
+        text: `${lateWho} picked up "${t.title.slice(0, 30)}" while you were deciding — that run was stopped too` });
+      abortAgentRun(lateDesk);
+    }
     /* A deleted task can still be a live link in someone else's workflow:
        another card's `chainTo` may point AT this id (the predecessor that
        hands off to it), or another card's `dependsOn` may point HERE (a
@@ -5402,7 +5489,7 @@ ${d.text}` : d.text,
        cards are untouched. The chain break itself is already announced by
        the brokeChain row above. */
     setApprovals(prev => prev.filter(p => !(p.taskId && p.taskId === id)));
-    say(running ? `Deleted "${t.title.slice(0, 30)}" and stopped the run` : `Deleted "${t.title.slice(0, 30)}"`, 'TASK');
+    say((running || lateDesk) ? `Deleted "${t.title.slice(0, 30)}" and stopped the run` : `Deleted "${t.title.slice(0, 30)}"`, 'TASK');
   };
   /* taskFresh: a task created in THIS tick (starter cards) isn't in the
      `tasks` closure yet. Callers that just minted one pass it directly; the

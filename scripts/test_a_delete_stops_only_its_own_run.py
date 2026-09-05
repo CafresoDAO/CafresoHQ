@@ -112,6 +112,17 @@ def main():
         # before the first case runs. What it does when the desk does change is
         # test_the_x_on_a_card_stopped_a_note_it_never_named.py's job.
         '  const displaceDeskNote = (aid) => { log.displaced = (log.displaced || []).concat([aid]); return null; };\n'
+        # #400 — and the far side of the ask is now re-derived against the LIVE
+        # board and the LIVE roster, not this render's closure, because a chain
+        # step can auto-start the very card the boss is deleting while the
+        # result-guard confirm is open. Nothing here moves the board mid-dialog,
+        # so both refs simply mirror the closure; they just have to EXIST, or the
+        # lift throws ReferenceError before the first case runs. What happens
+        # when the board DOES move is
+        # test_the_card_got_picked_up_while_you_were_deciding.py's job.
+        '  const tasksRef = { current: tasks };\n'
+        '  const agentsRef = { current: agents };\n'
+        '  const logActivity = (row) => { log.activity = (log.activity || []).concat([row]); };\n'
         # onDeleteTask also purges the tray of approval cards bound to the
         # deleted task (see test_deleting_a_task_takes_its_approval_cards_with_it).
         '  const setApprovals = (fn) => { log.approvals = fn(s.approvals || []); };\n'

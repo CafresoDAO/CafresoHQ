@@ -130,7 +130,15 @@ async function run(scenario) {
   const missions = missionsState;
   const setMissions = (fn) => { missionsState = fn(missionsState); };
   const nightShiftBoard = nightBoard;
-  const setNightShiftBoard = (v) => { nightBoard = v; };
+  /* #400 — the sweep now iterates nightShiftBoardRef.current rather than the
+     render closure, because a schedule that reaches its start time while the
+     confirm is open is picked up by the 15s poll and was then missed by every
+     DELETE below it. Nothing in these three scenarios moves the board
+     mid-dialog, so the ref simply mirrors the closure; it just has to EXIST,
+     or the lift throws ReferenceError. What happens when the board DOES move
+     is test_the_card_got_picked_up_while_you_were_deciding.py's job. */
+  const nightShiftBoardRef = { current: nightBoard };
+  const setNightShiftBoard = (v) => { nightBoard = v; nightShiftBoardRef.current = v; };
   const setChat = (fn) => { chat.push(...fn(chat).slice(chat.length)); };
   const HQ = { uid: (p) => p + '_x' };
   const say = (msg) => { saidNothing = msg === 'Nothing to stop'; };

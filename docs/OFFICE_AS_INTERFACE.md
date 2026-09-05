@@ -42043,3 +42043,189 @@ tester still has no brain. Nothing here bundles one, and nothing here can:
 which model ships in the invitation is a product call. `docs/BETA_READINESS.md`
 is updated to draw that line where it actually falls — the failure is now fast
 and legible, and the brain is still missing.
+
+## 400. the card got picked up while you were deciding to bin it
+
+`## 398` swept all 85 suspend points in `app.jsx` and `hq-runtime.jsx` for
+the class `## 394` opened — an observation made BEFORE an `await`, acted
+upon AFTER it, when the observed thing can change during the wait — fixed
+two doors, and named three more precisely so the next hunt would not have
+to re-derive them. This is that hunt. All three re-derived against current
+source before anything was touched, because the most valuable thing `## 398`
+itself produced was catching that `## 391` had filed a door SAFE for two
+reasons that were both wrong. Two of the three came back exactly as `## 398`
+described them. The third did not: `## 398`'s stated reason for leaving it
+alone is false in one arm, and that arm loses work rather than a number.
+
+### 1. The ✕, from the other side of the same window
+
+`## 398` closed the case where `running` was TRUE at observe time — the boss
+answering "Vera is working on X right now. Delete it and stop them?" while
+the desk changed hands underneath the question. The other case is `running`
+FALSE, the boss answering the RESULT-GUARD confirm instead ("Delete X? Your
+coworker's work on it will be lost"), and this card getting STARTED inside
+that gap. Nothing between the ask and the abort re-reads anything, so
+`if (running)` is still false, the card is removed, and the run is left
+alive.
+
+Which is verbatim the failure the abort's own comment says was fixed — "a
+minute later the run finished and FILED A DELIVERY into the cabinet for work
+the boss had explicitly removed", closed in *the office survives ordinary
+accidents, 2026-08-07* with "now it names the coworker, asks, and aborts".
+That claim was true about the desk as it was BEFORE the ask, and about
+nothing else. **A comment that says a bug is closed is a claim about a
+moment, and this series keeps finding that the moment has an `await` in it.**
+
+The starter needs no boss and no bad luck. `triggerChainStep` →
+`onTaskDropOnAgent({ auto: true })` never asks, never checks whether a modal
+is open, and fires from the tail of the predecessor step's own run on any
+successor sitting in `inbox`. An inbox card carries the `result` of an
+earlier run — a finished card dragged back to redo it, a dismissal release,
+the reload scrub — and `result` is precisely and only what raises this
+dialog. So the trigger is: a two-step chain, the boss changing their mind
+about step two, and step one finishing while they read.
+
+Reproduced 2026-09-05 through new `scripts/harness_await_tail.mjs`, lifting
+the REAL `onDeleteTask`, the REAL card-assign block out of
+`onTaskDropOnAgent` (marker-bounded, from its `applyStatus(t, 'doing')`
+write to the `say()` that closes the block) and the REAL desk registry:
+`dialogWasTheResultGuard: true, chainStarted: true, cardDeleted: true,
+runStillAlive: true, deskStillLit: true, abortFired: false,
+lateStopReported: false` — the desk still lit for a card that no longer
+exists, and the ticker holding one line, `picked up "the follow-up memo" 📁`,
+for a pickup nobody will ever see the end of.
+
+**The fix**, in the idiom `## 394` and `## 398` set. Re-derive the
+observation on the far side of the ask — `afterAsk` off `tasksRef.current`,
+the live board rather than this render's closure, which cannot have moved —
+with the SAME full witness `running` used (`doing`, no `blockedReason`, an
+assignee, and the registry bit), and only when it names a desk the abort
+below is not already stopping (`afterAsk.assignedTo !== stopping`, so
+`## 398`'s own case stays exactly as `## 398` left it). The boss still gets
+their deletion; the run that started under them is stopped, and named:
+one `logActivity` row, `Vera picked up "…" while you were deciding — that
+run was stopped too`. The ticker rather than a new channel, and not a
+`stalledNote` — there is no card left to park one on — and not a re-run,
+because re-running work the boss just removed is the contradiction this
+whole door exists to prevent. Its own statement BELOW
+`if (running) abortAgentRun(t.assignedTo);`, which
+`test_a_delete_stops_only_its_own_run.py` pins verbatim, for the same
+reason `## 398`'s report sits above it.
+
+### 2. The vault answer that outlived the instruction to forget it
+
+`isVaultReady` (hq-runtime.jsx) reads the cache, `await`s
+`CafresoHQClient.vaultStatus()`, and then writes — with a stamp taken before
+the await and no check that the cache is still the one it was asked about.
+`## 398` named both halves and both hold.
+
+The harm is the first half and it is worse than "a card advertising a vault
+the boss disconnected". `clearVaultReadyCache()` is the office being TOLD to
+forget, and the whole point of `vaultReadySync`'s `undefined` is that a
+cleared cache says nothing rather than saying no. An in-flight probe undoes
+that instruction: it writes the OLD backend's answer over the cleared cache,
+and because a cleared cache is `first`, `_noteVaultReady` fires every watcher
+with `changed === true`. Measured pre-fix: `syncRightAfterClear:
+"undefined"` → `syncAfterProbeLanded: "true"`, watcher trail
+`["undefined", "true"]`. The cards repaint from that trail, and
+`toolsForAgent` — which awaits this same function — then hands out `VAULT_*`
+for the vault the boss just disconnected. Settings → Connections after a
+backend swap is exactly the moment a probe is in flight.
+
+Fixed with the epoch this codebase already uses for exactly this shape
+(`dispatchToAgent`'s wait re-reads two of them): `_vaultCacheEpoch`, bumped
+by every deliberate invalidation, read before the probe suspends and
+re-checked before BOTH writes — the answer and the unreachable-office one,
+since a failure recorded over a clear is the same lie one word quieter. A
+discarded probe returns the cache rather than its own answer, which reads
+`false` — the "do not sell on unknown" side of the fence, where a
+just-disconnected vault belongs.
+
+The stamp is the second half and it is real but mild, in the direction
+nobody would notice: `now` taken before the await means a slow probe is
+filed as if it answered when it was asked, so a 4s probe's answer is born 4s
+old and the 5s window expires one second after it arrives. That costs extra
+round trips, not a wrong answer — but it is wrong in company: two
+overlapping probes let the slower one stamp its answer with the OLDER time
+and backdate a fresher one that had already landed. `Date.now()` at write
+time; the freshness TEST above keeps the pre-await `now`, because that is a
+read and not a write, and pinned as such. Driven on a stubbed clock: a 4s
+probe then a call 1.5s later — `probes: 2` pre-fix, `1` after.
+
+### 3. STOP ALL — where `## 398` was wrong
+
+`## 398` filed this visible-only and said why: "the sweep it performs is
+unconditional and correct, and the cost is a wrong count in one sentence,
+not lost work." **That is true of every arm but one.** `setMissions` and
+`setAgents` are functional updaters that read at commit time, so a mission
+or a desk that lit up during the dialog is swept anyway;
+`abortAllAgentRuns()` reads a ref. But the night-shift arm acts by
+ITERATING `nightShiftBoard` — the array its render closed over — and firing
+one `DELETE /missions/scheduled/<id>` per entry. A schedule that reaches its
+start time while the confirm is open is picked up by the 15s poll, lands in
+the board, and is missed by every DELETE below it. 1:59:50, the boss presses
+the big red button; 2:00, the overnight run begins; 2:00:30 the boss
+confirms, is told the office stopped, and the night shift keeps burning
+tokens server-side — which is the SAME failure *STOP ALL claimed to pause
+every running night shift, and never touched one* built this arm to close,
+re-opened by the modal standing in front of it.
+
+So it is not the lowest-priority of the three; it is the only one of the
+three that loses work, and the reason it was left is the reason it needed
+looking at. Sixth consecutive "already safe" verdict in this series to
+collapse under driving. Measured pre-fix: `nightShiftDeleted: false,
+deletes: []`, board never cleared, and the chat line reading `aborted 1
+stream` for a sweep that took two.
+
+Fixed with a `nightShiftBoardRef` mirror declared beside its state — the
+same two lines `agentsRef` and `tasksRef` are, for the same reason — read by
+the sweep and by the sentence. `swept` is the true stream count, one free
+ref read on the statement before `abortAllAgentRuns()` empties the map. The
+CONFIRM keeps the pre-ask numbers and is pinned that way: the dialog is a
+question about now, and re-writing it after the fact would describe a moment
+the boss was never shown. `localRunning` also keeps its pre-ask number,
+named here rather than fixed — its sweep is a functional updater, so the
+mission IS paused and only the count is stale, and mirroring `missions` into
+a ref to make one word of one line prettier buys less than it costs.
+
+### Fire-tested
+
+New `scripts/test_the_card_got_picked_up_while_you_were_deciding.py`: 39
+checks — structural (the far side re-derived off `tasksRef.current` with the
+full witness, excluding the desk already being stopped, reported exactly
+once through the ticker, named off the LIVE roster; the epoch declared,
+bumped, read pre-await and re-checked before both writes, with the stamp
+moved to answer time; the night-shift ref mirror, the live-board sweep, the
+swept count and the swept sentence), the load-bearing negatives (no `await`
+between the re-derivation and the two acts on it, since one there re-opens
+the very window this closes; `## 398`'s displacement report and its pinned
+abort marker untouched; `## 86`'s full running witness; the freshness test
+still reading pre-await `now`; the confirm and the early bail still on the
+pre-ask counts), and eight real-extraction scenarios through the new
+harness including a declined delete keeping both the card and the run, an
+untouched card deleted in silence, an unclear probe still landing, and a
+quiet office naming no night shift.
+
+Reverted in place (md5 `ef51cafb5675f620960946c278ff653e` /
+`1ab15681db1b19e67c725061121705e1` fixed, `a0ea52f56e90c4369dc898a6ec07ede3` /
+`3fb18524011d743e0bc398bfcfd859e8` reverted): **29** checks failed reliably
+across 3 repeated runs, including all fourteen live ones, while the ten
+pinned negatives kept passing — which is what says they are properties of
+these doors and not artifacts of this fix. Restored byte-identical, green on
+three repeated runs, and run from the MAIN CHECKOUT as well (29 failures
+there, the same 29, against its pre-fix source — no path or glob defect of
+the kind `## 397` shipped, since nothing here walks a directory). `npm run
+build` succeeds.
+
+**Fallout, repaired here.** Forty-eight tests name the functions this entry
+touches; three broke, all the usual way — a lift into an isolated Node
+namespace missing a new dependency. `test_a_delete_stops_only_its_own_run`
+and `harness_delete_desk_race.mjs` (behind
+`test_the_x_on_a_card_stopped_a_note_it_never_named`) threw `ReferenceError:
+tasksRef is not defined`; `test_stop_all_stops_the_night_shift_too` threw
+`ReferenceError: nightShiftBoardRef is not defined`; and
+`test_the_card_waits_for_the_vault_to_answer`, which rebuilds the vault
+cache declarations by hand rather than lifting the region, needed
+`_vaultCacheEpoch`. All four given the dependency with a comment citing this
+entry and pointing at the test that owns the moving-board case. The other
+forty-four pass unchanged.

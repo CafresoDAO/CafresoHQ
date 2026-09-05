@@ -173,6 +173,14 @@ def main():
     else:
         lifted = '\n'.join([
             'let _vaultConfiguredCache = { at: 0, ok: false };',
+            # #400 — the probe now reads this epoch before it suspends and
+            # re-checks it before writing, so a clearVaultReadyCache() landing
+            # mid-probe is not undone by the old vault's answer arriving after
+            # it. Declared here beside the cache it guards, the way the file
+            # declares it; nothing in this harness clears mid-probe, so it only
+            # has to exist. The mid-probe clear itself is
+            # test_the_card_got_picked_up_while_you_were_deciding.py's job.
+            'let _vaultCacheEpoch = 0;',
             'const _vaultWatchers = new Set();',
             brace_lift(runtime, 'function _noteVaultReady(ok, now) {'),
             brace_lift(runtime, 'async function isVaultReady() {'),

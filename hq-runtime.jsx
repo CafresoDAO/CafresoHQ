@@ -1768,6 +1768,17 @@ const MAX_TOOL_HOPS = 4;
 /* `at: 0` is not "stale", it is NEVER ASKED, and the two have to stay
    distinguishable — see `vaultReadySync` below. */
 let _vaultConfiguredCache = { at: 0, ok: false };
+/* #400 — bumped by every deliberate invalidation, and read on BOTH sides of
+   the probe's `await`. A clear is an instruction ("forget what you know
+   about the vault"), and until this existed an in-flight probe silently
+   undid it: the probe answers about the OLD backend, `_noteVaultReady`
+   writes that answer back over the cleared cache, the watchers fire with
+   `changed === true` (a cleared cache is `first`), and every coworker card
+   goes from honestly saying nothing to advertising a vault the boss had
+   just disconnected — while `toolsForAgent`, which awaits this same
+   function, hands out VAULT_* for it. Settings → Connections after a
+   backend swap is exactly the moment a probe is in flight. */
+let _vaultCacheEpoch = 0;
 const _vaultWatchers = new Set();
 function _noteVaultReady(ok, now) {
   const first = !_vaultConfiguredCache.at;
@@ -1783,9 +1794,18 @@ async function isVaultReady() {
      test that reads it as an answer from 1970 is one stubbed clock away from
      handing back `ok: false` for a vault nobody has looked at. */
   if (_vaultConfiguredCache.at && now - _vaultConfiguredCache.at < 5000) return _vaultConfiguredCache.ok;
+  /* #400: the epoch as observed BEFORE the probe suspends, and `Date.now()`
+     again when it answers rather than `now`. The stamp is what the 5s
+     freshness window measures, and the window is asking "how long since we
+     heard back" — a slow probe filed under the time it was ASKED is born
+     partly spent, and on a probe slower than the window itself, already
+     stale. Worse in company: two overlapping probes let the slower one
+     stamp its answer with the OLDER time, backdating a fresher answer that
+     had already landed. */
+  const epoch = _vaultCacheEpoch;
   try {
     const s = await CafresoHQClient.vaultStatus();
-    _noteVaultReady(!!(s.configured && s.exists), now);
+    if (epoch === _vaultCacheEpoch) _noteVaultReady(!!(s.configured && s.exists), Date.now());
   } catch (_e) {
     /* The office is unreachable, so whether a vault is CONFIGURED is
        genuinely unknown — but what the coworker gets is not: `toolsForAgent`
@@ -1793,12 +1813,17 @@ async function isVaultReady() {
        observation of "not ready" is what keeps the card and the grant
        saying the same thing, which is the only invariant here worth
        protecting. */
-    _noteVaultReady(false, now);
+    if (epoch === _vaultCacheEpoch) _noteVaultReady(false, Date.now());
   }
+  /* Deliberately the CACHE and not the probe's own answer: when the epoch
+     moved, that answer is about a vault this office has been told to forget,
+     and a cleared cache reads `false` — the "do not sell on unknown" side of
+     the fence, which is where a just-disconnected vault belongs. */
   return _vaultConfiguredCache.ok;
 }
 function clearVaultReadyCache() {
   _vaultConfiguredCache = { at: 0, ok: false };
+  _vaultCacheEpoch++;   // #400 — see the epoch's declaration above
   /* Back to "never asked", and the watchers are told so they can ask again.
      Without this, Settings → Connections → MARKDOWN VAULT would clear the
      cache after a backend swap and every coworker card would sit on the

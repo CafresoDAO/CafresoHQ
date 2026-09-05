@@ -133,7 +133,13 @@ const DELETE_PARAMS = ['tasks', 'agents', 'agentAbortersRef', 'abortAgentRun',
   'setTasks', 'setApprovals', 'logActivity', 'say', 'window',
   // added by this hunt (#398): the honest report #394 built for the other
   // two doors. Absent pre-fix — passed as a no-op so the lift still runs.
-  'displaceDeskNote'];
+  'displaceDeskNote',
+  // added by #400: the handler now re-derives the board and the roster on the
+  // far side of the ask, against the LIVE refs rather than this render's
+  // closure. Neither scenario below moves the CARD mid-dialog (what moves is
+  // the desk, which is #398's own subject), so both refs just mirror the
+  // closure — they have to exist or the lift throws ReferenceError.
+  'tasksRef', 'agentsRef'];
 
 /* ── scenario 1: the ✕ dialog outlives the run it named ──────────────── */
 async function deleteDialogRace(name, { dialogMs = 900, noteRunMs = 600,
@@ -175,6 +181,7 @@ async function deleteDialogRace(name, { dialogMs = 900, noteRunMs = 600,
     setApprovals: (fn) => fn([]),
     logActivity: () => {}, say: () => {},
     window: win, displaceDeskNote,
+    tasksRef: { current: [task] }, agentsRef: { current: [agent] },
   };
 
   // 1. The CARD's own run is on Vera's desk — this is what the ✕ dialog names.
@@ -250,6 +257,7 @@ async function deleteUnchangedDesk(name) {
     setApprovals: (fn) => fn([]), logActivity: () => {}, say: () => {},
     window: { hqConfirm: async (m) => { dialogs.push(m); await new Promise(r => setTimeout(r, 50)); return true; } },
     displaceDeskNote,
+    tasksRef: { current: [task] }, agentsRef: { current: [agent] },   // #400, as above
   };
   await del(...DELETE_PARAMS.map(k => world[k]), 'tk_l');
   console.log(JSON.stringify({
