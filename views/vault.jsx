@@ -206,6 +206,39 @@ const _backlinkSources = (g, path) => {
 const _hiddenMsg = (part) =>
   `Hidden files can't be filed here — the Library never lists anything under "${part}". Drop the leading dot so the note stays visible.`;
 
+/* THREE states, not two. `hits === null` means no search is running and the
+   pane belongs to the tree (or, on a first run, to the welcome). A non-empty
+   array is results. An EMPTY array is the third thing — a search that ran and
+   found nothing — and it was being folded into "results" because `[]` is
+   truthy in JavaScript, so `hits ? results : tree` took the results arm and
+   painted `0 result(s)` with a ✕ beside it.
+
+   On a Library with notes in it that is merely terse. On an EMPTY Library it
+   costs the boss the only room in this view that has a call to action: the
+   first thing a new tester does is poke the search box, and the "📓 Your
+   Library is empty / ➕ Write your first note" panel vanished the moment they
+   did — replaced by a zero and a dismiss button, with the way in gone.
+
+   So a no-result search says so in words, and when the Library is empty it
+   says the reason is the empty Library rather than the query, and the
+   greeting is rendered underneath it: the escape route survives the search
+   that was only ever an exploration. */
+function vaultNoHitsNote(query, fileCount) {
+  const q = String(query == null ? '' : query).trim();
+  const named = q ? `“${q}”` : 'that search';
+  if (!fileCount) {
+    return {
+      title: 'Nothing to search yet',
+      sub: `Your Library is empty, so ${named} had nothing to match — no note is being hidden from you.`,
+    };
+  }
+  const one = fileCount === 1;
+  return {
+    title: `No match for ${named}.`,
+    sub: `Your Library has ${fileCount} file${one ? '' : 's'} in it and none of them matched. Try a different word, or clear the search to see ${one ? 'it' : 'them'} again.`,
+  };
+}
+
 /* "Simple page" is one of exactly THREE starter tasks on the whole app's
    front door (§3.6) — a boss's first delivery is very often an .html file.
    renderMarkdown() escapes every `<`/`>` before it ever looks for markdown
@@ -1386,6 +1419,29 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     </div>
   ) : null;
 
+  /* The three-way the render arms read (see vaultNoHitsNote): 'idle' is no
+     search running, 'none' is a search that ran and found nothing, 'found'
+     is results. Never `hits ?`. */
+  const searchState = hits === null ? 'idle' : (hits.length ? 'found' : 'none');
+
+  /* Both the results ✕ and the no-match panel land here. Emptying the box
+     too is the honest version of "clear the search": leaving the query
+     sitting in an input above a restored tree reads as a filter that is
+     still on. */
+  const clearSearch = () => { setHits(null); setQ(''); };
+
+  const noHitsPanel = (() => {
+    const note = vaultNoHitsNote(hitQ || q, files.length);
+    return (
+      <div style={{ padding: '14px', fontSize: 11, lineHeight: 1.6 }}>
+        <div style={{ fontWeight: 600, marginBottom: 4 }}>{note.title}</div>
+        <div style={{ opacity: 0.7 }}>{note.sub}</div>
+        <button className="px-btn ghost" style={{ fontSize: 9, marginTop: 8 }}
+          onClick={clearSearch}>✕ CLEAR SEARCH</button>
+      </div>
+    );
+  })();
+
   /* `openInObsidian` lived here, was REMOVED, and is now back behind the
      gate it always needed. The removal note used to read, in part:
 
@@ -1602,13 +1658,18 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
                 <input style={{width:'100%',boxSizing:'border-box'}} value={q} aria-label="Search the Library" onChange={e=>setQ(e.target.value)} placeholder="Search the Library…" onKeyDown={e=>e.key==='Enter'&&search()} />
                 <button className="px-btn secondary" style={{fontSize:9}} onClick={search}>{'🔎'} SEARCH</button>
               </div>
-              {hits ? (
+              {searchState === 'found' ? (
                 <div style={{overflowY:'auto',flex:1}}>
                   <div style={{padding:'4px 8px',fontSize:9,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                     {hits.length} result(s)
-                    <button className="px-btn ghost" style={{fontSize:9}} onClick={()=>setHits(null)}>{'✕'}</button>
+                    <button className="px-btn ghost" style={{fontSize:9}} onClick={clearSearch}>{'✕'}</button>
                   </div>
                   {hits.map(h => hitRow(h, mobileOpenByPath))}
+                </div>
+              ) : searchState === 'none' ? (
+                <div style={{overflowY:'auto',flex:1}}>
+                  {noHitsPanel}
+                  {files.length === 0 && emptyTreeState}
                 </div>
               ) : (
                 <>
@@ -1686,13 +1747,18 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
           <input style={{width:'100%',boxSizing:'border-box'}} value={q} aria-label="Search the Library" onChange={e=>setQ(e.target.value)} placeholder="Search the Library…" onKeyDown={e=>e.key==='Enter'&&search()} />
           <button className="px-btn secondary" style={{fontSize:9}} onClick={search}>🔎 SEARCH</button>
         </div>
-        {hits ? (
+        {searchState === 'found' ? (
           <div style={{overflowY:'auto',flex:1}}>
             <div style={{padding:'4px 8px',fontSize:9,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
               {hits.length} result(s)
-              <button className="px-btn ghost" style={{fontSize:9}} onClick={()=>setHits(null)}>✕</button>
+              <button className="px-btn ghost" style={{fontSize:9}} onClick={clearSearch}>✕</button>
             </div>
             {hits.map(h => hitRow(h, openByPath))}
+          </div>
+        ) : searchState === 'none' ? (
+          <div style={{overflowY:'auto',flex:1}}>
+            {noHitsPanel}
+            {files.length === 0 && emptyTreeState}
           </div>
         ) : (
           <>

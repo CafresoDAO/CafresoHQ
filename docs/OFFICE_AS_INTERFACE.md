@@ -35125,3 +35125,55 @@ The test lifts the real `parseDirEntries` and runs it under node against a
 real empty listing, a real 300-entry truncated listing and an ordinary one,
 the way #303's does. Asserting on the source alone would have passed a parser
 that still silently dropped the marker.
+
+---
+
+## 308. the search box ate the only door out of the empty Library
+
+`#306` fixed an empty room that blamed a filter. This is the same room one
+step earlier: an empty room that was deleted outright by the first thing a
+tester does in it.
+
+The Library pane has three states and was rendering two. `hits === null`
+means no search is running and the pane belongs to the tree — or, on a
+first run, to the welcome `#`-numbered work has been protecting since it
+landed: "📓 Your Library is empty", the sentence naming what lives here and
+that coworkers file deliveries here too, and under it two full-size doors,
+➕ WRITE YOUR FIRST NOTE and 📤 UPLOAD FILES. A non-empty array of hits is
+results. An empty array is the third thing — a search that RAN and found
+nothing — and both render arms asked the question as `hits ? (results) :
+(tree)`, where `[]` is truthy.
+
+So a brand-new boss with nothing filed pokes the search box, which is the
+most natural thing to do in a room called a Library, presses SEARCH, and
+the greeting is replaced by:
+
+> 0 result(s)                                              ✕
+
+A bare zero and a dismiss button, over an empty pane. Nothing said the
+Library was empty. Nothing said the query was not at fault. And the one
+call to action this office had — the button that was going to get the first
+note written, the whole reason the welcome exists — was gone, recoverable
+only by noticing that a 9px ✕ in the corner is not "close the panel" but
+"undo the search". A boss who read the zero as an answer about their
+Library learned the wrong thing about a cabinet that was working fine.
+
+The identical shape stood in both layouts, the desktop three-column pane and
+the mobile FILES tab — the sibling pattern this repo keeps producing, caught
+here twice in one file. `backlinks` and the `[[` autocomplete were checked
+in the same pass and are already honest: one asks `.length`, the other
+stores `null` when the candidate list comes back empty.
+
+`searchState` now names the three-way once — `idle` / `none` / `found` — and
+`vaultNoHitsNote(query, fileCount)` says the third one in words, split by
+whose fault it is. A stocked Library is told the query missed and how much
+it is standing in front of ("Your Library has 12 files in it and none of
+them matched"), with the clear offered as a route that works. An empty
+Library is told the reason is the empty Library, not the word it typed, and
+that no note is being hidden from it — and the greeting is rendered directly
+underneath the sentence, so the way forward survives the search that was
+only ever an exploration.
+
+Clearing now empties the query box as well as the hits. A search term left
+sitting in an input above a restored tree is a filter that looks like it is
+still on, which is the `#306` mistake in miniature.
