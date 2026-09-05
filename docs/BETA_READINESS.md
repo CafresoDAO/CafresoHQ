@@ -1,5 +1,54 @@
 # Beta readiness — re-audit
 
+**2026-09-05 (third pass, status update — not a re-audit).** The second pass
+below (verified against `#336`/`#337`, verdict: *"shippable to an outside beta
+tester today"*) still stands; nothing here changes that verdict. This is a
+progress note from the coordinator running the standing bug-hunt loop, current
+through `## 380.` (`a4bb342`).
+
+Since `#337`, roughly 44 more numbered fixes landed (`#338`–`#380`, a handful of
+ledger numbers reserved-then-skipped for relaunched agent work). None of them
+touch the security-posture findings the second pass measured — that surface
+hasn't moved. What they closed instead is a different, quieter reliability
+class this session ran down methodically:
+
+- **Stale-snapshot component state** (`#374`–`#378`): five real bugs where a
+  panel/modal captured a coworker, task, or meeting-roster object once at open
+  time instead of re-reading it live — Settings edits made while the panel
+  stayed open (model, tools, color) silently never reached it. Swept until a
+  dedicated hunt for more instances came back clean.
+- **`useFileStored` hydration races** (`#379`, `#380`): two stores (the
+  approvals/receipts audit trail, and the coworker job/résumé ledger) could
+  have their entire on-disk history silently discarded and overwritten if a
+  new entry was recorded in the ~100–300ms window before the file finished
+  loading from disk on mount. Swept until every remaining `useFileStored` call
+  site was checked and confirmed either safe or already correctly wired.
+- Plus a scattering of one-off finds: a Night Shift permission gate that only
+  covered vault *writes* and not reads/search (`#375`), a stale DM-roster
+  closure surviving a boss-blocking confirm dialog (`#376`), and a duplicate
+  chat escalation on every page reload (`#374`).
+
+Full suite as of `## 380.`: **555/556 suites pass.** The sole failure is the
+same one this document has named at every prior pass —
+`test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`, blocked on
+`moc`'s `M0219` diagnostics against a foreign session's uncommitted
+`src/cafresohq_state/main.mo`, which this session may read and must not touch.
+
+The four gates listed near the end of this document (the `main.mo` migration,
+any mainnet action, cycles auto-top-up, and the nine unauthorized MCP
+connectors) are unchanged and remain true today — none of the 44 fixes above
+were in a position to close any of them, since none are within this session's
+authority to touch.
+
+**Reading this update alongside the second pass:** the second pass answered
+"is it safe to hand to a stranger," and the answer there hasn't moved. This
+update answers "has anything rotted since," and the answer is no — the app has
+gotten more internally consistent (fewer places where the UI quietly lies about
+current state), not less safe. Nothing below this line has been re-verified
+against today's commit; it is preserved as the second pass's own record.
+
+---
+
 **2026-09-05 (second pass).** Supersedes the audit dated the same day at
 `89d1163`, whose verdict was *"not shippable to an outside tester today, for
 exactly one reason: the default security posture."* Verified against `6887f20`
