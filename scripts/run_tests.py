@@ -56,6 +56,11 @@ SUITE_OVERRIDES: list[tuple[str, int, bool]] = [
     ('scripts/test_deep_research.py',               600,  True),
     ('scripts/test_search_worker.py',               600,  True),
     ('search_worker_service/scripts/test_worker.py', 600, True),
+    # Boots a real headless browser and measures TWO landscape viewports,
+    # each one a full cold app boot behind the first-run dialogs. ~90s on an
+    # idle machine, and it is competing with whatever else is on the box.
+    ('scripts/test_the_office_does_not_vanish_when_the_phone_is_turned_sideways.py',
+                                                     300, False),
 ]
 
 

@@ -11447,6 +11447,41 @@ body.night .px-lobby .px-int, body.night .px-lobby { filter: brightness(0.85); }
   .px-pin-x { padding: 6px; margin: -6px; }
 }
 
+/* Landscape phone. Every rule above this line was written against a
+   PORTRAIT phone, and the office column does not survive being turned
+   sideways: at 667x375 the root has 136px of content box, the task rail
+   (70px) and the agent strip (67.5px) are `flex: 0 1 auto` with
+   `min-height: auto` so they cannot shrink below their content, and
+   `.pxhq` — `flex: 1 1 0%`, a ZERO flex base — resolved to exactly 0px
+   with `overflow: hidden` over a 698px building. Not a small office: no
+   office, and no lobby door to tap at any scroll position.
+
+   #345's `min-height: 0` is not the culprit and putting a floor back is
+   not the fix — it is what this same rule USED to say (420px), and at
+   375px of viewport height that draws the building straight over the
+   ticker, the tab bar and off the screen. Both values are answers to a
+   question with no answer: the column is laid out to FIT the viewport,
+   and at this height its own fixed furniture does not fit.
+
+   So stop fitting it. The column scrolls: the root becomes the scroller
+   and `.pxhq` / `.px-scene` take their natural content height inside it,
+   which leaves exactly ONE scroller on the landscape floor instead of a
+   starved flex line feeding a nested one. Nothing is hidden, and there
+   is no pixel floor to be wrong about.
+
+   The width half of the gate keeps this inside the mobile regime the
+   rest of the office's phone CSS lives in (`@media (max-width: 768px)`
+   above, and office.jsx ~417's own 768px test), so it can never fire
+   against a layout it was not measured on. The height half is below
+   every portrait phone measured in this repo — 812, 667, 568 — so all
+   three are untouched. Measured both ways in
+   scripts/test_the_office_does_not_vanish_when_the_phone_is_turned_sideways.py. */
+@media (max-width: 768px) and (max-height: 460px) {
+  .office.pxhq-root { overflow-y: auto; overscroll-behavior: contain; }
+  .pxhq { min-height: 0; max-height: none; flex: 0 0 auto; overflow: visible; }
+  .px-scene { height: auto; flex: 0 0 auto; overflow-y: visible; }
+}
+
 /* Paper stack — sheets accumulate with the real filed-report count. */
 .px-paperstack {
   position: absolute; left: -9px; bottom: 22px;

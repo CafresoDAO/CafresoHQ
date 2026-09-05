@@ -38307,3 +38307,79 @@ wrong thing to leave. The exclusion is now deleted: the suite asks the
 question a person tapping a door actually asks — is anything at all painted
 over this — and it fails, loudly and at both sizes, the moment the button
 goes back to `right: 10px`.
+
+---
+
+## 357. the office that fit the phone, until the phone turned sideways
+
+Every phone rule in `styles.css` was written against a portrait phone. `##
+338.` was found at 375x812, `## 345.` at 375x667, and `## 352.` measures
+exactly those two. Turn the phone sideways and the office is not small, or
+clipped, or badly proportioned. It is gone.
+
+At 667x375 the office column had 136.2px of content box between the section
+title and the ticker. Inside it: the task rail at 70.0px and the mobile agent
+strip at 67.5px, both `flex: 0 1 auto` with `min-height: auto`, so their flex
+base *is* their content and they cannot shrink below it — 153.5px of
+furniture with the gaps. `.pxhq` is `flex: 1 1 0%`, a zero flex base, last in
+line for space that ran out two items earlier. It resolved to 256.3 -> 256.3.
+Zero. With `overflow: hidden` and a 698px building inside it, drawn at -355.2
+-> 342.8: entirely outside its own clip box. `elementsFromPoint` at the lobby
+door's centre returned `['DIV.toast', 'NAV.mobile-tabbar', 'DIV.office-wrap',
+…]` — not the door, not anything belonging to `.px-scene`, because there was
+no `.px-scene` on screen to belong to. `scrollTop` sat pinned at its 698px
+maximum in a 40px box. The one control that seats the team could not be
+tapped at any scroll position, because there were no scroll positions.
+
+`## 345.` did not cause this and reverting it does not fix it. That rule used
+to read `min-height: 420px`, which at 375px of viewport height draws the
+building over the ticker, over the tab bar, and off the bottom of the screen
+— the identical fault `## 345.` measured at 375x667, four times worse.
+`min-height: 0` and `min-height: 420px` are two answers to a question that
+has no answer at this height: the column is laid out to *fit* the viewport,
+and here its own fixed furniture does not fit. A pixel floor cannot be right,
+because there is no number that is simultaneously enough office to be an
+office and little enough to leave room for the ticker.
+
+So the column stops fitting and starts scrolling. Below `(max-width: 768px)
+and (max-height: 460px)` the root becomes the scroller and `.pxhq` /
+`.px-scene` fall back to their natural content height inside it — one
+scroller on the landscape floor instead of a starved flex line feeding a
+nested one. `.pxhq` measures 784.5px and ends 2.2px inside a root ending
+249.0; the root scrolls 794 of 794; the door comes to rest at 196.8 -> 230.8,
+inside the column's own painted box, and is the topmost thing on the floor
+under its own centre. At 568x320 — the smallest phone this repo measures,
+sideways — the same shape holds: 846.5 of 847, door at 150.0 -> 184.0. The
+ticker clears the tab bar by 2.0px at both, which is what it clears by at all
+three portrait sizes.
+
+The gate's width half is not decoration. It keeps the rule strictly inside
+the mobile regime the rest of the office's phone CSS already lives in — the
+`(max-width: 768px)` block above it, and `office.jsx ~417`'s own 768px test
+for whether to render the agent strip at all — so it can never fire against a
+layout nobody measured it on. The height half sits below 812, 667 and 568, so
+all three portrait sizes are byte-for-byte what `## 352.` recorded, and that
+suite is run unchanged to say so.
+
+Removing the rule body fails the new suite eleven ways at the two landscape
+sizes, and one of those failures is a fault nobody had reported: at 568x320
+the agent strip's `.mas-scroll` hit-tests as the thing painted over the
+ticker. It was never a separate bug. The strip could reach the ticker because
+`.pxhq` had collapsed out from under it, and the same starved flex line was
+doing both.
+
+Two things measured here and deliberately left alone, so the next person does
+not think they found them fresh. A large phone in landscape — 926x428,
+932x430 — is *wider* than 768 and gets the desktop office layout, where
+`.pxhq`'s un-overridden `min-height: 480px` overhangs a shorter root in its
+own way; that is a different starvation in a different container and this
+suite does not measure it. And `.mobile-agent-strip` is rendered by
+`office.jsx` at `innerWidth <= 768` while its styling — `position: sticky`,
+its padding, its background — lives in `@media (max-width: 640px)`, so
+between 641px and 768px wide it draws unstyled and static. That band is
+exactly where 667x375 sits. Both are real, both are their own tickets, and
+neither is a reason to hold this one.
+
+The lesson is the older one, in a new axis. A layout that fits by
+construction has a viewport at which the construction fails, and every
+breakpoint in this file names a width. None of them named a height.
