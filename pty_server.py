@@ -66,6 +66,58 @@ def _pty_reaper():
 threading.Thread(target=_pty_reaper, daemon=True).start()
 
 
+def _pty_claim_session(session_id):
+    """Find the live session for `session_id`, or register a fresh one and
+    claim the right to spawn its PTY. Returns (sess, is_new).
+
+    Both halves happen under ONE hold of _PTY_SESSIONS_LK, and that is the
+    whole point. The lookup and the registration used to be two separate
+    holds with the session dict built in between, so two connections
+    carrying the same session_id — a phone and a desktop both restoring the
+    id they persisted, or one client reconnecting the instant the server
+    came back — could both read "no session here" and both go on to spawn.
+    The second registration overwrote the first, and the first PTY was then
+    unreachable by every route that exists to end one: the reaper only walks
+    _PTY_SESSIONS, /terminal/kill only pops out of it, and the WS teardown at
+    the bottom of _terminal_pty_ws deliberately does NOT terminate a session
+    that has an id (it assumes the registry is holding it for a reconnect).
+    A whole CLI process, its master fd and its reader thread stayed alive for
+    the life of the server, one more per collision.
+    """
+    with _PTY_SESSIONS_LK:
+        sess = _PTY_SESSIONS.get(session_id) if session_id else None
+        if sess is not None and not sess['stop'].is_set():
+            return sess, False
+        sess = {
+            'stop':    threading.Event(),
+            'sock':    None,
+            'sock_lk': threading.Lock(),
+            'buf':     bytearray(),
+            'buf_lk':  threading.Lock(),
+            'expires': None,
+        }
+        if session_id:
+            _PTY_SESSIONS[session_id] = sess
+        return sess, True
+
+
+def _pty_drop_session(session_id, sess):
+    """Remove `session_id` from the registry only if it still maps to `sess`.
+
+    The other half of the same hazard: a PTY that exits pops its own id, but
+    a bare pop(session_id) evicts whatever is under that key NOW. When a
+    client reconnects to an id whose PTY has just died, the claim above
+    installs a fresh session under it, and the dying reader thread's pop then
+    deleted the live successor — orphaning the new PTY exactly the way the
+    duplicate spawn orphaned the old one.
+    """
+    if not session_id:
+        return
+    with _PTY_SESSIONS_LK:
+        if _PTY_SESSIONS.get(session_id) is sess:
+            _PTY_SESSIONS.pop(session_id, None)
+
+
 # Browser→server control frames that must NEVER be forwarded to the PTY.
 def _pty_control_frame(payload):
     """Classify one browser→server WS frame: return the parsed control dict
@@ -371,10 +423,9 @@ def _terminal_pty_ws(self):
     # ── Session resume or new spawn ─────────────────────────────────────
     session_id = (params.get('session_id') or [''])[0].strip()
 
-    with _PTY_SESSIONS_LK:
-        sess = _PTY_SESSIONS.get(session_id) if session_id else None
+    sess, _sess_is_new = _pty_claim_session(session_id)
 
-    if sess is not None and not sess['stop'].is_set():
+    if not _sess_is_new:
         # ── Reconnect to existing PTY session ──────────────────────────
         with sess['sock_lk']:
             sess['sock']    = client_sock
@@ -414,18 +465,11 @@ def _terminal_pty_ws(self):
 
     else:
         # ── Spawn a fresh PTY ───────────────────────────────────────────
-        stop_evt = threading.Event()
-        sess = {
-            'stop':    stop_evt,
-            'sock':    client_sock,
-            'sock_lk': threading.Lock(),
-            'buf':     bytearray(),
-            'buf_lk':  threading.Lock(),
-            'expires': None,
-        }
-        if session_id:
-            with _PTY_SESSIONS_LK:
-                _PTY_SESSIONS[session_id] = sess
+        # The registry slot was already claimed atomically above; this
+        # connection owns it, so attaching the socket needs no lock yet
+        # (no reader thread exists until the spawn below succeeds).
+        with sess['sock_lk']:
+            sess['sock'] = client_sock
 
         if _is_win:
             spawn_argv = ['cmd.exe', '/c', bin_ or cli] + cli_extra_args
@@ -437,8 +481,7 @@ def _terminal_pty_ws(self):
             except Exception as exc:
                 try: _ws_send_raw(client_sock, f'\r\n\x1b[31mFailed to spawn {cli}: {exc}\x1b[0m\r\n')
                 except OSError: pass
-                if session_id:
-                    with _PTY_SESSIONS_LK: _PTY_SESSIONS.pop(session_id, None)
+                _pty_drop_session(session_id, sess)
                 return
             sess['pty_proc'] = pty_proc
 
@@ -472,8 +515,7 @@ def _terminal_pty_ws(self):
                             sess['buf'] = sess['buf'][-_PTY_BUF_CAP:]
                 # PTY exited — notify client and clean up.
                 sess['stop'].set()
-                if session_id:
-                    with _PTY_SESSIONS_LK: _PTY_SESSIONS.pop(session_id, None)
+                _pty_drop_session(session_id, sess)
                 with sess['sock_lk']:
                     sock = sess['sock']
                 if sock:
@@ -500,8 +542,7 @@ def _terminal_pty_ws(self):
                 os.close(slave_fd); os.close(master_fd)
                 try: _ws_send_raw(client_sock, f'\r\n\x1b[31mFailed to spawn {cli}: {exc}\x1b[0m\r\n')
                 except OSError: pass
-                if session_id:
-                    with _PTY_SESSIONS_LK: _PTY_SESSIONS.pop(session_id, None)
+                _pty_drop_session(session_id, sess)
                 return
             os.close(slave_fd)
             sess['proc']      = proc
@@ -537,8 +578,7 @@ def _terminal_pty_ws(self):
                         if len(sess['buf']) > _PTY_BUF_CAP:
                             sess['buf'] = sess['buf'][-_PTY_BUF_CAP:]
                 sess['stop'].set()
-                if session_id:
-                    with _PTY_SESSIONS_LK: _PTY_SESSIONS.pop(session_id, None)
+                _pty_drop_session(session_id, sess)
                 try: os.close(master_fd)
                 except OSError: pass
                 with sess['sock_lk']:

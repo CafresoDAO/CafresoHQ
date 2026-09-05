@@ -34851,3 +34851,77 @@ The test runs the real effect and the real `loadSub`, lifted from the file,
 against a `toolExec` that fails the way the server actually fails: 200,
 `ok: true`, `failed: true`, refusal as the result. Asserting on the source
 would have passed a tree that still drew the fake file row.
+
+---
+
+## 304. two phones opened one terminal and the office kept a CLI nobody could ever close
+
+A persistent terminal is a key in one module-level dict. `pty_server.py`'s
+`_PTY_SESSIONS` maps the session_id the browser persists to the session that
+owns a live PTY, and every route that can *end* a terminal reaches it only
+through that dict: the reaper walks it, `/terminal/kill` pops out of it, and
+the teardown at the bottom of `_terminal_pty_ws` deliberately refuses to
+terminate a session that has an id at all — `if not session_id and not
+sess['stop'].is_set()` — because a session with an id is, by assumption,
+being held in the registry for a reconnect. The registry is not a cache of
+the terminals; it is the only handle on them.
+
+serve.py is a `ThreadedServer`, so each WebSocket upgrade runs on its own
+thread, and the resume-or-spawn decision was a check-then-act split across
+two holds of the registry lock, with the session dict built in the gap:
+
+    with _PTY_SESSIONS_LK:
+        sess = _PTY_SESSIONS.get(session_id) if session_id else None
+    if sess is not None and not sess['stop'].is_set():
+        ...resume...
+    else:
+        sess = { 'stop': threading.Event(), ... }
+        if session_id:
+            with _PTY_SESSIONS_LK:
+                _PTY_SESSIONS[session_id] = sess
+        ...spawn claude/codex on a PTY...
+
+The interleaving: a phone and a desktop both hold the same persisted
+session_id — the ordinary case after serve.py restarts, since both clients
+retry and both retry against the id they saved. Both upgrades wait out the
+2-second init-frame window, both reach the lookup within microseconds of each
+other, both read "nothing under this key", and both spawn. The second
+`_PTY_SESSIONS[session_id] = sess` overwrites the first. The first session is
+now held by nobody: the reaper cannot see it, "End session" cannot address
+it, and its own WS teardown will not kill it because it *has* an id. A whole
+CLI child process, its pty master fd and its reader thread survive for the
+life of the server, and the product contains no gesture that ends them. One
+more per collision, and the count only goes up.
+
+`terminal.jsx` already carries a comment about the client half of this
+("open TWO sockets for one session_id") and closed it with a synchronous
+in-flight flag. That flag is per-component. It cannot see the other tab, the
+other device, or the reconnect storm after a restart — the cases where two
+sockets for one id are not a bug in the client at all but the feature
+working. The server is the only place the id is actually unique, so the
+server is where the claim has to be atomic.
+
+The same key had a symmetric second face. An exiting PTY popped its own id
+with a bare `_PTY_SESSIONS.pop(session_id, None)`: pop by name, not by
+identity. Reverse the order of the same two events — the old PTY dies, the
+client reconnects and the registry hands the id to a fresh session, and only
+then does the dying reader thread run its cleanup — and the pop deletes the
+live successor, orphaning the *new* PTY the way the duplicate spawn orphaned
+the old one. A cleanup that names a key instead of naming itself is a
+cleanup that can delete somebody else's work.
+
+The fix is two small helpers and no new locks. `_pty_claim_session()` does
+the lookup and the registration inside one hold, so the loser of the race
+takes the resume branch and attaches to the winner's PTY instead of spawning
+a second one — which is what the user wanted from a shared session_id
+anyway. `_pty_drop_session()` pops only when the key still maps to the
+session doing the popping.
+
+The test forces the interleaving rather than hoping for it. It stubs the
+`threading` module `pty_server` sees so that constructing a session dict
+parks on a barrier: in the pre-fix code the lock is released before that
+construction, so all four threads arrive together and sail through — four
+spawn verdicts for one id; in the fixed code the construction happens while
+the lock is held, only one thread can ever reach the barrier, and it breaks
+on its timeout. Same test, two outcomes, no sleeps and no luck.
+`scripts/test_two_terminals_resuming_one_session_id_never_leave_a_pty_behind.py`
