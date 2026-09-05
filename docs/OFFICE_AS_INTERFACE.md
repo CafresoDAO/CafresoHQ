@@ -33162,3 +33162,102 @@ a foreign session owns and this change never touches). This change covers only
 `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any kind
 was run.
+
+---
+
+## 279. every japanese starter task was filed as note.md
+
+**The wreck.** A boss who works in Japanese hires their first coworker, takes
+the FIRST ASSIGNMENT card, and asks for a draft of 顧客への提案メール. It comes
+back: "Saved to `Drafts/note.md`." Good. Later that week, 新製品の価格戦略 — a
+completely different piece of work. It comes back: "Saved to `Drafts/note.md`."
+Also good, as far as anyone on screen can tell. The proposal email no longer
+exists. Nothing said so.
+
+**What was actually happening.** A starter card asks for exactly one thing —
+the subject — and `modals/starter.jsx` turns it into the path it then writes
+*into the brief the coworker receives*:
+
+```
+Save the draft to Drafts/<slug>.md, then reply with a 2-sentence summary
+and the path.
+```
+
+The slug came from one line:
+
+```js
+const slug = String(subject).toLowerCase()
+  .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48) || 'note';
+```
+
+That character class reads as "strip the unsafe characters". It is not. It is
+"strip everything that is not the Latin alphabet." Japanese, Russian, Greek,
+Hebrew, Arabic, Korean — every letter of every one of them is `[^a-z0-9]`, so
+the whole subject became dashes, the trim ate the dashes, and the empty string
+fell through to the `|| 'note'` fallback. Measured:
+
+```
+filePath('Drafts',   '顧客への提案メール')          ->  Drafts/note.md
+filePath('Drafts',   '新製品の価格戦略')            ->  Drafts/note.md
+filePath('Research', 'Стратегия ценообразования')  ->  Research/note.md
+filePath('Sites',    '개 산책 사업 홈페이지')         ->  Sites/note.md
+```
+
+The constant is the whole defect, because the *other* end of the path is
+`VAULT_NEW`, whose own doc line in `hq-runtime.jsx` says what it does:
+
+> create a new note (**overwrites if exists**)
+
+So an office that does not type in English got exactly one surviving starter
+deliverable per folder, forever. Every task after the first quietly destroyed
+its predecessor and reported the same green path back — the same sentence, the
+same filename, the same look of a thing that worked. There is no conflict
+prompt on that path, no version, and nothing on the floor that flags it.
+
+**The fix.** Keep letters and digits from *every* script, not one:
+
+```js
+const cleaned = String(subject).toLowerCase()
+  .replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '');
+const slug = Array.from(cleaned).slice(0, 48).join('')
+  .replace(/^-+|-+$/g, '') || 'note';
+```
+
+`\p{L}\p{N}` under `/u` still turns `.` and `/` into `-`, so the thing the old
+class was *actually* protecting — a subject cannot walk out of the vault, and
+cannot file itself under a leading dot where `serve.py` refuses to list it
+(`#140`) — is untouched. The cap now counts code points rather than UTF-16
+units, so an astral CJK-extension character is never sliced in half into a lone
+surrogate, and the trim runs again after the cut so the cap can no longer leave
+a dangling `-` (`…-line-for-the-second-half-` was the old shape). The `'note'`
+fallback stays for a subject that really has no letters or digits in it at all
+— "!!!" or a row of emoji — which is now the only way two subjects can still
+collide.
+
+**The test.** `scripts/test_two_briefs_in_japanese_are_not_the_same_file.py`
+lifts the real `filePath` out of `modals/starter.jsx` with `brace_lift` and
+runs it under Node — nine subjects in seven scripts, which must produce nine
+different files. Distinctness alone is not enough to pass: a counter bolted on
+the end would satisfy it while still throwing the subject away, so each path
+must also *carry* what the boss typed. The rest guards the properties the old
+line got right and a rewrite could lose: no `/`, no leading dot, the 48-cap,
+no dangling dash, no lone surrogate, and the fallback still there.
+
+Fire-tested: copied the fixed `modals/starter.jsx` to `/tmp`, reverted
+`filePath` in place with the editor (never `git checkout -- <file>`) — 10 of 20
+checks failed, exit 1, with `顧客への提案メール` and `新製品の価格戦略` both
+landing on `Drafts/note.md`. Restored from the `/tmp` copy, confirmed
+byte-identical by `md5` (`d99676f85e577c5c5a3f9d29ae03ebef`), reran — 20 of 20
+passed, exit 0.
+
+`npm run build` was run once up front so `dist-ui/manifest.json` exists in a
+fresh worktree, and again after the `.jsx` edit.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing failure
+`scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (the
+`moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on a file
+a foreign session owns and this change never touches). This change covers only
+`modals/starter.jsx`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any kind
+was run.

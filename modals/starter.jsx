@@ -83,10 +83,32 @@ const STARTER_TASKS = [
   },
 ];
 
-/* Vault-relative path for a deliverable: Research/how-small-teams-price.md */
+/* Vault-relative path for a deliverable: Research/how-small-teams-price.md
+
+   The class was `[^a-z0-9]`, which is not "unsafe characters" — it is "not
+   the Latin alphabet". Every letter of every other script fell through it,
+   so a subject written in Japanese, Russian, Greek, Hebrew or Arabic slugged
+   to the empty string and landed on the `|| 'note'` fallback. Measured:
+   filePath('Drafts', '顧客への提案メール', 'md') and
+   filePath('Drafts', '新製品の価格戦略', 'md') both return `Drafts/note.md`.
+
+   VAULT_NEW's own doc line is "create a new note (OVERWRITES if exists)",
+   and the brief hands the coworker that exact path — so the second starter
+   task a non-Latin office ever runs destroys the first one's deliverable and
+   reports the same green path back. Silent, and only the newest file is left
+   to find.
+
+   `\p{L}\p{N}` with /u keeps letters and digits from every script and still
+   turns `.` and `/` into `-`, so the traversal the old class was really
+   guarding against remains impossible. The 48-cap counts CODE POINTS, not
+   UTF-16 units, so an astral CJK-extension character is never sliced in half
+   into a lone surrogate; the trim runs again after the cut so the cap cannot
+   leave a dangling `-`. */
 function filePath(folder, subject, ext) {
-  const slug = String(subject).toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48) || 'note';
+  const cleaned = String(subject).toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '');
+  const slug = Array.from(cleaned).slice(0, 48).join('')
+    .replace(/^-+|-+$/g, '') || 'note';
   return `${folder}/${slug}.${ext}`;
 }
 
