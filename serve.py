@@ -1053,69 +1053,138 @@ def _night_run_one(sched):
         _night_abort.discard(sid)
 
 
+_NIGHT_SCAN_LOCK_STALE_SEC = 60
+
+
+def _night_scan_lock_path():
+    return _night_path('night-scan.lock')
+
+
+def _night_try_claim_scan():
+    """Exclusive, CROSS-PROCESS claim on the scan's pick-mutate-persist step.
+
+    O_CREAT|O_EXCL — the same shape as fs_routes.claim_name — so "is a
+    schedule due?" and "I am the one advancing it" are the same syscall.
+    Without this, two serve.py processes briefly alive at once (an ordinary
+    deploy overlap, or two dev instances) each read scheduled-missions.json,
+    each see the same row due, and each dispatch it — both fire, and only
+    one of the two nextRunAt advances survives the last-writer-wins save.
+
+    A lock older than _NIGHT_SCAN_LOCK_STALE_SEC is reclaimed rather than
+    left to deadlock every scan forever: the section this guards is a few
+    lines of pure Python with no I/O to an LLM (the mission itself now
+    starts AFTER the lock is released — see _night_scan), so it is never
+    legitimately held anywhere near that long, and a lock that old can only
+    mean the process that created it is gone.
+    """
+    p = _night_scan_lock_path()
+    for _ in range(2):   # second pass only runs after reclaiming a stale lock
+        try:
+            fd = os.open(str(p), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
+            os.close(fd)
+            return True
+        except FileExistsError:
+            try:
+                age = time.time() - p.stat().st_mtime
+            except OSError:
+                return False   # someone else just released it mid-check
+            if age <= _NIGHT_SCAN_LOCK_STALE_SEC:
+                return False   # a live process holds it — try again next scan
+            try:
+                p.unlink()
+            except OSError:
+                pass
+    return False
+
+
+def _night_release_scan_lock():
+    try:
+        _night_scan_lock_path().unlink()
+    except OSError:
+        pass
+
+
 def _night_scan():
     now_ms = int(time.time() * 1000)
     with _night_lock:
-        scheds = _night_load('scheduled-missions.json', [])
-        changed = False
-        for s in scheds:
-            if not s.get('enabled'):
-                continue
-            if int(s.get('nextRunAt', 0) or 0) > now_ms:
-                continue
-            if _night_running:
-                break   # one mission at a time — keeps provider usage sane
-            sid = str(s.get('id', ''))
-            _night_running[sid] = True
-            s['lastRunAt'] = now_ms
-            # `lastRunInterrupted` describes the LATEST run, so it goes out
-            # with the folder: a nightly schedule that lost one night to a
-            # reboot must not still be apologising for it a week later, and
-            # a once-schedule the boss re-enabled is asking for a fresh
-            # night, not a replay of the old one's ending.
-            s.pop('lastRunInterrupted', None)
-            s.pop('lastRunNote', None)
-            if s.get('recurrence') == 'daily':
-                nxt = int(s.get('nextRunAt', now_ms) or now_ms)
-                # Advance by one LOCAL calendar day at a FIXED local hour,
-                # not a chained fixed 86,400,000ms offset. The schedule's
-                # time-of-day (e.g. missions.jsx's default "2:00 AM") is a
-                # local wall-clock hour, and a constant ms offset does not
-                # preserve that across a DST transition — a day with a
-                # spring-forward or fall-back in it is 23 or 25 real hours
-                # long locally, not 24. Chaining +86_400_000 silently
-                # drifted the anchor by exactly one hour at every DST
-                # boundary, forever, with the Night Shift card still
-                # showing a plausible-looking (but now wrong) "next: ..."
-                # time. The intended hour/minute is captured ONCE, the
-                # first time this schedule is seen, and reused on every
-                # advance — re-deriving it from `nxt` itself each time
-                # would still drift, because `nxt` gets forced onto a
-                # different hour on whichever single calendar day the
-                # target hour doesn't exist (spring-forward) or is
-                # ambiguous (fall-back), and reading the hour back off
-                # that one shifted value would lock the schedule onto the
-                # shifted hour for good. time.mktime normalizes an
-                # overflowed tm_mday (next month/year) the same way C
-                # does, and tm_isdst=-1 lets it resolve DST correctly for
-                # the new date.
-                if 'dailyHour' not in s:
-                    lt0 = time.localtime(nxt / 1000)
-                    s['dailyHour'], s['dailyMinute'] = lt0.tm_hour, lt0.tm_min
-                while nxt <= now_ms:
-                    lt = time.localtime(nxt / 1000)
-                    nxt = int(time.mktime((
-                        lt.tm_year, lt.tm_mon, lt.tm_mday + 1,
-                        s['dailyHour'], s['dailyMinute'], 0, 0, 0, -1,
-                    )) * 1000)
-                s['nextRunAt'] = nxt
-            else:
-                s['enabled'] = False
-            changed = True
-            threading.Thread(target=_night_run_one, args=(dict(s),),
-                             daemon=True, name='night-%s' % sid).start()
-        if changed:
-            _night_save('scheduled-missions.json', scheds)
+        if _night_running:
+            return   # one mission at a time — keeps provider usage sane
+        if not _night_try_claim_scan():
+            return   # another process is mid-scan (or a deploy overlap) — wait it out
+        try:
+            scheds = _night_load('scheduled-missions.json', [])
+            fire_sched = None
+            for s in scheds:
+                if not s.get('enabled'):
+                    continue
+                if int(s.get('nextRunAt', 0) or 0) > now_ms:
+                    continue
+                sid = str(s.get('id', ''))
+                s['lastRunAt'] = now_ms
+                # `lastRunInterrupted` describes the LATEST run, so it goes out
+                # with the folder: a nightly schedule that lost one night to a
+                # reboot must not still be apologising for it a week later, and
+                # a once-schedule the boss re-enabled is asking for a fresh
+                # night, not a replay of the old one's ending.
+                s.pop('lastRunInterrupted', None)
+                s.pop('lastRunNote', None)
+                if s.get('recurrence') == 'daily':
+                    nxt = int(s.get('nextRunAt', now_ms) or now_ms)
+                    # Advance by one LOCAL calendar day at a FIXED local hour,
+                    # not a chained fixed 86,400,000ms offset. The schedule's
+                    # time-of-day (e.g. missions.jsx's default "2:00 AM") is a
+                    # local wall-clock hour, and a constant ms offset does not
+                    # preserve that across a DST transition — a day with a
+                    # spring-forward or fall-back in it is 23 or 25 real hours
+                    # long locally, not 24. Chaining +86_400_000 silently
+                    # drifted the anchor by exactly one hour at every DST
+                    # boundary, forever, with the Night Shift card still
+                    # showing a plausible-looking (but now wrong) "next: ..."
+                    # time. The intended hour/minute is captured ONCE, the
+                    # first time this schedule is seen, and reused on every
+                    # advance — re-deriving it from `nxt` itself each time
+                    # would still drift, because `nxt` gets forced onto a
+                    # different hour on whichever single calendar day the
+                    # target hour doesn't exist (spring-forward) or is
+                    # ambiguous (fall-back), and reading the hour back off
+                    # that one shifted value would lock the schedule onto the
+                    # shifted hour for good. time.mktime normalizes an
+                    # overflowed tm_mday (next month/year) the same way C
+                    # does, and tm_isdst=-1 lets it resolve DST correctly for
+                    # the new date.
+                    if 'dailyHour' not in s:
+                        lt0 = time.localtime(nxt / 1000)
+                        s['dailyHour'], s['dailyMinute'] = lt0.tm_hour, lt0.tm_min
+                    while nxt <= now_ms:
+                        lt = time.localtime(nxt / 1000)
+                        nxt = int(time.mktime((
+                            lt.tm_year, lt.tm_mon, lt.tm_mday + 1,
+                            s['dailyHour'], s['dailyMinute'], 0, 0, 0, -1,
+                        )) * 1000)
+                    s['nextRunAt'] = nxt
+                else:
+                    s['enabled'] = False
+                fire_sched = dict(s)
+                break   # one mission at a time
+            if fire_sched is not None:
+                # Persist the advanced nextRunAt/enabled/lastRunAt BEFORE
+                # the mission actually starts, not after. A run is dispatched
+                # in a daemon thread that can outlive this function by hours;
+                # if the process dies anywhere between starting that thread
+                # and saving, the file on disk still shows the OLD (now
+                # stale, still-due) nextRunAt, and the next process to boot
+                # sees the same schedule as due all over again and fires it
+                # a second time for a mission that already ran — a "once"
+                # schedule the boss meant fired exactly once, fired twice.
+                # Persisting first means the worst a crash in that window
+                # can do is lose one dispatch, never duplicate one.
+                _night_save('scheduled-missions.json', scheds)
+                sid = str(fire_sched.get('id', ''))
+                _night_running[sid] = True
+                threading.Thread(target=_night_run_one, args=(fire_sched,),
+                                 daemon=True, name='night-%s' % sid).start()
+        finally:
+            _night_release_scan_lock()
 
 
 def _night_loop():

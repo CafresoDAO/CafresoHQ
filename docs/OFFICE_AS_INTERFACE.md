@@ -39888,3 +39888,91 @@ confirmed byte-identical (md5, `09c842b187a6ac3da0d85138fef0c88e`) to
 the fixed one, test green again on three repeated runs.
 
 No `.jsx`/`.js`/`.css` touched — no build required.
+
+## 384. a due night shift could fire twice for the same night
+
+**The hunt.** A dedicated sweep of Night Shift's restart and re-trigger
+behavior, checking the three shapes that family of bug usually takes:
+fire twice across a restart, pile up a burst after a long outage, or
+double-fire when two server processes are briefly both alive. Two were
+real.
+
+**Shape one — double-fire on restart.** `_night_scan` (serve.py) picked
+the one due schedule, mutated its `nextRunAt`/`enabled`/`lastRunAt` in
+memory, started its mission in a daemon thread — the actual fire, real
+tokens spent, real vault writes queued, a thread that can run for up to
+four hours — and only THEN called `_night_save('scheduled-missions.json',
+…)`, last. If the process died anywhere in that window (a crash, a
+deploy's SIGKILL, the box losing power), the advanced `nextRunAt` never
+reached disk. The next process to boot read the same still-due row and
+fired it again: a "once" schedule the boss meant fired exactly once
+fired twice; a `daily` schedule re-ran tonight's mission instead of
+advancing to tomorrow's.
+
+Reproduced standalone: monkeypatched `_night_save` to raise on its first
+call (simulating the crash), called `_night_scan()` once, confirmed the
+mission had already started before the raise, then cleared
+`_night_running`/`_night_abort` (what a fresh process's globals actually
+look like) and called `_night_scan()` again. Fired twice, pre-fix, on a
+single "once" schedule seeded five seconds in the past.
+
+**Shape two — concurrent-instance double-fire.** `_night_running` is the
+in-memory "one mission at a time" gate, per-process. Two serve.py
+processes alive at once — an ordinary deploy overlap, or two dev
+instances pointed at the same state dir — each see an empty
+`_night_running`, each read the same due row, each dispatch it. Nothing
+made "is this due?" and "I claimed it" the same operation, the way
+`fs_routes.claim_name` already does for a filename. Reproduced with 8
+real `python3` subprocesses (not `multiprocessing.fork` — forking this
+process after `serve` is already imported inherits the cached module and
+never re-reads `CAFRESOHQ_HQ_STATE_DIR`; a genuine second interpreter is
+what an actual deploy overlap is) all racing one due schedule in one
+scratch state dir: pre-fix, more than one process's dispatch could land
+depending on scheduler timing.
+
+**Shape three — late-fire pileup — checked, not reproduced.** A `daily`
+schedule's catch-up is a `while nxt <= now_ms` loop that advances the
+STORED `nextRunAt` past every missed day before the row is ever saved —
+it does not queue one dispatch per missed interval, and `_night_scan`
+dispatches at most one row per call regardless. A schedule that slept
+through five days across a laptop lid fires exactly once on wake, onto
+the correct next occurrence. No fix needed; recorded so a future hunt
+does not re-open it.
+
+**The fix.** Reordered `_night_scan` to persist BEFORE the mission
+starts, not after: pick the due row, mutate it, `_night_save(...)`, and
+only once that succeeds start the dispatch thread. The worst a crash in
+that window can now do is lose one dispatch, never duplicate one. And
+the whole pick-mutate-persist step is now guarded by a new
+`_night_try_claim_scan()` — an `O_CREAT|O_EXCL` lock file
+(`night-scan.lock` in the HQ state dir), the identical shape
+`fs_routes.claim_name` already uses for a filename — so two processes
+can no longer both see the same row as unclaimed. A lock older than
+`_NIGHT_SCAN_LOCK_STALE_SEC` (60s) is reclaimed rather than left to
+deadlock every scan forever: the guarded section is a few lines of pure
+Python with no LLM I/O in it (the mission itself now starts strictly
+after the lock is released), so it is never legitimately held anywhere
+near that long, and a lock that old can only mean the process that
+created it is gone.
+
+**Fire-tested.** New
+`scripts/test_a_night_shift_fired_twice_for_one_due_night.py`: round 1
+drives the crash-before-persist scenario above directly against
+`serve._night_scan`, confirming the crashed scan fires nothing and the
+simulated restart fires exactly once, twice over (a second bounce after
+the honest disable must not re-fire either); round 2 exercises
+`_night_try_claim_scan()`/`_night_release_scan_lock()` directly — a
+second claim while the first is held is refused, a claim after release
+succeeds, a 120s-stale lock is reclaimed, a merely-young lock is not;
+round 3 launches 8 real OS subprocesses against one scratch state dir
+with one due schedule, five rounds, checking exactly one dispatch lands
+each round; round 4 is a structural check that `_night_save` still
+precedes the dispatch thread in source and that the lock is released in
+a `finally`. Reverted the fix in place (md5
+`6675c7dc7b6bcd18bdad83f563777b7e`, the pre-fix `serve.py`) — round 1
+failed immediately (the crashed scan still fired), on three repeated
+runs. Restored from a `/tmp` copy, confirmed byte-identical (md5
+`fd9b08f36a669ac494b3c8575e9c7216`) to the fixed one, test green again
+on two repeated runs.
+
+No `.jsx`/`.js`/`.css` touched — no build required.
