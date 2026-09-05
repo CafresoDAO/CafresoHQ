@@ -2085,6 +2085,24 @@ ${d.text}` : d.text,
      under way when the boss began typing is somebody else's job. */
   const bossTurnRef = useRefA(null);
   const turnRunsRef = useRefA(new Set());
+  /* WHAT is on each desk, alongside WHO — `agentAbortersRef` answers "is
+     this coworker busy" and nothing more, which is enough to make somebody
+     wait and not enough to tell them what they waited behind. #394: the two
+     boss-initiated claim paths ask "stop them?" in a modal and then evict
+     whatever holds the desk when the modal CLOSES, which is not always what
+     the modal named. Naming the actual victim needs a ledger, so this is
+     it — one entry per desk, written by the run that claimed it, dropped
+     by the same identity check `endAgentRun` already uses. Only
+     `dispatchToAgent` signs it — a note in flight is the only thing that
+     can be silently displaced, since a card run's displacement already has
+     `stalledNote` and the boss's own turn has the composer — and it signs
+     AFTER its own claim rather than through `beginAgentRun`, deliberately,
+     so the registry's signature stays `(agentId)` for the dozen tests that
+     lift it. An entry left behind by a note that has since lost the desk is
+     not a hazard: every reader checks `controller` identity against the
+     desk's CURRENT holder first, the same check `endAgentRun` has always
+     made. */
+  const deskWorkRef = useRefA(new Map());
   const beginAgentRun = (agentId) => {
     const prior = agentAbortersRef.current.get(agentId);
     if (prior) { try { prior.abort(); } catch (_e) {} }
@@ -2098,6 +2116,49 @@ ${d.text}` : d.text,
       agentAbortersRef.current.delete(agentId);
       turnRunsRef.current.delete(agentId);
     }
+    const held = deskWorkRef.current.get(agentId);
+    if (held && held.controller === controller) deskWorkRef.current.delete(agentId);
+  };
+  /* Say who actually got stopped, when a boss gesture stops somebody the
+     boss was never asked about.
+
+     `onDelegate` and `onTaskDropOnAgent` both read the desk, then `await
+     window.hqConfirm(...)`, then claim. A modal is open for as long as the
+     boss leaves it open, and the wait in `dispatchToAgent` re-polls every
+     750ms — so a note that queued behind the SAME busy desk can wake, find
+     it clear, claim it and start streaming entirely inside that gap.
+     `beginAgentRun` then evicts the note instead of the run the dialog
+     described. Reproduced 2026-09-05 via scripts/harness_busydesk_race.mjs
+     against the real handlers: Kip's reply held Vera's desk, Sam's note
+     waited its turn, Kip finished while the boss read the dialog, Sam's
+     note claimed the desk — and "Start it" killed Sam's note mid-token
+     with not one line in the team room and not one registry transition.
+     Lost work, and nothing anywhere said so.
+
+     Called with the desk's occupant AS OBSERVED before the dialog; if the
+     desk changed hands under it, this is the honest ending. The boss's
+     gesture still wins — they asked for it — but the note it displaced is
+     filed the way the wait's own STOP ALL branch files an undelivered one:
+     `cancelled`, retryable, with the re-send left to the boss. */
+  const displaceDeskNote = (agentId, agentName, since, byWhat) => {
+    const now = agentAbortersRef.current.get(agentId);
+    if (!now || now === since) return null;
+    const held = deskWorkRef.current.get(agentId);
+    if (!held || held.controller !== now) return null;
+    const whose = held.from ? `${held.from}'s note` : 'a note';
+    if (held.messageId) {
+      MessageRegistry.transition(held.messageId, 'cancelled', {
+        by: 'host',
+        note: `${byWhat} took the desk while this was being answered`,
+        failureCause: { kind: 'displaced', retryable: true,
+          message: `${agentName} had just started on ${whose} when ${byWhat} took their desk.`,
+          actionNeeded: 'Re-send it if the question still needs an answer.' },
+      });
+    }
+    setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
+      text: `(${whose} for ${agentName} had just started when ${byWhat} took the desk — that reply was stopped, not the one you were asked about.)`,
+      thread: 'team' }]);
+    return held;
   };
   /* Sit back down after a run that ended still-`active`.
 
@@ -2989,7 +3050,15 @@ ${d.text}` : d.text,
     const hireAssistantQueue = [];           // [{nameAndRole, body}]
     const elevationRequestQueue = [];        // [{reason, body}]
     const flush = HQ.throttleTokens(setChat, agentMsgId);
+    /* Sign the desk (#394). A note is the one thing on a desk that can be
+       evicted with nothing left behind — a card run has its `stalledNote`,
+       the boss's own turn has the composer. Registering who it is from and
+       which record it is lets `displaceDeskNote` name it if a boss gesture
+       stops it by accident. */
     const controller = beginAgentRun(agent.id);
+    deskWorkRef.current.set(agent.id, {
+      controller, messageId, from: sender ? sender.name : 'the office',
+    });
     // Mark in_progress as soon as the recipient agent's stream actually starts.
     MessageRegistry.transition(messageId, 'in_progress', { by: agent.name });
 
@@ -4620,6 +4689,10 @@ ${d.text}` : d.text,
        silently on a direct gesture reads as the office ignoring it.
        Declining returns false so the picker puts the boss's typed text
        back in the composer instead of losing it. */
+    /* Held for #394's check below: the dialog is a question about the desk
+       as it is RIGHT NOW, and the answer can arrive long after that stopped
+       being true. */
+    const priorRun = agentAbortersRef.current.get(a.id);
     if (agentAbortersRef.current.has(a.id)) {
       const ok = await window.hqConfirm(
         `${a.name} is mid-reply right now.\n\nHand this off anyway? Their current answer will be stopped.`,
@@ -4668,6 +4741,8 @@ ${d.text}` : d.text,
       : []);
     let honesty = null;
     const flush = HQ.throttleTokens(setChat, agentId);
+    // #394 — the desk may have changed hands while the ask above was open.
+    displaceDeskNote(a.id, a.name, priorRun, 'your hand-off');
     const controller = beginAgentRun(a.id);
     /* Same ref as the @mention path. This one is reached from a button, in
        the same tick, so it is not stale today — but "not stale today" is a
@@ -5513,6 +5588,10 @@ ${d.text}` : d.text,
       : []);
     let honesty = null;
     const flush = HQ.throttleTokens(setChat, agentMsgId);
+    /* #394 — same as the hand-off door. `priorRun` is what the confirms up
+       there described; if something else holds the desk now, say whose
+       reply this card actually stopped. */
+    displaceDeskNote(agent.id, agent.name, priorRun, `starting "${task.title}"`);
     const controller = beginAgentRun(agent.id);
     /* A task run gets NO chat history, unlike the two conversational paths.
        A card dropped on a desk is the whole job — the brief is right there,

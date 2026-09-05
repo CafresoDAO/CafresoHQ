@@ -118,6 +118,10 @@ const PARAM_NAMES = [
   'cabinetIsEncrypted', 'onApprovalRequest', 'triggerChainStep', 'chatErrorText',
   'consumeDmBudget', 'dmBudgetExhaustedNote', 'dispatchToAgent', 'chainHoldLine',
   'visitLine', 'visitPlace',
+  // #394: the desk ledger and the honest displacement report the drop path
+  // now calls before it claims a desk. This harness never sets up a
+  // displaced note, so both are inert here — they just have to exist.
+  'deskWorkRef', 'displaceDeskNote',
 ];
 
 function buildOnTaskDropOnAgent() {
@@ -160,6 +164,8 @@ function makeWorld(overrides = {}) {
     // pre-fix source doesn't) — a fresh Set every call, exactly like
     // useRefA(new Set()) on a fresh render, so each `run()` starts unclaimed.
     startingTaskIdsRef: { current: new Set() },
+    deskWorkRef: { current: new Map() },
+    displaceDeskNote: () => null,
     HQ: {
       displacedTask: (...a) => realDisplacedTask(...a),
       uid: (p) => `${p}_${Math.random().toString(36).slice(2)}`,

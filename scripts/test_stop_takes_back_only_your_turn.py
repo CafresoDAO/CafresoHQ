@@ -182,11 +182,17 @@ const mk = () => {
     bossTurnRef: { current: null },
     turnEpochRef: { current: 0 },
     stopEpochRef: { current: 0 },
+    /* #394 added the desk ledger, which endAgentRun now drops entries from
+       by controller identity. Nothing in this test signs it, so it stays
+       empty — it just has to exist in the namespace the lift runs in. */
+    deskWorkRef: { current: new Map() },
   };
   const fns = new Function(
     'agentAbortersRef', 'turnRunsRef', 'bossTurnRef', 'turnEpochRef', 'stopEpochRef',
+    'deskWorkRef',
     SRC + ' return { beginAgentRun, endAgentRun, abortTurnAgentRuns, abortAllAgentRuns };'
-  )(env.agentAbortersRef, env.turnRunsRef, env.bossTurnRef, env.turnEpochRef, env.stopEpochRef);
+  )(env.agentAbortersRef, env.turnRunsRef, env.bossTurnRef, env.turnEpochRef, env.stopEpochRef,
+    env.deskWorkRef);
   /* The real open/close statements, lifted out of recordBossAsk and
      settleBossAsk and given the same two refs they read there. */
   const openTurn = new Function('bossTurnRef', 'turnRunsRef', 'id', OPEN)

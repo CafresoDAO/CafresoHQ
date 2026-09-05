@@ -40938,3 +40938,119 @@ standalone and pass.
 `submitGithub` in `views/projects.jsx` (handled in parallel with this hunt),
 and `onPin` in `app.jsx`, still deliberately unfixed — the duplicate there
 is one corkboard row the boss can remove, no dispatch and no spend.
+## 394. the note waited its turn, then died for somebody else's yes
+
+`## 391`'s guard sweep classified one finding out of its own family and
+handed it to a future hunt, verbatim: "`dispatchToAgent`'s busy-desk
+`while` poll — two office-initiated notes can both wake on the same clear
+tick and both proceed. That's two *distinct* messages where one gets
+evicted (lost work), not one dispatched twice. Worth its own hunt." This
+is that hunt. The literal claim does not reproduce. The bug it was
+pointing at is one door over, and it does.
+
+**The negative, driven rather than argued.** The wait is
+`while (agentAbortersRef.current.has(agent.id)) { await new
+Promise(res => setTimeout(res, 750)); }`. The test is at the TOP of every
+iteration, each 750ms sleep is its own macrotask, and the microtask
+checkpoint between two timer tasks lets the first waiter's continuation
+run to completion before the second's timer callback is ever entered —
+and that continuation is straight-line synchronous the whole way to
+`beginAgentRun`, 320 lines of prompt assembly with not one `await` in it.
+So the second waiter re-tests a desk the first has already claimed and
+goes back to sleep. Driven with the real extracted deferral block and the
+real registry via new `scripts/harness_busydesk_race.mjs`: two notes, then
+three, released onto one desk that clears while all of them are polling —
+every note delivered, none evicted, one "waits its turn" line each. Pinned
+in the test, because it is true by that await-free stretch and by nothing
+else; an `await` added anywhere between the loop's close and the claim
+turns `## 391`'s sentence into a live bug that afternoon.
+
+**The bug, same desk, same lost work, different racers.** The two
+BOSS-initiated claim paths — `onDelegate`'s hand-off (app.jsx 4692) and
+`onTaskDropOnAgent`'s ▶ START / drop (5429) — read the desk, `await
+window.hqConfirm(...)`, and only then call `beginAgentRun`. A modal is
+open for exactly as long as the boss leaves it open, and the wait re-polls
+every 750ms. So a note that queued behind the SAME busy desk can wake
+inside that gap, find the desk clear, claim it and start streaming — and
+`beginAgentRun` then evicts the note instead of the run the dialog
+described. `## 391` read both doors and called them safe on the strength
+of the dialog being accurate; the dialog IS accurate, about a desk that
+has since changed hands.
+
+The real-world trigger is ordinary and does not need bad luck: a busy desk
+is precisely the condition that raises the dialog AND the condition that
+queues notes. Notes queue there from the approval stamp's follow-up
+dispatch, the elevation grant's, `onRetryMessage`, the DM chains, the
+workflow-step advance — five fire-and-forget `dispatchToAgent` call sites
+that never await anything. The boss watching a coworker be slow, dragging
+a card onto them, and reading a danger dialog for a second is the whole
+setup.
+
+Reproduced 2026-09-05 by the same harness, lifting the REAL
+`onTaskDropOnAgent`, the REAL deferral block and the REAL registry, in the
+`dialog-outlives-the-occupant` scenario: Kip's reply held Vera's desk,
+Sam's note waited its turn (the team room said so), Kip finished while the
+boss read the dialog, Sam's note woke and claimed the desk, and "Start it"
+killed it mid-token — `samsNoteStarted: true, samsNoteEvicted: true,
+displacementReported: false`, an empty `transitions` array and not one
+team-room line. The boss was asked about Kip and answered about Kip; Sam's
+work was the thing that stopped. That is strictly worse than the
+double-submit family this series has been closing: a duplicate leaves two
+of something, and this leaves nothing at all, on a record that stays
+`in_progress` forever.
+
+**The fix.** `agentAbortersRef` answers "is this desk busy" and nothing
+more — enough to make somebody wait, not enough to name what they waited
+behind. So a ledger: `deskWorkRef`, one entry per desk, `{ controller,
+messageId, from }`, signed by `dispatchToAgent` in the statement
+immediately after its own claim and dropped by `endAgentRun` under the
+same controller-identity check it has always used. A note in flight is the
+only thing that can be silently displaced — a card run's displacement
+already has `stalledNote`, the boss's own turn has the composer — so it is
+the only path that signs. Deliberately signed at the CALL SITE rather than
+through a widened `beginAgentRun(agentId, work)`: a dozen tests lift that
+registry by its exact `(agentId)` marker, and the first draft of this fix
+broke all of them.
+
+Then `displaceDeskNote(agentId, agentName, since, byWhat)`, called at both
+claim sites with the occupant AS OBSERVED before the dialog and with
+nothing awaitable between the call and the claim. If the desk still holds
+what the dialog named, it returns null and says nothing. If it changed
+hands, the boss's gesture still wins — they asked for it — and the note it
+actually displaced is filed the way the wait's own STOP ALL branch already
+files an undelivered one: `MessageRegistry.transition(…, 'cancelled')`
+with a `kind: 'displaced'`, `retryable: true` cause (so the inbox gives it
+a Retry door, `## 384`'s rule) and one team-room line — "Sam's note for
+Vera had just started when starting "…" took the desk — that reply was
+stopped, not the one you were asked about." No automatic re-run: the
+office's precedent for displaced work is `stalledNote`'s parks-and-says-
+why, and re-sending is the boss's call.
+
+**Fire-tested.** New
+`scripts/test_a_note_that_waited_its_turn_is_not_stopped_in_silence.py`:
+structural — the ledger exists, the report exists once, `beginAgentRun`'s
+signature is untouched, the signature is the statement after the claim,
+`endAgentRun` drops by identity, the report refuses to fire on an
+unchanged desk and refuses to name a run the ledger does not hold, both
+doors observe-then-report-then-claim with no `await` in between, and the
+pinned negative (the poll re-tests at the top, and nothing awaitable
+stands between it and the claim). Behavioral, through the new harness —
+two notes and three notes on one clearing desk all delivered with none
+evicted, a single note as the plain sanity case, and the race itself
+proving the displaced note is now named in the team room and cancelled
+against its own record. Reverted in place (md5
+`78b52efb20eeb8ba27e71934d33b51cb` fixed, `eb9339bde1411d9a85278b0d46d01e11`
+reverted) — 13 checks failed reliably across 3 repeated runs, including
+the live one, while the two pinned negatives kept passing, which is what
+says they are properties of the poll and not artifacts of the fix.
+Restored byte-identical, green on three repeated runs.
+
+Two of the thirty-seven existing tests that lift or reference these
+functions broke on the new namespace, both `ReferenceError: deskWorkRef is
+not defined` inside a lift: `test_stop_takes_back_only_your_turn.py` (its
+`mk()` env, which builds `endAgentRun` by hand) and
+`scripts/harness_taskdrop_race.mjs` behind
+`test_a_second_drop_on_a_desk_does_not_double_the_job.py` (its
+`PARAM_NAMES` world for `onTaskDropOnAgent`). Both were given the new
+dependency with a comment citing this entry; the other thirty-five pass
+unchanged. `npm run build` succeeds.
