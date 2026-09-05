@@ -38986,3 +38986,70 @@ questions correctly through the one shared cache: app.jsx's `hasKey` effect,
 the getting-started checklist, and the topbar chip all read
 `hasUsableKey()`/`probeManagedBrain()` together. This tour step was the one
 surface still asking half.
+
+---
+
+## 371. the grant that outlived its own revoke
+
+**The wreck.** `## 360.` closed the door a scheduled mission used to walk
+through with no key at all: `NightContext.agent_tools`, "resolved per
+DISPATCH rather than stored on the schedule, so a grant the boss revoked
+this afternoon is gone from tonight's run instead of being honoured from a
+snapshot." True at the grain it was measured at — before a mission starts.
+Nobody asked what a snapshot means for a mission that is still running when
+the revoke happens. `run_mission`'s own docstring says a mission "iterate[s]
+every intervalMs until durationMs elapses", and `durationMs` is capped at
+`min(sched.get('durationMs', 3600000), 4 * 3600 * 1000)` — four hours. Every
+`VAULT_APPEND`/`VAULT_NEW` hop inside that window, at `run_tool`'s vault
+branch and at `run_mission`'s own opening gate, read `ctx.agent_tools`: a
+plain Python list, captured once, at the top of `_night_run_one`, before the
+first brain call. A boss who unticks "read your Library" on a coworker
+three hours into their overnight research mission has revoked nothing that
+mission can see — not on its next write, not on the one after that, only on
+tomorrow's dispatch. "Per dispatch" and "per write" are the same fact for a
+mission that finishes inside one `intervalMs`, and different facts for one
+that runs the length its own scheduler allows.
+
+**Where it was.** `serve.py`'s `_night_agent_tools(agent_id)` was already a
+live, uncached read straight off `hq-state/memory/agents.json` — that part
+of `## 360.` never went stale. What went stale was that it was only ever
+called ONCE per dispatch, in `_night_run_one`, and the list it returned was
+handed to `NightContext` and never asked for again. `run_tool`'s vault
+branch and `run_mission`'s door both read `ctx.agent_tools` directly — the
+same field, so the two call sites `## 360.` deliberately unified never
+drifted apart from EACH OTHER, only from the roster.
+
+**Measured**, against a real `serve.py` on a scratch `HOME` with a real
+`agents.json`: a coworker granted `vault` is dispatched, `ctx.agent_tools ==
+['web', 'vault']`; the file is then rewritten to `['web']` — the boss's
+revoke, mid-run — and `serve._night_agent_tools('a_lib')` answers `['web']`
+immediately, live, as designed. But `run_tool(ctx, 'VAULT_NEW', …)` called
+on that SAME `ctx` — the one the running mission has held the whole time —
+still reached the write attempt and returned as if nothing had changed,
+because it never asked the roster again. A fresh dispatch of the same
+coworker, revoked before its first call, still turned away at the door
+exactly as `## 360.` measured; only a write attempted mid-mission, after a
+mid-mission revoke, was the gap.
+
+**The fix.** `NightContext` gains an `agent_tools_lookup`: an optional
+zero-arg callable back to the live roster, closed over the dispatch's
+`agentId`. `current_agent_tools()` calls it fresh every time the question is
+asked when one was given, and falls back to the old one-shot `agent_tools`
+snapshot when it wasn't — so `_night_post_activity`'s bare `_night_ctx()`
+(no `agentId` to re-ask with) and every existing caller/test keep the exact
+behaviour they had. `run_tool`'s vault branch and `run_mission`'s door both
+now call `ctx.current_agent_tools()` instead of reading the field directly
+— the same two call sites `## 360.` named, still not drifting apart from
+each other, now also not drifting apart from the roster while a mission
+runs. `serve.py`'s `_night_ctx` builds the lookup as `lambda:
+_night_agent_tools(agent_id)` and `_night_run_one` passes its dispatch's
+`agentId` through; the disk read that used to happen once per mission now
+happens once per attempted vault write, the same cost profile `## 360.`
+already accepted for the once-per-dispatch case.
+
+**No collateral, again.** A coworker whose grant is untouched still reaches
+the wire on every attempt, mid-mission included; the suite measures this
+alongside the revoke, the same shape `## 360.`'s own test insists on. The
+existing `## 360.` test's own `FakeCtx` — a hand-rolled stand-in for
+`NightContext`, not the real class — needed `current_agent_tools()` added
+to keep imitating it; nothing about what that test measures changed.

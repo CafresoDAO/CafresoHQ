@@ -208,8 +208,14 @@ console.log(JSON.stringify(R));
     # gate is fail-closed on an agent the roster can no longer find.
     night = (ROOT / 'night_runner.py').read_text(encoding='utf-8')
     check('the Night Shift now DOES consult what the boss granted',
-          re.search(r"may_write_to_vault\(ctx\.agent_tools\)", night) is not None,
-          'night_runner.py: #360 gates VAULT_APPEND/VAULT_NEW on the '
+          # #370 made this ask the roster live rather than off the
+          # dispatch-time snapshot alone — ctx.current_agent_tools()
+          # re-resolves ctx.agent_tools per write when a live lookup was
+          # wired in, and falls back to the plain snapshot otherwise. Either
+          # way the grant is still what gates the write; the literal
+          # ctx.agent_tools this used to match moved behind that method.
+          re.search(r"may_write_to_vault\(ctx\.current_agent_tools\(\)\)", night) is not None,
+          'night_runner.py: #360/#370 gate VAULT_APPEND/VAULT_NEW on the '
           'dispatched coworker\'s real grants — a web-only front-desk hire '
           'now gets the same overnight-vault refusal a boss would see from '
           'them by day, instead of a silent bypass')

@@ -965,12 +965,22 @@ def _night_agent_tools(agent_id):
     return None
 
 
-def _night_ctx(agent_tools=None):
+def _night_ctx(agent_tools=None, agent_id=''):
     import night_runner as _nr
+    # A mission's own ctx outlives its dispatch by up to 4 hours (see
+    # run_mission's duration cap). `agent_tools` is this dispatch's
+    # snapshot, still passed through for the mission's opening door check
+    # and for callers (e.g. _night_post_activity) that have no agentId to
+    # re-ask with. `agent_tools_lookup` is what lets a write attempted an
+    # hour into the mission ask the roster again instead of trusting that
+    # snapshot for the whole run — see NIGHT_RUNNER's NightContext and
+    # ## 370 in docs/OFFICE_AS_INTERFACE.md.
+    lookup = (lambda: _night_agent_tools(agent_id)) if agent_id else None
     return _nr.NightContext(
         _night_base_url[0] or ('http://127.0.0.1:%d' % PORT),
         api_key=CAFRESOHQ_API_KEY,
-        agent_tools=agent_tools)
+        agent_tools=agent_tools,
+        agent_tools_lookup=lookup)
 
 
 def _night_post_activity(run):
@@ -1023,7 +1033,8 @@ def _night_run_one(sched):
     sid = sched.get('id', '')
     try:
         import night_runner as _nr
-        ctx = _night_ctx(_night_agent_tools(sched.get('agentId', '')))
+        ctx = _night_ctx(_night_agent_tools(sched.get('agentId', '')),
+                         agent_id=sched.get('agentId', ''))
         run = _nr.run_mission(ctx, sched, on_progress=_night_log_run,
                                should_abort=lambda: sid in _night_abort)
         _night_log_run(run)

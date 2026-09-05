@@ -76,6 +76,13 @@ class FakeCtx(object):
         self.hermes_home = ''
         self.ssl_ctx = None
 
+    def current_agent_tools(self):
+        # Real NightContext.current_agent_tools() re-asks a live lookup when
+        # #370 wired one; this fake carries no lookup and no agentId, so it
+        # falls back to the same plain snapshot NightContext falls back to
+        # when it wasn't given one either — see NightContext's own default.
+        return self.agent_tools
+
 
 def main():
     # ── 1. the policy ────────────────────────────────────────────────────

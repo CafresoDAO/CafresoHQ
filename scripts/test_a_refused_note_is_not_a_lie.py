@@ -80,6 +80,13 @@ class FakeCtx(object):
     # here for a reason none of them are about.
     agent_tools = ['vault']
 
+    def current_agent_tools(self):
+        # Real NightContext.current_agent_tools() re-asks a live lookup
+        # when #370 wired one; this fake carries no lookup and no agentId,
+        # so it falls back to the same plain snapshot NightContext falls
+        # back to when it wasn't given one either.
+        return self.agent_tools
+
 
 def drive(replies, vault_status=200):
     calls = []

@@ -364,7 +364,7 @@ class NightContext(object):
     """Everything a run needs to reach the host serve.py + providers."""
 
     def __init__(self, base_url, api_key='', hermes_home='', brave_key='',
-                 agent_tools=None):
+                 agent_tools=None, agent_tools_lookup=None):
         self.base_url = base_url.rstrip('/')
         self.api_key = api_key or ''
         # What the boss actually granted the coworker this run belongs to,
@@ -376,11 +376,35 @@ class NightContext(object):
         # permission the boss revoked this afternoon is gone from tonight's
         # run instead of being honoured from a snapshot taken at create time.
         self.agent_tools = agent_tools
+        # A mission can run for up to 4 hours (see run_mission's duration
+        # cap). `agent_tools` above is a value captured ONCE, at dispatch --
+        # good enough for "gone from tonight's run" but not for "gone from
+        # the run in progress right now": every VAULT_APPEND/VAULT_NEW this
+        # mission attempts between dispatch and finish would keep reading
+        # that same snapshot, so a boss unticking "read your Library" at
+        # 11pm on a coworker whose mission started at 9pm would not be
+        # honoured until tomorrow night. `agent_tools_lookup`, when given, is
+        # a zero-arg callable back to the live roster (serve.py's
+        # `_night_agent_tools`, closed over this dispatch's agentId) that
+        # `current_agent_tools()` below calls fresh every time the question
+        # is asked, so a revoke reaches the write attempt it actually landed
+        # before, not merely the mission's next dispatch. None (the default,
+        # and what every existing caller/test still passes) keeps the old
+        # one-shot behaviour intact.
+        self.agent_tools_lookup = agent_tools_lookup
         self.hermes_home = hermes_home or os.environ.get('HERMES_HOME', '').strip() \
             or os.path.expanduser('~/.hermes')
         self.brave_key = brave_key or os.environ.get('BRAVE_API_KEY', '').strip()
         # Self-signed TLS on localhost is fine — we are calling ourselves.
         self.ssl_ctx = ssl._create_unverified_context() if self.base_url.startswith('https') else None
+
+    def current_agent_tools(self):
+        """The grant to gate THIS vault write on — live if we have a way to
+        re-ask, the dispatch-time snapshot otherwise. See the comment on
+        `agent_tools_lookup` above for why the two can differ mid-mission."""
+        if self.agent_tools_lookup is not None:
+            return self.agent_tools_lookup()
+        return self.agent_tools
 
 
 def _self_call(ctx, method, path, body=None, headers=None, timeout=90):
@@ -759,10 +783,16 @@ def run_tool(ctx, name, arg, body):
             # the morning report would name a note the Library never saw --
             # the exact fabrication the comments all through this file exist
             # to prevent.
-            if not may_write_to_vault(ctx.agent_tools):
+            # current_agent_tools(), not ctx.agent_tools directly: a mission
+            # can be hours into an already-approved run by the time this
+            # particular hop reaches for the marker, and the dispatch-time
+            # snapshot on ctx.agent_tools would keep saying yes to a grant
+            # the boss took back an hour ago. See NightContext's comment.
+            live_tools = ctx.current_agent_tools()
+            if not may_write_to_vault(live_tools):
                 return '%s (%d): %s' % (_VAULT_FAIL_PREFIX,
                                         NIGHT_VAULT_FORBIDDEN,
-                                        vault_not_granted_sentence(ctx.agent_tools))
+                                        vault_not_granted_sentence(live_tools))
             mode = 'append' if name == 'VAULT_APPEND' else 'write'
             try:
                 s, raw = _self_call(ctx, 'PUT', '/vault/note?path=%s&mode=%s' % (
@@ -1229,9 +1259,9 @@ def run_mission(ctx, sched, on_progress=None, should_abort=None):
     # refusal every iteration until ERROR_STREAK_AUTO_PAUSE ended it, and the
     # boss would pay for a night whose outcome was knowable before the first
     # brain call. One local lookup instead.
-    if not may_write_to_vault(ctx.agent_tools):
+    if not may_write_to_vault(ctx.current_agent_tools()):
         run['errors'] = 1
-        run['lastError'] = vault_not_granted_sentence(ctx.agent_tools)
+        run['lastError'] = vault_not_granted_sentence(ctx.current_agent_tools())
         run['finishedAt'] = int(time.time() * 1000)
         return run
     ready, why = vault_can_take_a_note(ctx)
