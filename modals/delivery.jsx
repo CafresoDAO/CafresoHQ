@@ -37,7 +37,24 @@ function DeliverySheet({ open, delivery, onClose, onOpenNote }) {
     try {
       const r = await CafresoHQClient.sharePage(path,
         agentId ? { tipJar: { agentId, agentName } } : {});
-      setShare({ path, url: r.url });
+      /* File the address next to the page BEFORE it can only exist on screen.
+         This sheet is shown exactly ONCE per HQ (`firstDeliverySeen`), the
+         live URL is rendered nowhere else in the product, and both footer
+         buttons — including the primary "Open the page →", the natural next
+         click — unmount it. So a boss who shipped a page to the public
+         internet and then closed the sheet had no way left to find out where
+         it went: nothing lists published sites. publishSite() has always
+         dropped a clickable `.url` deliverable for exactly this reason; the
+         share path skipped it. Best-effort: a cabinet write that fails must
+         not turn a publish that SUCCEEDED into an error, so the URL still
+         renders either way — we just say whether the copy got filed. */
+      let linkPath = null;
+      try {
+        linkPath = String(path).replace(/\.html?$/i, '') + '.link.md';
+        await CafresoHQClient.vaultWrite(linkPath,
+          `# Live link\n\n[${r.url}](${r.url})\n\nPublished from \`${path}\`.\n`, 'write');
+      } catch (_e) { linkPath = null; }
+      setShare({ path, url: r.url, linkPath });
     } catch (e) {
       // §7, same sweep as every other run/action failure this session:
       // one honest clause, not the raw exception, on the "Didn't ship — …" line below.
@@ -77,6 +94,11 @@ function DeliverySheet({ open, delivery, onClose, onOpenNote }) {
             <div className="delivery-share-done">
               🚀 Live on the Internet Computer:{' '}
               <a href={shareFor.url} target="_blank" rel="noreferrer">{shareFor.url}</a>
+              <div className="delivery-share-hint">
+                {shareFor.linkPath
+                  ? `Link saved in your cabinet as ${shareFor.linkPath}.`
+                  : "Couldn't save the link to your cabinet — copy it before you close this."}
+              </div>
             </div>
           ) : shareFor && shareFor.err ? (
             <div className="delivery-share-err">⚠ Didn't ship — {shareFor.err}</div>

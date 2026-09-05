@@ -32399,3 +32399,90 @@ covers only `app.jsx`, the one new test file, and this entry;
 `src/cafresohq_state/main.mo` was never staged or edited, no II or
 `derivationOrigin` value was read or written, and no dfx/IC action of any
 kind was run.
+
+---
+
+## 270. The first delivery sheet put a page on the public internet and then lost the address
+
+**The wreck.** §3 step 6's delivery sheet is where a PAGE deliverable grows
+its "🚀 Share it live" button (entry above, shipped 2026-08-06 with
+Ship-to-chain). The boss clicks it, `sharePage()` publishes the `.html` note
+to the public HQ host, and the sheet swaps the button for the real link:
+
+```jsx
+setShare({ path, url: r.url });
+```
+
+That was the only place that URL ever existed. Three facts, each fine alone,
+combine into a hole:
+
+* the sheet is shown **once, ever** — `app.jsx` gates it on
+  `firstDeliverySeen`, a `useStored` flag set *before* `setDelivery(...)`, so
+  it never comes back;
+* **both** footer buttons unmount it — "Later", and the primary
+  "Open the page →", which is the natural next click and the one the sheet
+  spends its whole layout pointing at;
+* nothing else in the product renders a published address. There is no
+  published-sites list — `grep` for one comes back empty — and `sharePage()`,
+  unlike `publishSite()`, wrote nothing back to the cabinet.
+
+`publishSite()` has always dropped a clickable `<name>.url` deliverable into
+the project for exactly this reason:
+
+```js
+const body = `[InternetShortcut]\r\nURL=${url}\r\n`;
+```
+
+The share path skipped it. So the sequence was: put a page on the **public
+internet**, read its address off a modal, click the button the modal is
+built around, and now have no way to find out where it went — while the page
+stays live. That is the §4 failure in its money-and-trust register: not a
+lie on screen, but a control whose one durable output the office quietly
+threw away.
+
+**The fix** (`modals/delivery.jsx`, `doShare()`). Before the URL is revealed,
+file it next to the page it came from:
+
+```js
+linkPath = String(path).replace(/\.html?$/i, '') + '.link.md';
+await CafresoHQClient.vaultWrite(linkPath, `# Live link\n\n[${r.url}](…)`, 'write');
+```
+
+Awaited *before* `setShare(...)`, because filing after the reveal races the
+click that closes the sheet. Wrapped in its own `try/catch` that swallows to
+`linkPath = null`, because at that point the page **is** live and letting a
+cabinet hiccup fall into the outer `catch` would print "Didn't ship — …" over
+a publish that shipped. And the sheet now says which of the two happened —
+`Link saved in your cabinet as …`, or `Couldn't save the link to your
+cabinet — copy it before you close this.` Silence on that second branch
+would be the original bug wearing a success badge.
+
+**The proof.**
+`scripts/test_a_page_shipped_live_keeps_its_address.py` — 12 checks. It first
+pins the *premise* against the live source, so the entry can't outlive its
+own bug: the `firstDeliverySeen` gate must still be a stored one-shot, and
+the primary button must still call `onOpenNote(path); onClose();`. Then: the
+link is written through `vaultWrite`, at a path derived from the page,
+carrying `r.url` and not the vault path; the write is awaited before the
+reveal; it is isolated in its own `try/catch`; the URL still renders when the
+filing failed; and the success block both names the filed path and warns to
+copy when there isn't one.
+
+Fire-tested: copied the fixed `delivery.jsx` to `/tmp`, reverted both hunks
+in place with the editor (never `git checkout -- <file>`) — 8 of 12 checks
+failed, exit 1, with the four premise/structure checks still passing, which
+is the shape you want: the harness proves the bug, not the file's absence.
+Restored from the `/tmp` copy, confirmed byte-identical by `md5`
+(`71d198cfedd35c51249d1b752b2f15d0`), reran — 12 of 12 passed, exit 0.
+
+`npm run build` was run once up front so `dist-ui/manifest.json` exists in a
+fresh worktree, and again after the `.jsx` edit.
+
+**Suite:** `python3 scripts/run_tests.py` — expected sole pre-existing
+failure `scripts/test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py`
+(the `moc`/M0219 `main.mo` toolchain mismatch tracked from `#188` onward, on
+a file a foreign session owns and this change never touches). This change
+covers only `modals/delivery.jsx`, the one new test file, and this entry;
+`src/cafresohq_state/main.mo` was never staged or edited, no II or
+`derivationOrigin` value was read or written, and no dfx/IC action of any
+kind was run.
