@@ -128,6 +128,68 @@ _NO_BRAIN_HINT = (
     'under ON THIS MACHINE.'
 )
 
+# `#416` — what the office says INSTEAD of relaying the gateway's own words.
+#
+# `_hermes_proxy` injects `Authorization: Bearer API_SERVER_KEY` server-side
+# and its docstring says why: "so the key never lives in the browser". It then
+# relayed the gateway's body through untouched, and an upstream that quotes the
+# request it turned down — a common debug shape, and the Authorization header
+# travels with it — handed that key straight back. Measured before the fix:
+#
+#   POST /hermes/v1/chat/completions -> 401
+#   {"error": {… "headers": {"Authorization": "Bearer <the injected key>" …
+#
+# The argument for a sentence rather than a scrubbed relay is the one `#403`,
+# `#407` and `#411` each reached separately: a refusal from an upstream is a
+# DIAGNOSTIC, not the content a pass-through exists to carry, and the fix is
+# additive (compose a sentence, log the body) rather than subtractive (relay
+# the body minus whatever the author remembered to enumerate). `#411` spelt out
+# why subtraction loses: pointed at a vault door, `_scrub` removed the key and
+# left the path, the errno, the digits and the length — five offences of six.
+#
+# Digit-free and inside ninety characters for `#403`'s reason: `officeCause`
+# rewrites bare numbers and `cleanCause` truncates at 90.
+_HERMES_UNREACHABLE = (
+    'the agent gateway is restarting or not running — give it a moment'
+)
+_HERMES_RELAY_FAILED = (
+    'the agent gateway stopped mid-answer — nothing more of it is coming'
+)
+
+
+def _hermes_refusal(status):
+    """One sentence for a gateway that refused, in place of its body.
+
+    Keyed off the status class only, because the body is the thing we have
+    just decided the boss must not read. Each says what happened and what to
+    do; none of them says a number."""
+    if status in (401, 403):
+        return 'the agent gateway would not accept the office key — check it in Settings'
+    if status == 404:
+        return 'the agent gateway has no such model or endpoint — pick another in Settings'
+    if status == 429:
+        return 'the agent gateway is being rate limited — wait a little and send it again'
+    if status >= 500:
+        return 'the agent gateway hit a problem answering — send it again in a moment'
+    return 'the agent gateway turned that request down — try asking it differently'
+
+
+def _log_hermes_upstream(status, body, secret=''):
+    """Keep the gateway's own description of the refusal, move it off the
+    boss's screen — `_log_upstream`'s split, applied to the second upstream
+    that turned out to quote our credential back at us. Scrubbed on the way
+    for the same reason: a log file is still not a place for a key. This is
+    where `#411` said `_scrub`-shaped redaction belongs — the LOG side."""
+    try:
+        text = body[:300].decode('utf-8', 'replace') if body else ''
+        k = (secret or '').strip()
+        if len(k) >= 8:
+            text = text.replace(k, '<redacted>')
+        sys.stderr.write('[hermes] gateway answered %s — %s\n'
+                         % (status, ' '.join(text.split())))
+    except Exception:
+        pass    # a log line may never be the reason a request fails
+
 # ── Idle tracking (powers fleet reap-idle → stop idle containers, free A1 pool) ─
 # Single-slot list so the request handler can mutate it without `global`.
 # /idle, /health, and /idle's own polls do NOT count as activity.
@@ -166,6 +228,75 @@ def _relayable(name):
     n = name.lower()
     return not (n in HOP_HEADERS or n == 'content-encoding'
                 or n.startswith('access-control-'))
+
+
+class _SecretStream:
+    """Straddle-safe removal of one literal secret from a byte stream, with no
+    buffering delay on the bytes that are not it. `#416`.
+
+    The proxy loops in this file relay an upstream body with a raw `read1()`
+    loop, so SSE reaches the browser a token at a time. A secret the OFFICE
+    injected into the REQUEST — `_hermes_proxy`'s `Authorization: Bearer
+    API_SERVER_KEY` — can therefore come back split across two of those
+    chunks, and a per-chunk `bytes.replace` sees neither half. Buffering the
+    whole body to scan it would fix that and hand back `#399`'s 25ms first
+    token, which is not a trade this file makes.
+
+    So the loop holds back the only bytes that could still BECOME the secret:
+    the longest suffix of what it is about to emit that is also a proper
+    PREFIX of the secret. On real token data that suffix is empty — the last
+    byte simply is not the secret's first byte — so nothing is withheld and
+    nothing is delayed; one `find` answers that case before the loop runs. It
+    is non-empty only on the boundary the straddle needs, and never longer
+    than len(secret)-1, which is why `flush()` may emit the carry unchanged at
+    EOF: a proper prefix of a secret is not the secret.
+
+    Correctness, stated rather than assumed. Take any occurrence of the secret
+    in the concatenated stream. Either it lies wholly inside one `buf`, where
+    `replace` removes it, or its first i bytes are the tail of a buf — and
+    then that buf ends with secret[:i], so the held suffix is at least i bytes
+    long and those bytes are carried forward rather than emitted. Chunks
+    smaller than the secret are covered by the same argument applied twice:
+    the carry only ever grows toward a full match.
+
+    Its limits, also stated. It removes ONE literal byte string, so it does
+    nothing about a secret the upstream re-encodes (base64, \\u escapes) or
+    breaks up itself, and nothing about a secret shorter than the caller's own
+    minimum — callers gate at 8 bytes, as `_log_upstream` does, because a
+    three-character "key" would eat content. It is a second line, not the
+    first: the first is refusing to relay an upstream's error body at all.
+    """
+    __slots__ = ('_s', '_r', '_carry')
+
+    def __init__(self, secret, replacement=b'<redacted>'):
+        self._s = secret if isinstance(secret, bytes) else secret.encode()
+        self._r = replacement
+        self._carry = b''
+
+    def feed(self, chunk):
+        s = self._s
+        buf = (self._carry + chunk) if self._carry else chunk
+        if s in buf:
+            buf = buf.replace(s, self._r)
+        n = min(len(s) - 1, len(buf))
+        hold = 0
+        # A suffix that is a prefix of the secret must start with the secret's
+        # first byte; one find over the last n bytes settles the common case
+        # without slicing anything.
+        if n and buf.find(s[:1], len(buf) - n) >= 0:
+            for i in range(n, 0, -1):
+                if buf[-i:] == s[:i]:
+                    hold = i
+                    break
+        if hold:
+            self._carry = buf[-hold:]
+            return buf[:-hold]
+        self._carry = b''
+        return buf
+
+    def flush(self):
+        out, self._carry = self._carry, b''
+        return out
 
 
 # The other half of "who may read this office's answers is the OFFICE's
@@ -6343,6 +6474,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         Accept-Encoding is forced to 'identity' so SSE arrives uncompressed
         and streams straight through. A bounded tail of the response is scanned
         for the OpenAI `usage` object and recorded per-principal (metering).
+
+        `#416`: what comes BACK is not relayed unconditionally any more. A
+        gateway that refused (>=400) gets its body read into the server log and
+        answered with one composed sentence, because an upstream's refusal is a
+        diagnostic and not the content this route exists to carry — the same
+        conclusion `#403`, `#407` and `#411` reached at their own doors. What
+        stays a true pass-through, the <400 stream, runs through a
+        `_SecretStream` on the injected key so a value the office put in the
+        REQUEST cannot ride the RESPONSE back out. See the class for why that
+        costs no latency and what it does not cover.
         """
         upstream_path = self.path[len('/hermes'):]  # keep leading /
         if not upstream_path.startswith('/'):
@@ -6449,21 +6590,63 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     conn.close()
             except Exception:
                 pass
+            # `#416`: the connect failure is a ConnectionRefusedError, so this
+            # used to be `hermes: [Errno 61] Connection refused` — `#407`'s
+            # class exactly, and the old hint carried a bare `~15s` that
+            # officeCause rewrites. Errno to the log, sentence to the boss.
+            sys.stderr.write('[hermes] gateway connect failed: %s\n'
+                             % (last_err or 'no connection'))
             try:
-                self._send_json(502, {'error': f'hermes: {last_err or "gateway unavailable"}',
-                                      'hint': 'the agent gateway is restarting or down — retry in ~15s'})
+                self._send_json(502, {
+                    'error': 'gateway_unreachable',
+                    'message': _HERMES_UNREACHABLE,
+                    'hint': 'wait a moment, then send it again'})
             except Exception:
                 pass
             return
+        # `#416`: a refusal is a diagnostic, not the content this pass-through
+        # carries. Read a bounded body for the LOG, and answer the boss with a
+        # sentence. This is the half of the fix that removes the whole class:
+        # the measured leak was an upstream quoting our own Authorization
+        # header back inside a 401, and no scrubber is needed for a body that
+        # is never relayed. Status is preserved because the client reads it
+        # (_retryableStatus), and `message`/`hint` are what streamOpenAICompat
+        # shows in place of the braces (#399).
+        if resp.status >= 400:
+            try:
+                refused = resp.read(4096)
+            except Exception:
+                refused = b''
+            _log_hermes_upstream(resp.status, refused, env_key)
+            try:
+                self._send_json(resp.status, {
+                    'error': 'gateway_refused',
+                    'message': _hermes_refusal(resp.status),
+                    'hint': 'the details are in the office log'})
+            except Exception:
+                pass
+            conn.close()
+            return
         try:
+            # Only a value the OFFICE injected is worth removing: a key the
+            # browser sent itself is already in the browser. Gated at 8 bytes
+            # for `_log_upstream`'s reason — a three-character "key" would eat
+            # content — and that hole is stated in _SecretStream's docstring
+            # rather than inherited quietly.
+            sieve = _SecretStream(env_key) if (env_key and len(env_key) >= 8) else None
             self.send_response(resp.status)
             for k, v in resp.getheaders():
                 if not _relayable(k):
+                    continue
+                # An upstream that echoes the request in a HEADER is the same
+                # leak one layer up, and the body sieve cannot see it.
+                if sieve and env_key in v:
                     continue
                 self.send_header(k, v)
             self.send_header('Connection', 'close')
             self.end_headers()
             tail = b''  # rolling buffer (last 16KB) for usage extraction
+            broken = False
             while True:
                 try:
                     chunk = resp.fp.read1(8192) if hasattr(resp.fp, 'read1') else resp.read(1024)
@@ -6471,16 +6654,36 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     break
                 if not chunk:
                     break
+                out = sieve.feed(chunk) if sieve else chunk
+                if not out:
+                    continue          # a straddle carry: nothing safe to send yet
                 try:
-                    self.wfile.write(chunk)
+                    self.wfile.write(out)
                     self.wfile.flush()
                 except (BrokenPipeError, ConnectionResetError):
+                    broken = True
                     break
-                tail = (tail + chunk)[-16384:]
+                tail = (tail + out)[-16384:]
+            if sieve and not broken:
+                rest = sieve.flush()          # a proper prefix, never the key
+                if rest:
+                    try:
+                        self.wfile.write(rest)
+                        self.wfile.flush()
+                    except (BrokenPipeError, ConnectionResetError):
+                        pass
+                    tail = (tail + rest)[-16384:]
             self._record_hermes_usage(principal, upstream_path, tail)
         except Exception as e:
+            # Headers may already be on the wire here, in which case _send_json
+            # is a no-op the client never parses — but when it is not, `{e}`
+            # was another uncomposed exception body (#407). Same split.
+            sys.stderr.write('[hermes] relay failed: %s\n' % e)
             try:
-                self._send_json(502, {'error': f'hermes: {e}'})
+                self._send_json(502, {
+                    'error': 'gateway_relay_failed',
+                    'message': _HERMES_RELAY_FAILED,
+                    'hint': 'wait a moment, then send it again'})
             except Exception:
                 pass
         finally:

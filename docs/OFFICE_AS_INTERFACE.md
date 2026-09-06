@@ -44993,3 +44993,104 @@ the success bodies of `PUT /vault/note`, `POST /vault/rename` and
 configuration, or the mainnet. Four concurrent hunts were appending to this
 ledger; if this landed other than where it was numbered, every `#415` in
 `serve.py`, `hq-runtime.jsx` and the test moved with it.
+
+## 416. the key the proxy hid from the browser, and the body that handed it back
+
+`## 411` closed its sweep with one door deliberately left open and named for a
+human: `serve.py`'s `_hermes_proxy` injects `Authorization: Bearer
+API_SERVER_KEY` server-side — its own docstring says *"so the key never lives
+in the browser"* — and then relayed the gateway's response body through
+untouched. Measured there, and reproduced here first against a stand-in
+gateway that echoes the request it refuses, at both JSON key orders because
+`## 411`'s first run put the key one character outside its slice:
+
+    POST /hermes/v1/chat/completions -> 401  gateway key in body: True
+    {"error": {… "headers": {"Authorization": "Bearer <the injected key>" …
+
+The relay defeated the exact property the injection exists to provide. It was
+left because the relay is a streaming `read1()` loop where a key can straddle
+two chunks, and a wrong fix there breaks every streaming reply in the office.
+
+### The decision, argued: a sentence first, a sieve second
+
+Scrubbing the relayed body was not the first instrument. `## 403`, `## 407`
+and `## 411` each reached the same conclusion at their own doors and it holds
+here: **an upstream's refusal is a diagnostic, not the content a pass-through
+exists to carry.** So a gateway answer with status >= 400 is no longer relayed
+at all. Its body is read (bounded, 4KB) into the server log with the key
+redacted on the way — the LOG side is where `## 411` said `_scrub`-shaped
+redaction belongs — and the boss is answered with one composed sentence keyed
+off the status class only, digit-free and inside ninety characters for
+`## 403`'s reason. The status itself survives because `_retryableStatus`
+reads it. That half removes the measured class outright: no scrubber is
+needed for a body that is never relayed.
+
+The second half is for the < 400 stream, which IS the content the route
+carries and must stay a pass-through. A key the office put in the REQUEST can
+still come back inside a 200 — a model that repeats its context, a debug
+endpoint — so that stream runs through `_SecretStream`, and the straddle is
+solved rather than assumed away. The loop holds back only the longest suffix
+of what it is about to emit that is also a proper prefix of the key. On real
+token data that suffix is empty — the last byte simply is not the key's first
+byte, and one `find` settles that before any slicing — so nothing is withheld
+and nothing is delayed. It is non-empty only on the boundary a straddle needs,
+never longer than keylen−1, and at EOF the carry is emitted unchanged because
+a proper prefix of a key is not the key. A response HEADER that carries the
+key is dropped for the same reason one layer up. Stated limits: it removes
+one literal byte string, so a key the upstream re-encodes (base64, `\u`
+escapes) or breaks up itself passes; and it is gated at 8 bytes for
+`_log_upstream`'s reason — a three-character "key" would eat content.
+
+The proxy's own two error bodies went the same way as `## 407`'s: the connect
+failure was `hermes: [Errno 61] Connection refused` with a bare `~15s` in the
+hint, and the mid-relay exception was `hermes: {e}`. Errno to the log,
+sentence to the boss, both now `gateway_unreachable`/`gateway_relay_failed`
+with a `message` the client already shows in place of braces (`## 399`).
+
+### Measured, before and after
+
+Reproduction ladder, stand-in gateway echoing the refused request:
+`sort_keys=True` and `False` both `401`, key in body **True** before, **False**
+after, and the check asserts it actually reached the proxy rather than
+`## 399`'s 501 short-circuit, and that the stand-in really did echo our
+Authorization — a round that cannot fail is not a round.
+
+Straddle: a 200 stream with the 40-byte fake key split across two TCP writes
+at **41 offsets** (every interior offset plus both ends). Leaked at: none. A
+scrubber without a carry passes offset 0 and fails every other one.
+
+Streaming cost: **first byte 1ms**, last byte 677ms at the stand-in's own
+pacing, **9 chunks** observed by the browser for 414 bytes — the stream still
+arrives in pieces, not one buffered blob. `## 399`'s 25ms is not given back. A
+near-miss key prefix parked exactly on a chunk boundary relays byte-identical.
+A dead gateway still answers the retryable 502, in 15.1s, with a §7 sentence.
+
+### The weakest verdict here
+
+**"On real token data the held suffix is empty" is a claim about the data,
+not the mechanism.** A key whose first byte is a common token byte would make
+the sieve hold one byte at the end of many chunks — never more than a byte
+or two, never past the next chunk, and never past EOF, so it costs no
+correctness and no observable latency at the rate a gateway streams. But the
+measurement above is of a stand-in whose tokens do not start with the fake
+key's first byte, so "no delay" is proved for that stream and argued for the
+rest. And the sieve is the SECOND line: an upstream that re-encodes the key
+inside a 200 is outside it entirely, and nothing here pretends otherwise.
+
+### Test
+
+New `scripts/test_the_gateway_key_does_not_ride_the_proxy_body_out.py`, six
+rounds: the sieve driven directly at every chunk size from one byte up; the
+measured leak at both key orders with the reached-the-proxy and
+really-echoed assertions; the straddle at every offset; first-byte time and
+chunk count; boundary integrity; and the proxy's own two refusals. Every key
+in it is an obvious fake, and it pins `HERMES_HOME` to a scratch dir and puts
+an empty bin dir first on `PATH` so `gateway_restart`'s bare
+`Popen(['hermes', …])` cannot find a real binary.
+
+`serve.py` regions touched: the `_NO_BRAIN_HINT` neighbourhood (three new
+module-level helpers), a new `_SecretStream` class after `_relayable`, and
+`_hermes_proxy` itself. Nothing in the vault success bodies. Nothing here
+touched `main.mo`, the II configuration, or the mainnet. Four concurrent
+hunts were appending to this ledger; if this landed other than where it was
+numbered, every `#416` in `serve.py` and the test moved with it.
