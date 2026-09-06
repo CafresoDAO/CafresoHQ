@@ -634,6 +634,47 @@ const chatOnLoad = (xs) => (Array.isArray(xs) ? xs : []).map(m => {
   return { ...rest, text: body ? body + '\n\n' + CHAT_CUT_NOTE : CHAT_GONE_NOTE };
 });
 
+/* #413 — the union that lets the conversation be file-backed at all.
+   `chat` moved from useStored to useFileStored, and useFileStored's mount
+   fetch has a "keep theirs" guard that is right for a snapshot (tasks,
+   agents) and catastrophic for a log. Measured on the swap before this
+   function existed: a fresh browser, the real conversation on disk, and the
+   boss types one word inside the ~300ms before the fetch resolves. dirtyRef
+   is true and the value is no longer the seed, so the fetch was discarded —
+   and #232's replay then PUT the one-message local chat OVER the file.
+   Every conversation the office had ever held, deleted by the first
+   keystroke on a new device. `mergeOnDirty: true` plus this transform is
+   what makes the swap safe, exactly as it is for `messages` and `activity`.
+
+   Concatenation order, not a sort: the streaming placeholder
+   (ui/chat.jsx:806) carries no `ts` at all, so a ts sort would file every
+   live reply at the top of the transcript. The file is the older half and
+   the in-memory list is the newer one, so file-order-then-new-arrivals is
+   the chronology. In-memory wins on a shared id — it is the fresher copy of
+   a reply that is still being written.
+
+   `chatOnLoad` runs on the FETCHED side only. It spends the `interrupted`
+   marker into a sentence, and a record this session is streaming right now
+   has not been interrupted by anything. The cap is 100 to match the
+   in-memory ceiling at app.jsx:1738 rather than persistableChat's 80 — the
+   union is what state holds, and the write filter caps it again on the way
+   to disk. */
+const mergeChat = (inMem, fetched) => {
+  const live = Array.isArray(inMem) ? inMem : [];
+  const seen = new Map();
+  for (const m of live) if (m && m.id) seen.set(m.id, m);
+  const out = [];
+  const placed = new Set();
+  for (const m of chatOnLoad(fetched)) {
+    if (!m) continue;
+    const mine = m.id && seen.get(m.id);
+    out.push(mine || m);
+    if (m.id) placed.add(m.id);
+  }
+  for (const m of live) if (m && (!m.id || !placed.has(m.id))) out.push(m);
+  return capChatFair(out, 100);
+};
+
 /* Desk-screen feed: streams an agent's live output tail onto its office
    monitor (OfficeView listens for 'cafresohq:agentScreen'). Throttled to one
    event per 150ms per agent — token callbacks can fire per-chunk and the
@@ -839,4 +880,4 @@ const mergeMessages = (inMem, fetched) => {
 // the cap two functions up had been quietly disproving. `terminal` states
 // can't be transitioned out of (except via explicit reopen).
 
-export { capChatFair, chatErrorText, chatOnLoad, k, ks, makeScreenEmitter, mergeByIdCap, mergeMessages, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored };
+export { capChatFair, chatErrorText, chatOnLoad, k, ks, makeScreenEmitter, mergeByIdCap, mergeChat, mergeMessages, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored };

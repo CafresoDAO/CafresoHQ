@@ -44598,3 +44598,188 @@ lands as a different number, every `## 412.` and `` `## 412.` `` marker in
 `scripts/test_the_x_on_getting_started_was_a_one_way_door.py` and
 `scripts/test_the_x_on_getting_started_comes_back.py` moves with it.
 They are all spelled that way for grep.
+---
+
+## 413. every conversation the office ever had lived in one browser
+
+*(Renumber note: four other hunts appended concurrently. Every reference
+this entry owns is greppable as `#413` — in `app.jsx`, `app/storage.jsx`,
+`ui/chat.jsx`, `docs/BETA_READINESS.md` and
+`scripts/test_the_conversation_survives_a_fresh_browser.py`.)*
+
+`## 408.` built the first real durability map and left three rows EXPOSED
+with the largest one named as the next hunt's first job: **the conversation
+is localStorage-only**. `app.jsx:189` was `useStored`, not `useFileStored`;
+there was no `hq-state/chat.json` and never had been. Measured
+`freshKept: false`. Every other collection the office calls its own is
+file-backed, so a tester who clears site data, opens a second browser or
+picks up a different device keeps their tasks, their roster, their Library
+and their message registry — and loses every conversation they have ever
+had with their coworkers. This entry closes all three rows.
+
+`## 408.` did not close it for a stated reason: chat is the **highest-
+frequency store in the office** — a token stream driving the setter at
+animation-frame cadence — so the swap wanted its own cost measurement rather
+than a reflexive one-liner. That measurement came first here, and it
+overturned the premise the brief was written on.
+
+### There is no PUT storm, and there never was
+
+Driven against a real `python3 serve.py` on `:9418` with the real hook lifted
+out of `app/storage.jsx`, a real 1024-token reply (`DEFAULTS.maxTokens` is
+1024, so this is the routine reply, not the long tail) at 40 tok/s, over a
+118-message transcript — i.e. past `persistableChat`'s 80-entry cap, so
+`capChatFair` is doing full work on every frame:
+
+| | `useStored` (before) | `useFileStored` (after) |
+|---|---|---|
+| setter calls (rAF token frames) | 1027 | 1027 |
+| PUTs **during** the stream | — | **0** |
+| PUTs for the whole reply | — | **1** |
+| bytes on the wire | — | 53.7 KB |
+| PUT latency | — | 19.9 ms |
+| sync work per token frame | 0.011 ms | **0.37 ms** |
+| sync work, whole 28-second reply | 11.6 ms | 375 ms |
+| worst single frame | 0.45 ms | 6.4 ms |
+
+The 1500 ms debounce is re-armed by every token frame, so a reply that is
+still arriving costs **nothing on the wire**; exactly one write lands 1.5 s
+after the last token. The feared cost was the wrong cost. The real one is
+synchronous: `persist()` runs `persistableChat` and `JSON.stringify` over the
+whole array *inside the setState updater*, 0.37 ms against a 16 ms frame
+budget. That is ~2% of a frame, it is what twelve other file-backed stores
+have always paid, and the worst frame measured in 28 seconds of streaming
+was 6.4 ms — under budget.
+
+**So no debounce was added, no size ceiling beyond the existing
+`capChatFair(80)`, and no settled-turns-only filter.** Each of those was on
+the table and each is now argued against by the number above rather than by
+taste. The settled-turns idea is the one worth spelling out, because it is
+the tempting one and it is wrong: writing only finished turns would put back
+exactly the hole `## 408.`'s own note in `app/storage.jsx` records —
+`useStored`'s 300 ms debounce is re-armed by every token, so *nothing of an
+answer was ever written while it streamed*, and a reply the page outlived
+came back as a coworker's name over a blank bubble. The per-frame write is
+what makes the `interrupted` marker carry text. Paying 0.37 ms a frame to
+keep that is the trade this entry makes.
+
+Live end-to-end, against the same server and a genuinely fresh origin:
+
+```
+fileHasConversation   true          hq-state/chat.json, 1062 bytes
+fileHasStreamedTail   true          the last token of the reply is in it
+freshBrowserKept      [ "draft the El Salvador solar memo",
+                        "w0 w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 …" ]
+```
+
+### The swap would have opened a worse hole than it closed
+
+`useFileStored`'s mount fetch has a "keep theirs" guard that is right for a
+snapshot and catastrophic for a log — `## 177.`, `## 379.` and the comment
+above `mergeOnDirty` all say so about `activity` and `messages`, and nobody
+had said it about the chat because the chat had never been near that hook.
+Measured on the swap before `mergeChat` existed: a fresh browser, the real
+conversation on disk, and the boss types **one word** inside the ~300 ms
+before the fetch resolves. `dirtyRef` is true and the value is no longer the
+seed, so the fetch was discarded — and `## 232.`'s replay then PUT the
+one-message local chat over the file. Every conversation the office had ever
+held, deleted by the first keystroke on a new device.
+
+So the chat carries `mergeOnDirty: true` and a new `mergeChat`. Two details
+that are not obvious and are the reason it is a new function rather than
+`mergeByIdCap`:
+
+- **Concatenation order, not a sort.** The streaming placeholder at
+  `ui/chat.jsx:806` carries no `ts` at all, so a `ts` sort files every live
+  reply at the top of the transcript. The file is the older half, the
+  in-memory list is the newer one.
+- **`chatOnLoad` runs on the FETCHED side only.** It spends the
+  `interrupted` marker into a sentence, and a record this session is
+  streaming right now has not been interrupted by anything.
+
+### The two smaller rows, same treatment
+
+**Saved workspaces** (`app.jsx:619`) are now `hq-state/workspaces.json`. A
+layout the boss named and saved is authored content, not a preference. No
+`mergeOnDirty` here, deliberately: this is a snapshot, and a union would
+resurrect a workspace the boss had just deleted. `activeWorkspace` stays
+localStorage-only — it names which saved layout *this screen* is showing,
+and the layout it names already carries `density`/`theme`, per-device by
+construction. Syncing it would let a phone drag a desktop into Reading mode.
+Filed as a deliberate row on the map, in `## 408.`'s voice, not left silent.
+
+**The composer draft** (`ui/chat.jsx:90`) was a bare `useState('')` and is
+the only row on the whole map that a **plain reload** ate — every other loss
+measured this session needs an unusual event to reach it; this one needs the
+commonest event there is. It now restores from `localStorage`, debounced
+300 ms, cleared rather than stored empty so a sent message leaves nothing
+behind. One draft, not one per thread, because nothing clears `input` on a
+thread switch today — keying by thread would be a behaviour change wearing a
+persistence fix. Deliberately **not** file-backed: a sentence still being
+typed is a fact about one keyboard, not a record, and syncing it would
+restore a fragment mid-word on a second device and hand it to
+`hq-agents.md`.
+
+### The test, and the harness defect it was built with
+
+`scripts/test_the_conversation_survives_a_fresh_browser.py`. The first draft
+of it passed in the **main checkout**, which does not have the fix — because
+the harness transcribed the fixed wiring into the test file, so the
+behavioural checks proved only that the harness author can type. It now
+reads which hook `app.jsx` actually wires the chat to and drives *that* one.
+From the main checkout the headline check fails with the loss it is named
+after: `'[]'` — a brand-new browser gets nothing back.
+
+Two more things it does deliberately. It carries a **negative control** that
+drives the file-backed hook *without* the union and requires the deletion to
+reproduce, so the two union checks cannot pass for some unrelated reason.
+And its `mergeChat` binding is resolved defensively (`typeof mergeChat ===
+"undefined" ? null : mergeChat`) — the first version referenced it bare, and
+in a tree without the fix that threw at module-build time and reported
+**nothing** about the other seventeen checks. That is `## 404.`'s exact
+finding, reproduced by me, one entry later.
+
+### Fire test
+
+Three, each reverted in place and restored byte-identical.
+
+- `app.jsx` back to `useStored(k('chat'), …)` with the import restored: 4
+  FAILED, three runs running, other 14 checks still reported.
+- `mergeChat`'s live-append loop deleted: 1 FAILED — *a keystroke before the
+  fetch lands does not discard the history* — three runs running.
+- `ui/chat.jsx` back to `useState('')`: 2 FAILED, three runs running.
+
+`md5` after each restore: `app.jsx 320fa8fba13572bc318e5c7fde0d0858`,
+`app/storage.jsx 1c3c6c9dc568b9aa138850b29168c141`,
+`ui/chat.jsx 596743bab54ef1c02baec8f9478a945c`. Green three runs running.
+
+### My weakest verdict, flagged as weak
+
+`chatMergeRef` is assigned **during render** rather than in a
+`useEffect([chat])` — one scheduling hop earlier than where `activity` and
+`messages` put theirs — and the union is only as fresh as that ref. An edit
+made between a render and the mount fetch resolving is not in it. React
+commits a render within a frame of a setter and the fetch takes 100–300 ms,
+so the ordering holds. **That is a mechanism, not a measurement**, and it is
+the same mechanism `activity` and `messages` have been resting on unexamined
+since `## 177.`. The test's stub GET sleeps 120 ms and the harness commits a
+render before it resolves, which measures the ordering I *expect* rather
+than proving no ordering exists that breaks it. I could not close it without
+either double-applying setter updaters (unsafe — several capture variables
+out of the updater body) or unioning against the `localStorage` mirror
+(which holds `persistableChat` output and would narrate a live streaming
+reply as `interrupted`). Written down so the next hunt can drive it rather
+than inherit my confidence.
+
+Second, smaller, also unmeasured: `useStored` carried a cross-tab `storage`
+absorber and `useFileStored` does not, so two tabs open at once now
+last-writer-wins on the chat as they already do on every other file-backed
+store. Traded knowingly for file durability; nobody has measured it on any
+store.
+
+### Human-only gate
+
+Unchanged and now the largest thing on the map: **there is no export-all and
+no restore**. One `hq-state/` directory on one laptop is the durability story
+in full, and nothing in the product says so or offers a way to take a copy.
+That needs a product decision about where a backup goes, not a hunt.

@@ -15,7 +15,7 @@ import { taskKind, xpRecord } from './app/experience.jsx';
 import { attachVisit, chainHoldLine, doneLine, floorEmit, officeCause, shortfallLine, snagCause, snagSentence, toolActivity, visitLine, visitPlace } from './app/floor.jsx';
 import { formatToolInput, approvalTitle } from './app/approvals.jsx';
 import { attentionCount as attentionCountOf } from './app/attention.jsx';
-import { capChatFair, chatErrorText, chatOnLoad, k, ks, makeScreenEmitter, mergeByIdCap, mergeMessages, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored } from './app/storage.jsx';
+import { capChatFair, chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, mergeChat, mergeMessages, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored } from './app/storage.jsx';
 import { ChatWindow, MSG_STATES, WindowFrame, _chatAnchor, _railRight } from './app/windows.jsx';
 /* ==========================================================================
    CafresoHQ — root app
@@ -186,7 +186,40 @@ function App() {
     const t2 = setTimeout(sync, 10000);
     return () => { cancelled = true; clearTimeout(t1); clearTimeout(t2); };
   }, []);
-  const [chat, setChat] = useStored(k('chat'), HQ.INITIAL_CHAT, persistableChat, chatOnLoad);
+  /* #413 — the conversation, on disk. This was `useStored` from day one, so
+     there was no hq-state/chat.json and never had been: every other
+     collection the office calls its own is file-backed, and the one surface
+     a tester would name FIRST if asked what "my work" means lived in one
+     browser's localStorage. #408 measured it — `freshKept: false`. Clear
+     site data, open a second browser, or pick up a different device and the
+     tasks, the roster, the Library and the message registry all come back;
+     every conversation ever held does not.
+
+     Measured before swapping, because chat is the highest-frequency store in
+     the office and the worry was a PUT storm. There is no PUT storm. Driven
+     against a real `python3 serve.py` on :9418 with the real hook, a real
+     1024-token reply (DEFAULTS.maxTokens) at 40 tok/s over a 118-message
+     transcript: 1027 setter calls, **one PUT**, 53.7 KB, 19.9 ms. The
+     1500 ms debounce is re-armed by every token frame, so nothing goes to
+     the wire while a reply streams and exactly one write lands 1.5 s after
+     the last token. The real cost is synchronous: persist() stringifies the
+     whole array inside the setState updater, 0.37 ms per animation frame
+     against a 16 ms budget (375 ms total across a 28-second reply, worst
+     frame 6.4 ms). That is ~2% of a frame, it is what twelve other stores
+     already pay, and it buys the streaming text landing on disk — which is
+     the fact `persistableChat`'s `interrupted` marker exists to carry.
+
+     The argument order is the trap #408 wrote down: `useStored` takes the
+     WRITE filter third and the READ scrub fourth; `useFileStored` takes the
+     read transform FIFTH and the write filter in options. Backwards, and
+     `persistableChat`'s `interrupted` stamp lands on live replies.
+
+     `mergeOnDirty` + `mergeChat` are not decorative — see app/storage.jsx.
+     Without them the first keystroke on a new device deletes the file. */
+  const chatMergeRef = useRefA([]);
+  const [chat, setChat] = useFileStored(k('chat'), 'state', 'chat', HQ.INITIAL_CHAT,
+    (fetched) => mergeChat(chatMergeRef.current, fetched),
+    { persistTransform: persistableChat, mergeOnDirty: true });
   /* The live conversation, readable from a closure that was built some
      renders ago. `chat` itself is a per-render snapshot, and the dispatch
      helpers below are handed to the chat panel as props: by the time the
@@ -196,6 +229,23 @@ function App() {
      across renders, so a stale closure still reads the current value. */
   const chatRef = useRefA(chat);
   chatRef.current = chat;
+  /* The same value, for the merge transform above — which is CALLED from
+     inside useFileStored's useState initializer, i.e. before `chatRef` has
+     been declared. Reading `chatRef` from that closure is a TDZ
+     ReferenceError swallowed by the initializer's own `catch`, which would
+     silently seed the office with an empty conversation. So the merge ref is
+     declared ahead of the hook, the way `activity` and `messages` do it.
+
+     Assigned DURING RENDER rather than in a `useEffect([chat])` — which is
+     where those two put it — because the transform is a race against the
+     mount fetch and an effect is one scheduling hop later than a render.
+     The window this leaves is a real one and it is named in `## 413.` as
+     that entry's weakest verdict: an edit made between a render and the
+     fetch resolving is not in this ref. React commits a render within a
+     frame of the setter and the fetch takes 100–300 ms, so the ordering
+     holds — but that is a mechanism, not a measurement, and it is the same
+     mechanism `activity` and `messages` have been resting on. */
+  chatMergeRef.current = chat;
 
   /* One-time migration: rename "CafresoHQ" → "CafresoHQ" on any persisted
      chat messages so users with old localStorage state don't see the legacy
@@ -616,7 +666,24 @@ function App() {
     { id: 'ws.reading',  name: 'Reading',  builtin: true,
       state: { activeView: 'visual',   railCollapsed: true,  chatWinOpen: false, density: 'spacious',    theme: 'sepia',   night: false } },
   ]), []);
-  const [savedWorkspaces, setSavedWorkspaces] = useStored(k('savedWorkspaces'), []);
+  /* #413 — a workspace the boss NAMED is authored content, not a preference,
+     and it was localStorage-only alongside the conversation. Measured on the
+     durability map: `freshKept: false`. Unlike the chat this is a snapshot,
+     not a log — a rename or a delete must survive, so no `mergeOnDirty`
+     (its union would resurrect a workspace the boss had just removed) and
+     the plain "keep theirs" guard is the correct one. Measured cost: a save
+     is a discrete button press, so 1 PUT of 0.3 KB per press and nothing at
+     all while the office is merely being used.
+
+     `activeWorkspace` deliberately stays localStorage-only, on the same
+     reasoning that keeps `theme`, `density` and `rail` there. It names which
+     saved layout THIS screen is showing, and the layout it names already
+     carries `density`/`theme` — per-device settings by construction. A
+     second browser opening on the office defaults with the boss's saved
+     layouts intact is the right answer, not a loss; syncing it would mean a
+     phone dragging a desktop into "Reading" mode. Stated as a deliberate
+     row on the map rather than left unmeasured. */
+  const [savedWorkspaces, setSavedWorkspaces] = useFileStored(k('savedWorkspaces'), 'state', 'workspaces', []);
   const [activeWorkspace, setActiveWorkspace] = useStored(k('activeWorkspace'), null);
   // Notification center state — open flag + an in-memory event feed of
   // system events (agent activity, mission updates, runner errors). The

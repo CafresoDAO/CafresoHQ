@@ -911,10 +911,10 @@ these are round trips.
 |---|---|---|---|
 | tasks, missions, workflows, projects, meetings, pins, receipts, experience, messages, activity, windows, roster, office memory | survives | survives | survives |
 | the Library (`hq-state/vault/`) | survives | survives | survives |
-| **the conversation (`chat`)** | survives | survives | **LOST** |
-| **saved workspaces** | survives | survives | **LOST** |
-| theme / density / read-marks / onboarding flags | survives | survives | lost (correct) |
-| **half-typed message in the composer** | **LOST** | **LOST** | **LOST** |
+| the conversation (`chat`) → `hq-state/chat.json` (`## 413.`) | survives | survives | **survives** |
+| saved workspaces → `hq-state/workspaces.json` (`## 413.`) | survives | survives | **survives** |
+| half-typed message in the composer (`## 413.`) | **survives** | survives | lost (deliberate — see below) |
+| theme / density / read-marks / onboarding flags / **active workspace** | survives | survives | lost (correct) |
 | approvals, install jobs, night locks, market cache, PTY sessions | survives | **LOST — correct** | survives |
 
 ### Closed by `## 408.`
@@ -927,16 +927,69 @@ the page the reload destroyed. Now a `<key>::unpaid` note survives the reload,
 the mount reads it as "local is ahead", and disk is healed. Guarded by
 `scripts/test_an_edit_made_while_the_office_was_down_is_not_deleted.py`.
 
+### Closed by `## 413.`
+
+`## 408.`'s three EXPOSED rows, all of them.
+
+**The conversation is on disk.** `app.jsx` moved `chat` from `useStored` to
+`useFileStored`, so `hq-state/chat.json` now exists. `## 408.` left it
+because chat is the highest-frequency store in the office and it wanted its
+own cost measurement first. There is no PUT storm and there never was:
+driven against a real `python3 serve.py` on `:9418` with the real hook, a
+real 1024-token reply (`DEFAULTS.maxTokens`) at 40 tok/s over a 118-message
+transcript —
+
+| | `useStored` (before) | `useFileStored` (after) |
+|---|---|---|
+| setter calls (rAF token frames) | 1027 | 1027 |
+| PUTs during the stream | — | **0** |
+| PUTs for the whole reply | — | **1** |
+| bytes on the wire | — | 53.7 KB |
+| PUT latency | — | 19.9 ms |
+| synchronous work per token frame | 0.011 ms | **0.37 ms** (16 ms budget) |
+| synchronous work, whole reply | 11.6 ms | 375 ms |
+
+The 1500 ms debounce is re-armed by every token frame, so nothing reaches
+the wire while a reply is still arriving and exactly one write lands 1.5 s
+after the last token. The cost is synchronous, not networked: `persist()`
+stringifies the array inside the setState updater, ~2% of a frame — what
+twelve other stores already pay — and it buys the streamed text landing on
+disk, which is what `persistableChat`'s `interrupted` marker exists to
+carry. No debounce, no size ceiling and no settled-turns-only filter were
+added; the measurement did not justify any of them.
+
+The swap needed `mergeOnDirty` + a new `mergeChat` union, or it would have
+opened a worse hole than it closed: one keystroke inside the ~300 ms before
+the mount fetch resolves used to discard the fetched history and then replay
+the one-message local chat over the file. The test drives that unsafe wiring
+as a negative control and requires the deletion to reproduce.
+
+**Deliberately still lost, with the reason stated:**
+
+- **`activeWorkspace`** — which saved layout *this screen* is showing. The
+  layout it names already carries `density`/`theme`, per-device by
+  construction; syncing it would let a phone drag a desktop into Reading
+  mode. Same row as `theme` and `rail`.
+- **the composer draft, on a fresh origin** — it now survives a reload (the
+  only row on this map that a plain F5 ate) but is localStorage-only on
+  purpose. A sentence still being typed is a fact about one keyboard, not a
+  record; file-backing it would restore a fragment mid-word on a second
+  device and put it in front of `hq-agents.md`.
+
+Guarded by `scripts/test_the_conversation_survives_a_fresh_browser.py`,
+which reads which hook `app.jsx` actually wires the chat to rather than
+transcribing it — so reverting the call site turns the headline check into
+the exact loss it is named after (measured from the main checkout: `'[]'`).
+
 ### New beta gates
 
-1. **The conversation is not file-backed.** `app.jsx:189` uses `useStored`,
-   so there is no `hq-state/chat.json`. A tester on a second browser or a
-   cleared cache keeps everything except every conversation they have had.
-   This is the largest remaining gap on the map and should close before the
-   invitation goes out to anyone likely to use two devices.
-2. **There is no export-all and no restore.** The whole map above is one
-   `hq-state/` directory on one laptop. A tester who loses it loses
+1. **There is still no export-all and no restore.** The whole map above is
+   one `hq-state/` directory on one laptop. A tester who loses it loses
    everything, and nothing in the product tells them that or offers a way to
-   take a copy.
-3. Saved workspaces (`app.jsx:619`) and the composer draft (`ui/chat.jsx:90`)
-   are the two smaller losses, in that order.
+   take a copy. This is now the largest gap on the map, and it is a human
+   gate: it needs a product decision about where a backup goes.
+2. **Two browsers open at once still last-writer-wins on the chat.**
+   `useStored` carried a cross-tab `storage`-event absorber; `useFileStored`
+   does not, so the swap traded that for file durability. Every other
+   file-backed store has always been in this position, so this is not a new
+   class of problem — but it is a new instance of it, and it is unmeasured.

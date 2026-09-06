@@ -190,12 +190,39 @@ console.log(JSON.stringify(R));
           f"{R['notArr']!r}")
 
     # ── the wiring, pinned ──────────────────────────────────────────────
+    # #413 moved the chat from useStored to useFileStored — there is an
+    # hq-state/chat.json now — and the two hooks spell this the other way
+    # round: useStored takes the WRITE filter third and the READ scrub
+    # fourth, useFileStored takes the read transform FIFTH and the write
+    # filter in options. The invariant is unchanged and is what this pins:
+    # the scrub is on the read side, the filter on the write side, and they
+    # are never the same argument. Written to accept EITHER hook so a future
+    # move back does not need an edit here — what it refuses is the swap.
+    chat_call = re.search(r"use(?:File)?Stored\(k\('chat'\)[^;]*?\);", app, re.S)
+    call = chat_call.group(0) if chat_call else ''
+    on_read = re.search(r"HQ\.INITIAL_CHAT,\s*chatOnLoad\b", call) is not None
+    on_read_merged = 'mergeChat(' in call            # the union runs chatOnLoad itself
+    on_write = 'persistTransform: persistableChat' in call
+    on_write_positional = re.search(
+        r"useStored\(k\('chat'\),\s*HQ\.INITIAL_CHAT,\s*persistableChat,\s*chatOnLoad\)", app) is not None
     check('the scrub is wired to the chat as a READ hook, not a write filter',
-          re.search(r"useStored\(k\('chat'\), HQ\.INITIAL_CHAT, persistableChat, chatOnLoad\)", app)
-          is not None,
-          'app.jsx: chatOnLoad must be useStored\'s 4th argument. Passed as '
-          'the 3rd it becomes the write filter, and would stamp "this reply '
-          'stopped when the page reloaded" onto a run that is still going')
+          bool(call) and ((on_read and on_write_positional is False and on_write)
+                          or (on_read_merged and on_write)
+                          or on_write_positional),
+          f'app.jsx: {call[:200]!r} — the read scrub and the write filter must '
+          'be different arguments. Under useStored the scrub is the 4th and '
+          'the filter the 3rd; under useFileStored the read transform is the '
+          '5th and the filter goes in options as persistTransform. Swapping '
+          'them stamps "this reply stopped when the page reloaded" onto a run '
+          'that is still going')
+    check('...and whatever runs on the read side actually applies the scrub',
+          bool(call) and (on_read or on_write_positional
+                          or (on_read_merged
+                              and 'chatOnLoad(fetched)' in STORAGE.read_text(encoding='utf-8'))),
+          'app.jsx / app/storage.jsx: #413 routes the read side through '
+          'mergeChat, which must call chatOnLoad on the FETCHED half — a '
+          'union that skips it means a fresh browser shows a coworker name '
+          'over a blank bubble with nothing saying the answer was severed')
     check('useStored applies onLoad only where the page READS storage',
           STORAGE.read_text(encoding='utf-8').count('onLoad ? onLoad(parsed) : parsed') == 1,
           'app/storage.jsx: exactly one call site, in the mount initialiser. '

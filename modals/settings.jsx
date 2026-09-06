@@ -1473,6 +1473,16 @@ function AccountTab({ usageTokens = 0 }) {
      there is nothing stale left for that fetch to reassert. */
   const OFFICE_FILE_BACKED = {
     agents: { scope: 'memory', name: 'agents' },
+    /* #413 — the conversation and the boss's saved layouts became
+       file-backed, so they became restorable-and-then-silently-un-restored
+       exactly like the thirteen above. Two rows in a lookup table, and the
+       structural drift check in
+       test_a_restored_office_does_not_snap_back_to_the_old_file.py is what
+       caught them: OFFICE BACKUP would have written the localStorage half
+       and left hq-state/chat.json holding the office as it was before the
+       restore, for the very next mount fetch to reassert. */
+    chat: { scope: 'state', name: 'chat' },
+    savedWorkspaces: { scope: 'state', name: 'workspaces' },
     messages: { scope: 'state', name: 'messages' },
     openWindows: { scope: 'state', name: 'windows' },
     activity: { scope: 'state', name: 'activity' },

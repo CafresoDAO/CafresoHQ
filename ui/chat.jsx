@@ -87,7 +87,39 @@ function SwipeMessage({ children, onReply, onDM, agentName }) {
    thread is read-only, so that door was the only way to start a mission
    and the office was naming it wrong. */
 function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMeetings, onDelegate, onCeoUsage, onApprovalRequest, onDispatchToAgent, onPinAsTask, onInferTaskAssignment, backendDown = false, onStopTurn = null, onHire = null, onOpenResearch = null, turnEpochRef = null, onBossAsk = null, onBossAskSettled = null }) {
-  const [input, setInput] = useState('');
+  /* #413 — the half-typed message. This was a bare `useState('')`, and it is
+     the ONLY row on the durability map that a plain reload eats: not a
+     restart, not a fresh browser, just F5 or a crashed tab. Every other loss
+     measured this session needed an unusual event to reach it; this one
+     needs the commonest event there is.
+
+     Deliberately localStorage-only, and that is a decision rather than
+     laziness: a sentence still being typed is a fact about THIS keyboard,
+     not a record of anything. File-backing it would sync a fragment to disk
+     for hq-agents.md to render and for a second device to restore
+     mid-word — a draft surfacing on the boss's phone in the middle of a
+     word is a worse office than one that forgot it.
+
+     One draft, not one per thread, because that is what the composer
+     already is: nothing clears `input` on a thread switch today, so the
+     text carries across rooms, and keying by thread would be a behaviour
+     change wearing a persistence fix. Same raw-key shape as
+     `_ACTIVE_THREAD_KEY` and `_HANDOFF_KEY` a few lines down, for the same
+     reason they use it — this is panel-local, not office state. Cleared, not
+     stored empty, so a sent message leaves nothing behind. */
+  const _DRAFT_KEY = 'cafresohq_chat_draft_v1';
+  const [input, setInput] = useState(() => {
+    try { return String(localStorage.getItem(_DRAFT_KEY) || ''); } catch (_e) { return ''; }
+  });
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        if (input) localStorage.setItem(_DRAFT_KEY, input);
+        else localStorage.removeItem(_DRAFT_KEY);
+      } catch (_e) {}
+    }, 300);
+    return () => clearTimeout(t);
+  }, [input]);
   const [streaming, setStreaming] = useState(false);
   const [showDelegate, setShowDelegate] = useState(false);
   /* A brain has gone quiet past the point where dots alone stay honest.
