@@ -44897,3 +44897,99 @@ Nothing here touched `main.mo`, the II configuration, or the mainnet. Four
 concurrent hunts were appending to this ledger; if this landed other than
 where it was numbered, every `#414` in the three views and the two scripts
 moved with it.
+## 415. the path the door was given, and the path it wrote
+
+`## 410` closed by measuring one thing it did not fix:
+
+> `PUT /vault/note` returns the path it was GIVEN, not the one it WROTE.
+> `path=Research/topic` → `200 {"path":"Research/topic"}`, on disk
+> `Research/topic.md`.
+
+This is the vault side of the seam `## 401` closed for the exporters and
+`## 410` closed for the receipts. The full map first, because the extension
+turned out to be one rewrite of four.
+
+### The map: asked for, written, answered
+
+Measured pre-fix on a real `serve.py` with an empty vault:
+
+    door                 asked for              written on disk          answered
+    PUT /vault/note      Research/topic         Research/topic.md        Research/topic
+    PUT /vault/note      Notes/Q3 v1.2 plan     Notes/Q3 v1.2 plan.md    Notes/Q3 v1.2 plan
+    PUT /vault/note      /Deep\Dir/note         Deep/Dir/note.md         /Deep\Dir/note
+    PUT (append, new)    Journal/day            Journal/day.md           Journal/day
+    POST /vault/upload   README                 Up/README.md             Up/README
+    POST /vault/upload   README (again)         Up/README (2).md         Up/README (2)
+    POST /vault/rename   →Research/renamed      Research/renamed.md      Research/renamed
+
+Four independent rewrites live between the ask and the write: the `.md`
+default for a name with no extension; the title-with-dots rule, under which
+"Q3 v1.2 plan" (suffix ".2 plan") and "Meeting 2026.08.30" (suffix ".30") are
+titles and get `.md` too, deliberately; leading-slash strip and backslash
+fold; and the upload door's collision sidestep through `fs_routes.claim_name`.
+Every one of them was invisible in the answer, so "append .md to the string"
+would have been a quarter of a fix.
+
+### Who reads the answer, and what broke
+
+The mismatch alone is harmless — the READ doors run the same resolver, so a
+GET of the uncorrected name still finds the file. What is not harmless is
+that the answered string is what downstream matches EXACTLY on:
+`_ctx.meta.filedAs` → the `done` event's `arg` → `agentFiledPath` →
+`task.artifactPath` → the out-tray's "open the latest", `buildDelivery`'s
+duplicate check, and the receipts tray's title, which `anchorWorkReceipt`
+writes on chain. None of those can be matched against a `/vault/list` row,
+because no listing row holds the uncorrected name. Measured: a VAULT_NEW of
+`Research/topic` left `task.artifactPath = "Research/topic"` and the listing
+holding only `Research/topic.md`.
+
+### The fix: the exporters' mechanism, not a second one
+
+`serve.py` gains `_vault_rel_out(target, fallback)`, which derives the answer
+from the path OBJECT that was written — `relative_to(root).as_posix()`,
+exactly the `rel_out = str(out_path.relative_to(...))` move
+`exporters._vault_binary_path`'s callers make (`## 180`, `## 401`). That
+covers all four rewrites and any fifth without re-deriving a rule from the
+request string. It falls back to the caller's own string rather than
+answering with no path at all. Applied at `PUT /vault/note` (fs branch; the
+oci branch now strips the bucket prefix off the key it actually put),
+`POST /vault/rename` (file and folder bodies, `from` and `to`), and
+`POST /vault/upload`'s per-file entry, which now reads the path the claim
+lambda actually claimed rather than the composed name.
+
+`hq-runtime.jsx`: `VAULT_NEW`, `VAULT_APPEND`, and the per-agent
+`MEMORY_WRITE` / `MEMORY_APPEND` rebinds stash `r.path` on
+`_ctx.meta.filedAs`, the channel the three `EXPORT_` tools already use.
+`MEMORY_*` is deliberately outside `CABINET_WRITE`, so nothing there reaches
+`task.artifactPath`; what it reaches is an elevated agent's audit row, which
+promised "every tool call" and was printing the pre-correction name.
+
+### The weakest verdict here
+
+**The oci branch is fixed on the strength of the source, not a response.**
+There is no object-storage backend on this machine to drive, so its
+prefix-strip was written to the rule and read back, not measured. The rest
+branch was not touched at all: it echoes what the remote said, and whether
+the remote rewrites names is that remote's question. Both are flagged rather
+than counted as driven.
+
+### Test
+
+New `scripts/test_every_vault_write_door_names_the_file_it_wrote.py`, three
+rounds. Round 1 is the general invariant on a real server: every 2xx body
+from every vault-writing door names a path that is on disk AND is a row
+`/vault/list` returns — thirteen probes across note, append, upload, and
+rename, with a non-vacuity arm that fails unless at least eight of them were
+genuinely rewritten on the way in and at least twelve fields asserted on.
+Round 2 lifts the real tool objects out of `hq-runtime.jsx` under node,
+drives them against a stub client that rewrites the way the server does, and
+checks that `filedAs` and the emitted `done` args carry `Research/topic.md`
+and `Notes/Q3 v1.2 plan.md` through to `agentFiledPath`. Round 3 is
+structural, so a fifth door added later has to answer the same question.
+
+`serve.py` regions touched: `_vault_rel_out` after `_vault_resolve_dir`, and
+the success bodies of `PUT /vault/note`, `POST /vault/rename` and
+`POST /vault/upload` only. Nothing here touched `main.mo`, the II
+configuration, or the mainnet. Four concurrent hunts were appending to this
+ledger; if this landed other than where it was numbered, every `#415` in
+`serve.py`, `hq-runtime.jsx` and the test moved with it.

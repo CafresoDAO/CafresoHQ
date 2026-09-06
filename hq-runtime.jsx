@@ -2061,8 +2061,16 @@ const TOOL_REGISTRY = {
     requires: isVaultReady,
     doc: '- [VAULT_APPEND: <path>]\n<content>\n[/VAULT_APPEND] — append content to an existing note (creates if missing). Body can be multi-line markdown.',
     docShort: 'Append multi-line markdown to an existing Library file (creates if missing).',
+    /* #415 — same `_ctx.meta.filedAs` channel the three EXPORT_ tools below
+       already use, now that PUT /vault/note answers with the path it WROTE
+       instead of the path it was given. `[VAULT_APPEND: Research/topic]`
+       lands on disk as `Research/topic.md`; without this the 'done' event's
+       `arg` stayed `Research/topic`, and `agentFiledPath` → `task.artifactPath`
+       → the out-tray's "open the latest" and the on-chain receipt's title all
+       named a file no Library listing holds. */
     run: async (path, _ctx, body) => {
       const r = await CafresoHQClient.vaultWrite(path.trim(), body || '', 'append');
+      if (_ctx && _ctx.meta && r && r.path) _ctx.meta.filedAs = r.path;
       return `Appended ${(body||'').length} chars → ${r.path} (now ${r.size} bytes)`;
     },
   },
@@ -2072,8 +2080,10 @@ const TOOL_REGISTRY = {
     requires: isVaultReady,
     doc: '- [VAULT_NEW: <path>]\n<content>\n[/VAULT_NEW] — create a new note (overwrites if exists). Use for new findings, summaries, drafts.',
     docShort: 'Create or overwrite a Library file at the given path with provided content.',
+    /* #415 — see VAULT_APPEND above; `r.path` is the server's corrected name. */
     run: async (path, _ctx, body) => {
       const r = await CafresoHQClient.vaultWrite(path.trim(), body || '', 'write');
+      if (_ctx && _ctx.meta && r && r.path) _ctx.meta.filedAs = r.path;
       return `Wrote ${(body||'').length} chars → ${r.path}`;
     },
   },
@@ -3110,9 +3120,16 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
     });
     out.push({
       ...TOOL_REGISTRY.memory_write,
+      /* #415 — the same door, so the same receipt. MEMORY_* is deliberately
+         outside `CABINET_WRITE` (app/artifacts.jsx: a coworker's private
+         notes folder is not a deliverable), so nothing here reaches
+         `task.artifactPath`; what it does reach is an elevated agent's audit
+         row in the receipts tray, which promised "every tool call" and was
+         printing the pre-correction name. */
       run: async (rel, _ctx, body) => {
         const target = scope(rel);
         const r = await CafresoHQClient.vaultWrite(target, body || '', 'write');
+        if (_ctx && _ctx.meta && r && r.path) _ctx.meta.filedAs = r.path;
         return `Wrote ${(body||'').length} chars → ${r.path}`;
       },
     });
@@ -3124,6 +3141,7 @@ async function toolsForAgent(agent, { peers = [] } = {}) {
         // in the vault, so the boss's clock. Seconds dropped with the UTC.
         const stamped = `\n\n## ${officeStamp()}\n${body || ''}\n`;
         const r = await CafresoHQClient.vaultWrite(target, stamped, 'append');
+        if (_ctx && _ctx.meta && r && r.path) _ctx.meta.filedAs = r.path;   // #415
         return `Appended ${(body||'').length} chars → ${r.path} (now ${r.size} bytes)`;
       },
     });

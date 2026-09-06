@@ -1757,6 +1757,46 @@ def _vault_resolve_dir(rel: str) -> pathlib.Path:
     return candidate
 
 
+def _vault_rel_out(target, fallback: str = '') -> str:
+    """The vault-relative spelling of the path a write door ACTUALLY wrote —
+    the receipt half of `_vault_resolve` / `_vault_resolve_dir` / the upload
+    door's `claim_name`.
+
+    #415. Every fs write door in this file resolved the caller's string into
+    a real path and then answered with the CALLER'S string. Measured on a
+    real server with an empty vault:
+
+        PUT /vault/note?path=Research/topic     → {"path": "Research/topic"}
+            on disk: Research/topic.md
+        PUT /vault/note?path=Notes/Q3 v1.2 plan → {"path": "Notes/Q3 v1.2 plan"}
+            on disk: Notes/Q3 v1.2 plan.md
+        PUT /vault/note?path=/Deep\\Dir/note     → {"path": "/Deep\\Dir/note"}
+            on disk: Deep/Dir/note.md
+        POST /vault/upload  README               → {"path": "Up/README"}
+            on disk: Up/README.md
+        POST /vault/upload  README (again)       → {"path": "Up/README (2)"}
+            on disk: Up/README (2).md
+
+    Four independent rewrites live between the ask and the write — the '.md'
+    default, the title-with-dots rule ("Q3 v1.2 plan" has suffix ".2 plan"
+    and is NOT an extension), leading-slash/backslash normalisation, and the
+    upload door's collision sidestep — so "the extension" was never the whole
+    of it. Deriving the answer from the path object covers all four and any
+    fifth added later, which is why this takes a resolved path rather than
+    re-deriving a rule from the string.
+
+    Same move `exporters._vault_binary_path`'s callers already make
+    (`rel_out = str(out_path.relative_to(root))`, #180/#401) — one mechanism,
+    not two. Falls back to the caller's own string rather than raising or
+    returning '': a success body that suddenly has no path at all would be a
+    worse answer than the slightly-wrong one this replaces."""
+    try:
+        root = pathlib.Path(_vault_root).resolve()
+        return pathlib.PurePath(target).relative_to(root).as_posix()
+    except Exception:
+        return fallback
+
+
 _vault_write_lock = threading.Lock()   # every writer that mutates a note's
                                         # bytes in place (append, whole-body
                                         # write, wikilink backlink rewrite)
@@ -5457,8 +5497,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     encoded = content.encode('utf-8') if isinstance(content, str) else content
                     cli.put_object(_oci_vault_namespace, _oci_vault_bucket, key,
                                    put_object_body=encoded)
+                    # `key` is what was actually put, so strip the bucket
+                    # prefix back off rather than echoing `rel` (#415). This
+                    # backend appends no extension — its only rewrite is the
+                    # leading-slash strip in _oci_obj_key — but "the answer is
+                    # derived from what was written" is the rule, and a door
+                    # that re-derives it from the request string is how the fs
+                    # door drifted in the first place.
+                    _pfx = (_oci_vault_prefix.rstrip('/') + '/') if _oci_vault_prefix else ''
                     return self._send_json(200, {
-                        'path': rel, 'mode': mode,
+                        'path': key[len(_pfx):] if key.startswith(_pfx) else key,
+                        'mode': mode,
                         'size': len(encoded), 'backend': 'oci'})
                 except Exception as e:
                     return self._send_json(502, {'error': f'oci: {e}'})
@@ -5492,7 +5541,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 sys.stderr.write('[vault] PUT /vault/note %s: %s\n' % (rel, e))
                 return self._send_json(500, {'error': 'the note could not be saved — '
                                                       'check the vault folder is writable'})
-            return self._send_json(200, {'path': rel, 'mode': mode, 'size': target.stat().st_size})
+            # The path WRITTEN, not the path asked for (#415, _vault_rel_out).
+            # VAULT_NEW/VAULT_APPEND carry this out on _ctx.meta.filedAs the
+            # way the export tools already do, so task.artifactPath, the
+            # out-tray's "open the latest" and the on-chain receipt's title
+            # all name a file the Library listing actually holds.
+            return self._send_json(200, {'path': _vault_rel_out(target, rel),
+                                         'mode': mode,
+                                         'size': target.stat().st_size})
 
         # ---------- Delete ----------
         if path == '/vault/note' and method == 'DELETE':
@@ -5673,7 +5729,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         # the move itself already succeeded — but the pass
                         # that keeps links pointing at it did not
                         link_error = str(e)
-                return self._send_json(200, {'from': src, 'to': dst,
+                # Resolved, not asked-for (#415): `from` names the drawer that
+                # was there, `to` the drawer that is there now.
+                return self._send_json(200, {'from': _vault_rel_out(s_path, src),
+                                             'to': _vault_rel_out(d_path, dst),
                                              'folder': True, 'moved': moved,
                                              'linksRewritten': rewritten,
                                              'filesTouched': files_touched,
@@ -5684,7 +5743,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     src, dst, stranded)
             except Exception as e:
                 link_error = str(e)
-            return self._send_json(200, {'from': src, 'to': dst,
+            # Resolved, not asked-for (#415) — `_vault_resolve` appends '.md'
+            # to a bare destination, so "rename to Research/renamed" answered
+            # over a file that is Research/renamed.md on disk.
+            return self._send_json(200, {'from': _vault_rel_out(s_path, src),
+                                         'to': _vault_rel_out(d_path, dst),
                                          'linksRewritten': rewritten,
                                          'filesTouched': files_touched,
                                          **_vault_link_trouble(stranded,
@@ -5743,6 +5806,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 fname = decided['name']
                 collided = False
                 claimed = None
+                _tgt = None          # the path claim_name actually claimed
                 if _vault_backend not in ('rest', 'oci'):
                     # fs (the shipping default): a name already filed steps
                     # aside — never silently replaced. The sidestep CLAIMS the
@@ -5779,7 +5843,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         with os.fdopen(claimed, 'wb') as fh:
                             claimed = None      # fdopen owns it now
                             fh.write(data)
-                    entry = {'path': rel, 'size': len(data)}
+                    # The claimed path, not the composed one (#415). The claim
+                    # lambda runs `fname` through `_vault_resolve`, so an
+                    # extensionless drop ("README") and a dotted-title drop
+                    # ("Q3 v1.2 plan") were both filed with '.md' appended and
+                    # both reported back without it — a Library row the boss's
+                    # own upload toast could never be matched against. The
+                    # collision sidestep is already in `fname`; this catches
+                    # the resolve on top of it.
+                    entry = {'path': _vault_rel_out(_tgt, rel) if _tgt is not None else rel,
+                             'size': len(data)}
                     if decided['renamedFrom'] or collided:
                         # Whichever name the boss actually picked — pre-
                         # sanitize if sanitizing changed it, pre-sidestep
