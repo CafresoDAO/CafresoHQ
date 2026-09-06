@@ -202,16 +202,19 @@ const commitProject = async ({ name, path, source }) => {
     check('found ProjectsView.commitProject, the second of the two',
           'setSelected' in classic_fn and 'setSelectedId' not in classic_fn,
           'views/projects.jsx shape changed')
+    # `## 414.` folded the six bare `setOpenFile(null)` into `clearOpenFile()`
+    # (which claims openSeqRef and then clears) — the pairing is the same,
+    # the spelling is not.
     check('ProjectsView.commitProject now resets openFile alongside setSelected',
-          'setOpenFile(null)' in classic_fn, classic_fn)
+          'clearOpenFile()' in classic_fn, classic_fn)
 
     for label, needle in [
-        ('deleteProject', "if (selected === p.id) { setSelected(null); setOpenFile(null); }"),
-        ('mobile-back', "setSelected(null); setOpenFile(null); setMobileStep('list');"),
-        ('mobile-list-row', "setSelected(p.id); setOpenFile(null); setMobileStep('detail');"),
-        ('desktop-list-row', "setSelected(p.id); setOpenFile(null); setRightTab('files');"),
+        ('deleteProject', "if (selected === p.id) { setSelected(null); clearOpenFile(); }"),
+        ('mobile-back', "setSelected(null); clearOpenFile(); setMobileStep('list');"),
+        ('mobile-list-row', "setSelected(p.id); clearOpenFile(); setMobileStep('detail');"),
+        ('desktop-list-row', "setSelected(p.id); clearOpenFile(); setRightTab('files');"),
     ]:
-        check(f'ProjectsView.{label} still pairs setSelected with setOpenFile(null)',
+        check(f'ProjectsView.{label} still pairs setSelected with clearOpenFile()',
               needle in src, 'views/projects.jsx: sibling call site changed shape')
 
     classic_body = classic_fn[classic_fn.index('=> {') + len('=> {'):classic_fn.rindex('\n  }')]
@@ -231,6 +234,9 @@ const calls = {
 const setProjects = (fn) => calls.setProjects.push(typeof fn === 'function' ? fn([]) : fn);
 const setSelected = (v) => calls.setSelected.push(v);
 const setOpenFile = (v) => calls.setOpenFile.push(v);
+// The real one, verbatim from views/projects.jsx (`## 414.`): claim, then clear.
+const openSeqRef = { current: 0 };
+const clearOpenFile = () => { openSeqRef.current++; setOpenFile(null); };
 const setShowAdd = (v) => calls.setShowAdd.push(v);
 const toast = () => {};   // only the refused branch speaks through it
 const window = { cafresohqToast: %(toast)s };

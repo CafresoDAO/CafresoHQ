@@ -102,7 +102,7 @@ SPEAKING_FILES = [
     'features.jsx', 'hq-runtime.jsx', 'missions.jsx', 'modals.jsx',
     'tweaks-panel.jsx', 'views.jsx',
     'views/core.jsx', 'views/vault.jsx', 'views/graph.jsx',
-    'views/projects.jsx', 'views/ide.jsx',
+    'views/projects.jsx', 'views/ide.jsx', 'views/terminal.jsx',
     'ui/primitives.jsx', 'ui/office.jsx', 'ui/chat.jsx', 'ui/panels.jsx',
     'app/cast.jsx', 'app/commands.jsx', 'app/floor.jsx', 'app/artifacts.jsx',
     'app/storage.jsx', 'app/windows.jsx',

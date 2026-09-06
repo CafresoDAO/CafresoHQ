@@ -223,6 +223,14 @@ function buildClassicRoom(w) {
     isUnder: (p, b) => p === b || p.startsWith(b + '/') || p.startsWith(b + '\\'),
     window: globalThis.window,
     openFile: null,   // rebound per call: the render closure
+    // `## 414.` gave Classic's readFile the far-side shape openPath has: it
+    // reads the ref, claims a number, and files typing before the swap.
+    // Classic's ref is its OWN (declared beside clearOpenFile), not
+    // WorkspaceView's, so it starts at 0 here rather than sharing base's.
+    openFileRef: base.openFileRef,
+    openSeqRef: { current: 0 },
+    saveFileRef: { current: null },
+    baseName: (p) => String(p || '').split(/[/\\]/).pop(),
   };
   const names = Object.keys(scope);
   const vals = () => names.map(n => scope[n]);

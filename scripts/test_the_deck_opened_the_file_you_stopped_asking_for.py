@@ -259,8 +259,12 @@ check('switchProject claims before it clears the deck',
       switch is not None and 'openSeqRef.current++;' in switch
       and switch.find('openSeqRef.current++;') < switch.find('setOpenFile(null)'))
 
+# Two seeds in Workspace (switchProject, commitProject) plus Classic's
+# `clearOpenFile`, which `## 414.` gave its own ref and routed six bare clears
+# through — three claim sites, not two, since that landed.
 check('the add-project commit — the second path to the same clear — claims too',
-      projects.count('openSeqRef.current++;') == 2,
+      projects.count('openSeqRef.current++;') == 3
+      and 'const clearOpenFile = () => { openSeqRef.current++; setOpenFile(null); };' in projects,
       projects.count('openSeqRef.current++;'))
 
 check('the ref is declared beside the other refs of this pane',
