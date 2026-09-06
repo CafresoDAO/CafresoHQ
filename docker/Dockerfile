@@ -31,6 +31,13 @@ RUN npm ci
 # UI source: the 13 HQ .jsx files + the npm-importing engine/worker/viewer entries.
 COPY scripts/build_ui_bundle.mjs ./scripts/build_ui_bundle.mjs
 COPY *.jsx ./
+# The UI is ES modules now: the root .jsx files are barrels, and most of the
+# tree lives in these four folders (app/, ui/, views/, modals/). Copying only
+# *.jsx built an image whose bundle step failed on the first folder import.
+COPY app/ ./app/
+COPY ui/ ./ui/
+COPY views/ ./views/
+COPY modals/ ./modals/
 COPY graph-engine.js analytics.worker.js graph-viewer.js ./
 RUN npm run build          # -> /ui/dist-ui (manifest.json + bundle/*)
 
@@ -87,6 +94,9 @@ RUN pip install --no-cache-dir "hermes-agent==0.15.1" aiohttp
 WORKDIR /app
 
 COPY serve.py                 ./serve.py
+# serve.py imports these at module load (serve.py:458-460, :2300); an image
+# without them starts, prints ModuleNotFoundError, and exits.
+COPY exporters.py fs_routes.py pty_server.py kg_builder.py ./
 COPY drivers/                 ./drivers/
 COPY night_runner.py          ./night_runner.py
 COPY hq.html ./hq.html
