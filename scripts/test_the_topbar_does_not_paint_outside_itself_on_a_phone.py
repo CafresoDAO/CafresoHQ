@@ -190,7 +190,7 @@ def boot(ws, url, width, height):
                     'the boot splash to clear')
     dismiss_first_run(ws)
     office.evaluate(ws, """(() => {
-      const x = document.querySelector('.gs-coach button[title="Dismiss"]');
+      const x = document.querySelector('.gs-coach button.gs-dismiss');
       if (x) x.click();
       return !!x;
     })()""")

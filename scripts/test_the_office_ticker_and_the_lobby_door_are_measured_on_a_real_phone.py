@@ -406,7 +406,7 @@ def measure(ws, url, width, height):
     # first-run panel that legitimately floats over the column. Close it by
     # its own ✕ so the boxes underneath are the office's, not onboarding's.
     evaluate(ws, """(() => {
-      const x = document.querySelector('.gs-coach button[title="Dismiss"]');
+      const x = document.querySelector('.gs-coach button.gs-dismiss');
       if (x) x.click();
       return !!x;
     })()""")

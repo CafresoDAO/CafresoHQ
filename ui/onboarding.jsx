@@ -578,8 +578,21 @@ function GettingStarted({ hasKey, hired, chatted, assigned, built, sawWork, onAd
     React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 } },
       React.createElement('div', { style: { fontWeight: 700, color: '#F5D25D', flex: 1 } }, allDone ? "You're all set 🎉" : 'Getting started'),
       React.createElement('span', { style: { color: '#8f8676' } }, doneCount + '/' + steps.length),
-      React.createElement('button', { onClick: () => setCollapsed(true), title: 'Collapse', style: { cursor: 'pointer', background: 'none', border: 'none', color: '#8f8676', fontSize: 14, lineHeight: 1, padding: 2 } }, '–'),
-      React.createElement('button', { onClick: onDismiss, title: 'Dismiss', style: { cursor: 'pointer', background: 'none', border: 'none', color: '#8f8676', fontSize: 14, lineHeight: 1, padding: 2 } }, '✕'),
+        /* `gs-collapse` / `gs-dismiss`: a hook that is identity, not prose.
+         Five headless-layout harnesses in scripts/ opened this card and then
+         clicked `.gs-coach button[title="Dismiss"]` to get it out of the way
+         — pinning a user-facing tooltip, so the moment that sentence had to
+         change (see the ✕ below) four of them stopped being able to render
+         the office at all and failed on "the app rendered so it could be
+         measured". The prose is what this test file asserts; the class is
+         what everything else should reach for. No CSS claims either name. */
+      React.createElement('button', { onClick: () => setCollapsed(true), className: 'gs-collapse', title: 'Collapse', style: { cursor: 'pointer', background: 'none', border: 'none', color: '#8f8676', fontSize: 14, lineHeight: 1, padding: 2 } }, '–'),
+      /* `## 412.` The tooltip names the way back, because the click is otherwise
+         indistinguishable from the "–" beside it: same 14px, same grey,
+         same 2px padding, and only one of the two is permanent. It used to
+         read "Dismiss" full stop — the shorter word for the more expensive
+         button. See the `cafresohq:showGettingStarted` listener in app.jsx. */
+      React.createElement('button', { onClick: onDismiss, className: 'gs-dismiss', title: 'Dismiss — bring it back from the command palette (Show getting started checklist)', style: { cursor: 'pointer', background: 'none', border: 'none', color: '#8f8676', fontSize: 14, lineHeight: 1, padding: 2 } }, '✕'),
     ),
     steps.map((s) => React.createElement('div', { key: s.k, style: { display: 'flex', alignItems: 'flex-start', gap: 9, padding: '6px 0', borderTop: '1px solid rgba(255,255,255,0.05)' } },
       React.createElement('span', { style: { flex: '0 0 auto', width: 18, height: 18, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, marginTop: 1, background: s.done ? 'rgba(165,196,161,0.25)' : 'rgba(245,210,93,0.14)', color: s.done ? '#A5C4A1' : '#F5D25D', border: '1px solid ' + (s.done ? 'rgba(165,196,161,0.5)' : 'rgba(245,210,93,0.4)') } }, s.done ? '✓' : s.n),

@@ -44479,3 +44479,122 @@ fifth its number moved, and every `#411` in `fs_routes.py`, `pty_server.py`,
 `drivers/local_http.py` and
 `scripts/test_the_errno_and_the_key_reach_the_log_not_the_boss.py` moved
 with it.
+## 412. the ✕ that tidied the card away also took the map
+
+`## 396.`, `## 399.` and `## 405.` walked everything up to the moment the page
+renders. This one is the first five minutes *after* it — driven as somebody
+who has never seen the office, on a server of my own (port 8973, `HOME` in a
+temp dir, `hermes` off `PATH`, verified: `ps aux | grep 'hermes gateway
+restart'` → 0 throughout). A port was thrown away first: `localhost:8931`
+answered a *different* session's server over IPv6 while mine held IPv4, and
+three endpoints came back 404 from a stranger. `lsof -nP -iTCP:<port>` before
+trusting anything, and `127.0.0.1`, not `localhost`.
+
+**What the first render actually is.** Not the tour. `setTourOpen(true)`
+occurs at exactly one site in `app.jsx` — the `cafresohq:replayTour` handler
+— and the first-run effect does not use it: it sets `tourSeen` true, writes
+the CEO's welcome, and opens the candidate deck 1600ms later. The two
+onboarding surfaces a first-time boss really gets are the **Getting Started
+checklist** and the **just-in-time coach marks**.
+
+**Both of them are behind one flag, and that flag was a one-way door.**
+`ks('gettingStartedDone')` had exactly one writer in the repo,
+`setGsDismissed(true)`, hung off the ✕ in the checklist's header. Nothing
+anywhere set it false. It is `useStored`, so the click outlived the tab, the
+session and the server. And `coachMark` opens with `if (gsDismissed) return
+null` — so the click that tidied the card away also silenced every nudge that
+was supposed to replace it. One unlabelled glyph, two surfaces, permanently.
+
+The glyph is 14px of `#8f8676` at `padding: 2`, sitting immediately beside a
+14px `#8f8676` "–" at `padding: 2` that collapses the card *reversibly*. The
+click that costs a newcomer the whole map of the product is one button-width
+from the click that costs them nothing, and asked nothing before it landed.
+
+The palette's one recovery command recovers neither. "Replay onboarding tour"
+sets `tourOpen`, and the checklist's render guard is `!gsDismissed &&
+!tourOpen` — the tour is the surface that hides the checklist hardest.
+
+A confirm on a one-click tidy-up would be the wrong trade. The door back is
+the right one: `cafresohq:showGettingStarted`, wired exactly like
+`replayTour`, a listed Help command ("Show getting started checklist"), and a
+✕ tooltip that says the door exists. The handler clears `tourOpen` too,
+because a restore run from inside the replayed tour would otherwise show the
+boss nothing and read as a dead command.
+
+`scripts/test_the_x_on_getting_started_was_a_one_way_door.py` derives what it
+asserts rather than pinning it: the event name is read out of `app.jsx`'s
+listener and then looked for in the palette, and the `<GettingStarted>` render
+guard's own negated identifiers are what the restore handler is checked
+against — so renaming either end fails here instead of drifting. Its last
+section is the general form: every `cafresohq:` event the palette dispatches
+must have a listener in the app's own sources, because a Help command that
+fires into the void looks like a way out and is not one. Every check returns a
+bool; none index into a string that may be absent (`## 404.`'s lesson — a
+check that raises reports nothing about the checks after it).
+
+That file asserts the wiring. `scripts/test_the_x_on_getting_started_comes_back.py`
+asserts the behaviour, in headless Chrome over CDP on a fresh profile and a
+fresh port: checklist present → ✕ → gone → flag reaches localStorage (waited
+for, not sampled — `useStored` debounces 300ms and the first run of this
+test read the mount write and reported a false pass) → reload does NOT bring
+it back → the palette's event brings it back and the flag is false again.
+Fire-tested by removing the handler body in place: 6 wiring checks and 2
+behaviour checks fail, the others still run and report; restored
+byte-identical by md5; green twice.
+
+One repair that fell out of the tooltip change. Five headless layout
+harnesses in `scripts/` got the checklist out of their way with
+`.gs-coach button[title="Dismiss"]` — pinning a user-facing tooltip — so the
+moment that sentence changed, four of them stopped being able to render the
+office at all and failed on "the app rendered so it could be measured". The
+two header buttons now carry `gs-collapse` / `gs-dismiss` (identity, not
+prose; no CSS claims either name) and all five harnesses click the class.
+
+**Two things measured and left EXPOSED, deliberately.**
+
+*The key walkthrough is second-visit-only.* `<OnboardingKeyStep>` — the step
+carrying all of `## 399.`'s honest-error work, `keyOpener`, the `serverStored`
+read, the `restarted: false` gateway branch — lives inside a tour step, and
+the tour never opens on a first run. The only door is a palette command a
+newcomer has no reason to look for. Everything that step says is true; almost
+nobody in the first five minutes will read it. The fix is a product decision
+about what the first run *is*, not an edit.
+
+*And when it is read, it asks two of the three questions the office answers.*
+It reads `managedBrain` and `/hermes/trial-status`, never
+`HQ.frontDeskBrainsSync()` — the front desk's own measurement. Driven here:
+`/health` → `brain: null`, `/hermes/trial-status` → `active: false`, and
+`/agent/drivers?probe=1` → `ollama {"version": "reachable"}`. All three true at
+once, so `onTrial` is false and the step tells a machine with a working local
+brain that "it needs **your own free key** from OpenRouter", then walks it
+through the signup. That is the same bug the file's own comment above
+`managedBrain` describes having fixed for the managed case, left standing for
+the local one. Downstream of the paragraph above, so it is not the leverage.
+
+**Measured and honest, for the record.** A key survives a server restart:
+POST a key → `configured: true` → kill the server → restart → `configured:
+true`, `~/.hermes/.env` at 0600. Malformed key → `400 {"error": "invalid
+OpenRouter key"}` → `keyOpener` → "your office read that key and turned it
+down as the wrong shape…", no status code and no JSON in the card. Whitespace
+is trimmed on both sides of the wire; an empty key is a removal, not a
+rejection, and says so. The front desk did *not* fall for the decoy on this
+machine: BlueBubbles holds port 1234, and LM Studio still reported
+`version: ''` because the probe asks `/v1/models` rather than trusting a
+TCP connect.
+
+**Weakest verdict in this entry, flagged as `## 404.` asks.** "Onboarding
+survives a reload" is the one I would not defend. The key half is measured
+above. The other half — the CEO welcome and `tourSeen` — I reasoned about and
+did not drive: `tourSeen` is `useStored` (synchronous localStorage) and is set
+at t=800ms, while the welcome goes through the file-backed chat store, so a
+tab closed inside that window should come back with the flag set and no
+welcome and no candidate deck. I did not reproduce it, and durability is
+another hunt's scope. Treat it as a hypothesis.
+
+Concurrent hunts are appending to this ledger at the same time; if this entry
+lands as a different number, every `## 412.` and `` `## 412.` `` marker in
+`app.jsx`, `app/commands.jsx`, `ui/onboarding.jsx`,
+`docs/BETA_READINESS.md`,
+`scripts/test_the_x_on_getting_started_was_a_one_way_door.py` and
+`scripts/test_the_x_on_getting_started_comes_back.py` moves with it.
+They are all spelled that way for grep.

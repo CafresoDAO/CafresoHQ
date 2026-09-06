@@ -255,6 +255,16 @@ function AppGlobalCommands({
     { id: 'help.tour', label: 'Replay onboarding tour', section: 'Help', icon: '🎓',
       run: () => window.dispatchEvent(new CustomEvent('cafresohq:replayTour'))
     },
+    /* The door back from the checklist's ✕ (`## 412.`) — see the `showGettingStarted`
+       listener in app.jsx for what that click actually took away. The tour
+       above is NOT that door: it opens a different surface, and the
+       checklist's render guard hides the card for as long as the tour is up.
+       Listed unconditionally, like the tour, because the palette cannot see
+       `gsDismissed` and a command that appears only once you already know
+       to look for it is not a way back. */
+    { id: 'help.gettingstarted', label: 'Show getting started checklist', section: 'Help', icon: '✦',
+      run: () => window.dispatchEvent(new CustomEvent('cafresohq:showGettingStarted'))
+    },
   ];
 
   useCommands(cmds, [

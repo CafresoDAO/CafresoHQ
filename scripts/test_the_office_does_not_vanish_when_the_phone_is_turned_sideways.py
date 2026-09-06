@@ -232,7 +232,7 @@ def measure(ws, url, width, height):
         H.press_escape(ws)
         time.sleep(0.4)
     H.evaluate(ws, """(() => {
-      const x = document.querySelector('.gs-coach button[title="Dismiss"]');
+      const x = document.querySelector('.gs-coach button.gs-dismiss');
       if (x) x.click();
       return !!x;
     })()""")

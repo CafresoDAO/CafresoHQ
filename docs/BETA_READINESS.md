@@ -1,5 +1,64 @@
 # Beta readiness — re-audit
 
+## 2026-09-05 (`## 412.`) — the first five minutes INSIDE the office
+
+`## 396.`, `## 399.` and `## 405.` walked everything up to the moment the page
+renders. Nobody had driven what happens after it. Driven on an office of its
+own — own port (8973, chosen after `lsof` showed a concurrent session holding
+the first one over IPv6 while mine held IPv4), own `HOME`, `hermes` off
+`PATH`. Nothing on mainnet, no II, no hosted path.
+
+**Correct the mental model first: the onboarding tour is not part of a first
+run.** `setTourOpen(true)` appears at exactly one site in `app.jsx`, the
+`cafresohq:replayTour` handler. The first-run effect sets `tourSeen` true,
+writes the CEO's welcome, and opens the candidate deck 1600ms later — it never
+opens the tour. So the two onboarding surfaces a beta tester actually gets are
+the **Getting Started checklist** and the **just-in-time coach marks**, and
+anything reachable only through a tour step is second-visit-only.
+
+**Fixed.** Both of those surfaces were behind one flag,
+`ks('gettingStartedDone')`, whose only writer in the repo set it *true* — from
+a 14px ✕ sitting flush against a 14px "–" that collapses the same card
+reversibly. `useStored`, so it outlived the tab; and `coachMark` opens with
+`if (gsDismissed) return null`, so the one click took both. The palette's only
+recovery command ("Replay onboarding tour") recovers neither — the checklist's
+render guard is `!gsDismissed && !tourOpen`. There is now a door back:
+`cafresohq:showGettingStarted`, a listed Help command, and a ✕ tooltip that
+says so. `scripts/test_the_x_on_getting_started_was_a_one_way_door.py` (the
+wiring) and `scripts/test_the_x_on_getting_started_comes_back.py` (the same
+click and the same door, driven in headless Chrome on a fresh profile).
+
+**Not fixed, and the largest remaining onboarding gap.**
+`<OnboardingKeyStep>` — the surface carrying `## 399.`'s honest key errors —
+renders only inside a tour step, so on a genuine first run nobody sees it. The
+checklist's own "Your AI brain" button goes to Settings → Connections instead.
+What the first run *should* contain is a product decision, not an edit. And
+when that step is reached, it asks `managedBrain` and `/hermes/trial-status`
+but never the front desk's own measurement, so a machine with a working local
+brain (measured here: `/health` `brain: null`, trial `active: false`,
+`/agent/drivers?probe=1` → `ollama {"version": "reachable"}`) is told it "needs
+your own free key from OpenRouter" and walked through the signup.
+
+**Measured green, for the record.** A provider key survives a server restart
+(`configured: true` → kill → restart → `configured: true`; `~/.hermes/.env` at
+0600). A malformed key is refused with a sentence, not a status code. A
+whitespace-padded key is trimmed on both sides of the wire. An empty key is a
+removal and says so. And the front desk did not fall for a decoy: another
+process held port 1234 and LM Studio still reported not-reachable, because the
+probe asks `/v1/models` rather than trusting a TCP connect.
+
+**Weak verdict, flagged.** "Onboarding writes survive a reload" is reasoned,
+not driven, for the `tourSeen`-vs-CEO-welcome half: `tourSeen` is synchronous
+localStorage set at t=800ms while the welcome goes through the file-backed
+chat store, so a tab closed inside that window should come back with the flag
+set and no welcome and no candidate deck. Unreproduced; durability is another
+pass's scope.
+
+**Still human-only:** the hosted / ICP first run, Internet Identity, and the
+worker's own registration. None attempted.
+
+---
+
 ## 2026-09-05 (`## 405.`) — the first run, walked in the README's own order
 
 `## 396.` did the first cold-start pass and found the README's ordering did not

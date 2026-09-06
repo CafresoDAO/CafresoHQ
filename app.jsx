@@ -703,6 +703,36 @@ function App() {
 
   /* Persistent getting-started checklist (survives a tour-skip). */
   const [gsDismissed, setGsDismissed] = useStored(ks('gettingStartedDone'), false);
+  /* …and the way back (`## 412.`). `setGsDismissed(true)` was a ONE-WAY door: the only
+     writer in the file was the checklist's own ✕, nothing anywhere set it
+     false again, and it is `useStored`, so the click outlived the tab.
+
+     Two surfaces went out on that click, not one. The checklist is the only
+     place in the office that lists the six things a first run consists of —
+     and `coachMark` opens with `if (gsDismissed) return null`, so the same ✕
+     also silences every just-in-time nudge that would have replaced it. The
+     palette's one recovery command, "Replay onboarding tour", brings back
+     NEITHER: it sets `tourOpen`, and the checklist's own render guard is
+     `!gsDismissed && !tourOpen`, so the tour is if anything the surface that
+     hides the checklist hardest.
+
+     The ✕ is 14px of grey, `padding: 2`, immediately beside a 14px grey "–"
+     that collapses the card reversibly — so the click that costs a first-time
+     boss the whole map of the product is one pixel-width away from the one
+     that costs them nothing, and it asks nothing before it lands.
+
+     A confirm on a one-click tidy-up would be the wrong trade. A door back
+     is the right one, and it is wired exactly like replayTour above so the
+     palette can open it. Restoring this flag restores precisely what the ✕
+     removed — the card AND the coach marks — because both read this one
+     value. `setTourOpen(false)` because the render guard above means a
+     restore that happens while the tour is open would otherwise show the
+     boss nothing and read as a dead command. */
+  useEffectA(() => {
+    const onShow = () => { setGsDismissed(false); setTourOpen(false); };
+    window.addEventListener('cafresohq:showGettingStarted', onShow);
+    return () => window.removeEventListener('cafresohq:showGettingStarted', onShow);
+  }, []);
   /* Whether the Getting Started checklist is collapsed to its pill. Reported
      up by the card so the coach mark below can stand down on a phone — see
      the coachMark memo. Deliberately NOT persisted: it is a within-session
