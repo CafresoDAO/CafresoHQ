@@ -44783,3 +44783,117 @@ Unchanged and now the largest thing on the map: **there is no export-all and
 no restore**. One `hq-state/` directory on one laptop is the durability story
 in full, and nothing in the product says so or offers a way to take a copy.
 That needs a product decision about where a backup goes, not a hunt.
+
+## 414. the file, the map and the key all landed on whatever came next
+
+The tail of the stale-observation sweep — an observation made BEFORE an
+`await`, acted on AFTER it, when the observed thing can change during the
+wait (`## 394`, `## 398`, `## 400`, `## 404`, `## 409`). `## 409` carried the
+class through `WorkspaceView` and left three doors **named but not
+measured**. These are those three, driven through a new harness that lifts
+the REAL bodies out of the committed sources by brace-balanced extraction —
+nothing under test is re-implemented — and then fixed with the two shapes
+this codebase already owns: a sequence number claimed before the first
+suspend and re-checked after each one, and re-deriving the live value on the
+far side.
+
+### 1. Classic `readFile` — `views/projects.jsx`
+
+The same door as `## 409`'s `openPath`, in the OTHER pane on the same screen,
+with none of its machinery: no ref (the door read the RENDER value), no
+sequence number, and — on the reading door — no discard check of any kind.
+Measured pre-fix:
+
+    bufferAfterBothLanded:      "/p/slow.js"    (last click was /p/fast.js)
+    typedTextStillInBuffer:     false   typedTextOnDisk: false   said: []
+    askedBeforeDroppingTheEdits: false  (a MISSING observation, not an expired one)
+    errShown: "Not a file: /p/gone.js"  (painted over the file that DID open)
+    previewModeAfter:           true    (a .md stranded in the read-only preview)
+    bufferAfterSwitch:          "/old/slow.js"  (the old project's file, hung inside the new one)
+
+The tree is never frozen while a read runs — `busy` reaches exactly the two
+Save buttons — and the editor keeps taking keystrokes throughout. Fixed with
+`openFileRef` / `openSeqRef` / `saveFileRef`, the same three shapes in the
+same order as `WorkspaceView`'s. Every door that SEEDS the buffer now claims
+a number through `clearOpenFile` (six bare `setOpenFile(null)` were the leak
+the counter would otherwise have had). `readFile` asks before discarding a
+dirty buffer, keeps a cancelled confirm's number on purpose, re-checks after
+the read, FILES typing that landed during it and says so once naming both
+files, keeps the boss where they are if that flush did not land, decides
+`previewMode` after the read rather than before, and lets a superseded read's
+refusal belong to the open it came from.
+
+### 2. `window.CafresoHQGraph.refresh` — `views/graph.jsx`
+
+`## 409` assessed the cost as "a stale picture". Driven, it is more than that.
+`mountData` DESTROYS the engine on the canvas before mounting the next, and
+three things start a rebuild without freezing the other two: the
+source/scope effect, ↻ Rebuild, and `refresh()` — which `views/vault.jsx`
+fires after EVERY note write and `agent_runner.jsx` fires from four places,
+none of them a DOM click. Measured pre-fix:
+
+    mountedAfterBoth:            "/a.md"   (boss wrote A then B; B is not on the map)
+    deadLinksNamedByTheConfirm:  []        (live library had one)
+    mountedSource:               "links"   (under a toolbar that said Concept map)
+    loadError: "the office is not answering"  (a superseded refresh's card over a map that mounted)
+
+The second line is the one that matters: `_lastGraph` is not a picture, it is
+what the delete confirm COUNTS to name the notes about to lose a link, so the
+stale shape under-reported the damage. Fixed with `mountSeqRef`, claimed by
+the load effect and by `refresh()` and re-checked after each `loadData` in
+both directions — `cancelled` alone only covered the effect being torn down.
+A refresh still in flight when the panel closes now mounts nothing and throws
+nothing, because the unmount deletes the API object.
+
+### 3. `saveKey` / `clearKey` — `views/terminal.jsx`
+
+`## 409` declined to harness this path because it handles real credentials.
+It is harnessed here under a rule the test pins: `setAgentKey` is a stub that
+records its arguments, no environment, keychain or file is read, every value
+is an obvious `sk-FAKE-…`, and the harness never prints a key — only whether
+the field still holds what was typed. Nothing in the panel is `disabled`
+while the write is out and the input is `autoFocus`. Measured pre-fix:
+
+    typedAfterSaveSurvived: false   panelStillOpen: false   fieldLeftEmpty: true
+    replacementSurvivedGettingBackToIt: false   (CLEAR KEY, the same door the other way)
+
+A secret the boss pasted, gone with the panel, on the one buffer in this
+office whose contents cannot be recovered by re-reading anything. Fixed with
+`keyInputRef`: `saveKey` captures what it is FILING before the round trip and
+clears the field only if it still holds that; `clearKey` keeps the panel open
+over a replacement typed during the delete. `provider` is not part of the
+race — it derives from the `cli` prop and every session panel stays mounted
+with its own.
+
+### Left EXPOSED, measured
+
+`modals/settings.jsx`'s agent-wallet card: the post-save read-back still
+overwrites an amount typed while it was running, because `busy` there reaches
+buttons only. Measured, not fixed here, and the test pins the measurement so
+the day it is repaired that line is what changes. The remaining unread
+suspend points in `ui/office.jsx` and the rest of `modals/` were not swept by
+this entry; `## 409`'s ~163 stands minus the three doors above.
+
+### The weakest verdict here
+
+**The Classic flush path — typing filed on the far side of the read — is
+proved against a stub `saveFile` that lands, and measured once against the
+real one.** The branch where the flush does NOT land (a coworker's conflict
+banner, a failed write) is driven to "the boss stays where they were with
+their typing", but which of the two sentences they read was only checked for
+the conflict case. That is one arm of two.
+
+### Test
+
+New `scripts/harness_await_tail_two.mjs` (the lifted bodies, driven) and
+`scripts/test_the_file_the_map_and_the_key_all_landed_on_whatever_came_next.py`:
+structural checks on all three files including the mechanisms that make each
+race reachable, credential-safety checks on the harness itself, sixteen
+driven scenarios with a negative arm beside each fix so an ordinary save,
+clear, discard and refresh still do what they did, and the settings.jsx
+EXPOSED pin.
+
+Nothing here touched `main.mo`, the II configuration, or the mainnet. Four
+concurrent hunts were appending to this ledger; if this landed other than
+where it was numbered, every `#414` in the three views and the two scripts
+moved with it.

@@ -141,6 +141,17 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
   const colorModeRef = React.useRef(colorMode); colorModeRef.current = colorMode;
   const localModeRef = React.useRef(localMode); localModeRef.current = localMode;
   const activePathRef = React.useRef(activePath); activePathRef.current = activePath;
+  /* #414 — the canvas is ONE slot and `mountData` DESTROYS whatever engine is
+     on it before mounting the next, so "the map you are looking at" is decided
+     by which `loadData` LANDS last, not by which rebuild was asked for last.
+     Three things start a rebuild and none of them freeze the other two: the
+     source/scope effect below, the ↻ Rebuild button, and
+     `window.CafresoHQGraph.refresh()` — which views/vault.jsx:450 fires after
+     EVERY note write and agent_runner.jsx fires from four places, none of them
+     a DOM click, so no overlay is anywhere in their path. Same sequence-number
+     shape as `openSeqRef` in views/projects.jsx (#409) and views/vault.jsx
+     (#404): claimed before the first suspend, re-checked after it. */
+  const mountSeqRef = React.useRef(0);
 
   const isDark = typeof document !== 'undefined' && document.body.classList.contains('night');
   const titleFor = (id) => {
@@ -249,12 +260,18 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
   // Load + mount on first render and whenever the source/scope changes.
   React.useEffect(() => {
     let cancelled = false;
+    /* Claimed before the first suspend. `cancelled` alone only covers ONE
+       direction — this effect being torn down — and the race that was live
+       runs the other way: a `refresh()` fired while this load is in flight
+       lands first, mounts, and then THIS older load mounts on top of it.
+       Measured pre-fix (#414). */
+    const seq = ++mountSeqRef.current;
     setLoading(true);
     setLoadError(null);
     (async () => {
       try {
         const g = await loadData();
-        if (cancelled || !containerRef.current) { setLoading(false); return; }
+        if (cancelled || mountSeqRef.current !== seq || !containerRef.current) { setLoading(false); return; }
         const eng = mountData(g);
         setLoading(false);
         /* `mountData` returns null when `window.CafresoGraphEngine` is not
@@ -269,12 +286,37 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
           _lastGraph: g,
           pulse: (id) => { try { engineRef.current && engineRef.current.focusNode(id); } catch (_) {} },
           refresh: async () => {
+            /* #414 — claimed before the read, re-checked after it. Two
+               refreshes in flight used to end on whichever `loadData` LANDED
+               last: measured pre-fix through
+               scripts/harness_await_tail_two.mjs, a boss who wrote note A and
+               then note B was left looking at the library WITHOUT note B
+               (`mountedAfterBoth: "/a.md"`, with only note A on it) — and `_lastGraph` was
+               left
+               holding that same stale shape, which is not a picture: it is
+               what views/vault.jsx:1408 counts to tell the boss which notes
+               will lose a link if they delete this one, so the delete confirm
+               under-reported the damage — `deadLinksNamedByTheConfirm: []`
+               where the live library had one, i.e. the plain "This cannot be
+               undone" instead of the sentence that names the note about to
+               lose its link. A rebuild started under the OLD
+               source/scope also used to land on the NEW one, painting the
+               wikilink graph onto a canvas whose toolbar said Concept map
+               (`mountedSource: "links"` under `source: "concepts"`). */
+            const seq2 = ++mountSeqRef.current;
             try {
               const g2 = await loadData();
-              if (!containerRef.current) return;
+              if (mountSeqRef.current !== seq2 || !containerRef.current) return;
               const e2 = mountData(g2);
-              if (e2) window.CafresoHQGraph._lastGraph = g2;
+              // The unmount effect below does `delete window.CafresoHQGraph`,
+              // so a refresh still in flight when the panel closes must not
+              // assume the API object is still there.
+              const api = window.CafresoHQGraph;
+              if (e2 && api) api._lastGraph = g2;
             } catch (e) {
+              // A refusal belongs to the rebuild it came from — a superseded
+              // one must not paint its card over the map that did mount.
+              if (mountSeqRef.current !== seq2) return;
               /* A refresh is fired by views/vault.jsx after a note write. It
                  failing silently left the map showing a shape the library no
                  longer has, with nothing saying it was stale. */

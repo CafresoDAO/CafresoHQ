@@ -418,6 +418,11 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
   const [keyInput,  setKeyInput]  = useSV('');
   const [keyStored, setKeyStored] = useSV({});
   const [spawnMsg,  setSpawnMsg]  = useSV('');
+  /* #414 — what the key field holds NOW, for the far side of saveKey/clearKey
+     to read. Same ref-mirrors-state shape as `openFileRef` in
+     views/projects.jsx and views/vault.jsx, and for the same reason: the field
+     is live through the round trip. */
+  const keyInputRef = React.useRef(''); React.useEffect(() => { keyInputRef.current = keyInput; }, [keyInput]);
   const bottomRef = React.useRef(null);
   const inputRef  = React.useRef(null);
   const ctrlRef   = React.useRef(null);
@@ -568,13 +573,46 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
     }
   };
 
+  /* #414 — the key field stays LIVE through this round trip: nothing in the
+     panel is `disabled` while the write is out (the SAVE button's only
+     `disabled` is `!keyInput.trim()`), and the input is `autoFocus`. So the
+     boss can still be typing when the write lands, and `setKeyInput('')` /
+     `setKeyPanel(false)` fired unconditionally on the far side — an
+     observation ("the field holds the key I am filing") made before the
+     suspend and acted on after it.
+
+     What that costs is a secret the boss pasted, gone with the panel, with
+     nothing said and no way to get it back — the same shape as the destroyed
+     keystroke in views/projects.jsx, on the one buffer in this office whose
+     contents cannot be recovered by re-reading anything.
+
+     `provider` is NOT part of the race: it is derived from the `cli` PROP, and
+     every session panel stays mounted with its own fixed `cli` (see the
+     `sessions.map` at the bottom of this file), so no instance can change
+     provider under its own await. The functional `setKeyStored` updater below
+     is therefore correct for the key that was actually filed — and it is not
+     what makes the two lines under it safe.
+
+     Driven in scripts/harness_await_tail_two.mjs with obvious fakes only —
+     `setAgentKey` is a stub that records its arguments and no real credential
+     store, environment or disk is anywhere in the harness. Measured pre-fix:
+     `typedAfterSaveSurvived: false, panelStillOpen: false, fieldLeftEmpty:
+     true` for a boss who corrected a truncated paste while the first one was
+     in flight. CLEAR KEY is the same door pointed the other way: it never
+     cleared the field, it just shut the panel over it, and the 🔓 button that
+     is the only way back in clears the field on its way — measured
+     `panelStillOpen: false, replacementSurvivedGettingBackToIt: false`. */
   const saveKey = async () => {
     const oc = CafresoHQClient;
     if (!oc || !oc.setAgentKey) return;
-    await oc.setAgentKey(provider, keyInput.trim());
-    setKeyStored(prev => ({ ...prev, [provider]: !!keyInput.trim() }));
-    setKeyInput('');
-    setKeyPanel(false);
+    const filed = keyInput.trim();
+    await oc.setAgentKey(provider, filed);
+    setKeyStored(prev => ({ ...prev, [provider]: !!filed }));
+    // Clear only what was actually filed. Anything the boss typed during the
+    // round trip is newer than the write and is theirs to keep — the same
+    // "clean only what was written" rule save() uses in views/projects.jsx.
+    const kept = keyInputRef.current.trim() !== filed;
+    if (!kept) { setKeyInput(''); setKeyPanel(false); }
   };
 
   const clearKey = async () => {
@@ -582,7 +620,9 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
     if (!oc || !oc.setAgentKey) return;
     await oc.setAgentKey(provider, '');
     setKeyStored(prev => ({ ...prev, [provider]: false }));
-    setKeyPanel(false);
+    // Same rule: a replacement typed while the delete was in flight keeps the
+    // panel open rather than being shut away behind a 🔓 that clears it.
+    setKeyPanel(p => (keyInputRef.current.trim() ? p : false));
   };
 
   return (

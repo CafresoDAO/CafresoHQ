@@ -962,6 +962,30 @@ function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
   const [err, setErr] = useSV(null);
   const [rightTab, setRightTab] = useSV('files');
   const [openedTerminals, setOpenedTerminals] = React.useState([]);
+  /* #414 — Classic is the OTHER pane on this screen and it keeps the same ONE
+     buffer WorkspaceView does, but it had none of the machinery `#409` gave
+     that one: no ref (its doors read the RENDER value), no sequence number,
+     and — on the reading door — no discard check of any kind. These three
+     lines are the same shapes, in the same order, as lines 182-215 above.
+       * `openFileRef` is the buffer as it stands NOW, which is the only thing
+         the far side of a round trip may act on.
+       * `openSeqRef` is claimed by every door that SEEDS this buffer, so a
+         read still in flight cannot land on top of a newer one — a sequence
+         number is not a guard unless every seeder claims it, which is why
+         `clearOpenFile` below exists rather than six bare `setOpenFile(null)`.
+       * `saveFileRef` is the forward reference `saveRef` solves for
+         WorkspaceView: `readFile` files typing that landed during its read,
+         and `saveFile` is declared below it. */
+  const openFileRef = React.useRef(null); React.useEffect(() => { openFileRef.current = openFile; }, [openFile]);
+  const openSeqRef = React.useRef(0);
+  const saveFileRef = React.useRef(null);
+  const baseName = (p) => String(p || '').split(/[\/\\]/).pop();
+  /* Clearing the deck SEEDS the buffer, exactly as WorkspaceView's
+     switchProject and commitProject do (#409) — so it claims a number too.
+     Measured pre-fix: a read started under the OLD project landed after the
+     row click and hung that project's file, absolute path and all, inside the
+     project the boss had moved to (`bufferAfterSwitch: "/old/slow.js"`). */
+  const clearOpenFile = () => { openSeqRef.current++; setOpenFile(null); };
   /* File-drop / upload into the selected project's working dir. treeNonce
      forces LocalTree to re-list after an upload; fileDragHover drives the
      drop-zone highlight. */
@@ -1061,7 +1085,7 @@ function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
       localStorage.removeItem(sessKey);
       localStorage.removeItem(`cafresohq_terminal:active:${p.id}`);
     } catch (_e) { /* localStorage/JSON failures here must never block the delete */ }
-    if (selected === p.id) { setSelected(null); setOpenFile(null); }
+    if (selected === p.id) { setSelected(null); clearOpenFile(); }
     if (window.cafresohqToast) window.cafresohqToast.info(`Deleted project "${p.name}"`);
   };
 
@@ -1098,7 +1122,7 @@ function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
     // this was the one path that skipped it, so the new project's pane
     // kept showing whatever file was open in the PREVIOUSLY selected one.
     setSelected(id);
-    setOpenFile(null);
+    clearOpenFile();
     setShowAdd(false);
     if (window.cafresohqToast) window.cafresohqToast.success(_addedProjectSay(name, madeAt));
   };
@@ -1122,13 +1146,62 @@ function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
     addProject(suggestedName);
   };
 
+  /* #414 — Classic's reading door, and the one `#409` named as the bigger
+     repair it stopped short of. It used to be five straight lines: observe
+     nothing, `await fsReadText`, and write the buffer back UNCONDITIONALLY.
+     WorkspaceView's `openPath`, at the top of this same file, carries that
+     contract in its own comment and now carries the guard too; this pane had
+     neither.
+
+     Measured pre-fix through scripts/harness_await_tail_two.mjs (the real
+     body, lifted — nothing re-implemented):
+       * two tree clicks in a slow project ended on whichever read LANDED
+         last: `bufferAfterBothLanded: "/p/slow.js"` for a boss whose last
+         click was /p/fast.js;
+       * a keystroke during the read was destroyed with nothing said —
+         `typedTextStillInBuffer: false, typedTextOnDisk: false, said: []`;
+       * a dirty buffer was replaced with no question asked at ALL
+         (`askedBeforeDroppingTheEdits: false`) — not an expired observation,
+         a missing one, which is why this door needed the near side too;
+       * a superseded read that FAILED painted its refusal over the file that
+         DID open: `errShown: "Not a file: /p/gone.js"` with /p/fast.js on
+         screen, which reads as that file being broken;
+       * `setPreviewMode` was decided BEFORE the read and never revisited, so
+         an image clicked while a text read was in flight left the text file
+         rendered in the read-only PREVIEW pane (`previewModeAfter: true`) —
+         the editor gone, the ● dot gone, and no way back but another click.
+
+     The tree is never frozen while this runs — `busy` reaches exactly two
+     things in this pane, the two Save buttons — and the IDEEditor textarea
+     keeps taking keystrokes throughout, which is the same fact `saveFile`
+     below states about its own three round trips. Both fix shapes are this
+     file's own: claim `openSeqRef` before the first suspend and re-check
+     after each one, and re-derive the LIVE buffer on the far side, FILING
+     typing that landed during the read rather than dropping it. */
   const readFile = async (path) => {
+    const cur = openFileRef.current;
+    // Never silently drop unsaved edits when switching files — the contract
+    // WorkspaceView's openPath states and this pane never had.
+    const mustAsk = !!(cur && cur.dirty && cur.path !== path);
+    // Claimed BEFORE the first suspend; the discard confirm is one too. A
+    // CANCELLED confirm keeps its number on purpose (#409): "stay where I am"
+    // is an answer, and a read still in flight from a click the boss thought
+    // better of does not get to land on top of it.
+    const seq = ++openSeqRef.current;
+    let discarded = null;
+    if (mustAsk) {
+      if (!(await window.hqConfirm('Discard unsaved changes to ' + baseName(cur.path) + '?', { okLabel: 'Discard', danger: true }))) return;
+      // The boss said DISCARD, about this file, just now. The far side owes
+      // that answer the same respect it owes typing nobody asked about.
+      discarded = cur.path;
+    }
+    if (openSeqRef.current !== seq) return;   // superseded while the dialog was up
     setBusy(true); setErr(null); setConflict(false);
     const kind = previewKind(path);
     const isBinary = kind === 'image' || kind === 'pdf';
-    setPreviewMode(isBinary);   // binary auto-previews; text lands in the editor
     if (isBinary) {
       // Not text — don't FILE_READ; the preview pane streams it from /fs/file.
+      setPreviewMode(true);
       setOpenFile({ path, content: '', dirty: false, binary: true });
       setBusy(false);
       return;
@@ -1138,8 +1211,33 @@ function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
       // back the mtime/hash saveFile needs for its own conflict check —
       // same contract WorkspaceView's openPath uses.
       const r = await CafresoHQClient.fsReadText(path);
+      if (openSeqRef.current !== seq) { setBusy(false); return; }
+      const live = openFileRef.current;
+      if (live && live.dirty && live.path !== path && live.path !== discarded) {
+        // Typing that landed while this read was in flight. The boss still
+        // gets the file they asked for — their words are FILED first and
+        // named, rather than overwritten in silence.
+        if (saveFileRef.current) await saveFileRef.current(false);
+        if (openSeqRef.current !== seq) { setBusy(false); return; }
+        const still = openFileRef.current;
+        if (still && still.dirty && still.path !== path) {
+          // The flush did not land — a coworker's edit raised the conflict
+          // banner, or the write failed and saveFile already said why.
+          // Keeping the typing is worth more than the swap.
+          toast('warn', `Still on ${baseName(still.path)} — your changes there aren't filed yet, so ${baseName(path)} stayed shut.`);
+          setBusy(false); return;
+        }
+        toast('info', `Filed your changes to ${baseName(live.path)} before opening ${baseName(path)}.`);
+      }
+      // Decided HERE, not before the read: a binary click that superseded a
+      // text read used to leave the text file in the preview pane.
+      setPreviewMode(false);
       setOpenFile({ path, content: r.content, mtime: r.mtime, hash: r.hash, dirty: false });
-    } catch (e) { setErr(e.message || String(e)); }
+    } catch (e) {
+      // A refusal belongs to the open it came from (#409).
+      if (openSeqRef.current !== seq) { setBusy(false); return; }
+      setErr(e.message || String(e));
+    }
     setBusy(false);
   };
 
@@ -1168,6 +1266,7 @@ function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
     } catch (e) { setErr(e.message || String(e)); }
     setBusy(false);
   };
+  saveFileRef.current = saveFile;   // #414 — readFile above files typing that landed during its read
   /* #402 — `setConflict(false)` used to sit OUTSIDE this try, next to a bare
      `catch (_e) {}`. The banner it clears reads "⚠ Your coworker changed this
      file while you had edits." and this is its Reload button, so dismissing
@@ -1340,8 +1439,8 @@ function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
               className="px-btn ghost"
               style={{fontSize:13,padding:'6px 12px',minWidth:44,minHeight:44,color:'var(--accent-sun)',fontWeight:700}}
               onClick={() => {
-                if (mobileStep === 'editor') { setOpenFile(null); setMobileStep('detail'); }
-                else { setSelected(null); setOpenFile(null); setMobileStep('list'); }
+                if (mobileStep === 'editor') { clearOpenFile(); setMobileStep('detail'); }
+                else { setSelected(null); clearOpenFile(); setMobileStep('list'); }
               }}
             >← Back</button>
             <span style={{fontFamily:"'Press Start 2P',monospace",fontSize:10,letterSpacing:'0.08em',color:'var(--ink)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
@@ -1384,7 +1483,7 @@ function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
                   transition:'background 0.15s, border-color 0.15s',
                   minHeight:56,
                 }}
-                onClick={() => { setSelected(p.id); setOpenFile(null); setMobileStep('detail'); }}
+                onClick={() => { setSelected(p.id); clearOpenFile(); setMobileStep('detail'); }}
               >
                 <span style={{fontSize:24,width:36,height:36,display:'flex',alignItems:'center',justifyContent:'center',borderRadius:8,background:'var(--accent-sun-10, rgba(218,165,32,0.1))'}}>📁</span>
                 <div style={{flex:1,minWidth:0}}>
@@ -1591,7 +1690,7 @@ function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
                 key={p.id}
                 className={'tree-row proj-list-row' + (selected === p.id ? ' active' : '')}
                 style={{cursor: 'pointer', padding: '8px 12px', flexDirection: 'column', alignItems: 'flex-start', gap: 1, position: 'relative'}}
-                onClick={() => { if (renamingId !== p.id) { setSelected(p.id); setOpenFile(null); setRightTab('files'); } }}
+                onClick={() => { if (renamingId !== p.id) { setSelected(p.id); clearOpenFile(); setRightTab('files'); } }}
                 title={p.path}
               >
                 {renamingId === p.id ? (
