@@ -97,6 +97,7 @@ const openSeqRef = { current: 0 };
 const setSelectedId = () => {};
 const setSelected = () => {};
 const setOpenFile = () => {};
+const clearOpenFile = () => {};   // `## 414.`: claim-then-clear, one call
 const setLedger = () => {};
 const setAgentStatus = () => {};
 const setPulse = () => {};

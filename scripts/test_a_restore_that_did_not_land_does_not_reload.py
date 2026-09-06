@@ -107,7 +107,8 @@ def main():
     check('OFFICE_FILE_BACKED still covers every mirrored key, so the branch '
           'has something to be right about',
           settings_src.count("{ scope: 'state', name:") +
-          settings_src.count("{ scope: 'memory', name:") == 13,
+          # thirteen when this was written; `## 413.` added chat + workspaces
+          settings_src.count("{ scope: 'memory', name:") == 15,
           settings_src.count("{ scope: 'state', name:") +
           settings_src.count("{ scope: 'memory', name:"))
 

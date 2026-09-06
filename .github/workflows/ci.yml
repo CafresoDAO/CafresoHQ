@@ -62,5 +62,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # The suites lift real .jsx into Node and bundle it with esbuild, and a
+      # handful measure the built app in a headless Chrome. Without these two
+      # steps nineteen of them fail on `npx esbuild` / a missing dist-ui/ and
+      # the run reads as a red branch (measured 2026-09-06: 568/595 here
+      # against 587/595 on a machine with node_modules).
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install deps + build the UI bundle the suites measure
+        run: npm ci && npm run build
+
       - name: Python suites
         run: python3 scripts/run_tests.py

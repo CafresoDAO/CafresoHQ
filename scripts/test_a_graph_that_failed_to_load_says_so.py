@@ -99,11 +99,17 @@ def main():
     # The effect's own prologue (the two setters + the clear) sits OUTSIDE the
     # async IIFE that does the work, so it is pinned against the raw source;
     # `body` below is the IIFE, which is what the harness actually drives.
+    # `## 414.` put a `const seq = ++mountSeqRef.current;` claim (and its
+    # comment) between `let cancelled` and the two setters, so the effect is
+    # found by the setter pair and lifted whole from its own `useEffect`.
+    prologue = 'setLoading(true);\n    setLoadError(null);'
+    pi = src.find(prologue)
     check('the load effect CLEARS loadError before starting, so a retry '
           'that works does not leave the old error card up',
-          'let cancelled = false;\n    setLoading(true);\n    setLoadError(null);' in src)
+          pi >= 0 and 'let cancelled = false;' in src[src.rfind('React.useEffect(() => {', 0, pi):pi])
 
-    body = brace_lift(src, 'React.useEffect(() => {\n    let cancelled = false;\n    setLoading(true);')
+    ei = src.rfind('React.useEffect(() => {', 0, pi) if pi >= 0 else -1
+    body = brace_lift(src[ei:], 'React.useEffect(() => {') if ei >= 0 else None
     check('found the load/mount effect', body is not None)
     body = body or ''
     check('the catch sets loadError via officeCause instead of only '
@@ -148,6 +154,7 @@ def main():
             const setReloadTick = (f) => { reloadTick = typeof f === 'function' ? f(reloadTick) : f; };
             const containerRef = { current: {} };
             const engineRef = { current: null };
+            const mountSeqRef = { current: 0 };   // `## 414.`: the load claims a number
             // The real mountData contract: null when the engine script is absent.
             const mountData = (g) => {
               if (!engineOk) return null;
@@ -199,6 +206,7 @@ def main():
             const setReloadTick = () => {};
             const containerRef = { current: {} };
             const engineRef = { current: null };
+            const mountSeqRef = { current: 0 };   // `## 414.`: the load claims a number
             const mountData = () => ({ focusNode: () => {} });
             const window = {};
             const console = { warn: () => {} };
@@ -221,9 +229,8 @@ def main():
         }
         run();
         """
-        # `let cancelled` and the two opening setters are consumed by the
-        # brace_lift opener above, so put them back before the lifted tail.
-        lifted = ('let cancelled = false;\n    setLoading(true);\n' + body)
+        # The lift is the whole effect body now, prologue included.
+        lifted = body
         harness = harness.replace('LIFTED_BODY', lifted)
         r = subprocess.run(['node', '-e', harness], capture_output=True, text=True)
         check('the extracted load effect ran without a Node error',
