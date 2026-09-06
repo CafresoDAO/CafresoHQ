@@ -993,3 +993,64 @@ the exact loss it is named after (measured from the main checkout: `'[]'`).
    does not, so the swap traded that for file durability. Every other
    file-backed store has always been in this position, so this is not a new
    class of problem — but it is a new instance of it, and it is unmeasured.
+
+---
+
+## Ship path to ai.cafreso.com, measured (2026-09-06)
+
+Nothing on this branch has ever reached a hosted user. Measured, not read:
+
+| surface | what serves it | what it runs today | what this branch would put there |
+|---|---|---|---|
+| `ai.cafreso.com` shell (v4tdv) | `cafreso-pages` repo, `scripts/deploy.sh` | `a90d400` (2026-08-05) — **current**, live entry bundles match the local build | nothing; no change needed |
+| office UI `hq-ui.cafreso.com` (vhoil, `cafresohq_ui`) | this repo, `hq-ui/` via `scripts/build_hq_ui.py` | `hq-app-7892a127fd.js` — an older build | `hq-app-e0b8fe1b97.js`, built clean from this tip |
+| per-user container (`hq.cafreso.com/u/<slug>`) | Docker Hub `anthonycf1/cafresoai-serve:latest`, built by `.github/workflows/docker.yml` on push to `merge/pages-cafresoai` | last built **2026-07-22 from `1ec6867`** — 1,090 commits and every numbered fix from `## 338.` on are absent | a build from this tip, once the trunk is fast-forwarded |
+| the brain behind those containers | `LMSTUDIO_BASE_URL=http://10.0.1.6:8899/v1`, `LMSTUDIO_MODEL=google/gemma-4-e4b`, socat on the gateway → `10.0.0.100:1234` | answering: `/v1/models` lists the pinned id; one `chat/completions` with it returned `OK.` in 12.7 s (JIT load included) | unchanged; serve.py, `drivers/local_http.py` and `docker/hermes-bootstrap.py` all still read both variables |
+
+### The image would not have built
+
+`docker/Dockerfile` predates two refactors on this branch. Its ui-build stage
+copied `*.jsx` only, and the UI is ES modules now with most of the tree in
+`app/`, `ui/`, `views/` and `modals/` (`app.jsx` alone has eleven folder
+imports), so `npm run build` fails on the first one. Its runtime stage copied
+`serve.py`, `drivers/` and `night_runner.py` only, and `serve.py` imports
+`exporters`, `fs_routes`, `pty_server` (line 458) and `kg_builder` (line 2300)
+at module load, so an image that got past the first failure would exit on
+`ModuleNotFoundError`. Both are fixed in `a249614`; verified by replaying each
+COPY set into a scratch tree (the bundle builds, the modules import), not by a
+Docker build — the daemon on this machine did not answer after a reboot.
+
+### The order that does not skew
+
+1. Fast-forward the trunk: `git push origin chore/oss-reduction:merge/pages-cafresoai`.
+   The trunk is a strict ancestor of this tip (checked with `merge-base`), so
+   this is a fast-forward. CI then runs the suite (`ci.yml`) and builds + pushes
+   the multi-arch image (`docker.yml`). Wait for both.
+2. Deploy the office UI: `DFX_VERSION=0.24.3 dfx deploy cafresohq_ui --network ic --identity default`
+   (the repo pins 0.24.3 in `.dfx-version`; the canister is assets-only so
+   either dfx works, but stay on the pin). Verify with
+   `curl -sS -H 'Cache-Control: no-cache' https://hq-ui.cafreso.com/hq.html | grep -o 'hq-app-[a-f0-9]*\.js'`
+   — expect `e0b8fe1b97` or whatever `hq-ui/hq.html` names at deploy time.
+   Assets cache for ten minutes; a stale tab is not a failed deploy.
+3. Roll the fleet, on the gateway. A container does not re-pull `:latest`
+   on `start`; only `provision` reads `image_url`. So each user's container
+   is `delete` then `provision`, and **that loses `/data/hq-state`** (the
+   office's tasks, chat, projects) because the container instance has no
+   persistent volume — only the vault, in Object Storage, survives. Roll
+   before there are users whose office you would mind emptying, or add a
+   volume first.
+
+The UI and the image should ship together: the UI on this tip expects doors
+(`/vault/file` receipts, `/fs/collect` sentences, the `_hermes_proxy` guards)
+that the 2026-07-22 image does not have.
+
+### What this pass could not walk
+
+Everything after "Sign in with Internet Identity" on `ai.cafreso.com/hq/app`.
+The lobby renders (four steps, a sign-in card), and sign-in needs a human's
+passkey. Provision → session → office-open on a container built from this
+tip is untested until someone signs in after step 3.
+
+Cycles balances for vhoil, v4tdv, ydacz, vhw7q and dqcmv were not read this
+pass (the read was refused in this session); run `scripts/check-canister-cycles.sh`
+before step 2. ydacz has been wiped by an empty balance once already.
