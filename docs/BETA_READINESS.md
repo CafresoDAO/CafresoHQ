@@ -994,11 +994,17 @@ the exact loss it is named after (measured from the main checkout: `'[]'`).
    it. What is still open, and still a product decision: nothing in the
    office TELLS a local tester to take the export, and no schedule takes
    one for them.
-2. **Two browsers open at once still last-writer-wins on the chat.**
-   `useStored` carried a cross-tab `storage`-event absorber; `useFileStored`
-   does not, so the swap traded that for file durability. Every other
-   file-backed store has always been in this position, so this is not a new
-   class of problem — but it is a new instance of it, and it is unmeasured.
+2. **Two TABS of one browser no longer last-writer-win on the chat; two
+   BROWSERS still do.** `useStored` carried a cross-tab `storage`-event
+   absorber and `useFileStored` did not, so `## 413.`'s swap traded that for
+   file durability. `## 418.` measured it (tab B's message erased from disk,
+   localStorage and tab A by tab A's next send) and put the absorber back
+   on `useFileStored` as an opt-in `absorb` merge, wired for the chat only.
+   What is still open: a second BROWSER or device shares only the file, and
+   a `storage` event never crosses that gap — there, whichever tab persists
+   last still writes its copy of the conversation over the other's. Every
+   other file-backed store (`messages`, `activity`, the snapshots) is in the
+   same position across tabs too; the class is not closed, one instance is.
 
 ---
 

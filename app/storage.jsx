@@ -105,6 +105,13 @@ function useStored(key, initial, transform, onLoad) {
    through it, so the durable record never receives what the filter exists to
    keep out of it. The two are separate on purpose — do not unify them. */
 function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensitive = false, persistTransform = null, mergeOnDirty = false } = {}) {
+  /* #418's option, read from the SAME options object in its own statement:
+     the destructure above is pinned verbatim by the early-activity guard
+     (`mergeOnDirty = false` must be its last name), so a fourth name there
+     fails the suite. Same options bag for the caller; one more line here.
+     No brace of either kind may appear in this comment: three guards lift
+     this function by counting braces, comments included. */
+  const { absorb = null } = arguments[5] || {};
   const [val, setVal] = useStateA(() => {
     const fallback = () => (typeof initial === 'function' ? initial() : initial);
     try {
@@ -447,6 +454,46 @@ function useFileStored(lsKey, fileScope, fileName, initial, transform, { sensiti
       .catch(() => { hydratedRef.current = true; });
   }, []);  // intentionally runs once on mount
 
+  /* #418 — the other tab. `useStored` absorbed another tab's write on the
+     `storage` event (which fires in every tab EXCEPT the one that wrote);
+     this hook did not, so `## 413`'s move of the chat onto it traded that
+     for file durability. Measured with two tabs over one localStorage map
+     and one stub file: B sends m4, its PUT lands; A sends m5, its PUT
+     writes A's copy — [m1,m2,m3,m5] — over the file, localStorage and every
+     tab that reloads. Last writer wins, and the loser's message is gone.
+
+     `absorb(theirs, mine)` is the caller's merge, handed the parsed event
+     value and the value THIS hook holds right now (valRef, not a render-old
+     ref: a send this tab made a moment ago and has not rendered yet is in
+     valRef and nowhere else). It is opt-in for the same reason mergeOnDirty
+     is: a snapshot store has no safe union with another tab's copy, and
+     replacing it wholesale while the boss is mid-edit is the clobber
+     useStored's `hasFocus` guard existed to avoid. A log-shaped store can
+     union, so it does — focused or not, because the union keeps ours.
+
+     Set into state, NEVER persisted: localStorage already holds theirs (it
+     is what fired the event), disk is theirs or about to be, and a persist
+     here would fire the same event back at them and the two tabs would
+     re-announce each other forever. The union reaches disk on this tab's
+     next real edit, which is exactly the write that used to erase it. */
+  const absorbRef = useRefA(absorb);
+  absorbRef.current = absorb;
+  useEffectA(() => {
+    if (!absorb) return;
+    const onStorage = (e) => {
+      if (!e || e.key !== lsKey || e.newValue == null || !absorbRef.current) return;
+      try {
+        const theirs = JSON.parse(e.newValue);
+        if (!_shapeMatches(theirs, valRef.current)) return;
+        const merged = absorbRef.current(theirs, valRef.current);
+        valRef.current = merged;
+        setVal(merged);
+      } catch (_e) {}
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [lsKey, !!absorb]);
+
   const setter = React.useCallback((updater) => {
     dirtyRef.current = true;
     setVal(prev => {
@@ -675,6 +722,41 @@ const mergeChat = (inMem, fetched) => {
   return capChatFair(out, 100);
 };
 
+/* #418 — the cross-tab half of mergeChat, for useFileStored's `absorb`.
+   `theirs` is what another tab just wrote to localStorage: persistableChat's
+   output, so a reply THAT tab is streaming arrives here as `interrupted:
+   true` with no `streaming`. Two things differ from the mount union above.
+
+   Shared id: theirs wins, unless ours is `streaming`. At mount the in-memory
+   copy is the fresher one by construction; across tabs the fresher copy is
+   whichever tab is writing the record, and only the streaming tab writes
+   it. Letting ours win unconditionally froze the other tab's reply at the
+   first absorbed frame; letting theirs win unconditionally replaced a live
+   reply with a copy of itself stamped cut-off. Ours-while-streaming is the
+   one rule that is right in both directions, and it is what lets the
+   finished reply reach the other tab on the finalize write.
+
+   No chatOnLoad: the marker on the other tab's live reply is a durable fact
+   for a reload to spend, not a sentence to append while the reply is still
+   arriving over there. It is carried through untouched, so a tab that dies
+   mid-stream still leaves the note for the next boot. Order is theirs-then-
+   ours, as the mount union orders file-then-live, for the same reason. */
+const absorbChat = (inMem, theirs) => {
+  const live = Array.isArray(inMem) ? inMem : [];
+  const mine = new Map();
+  for (const m of live) if (m && m.id) mine.set(m.id, m);
+  const out = [];
+  const placed = new Set();
+  for (const m of (Array.isArray(theirs) ? theirs : [])) {
+    if (!m) continue;
+    const ours = m.id && mine.get(m.id);
+    out.push(ours && ours.streaming ? ours : m);
+    if (m.id) placed.add(m.id);
+  }
+  for (const m of live) if (m && (!m.id || !placed.has(m.id))) out.push(m);
+  return capChatFair(out, 100);
+};
+
 /* Desk-screen feed: streams an agent's live output tail onto its office
    monitor (OfficeView listens for 'cafresohq:agentScreen'). Throttled to one
    event per 150ms per agent — token callbacks can fire per-chunk and the
@@ -880,4 +962,4 @@ const mergeMessages = (inMem, fetched) => {
 // the cap two functions up had been quietly disproving. `terminal` states
 // can't be transitioned out of (except via explicit reopen).
 
-export { capChatFair, chatErrorText, chatOnLoad, k, ks, makeScreenEmitter, mergeByIdCap, mergeChat, mergeMessages, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored };
+export { absorbChat, capChatFair, chatErrorText, chatOnLoad, k, ks, makeScreenEmitter, mergeByIdCap, mergeChat, mergeMessages, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored };

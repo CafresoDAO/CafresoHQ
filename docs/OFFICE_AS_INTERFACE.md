@@ -45187,3 +45187,130 @@ the one roll that brings a container forward past this entry.
 restore helpers), `_hq_handler` (one wait, one schedule call), `/health`
 (one key), and `__main__` (the restore thread). Nothing here touched
 `main.mo`, the II configuration, the fleet repo, or the mainnet.
+
+## 418. the message the other tab sent, and the send that erased it
+
+`## 413` moved the chat from `useStored` to `useFileStored` so the
+conversation could live in `hq-state/chat.json`, and `docs/BETA_READINESS.md`
+filed the cost as its second beta gate: `useStored` had a cross-tab
+`storage`-event absorber, `useFileStored` did not, and nobody had measured
+what that meant. This entry measures it, and it is data loss on the office's
+oldest surface.
+
+### Measured, before
+
+Two tabs of one office, driven headlessly out of the real `app/storage.jsx`
+— the lift `## 413`'s guard uses, extended to TWO pages over ONE
+localStorage map, each with its own `window`, so a write through one page's
+facade delivers a `storage` event to the other page's listeners and never to
+its own, which is what a browser does. Both tabs hydrated on a three-message
+history. Tab B sends `m4`; its PUT lands, disk reads `[m1,m2,m3,m4]`. Tab A
+sends `m5`:
+
+    tab A holds      [m1,m2,m3,m5]
+    localStorage     [m1,m2,m3,m5]
+    disk             [m1,m2,m3,m5]
+    tab B holds      [m1,m2,m3,m4]
+
+`m4` is gone from disk, gone from localStorage, gone from every tab that
+ever reloads, and the only place it still exists is the tab that sent it —
+until that tab reloads too. Not a race: tab A's `storage` event fired and
+nothing in `useFileStored` listened, so A's next persist was always going to
+write A's copy. The gate said "last-writer-wins"; the measurement says the
+loser's message is deleted from the record.
+
+### The decision, argued: an opt-in absorb, not `useStored`'s absorber back
+
+`useStored` absorbed by REPLACING state with the other tab's value, gated on
+`!document.hasFocus()` so the tab the boss was typing in stayed
+authoritative. That was the right rule for a store this hook cannot union,
+and it is the wrong rule for a log: a replace throws away whatever this tab
+holds that the other does not, and the focus gate just picks which tab
+loses. `useFileStored` already has the distinction — `mergeOnDirty` marks
+the stores whose transform can union a fetched copy against a live edit —
+so the absorber is the same distinction on a different event. `absorb(
+theirs, mine)` is a new option; without it the hook is byte-for-byte what
+it was, so the twelve snapshot stores are untouched. With it, a `storage`
+event on the hook's own key is parsed, shape-checked, merged against the
+value the hook holds, and SET INTO STATE. Never persisted: localStorage
+already holds theirs (it is what fired the event), disk is theirs or about
+to be, and a persist here would fire the same event back and the two tabs
+would re-announce each other forever. The union reaches disk on this tab's
+next real edit — the exact write that used to erase it.
+
+`mine` is `valRef.current`, not `chatMergeRef`. The ref app.jsx assigns
+during render is what `## 413`'s union reads, and `## 413` named the window
+between a setter and that render as its weakest verdict. Across tabs the
+window is not theoretical: the other tab writes localStorage on every token
+frame, so a send this tab made a moment ago and has not rendered would be
+absorbed away against a render-old ref. The hook knows its own latest
+value; it hands that over.
+
+`absorbChat` is the chat's merge, and it differs from `mergeChat` in two
+places for two reasons. On a shared id, THEIRS wins unless ours is
+`streaming`: at mount the in-memory copy is the fresher one by
+construction, but across tabs the fresher copy is whichever tab is writing
+the record, and only the streaming tab writes it. Ours-always froze the
+other tab's reply at the first absorbed frame; theirs-always replaced a live
+reply with a copy of itself carrying `persistableChat`'s `interrupted: true`
+— and, through `chatOnLoad`, a cut-off note appended to text still arriving.
+And no `chatOnLoad` at all: the marker on the other tab's live reply is a
+durable fact for a reload to spend, not a sentence to say while the reply is
+alive over there. It is carried through untouched, so a tab that dies
+mid-stream still leaves the note for the next boot.
+
+### Measured, after
+
+Same harness, same exchange: tab A `[m1,m2,m3,m4,m5]`, localStorage the
+same, disk the same, tab B the same. Three seconds after both PUTs landed:
+0 localStorage writes, 0 PUTs — no ping-pong. A reply streaming in A across
+30 frames while B sends `m6` at frame 15: A's `r1` is still `streaming`,
+its text is the latest frame, no cut-off note; B's copy of `r1` reads A's
+frames as they come; on A's finalize B holds the finished text with neither
+`streaming` nor `interrupted`; disk holds `{m1,m2,m3,r1,m6}`. A tab
+reloaded after the exchange reads all five and PUTs nothing shorter (the
+`## 402` class, not reopened); a brand-new browser reads all five. A
+`storage` event that lands before tab A's mount fetch resolves, with A's own
+keystroke behind it: A holds history, B's message and its own, and so does
+disk — `## 413`'s union is not disturbed by an absorb that precedes it.
+
+Fired twice. With the `storage.jsx` half reverted, 8 checks fail, the gate
+among them, with the before-numbers above. With only the `app.jsx` wiring
+reverted, the same 8 — the hook honours the option and the office does not
+pass it.
+
+### The weakest verdict here
+
+**Two BROWSERS still last-writer-win.** A `storage` event crosses tabs of
+one browser profile; it does not cross to Safari from Chrome, or to a phone.
+Those share only the file, and the file is written by whichever tab
+persists last. A re-fetch on `visibilitychange` would close the common
+case and was not taken here: the file can be behind THIS tab (a PUT still
+in its 1.5s debounce, or refused and noted `::unpaid`), and a theirs-wins
+absorb from a stale file rolls back this tab's own last edit. That needs a
+guard on `pendingRef` and the unpaid note that is a different entry's
+measurement. The gate is reworded to say exactly this. And the absorb runs
+on every frame the other tab writes: the cost is one `JSON.parse` of the
+conversation and one setState per token frame in a tab that is, by
+construction, not the one being looked at. `useStored` paid the same.
+
+### Test
+
+New `scripts/test_a_message_sent_in_the_other_tab_is_not_erased_by_this_one.py`,
+the five rounds above plus the negative control (the same two tabs with
+the absorb detached must reproduce the erasure) and three wiring checks:
+the `absorb` in app.jsx reads the hook's value, the hook listens on its own
+key, `absorbChat` lets ours win only while streaming.
+
+Regions touched: `app/storage.jsx` — `useFileStored`'s options (read in a
+statement of its own, because the early-activity guard pins the destructure
+verbatim and the full suite said so; and no brace in the comment above it,
+because three guards lift the function by counting braces, comments
+included, and the suite said that too), one
+effect between the mount fetch and the setter, `absorbChat` beside
+`mergeChat`, one export; `app.jsx` — the chat's `useFileStored` call, one
+option, and `absorbChat` in the storage import AFTER `capChatFair`, not
+before it — the busy-room guard string-matches `import { capChatFair,` at
+the head of that list and the full suite said so; `docs/BETA_READINESS.md`
+— gate 2. Nothing here touched
+`main.mo`, the II configuration, or the mainnet.

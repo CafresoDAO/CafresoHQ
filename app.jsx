@@ -15,7 +15,7 @@ import { taskKind, xpRecord } from './app/experience.jsx';
 import { attachVisit, chainHoldLine, doneLine, floorEmit, officeCause, shortfallLine, snagCause, snagSentence, toolActivity, visitLine, visitPlace } from './app/floor.jsx';
 import { formatToolInput, approvalTitle } from './app/approvals.jsx';
 import { attentionCount as attentionCountOf } from './app/attention.jsx';
-import { capChatFair, chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, mergeChat, mergeMessages, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored } from './app/storage.jsx';
+import { capChatFair, absorbChat, chatErrorText, k, ks, makeScreenEmitter, mergeByIdCap, mergeChat, mergeMessages, persistableAgents, persistableChat, persistableMessages, useFileStored, useStored } from './app/storage.jsx';
 import { ChatWindow, MSG_STATES, WindowFrame, _chatAnchor, _railRight } from './app/windows.jsx';
 /* ==========================================================================
    CafresoHQ — root app
@@ -215,11 +215,19 @@ function App() {
      `persistableChat`'s `interrupted` stamp lands on live replies.
 
      `mergeOnDirty` + `mergeChat` are not decorative — see app/storage.jsx.
-     Without them the first keystroke on a new device deletes the file. */
+     Without them the first keystroke on a new device deletes the file.
+
+     `absorb` is the other tab (#418): what a second tab of this office
+     writes arrives as a `storage` event and is unioned in through
+     `absorbChat`, against the value the HOOK holds (`mine`), not this ref —
+     the ref is a render old, and a send made since is in the hook's value
+     and nowhere else. Without it the next persist here wrote this tab's
+     copy over the other tab's message, in the file and in localStorage. */
   const chatMergeRef = useRefA([]);
   const [chat, setChat] = useFileStored(k('chat'), 'state', 'chat', HQ.INITIAL_CHAT,
     (fetched) => mergeChat(chatMergeRef.current, fetched),
-    { persistTransform: persistableChat, mergeOnDirty: true });
+    { persistTransform: persistableChat, mergeOnDirty: true,
+      absorb: (theirs, mine) => absorbChat(mine, theirs) });
   /* The live conversation, readable from a closure that was built some
      renders ago. `chat` itself is a per-render snapshot, and the dispatch
      helpers below are handed to the chat panel as props: by the time the
