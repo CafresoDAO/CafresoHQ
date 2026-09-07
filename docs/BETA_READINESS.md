@@ -983,11 +983,17 @@ the exact loss it is named after (measured from the main checkout: `'[]'`).
 
 ### New beta gates
 
-1. **There is still no export-all and no restore.** The whole map above is
-   one `hq-state/` directory on one laptop. A tester who loses it loses
-   everything, and nothing in the product tells them that or offers a way to
-   take a copy. This is now the largest gap on the map, and it is a human
-   gate: it needs a product decision about where a backup goes.
+1. **Export and restore exist, but the sentence above overstated the gap.**
+   Settings → Office has EXPORT / IMPORT: a `cafresohq-office-backup.json`
+   of every office key in localStorage, which `useFileStored` writes on every
+   change alongside the file (file wins on mount), so the file-backed rows
+   above are in it too; import PUTs them back through the file doors
+   (`## 402.`). What was true: a HOSTED office had no copy of `hq-state/`
+   outside its container. `## 417.` closes that — every `/hq` write is
+   mirrored to the user's vault bucket and an empty container restores from
+   it. What is still open, and still a product decision: nothing in the
+   office TELLS a local tester to take the export, and no schedule takes
+   one for them.
 2. **Two browsers open at once still last-writer-wins on the chat.**
    `useStored` carried a cross-tab `storage`-event absorber; `useFileStored`
    does not, so the swap traded that for file durability. Every other
@@ -1034,11 +1040,14 @@ Docker build — the daemon on this machine did not answer after a reboot.
    Assets cache for ten minutes; a stale tab is not a failed deploy.
 3. Roll the fleet, on the gateway. A container does not re-pull `:latest`
    on `start`; only `provision` reads `image_url`. So each user's container
-   is `delete` then `provision`, and **that loses `/data/hq-state`** (the
-   office's tasks, chat, projects) because the container instance has no
-   persistent volume — only the vault, in Object Storage, survives. Roll
-   before there are users whose office you would mind emptying, or add a
-   volume first.
+   is `delete` then `provision`. The container instance has no persistent
+   volume, so `/data/hq-state` (the office's tasks, chat, projects, memory)
+   dies with it. **From `## 417.` on, that is survivable:** every `/hq` write
+   is mirrored into the user's vault bucket under `.hq-state/`, and a fresh
+   container whose state dir is empty restores from the mirror before it
+   answers its first `/hq` request. Only containers running an image OLDER
+   than `## 417.` lose their office on the roll that brings them forward —
+   that roll is the last one that costs anything.
 
 The UI and the image should ship together: the UI on this tip expects doors
 (`/vault/file` receipts, `/fs/collect` sentences, the `_hermes_proxy` guards)

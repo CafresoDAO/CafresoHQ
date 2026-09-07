@@ -45094,3 +45094,96 @@ module-level helpers), a new `_SecretStream` class after `_relayable`, and
 touched `main.mo`, the II configuration, or the mainnet. Four concurrent
 hunts were appending to this ledger; if this landed other than where it was
 numbered, every `#416` in `serve.py` and the test moved with it.
+
+## 417. the office that lived in the container
+
+`## 416`'s sweep left the ship path documented and one line in it that was
+not a finding but a cost: a fleet roll is `delete` then `provision`, the
+container instance has no persistent volume, and **`/data/hq-state` dies
+with the container**. That directory is the office — every task, receipt,
+pin, workflow, project, meeting, the chat `## 413` moved out of the browser,
+and the agent roster and memory under it. Only the vault survived a roll,
+because only the vault was in Object Storage. So every image ship emptied
+every hosted office, and the doc's honest advice was "roll before there are
+users whose office you would mind emptying, or add a volume first."
+
+### The decision, argued: the bucket the office already has
+
+A volume was the obvious instrument and it was not taken. Container
+Instances mount volumes at provision time, which puts the fix in the
+fleet-manager and the gateway — a repo this hunt does not touch, on a VM
+this session is not allowed to reach — and it makes the office's survival
+depend on an operator remembering a flag. The office already has one
+durable, per-user, credentialed place that `serve.py` can reach from inside
+the container without anyone adding anything: the vault bucket, keyed under
+the user's `OCI_VAULT_PREFIX`. So the state directory is now MIRRORED there,
+and RESTORED from there.
+
+Mirror: every successful `/hq/state/<name>` and `/hq/memory/<name>` PUT is
+queued for the bucket after the atomic disk write returns, under
+`.hq-state/<scope>/<name>.json`. The dot-folder is not decoration: every
+vault listing and `/vault/search` already skips any path with a dot part
+(the `part.startswith('.')` filter both arms share), so the office's own files cannot show up as notes in the
+office's own search. The queue is debounced — latest body per name wins, one
+`put_object` per name per burst — because a note is PUT on every keystroke
+and a workflow on every tick, and a bucket write per keystroke is a bill.
+It is asynchronous and it cannot fail a save: a refused put is counted,
+logged, and reported on `/health` as `hq_state_mirror`, and the PUT that
+caused it was already answered 200 because the disk write it reports on
+already happened. The office never sees a failed save it did not have.
+
+Restore: at boot, in a daemon thread started before the socket binds, for
+each of the two scopes whose directory holds NO JSON yet, list the mirror
+prefix, fetch each `<name>.json`, validate it parses, write it atomically.
+**Disk wins.** A directory with one file in it is left entirely alone —
+not merged, not filled in behind — so a live container is never rolled back
+by a stale mirror and a half-restored office cannot be produced by a
+partial listing. The first `/hq` request on a fresh container waits
+(bounded, twenty seconds) for that thread, because the client seeds
+defaults over a `null` and a GET that raced the restore would have written
+the empty office back over the full one. A bucket outage delays the first
+answer; it never blocks it.
+
+### Measured
+
+Stand-in `oci` SDK, real `serve.py` subprocesses, one bucket file:
+
+    PUT tasks / 5× notes / memory agents  -> bucket holds exactly 3 objects,
+      notes carries v=4 (the newest), /health mirrored=3 failed=0
+    /vault/search?q=ship on that bucket   -> 200, no hits (dot-folder)
+    second server, EMPTY state dir        -> GET tasks = the mirrored body,
+      notes v=4, memory/agents = roster, never-written = null, restored=3
+    third server, tasks.json on disk      -> disk body answered, siblings
+      NOT pulled in behind it
+    bucket refusing put (503)             -> PUT 200, file on disk,
+      /health failed>=1 with the 503 in last_error, bucket unchanged
+
+Fired twice: with the mirror call removed, 13 checks fail; with the restore
+thread replaced by a no-op, the five round-2 checks fail and nothing else.
+
+### The weakest verdict here
+
+**Disk-wins is decided by "any `*.json` in the directory", not by age.** A
+container that survived a crash with one stray file and lost the rest would
+not be restored, and the rule cannot tell that case from a live office. It
+was chosen over any age comparison because the mirror carries no version and
+a clock inside a container is not a fact to build on; the case it mishandles
+needs a crash that deletes files selectively, which `_hq_handler`'s
+mkstemp + `os.replace` writes make hard to produce. And the mirror is one bucket
+write behind the disk by design: an office killed inside the two-second
+debounce loses that last write, which is the same window a laptop's own
+`useFileStored` debounce already accepts.
+
+### Test
+
+New `scripts/test_the_office_survives_its_container.py`, the five rounds
+above, its stand-in SDK now answering `list_objects` too. `docs/
+BETA_READINESS.md`'s roll paragraph and its first beta gate are corrected:
+the export/import in Settings existed before this entry (it was overstated
+as "no export-all"), and the hosted loss it described is now bounded to
+the one roll that brings a container forward past this entry.
+
+`serve.py` regions touched: the `_oci_obj_key` neighbourhood (the mirror and
+restore helpers), `_hq_handler` (one wait, one schedule call), `/health`
+(one key), and `__main__` (the restore thread). Nothing here touched
+`main.mo`, the II configuration, the fleet repo, or the mainnet.

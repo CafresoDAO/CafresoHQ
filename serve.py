@@ -1523,6 +1523,138 @@ def _oci_obj_key(rel: str) -> str:
     prefix = (_oci_vault_prefix.rstrip('/') + '/') if _oci_vault_prefix else ''
     return prefix + rel.lstrip('/')
 
+# ── #417 the office that lived in the container ───────────────────────────────
+# A fleet container has no persistent volume: `/data/hq-state` — every task,
+# receipt, workflow, chat and memory file the office PUT to /hq/* — dies with
+# the container, and a fleet roll (delete + provision) IS a container death.
+# Only the vault in Object Storage survives one. So every successful /hq PUT
+# is mirrored into the same bucket, under a dot-folder every vault list and
+# search already skips, and a container whose state dir is EMPTY on boot
+# restores from that mirror before it answers its first /hq request.
+#
+# Disk wins: a state dir with any file in it is never overwritten from the
+# bucket, so a live container is never rolled back by a stale mirror. The
+# mirror is debounced (latest body per name wins) and asynchronous — a bucket
+# failure is counted and logged, never turned into a failed save.
+_HQ_MIRROR_ROOT = '.hq-state/'
+_HQ_MIRROR_DELAY = float(os.environ.get('CAFRESOHQ_HQ_MIRROR_DELAY', '2') or 2)
+_hq_mirror_lock = threading.Lock()
+_hq_mirror_pending: dict = {}          # (scope, name) -> bytes, latest wins
+_hq_mirror_timer = None
+_hq_mirror_stats = {'mirrored': 0, 'failed': 0, 'last_error': '',
+                    'restored': 0, 'restore_error': ''}
+_hq_restore_done = threading.Event()
+_hq_restore_done.set()   # cleared by __main__ only while a restore is running
+
+
+def _hq_mirror_enabled() -> bool:
+    return bool(_vault_backend == 'oci' and _oci_vault_namespace
+                and _oci_vault_bucket)
+
+
+def _hq_mirror_key(scope: str, name: str) -> str:
+    return _oci_obj_key(_HQ_MIRROR_ROOT + scope + '/' + name + '.json')
+
+
+def _hq_mirror_flush() -> None:
+    global _hq_mirror_timer
+    with _hq_mirror_lock:
+        batch = dict(_hq_mirror_pending)
+        _hq_mirror_pending.clear()
+        _hq_mirror_timer = None
+    if not batch:
+        return
+    try:
+        cli = _oci_object_client()
+    except Exception as e:
+        with _hq_mirror_lock:
+            _hq_mirror_stats['failed'] += len(batch)
+            _hq_mirror_stats['last_error'] = str(e)[:200]
+        print(f'[hq-mirror] client unavailable: {e}')
+        return
+    for (scope, name), body in batch.items():
+        try:
+            cli.put_object(_oci_vault_namespace, _oci_vault_bucket,
+                           _hq_mirror_key(scope, name), body,
+                           content_type='application/json')
+            with _hq_mirror_lock:
+                _hq_mirror_stats['mirrored'] += 1
+        except Exception as e:
+            with _hq_mirror_lock:
+                _hq_mirror_stats['failed'] += 1
+                _hq_mirror_stats['last_error'] = str(e)[:200]
+            print(f'[hq-mirror] put {scope}/{name} failed: {e}')
+
+
+def _hq_mirror_schedule(scope: str, name: str, body: bytes) -> None:
+    """Queue one /hq write for the bucket. Debounced: a burst of saves to the
+    same name (every keystroke in a note, every tick of a workflow) costs one
+    put_object, carrying the newest body."""
+    global _hq_mirror_timer
+    if not _hq_mirror_enabled():
+        return
+    with _hq_mirror_lock:
+        _hq_mirror_pending[(scope, name)] = body
+        if _hq_mirror_timer is None:
+            t = threading.Timer(_HQ_MIRROR_DELAY, _hq_mirror_flush)
+            t.daemon = True
+            _hq_mirror_timer = t
+            t.start()
+
+
+def _hq_state_restore_from_bucket() -> None:
+    """Boot-time restore. For each scope whose directory holds no JSON yet,
+    pull every mirrored file back. Sets _hq_restore_done whatever happens so
+    a bucket outage delays the first /hq answer, never blocks it."""
+    try:
+        if not _hq_mirror_enabled():
+            return
+        for scope, base in (('state', _hq_state_dir), ('memory', _hq_memory_dir)):
+            try:
+                if base.exists() and any(base.glob('*.json')):
+                    continue                      # disk wins
+                cli = _oci_object_client()
+                prefix = _oci_obj_key(_HQ_MIRROR_ROOT + scope + '/')
+                resp = cli.list_objects(_oci_vault_namespace, _oci_vault_bucket,
+                                        prefix=prefix, fields='name', limit=1000)
+                names = [o.name for o in (resp.data.objects or [])]
+                base.mkdir(parents=True, exist_ok=True)
+                for key in names:
+                    rel = key[len(prefix):]
+                    if not _re.match(r'^[\w\-]+\.json$', rel):
+                        continue
+                    try:
+                        body = cli.get_object(_oci_vault_namespace,
+                                              _oci_vault_bucket, key).data.content
+                        json.loads(body.decode('utf-8'))
+                    except Exception as e:
+                        print(f'[hq-mirror] restore skipped {rel}: {e}')
+                        continue
+                    import tempfile as _tf
+                    tfd, tmp = _tf.mkstemp(dir=str(base), prefix='.' + rel + '.',
+                                           suffix='.tmp')
+                    try:
+                        with os.fdopen(tfd, 'wb') as fh:
+                            fh.write(body)
+                            fh.flush()
+                            os.fsync(fh.fileno())
+                        os.replace(tmp, base / rel)
+                    except Exception:
+                        try: os.unlink(tmp)
+                        except OSError: pass
+                        raise
+                    with _hq_mirror_lock:
+                        _hq_mirror_stats['restored'] += 1
+            except Exception as e:
+                with _hq_mirror_lock:
+                    _hq_mirror_stats['restore_error'] = str(e)[:200]
+                print(f'[hq-mirror] restore of {scope} failed: {e}')
+        if _hq_mirror_stats['restored']:
+            print(f"[hq-mirror] restored {_hq_mirror_stats['restored']} office "
+                  f"file(s) from the bucket")
+    finally:
+        _hq_restore_done.set()
+
 # Fleet identity (set by fleet-manager when provisioning the container)
 _fleet_mode      = os.environ.get('CAFRESOHQ_FLEET_MODE', 'local').strip()
 _fleet_user_principal = os.environ.get('USER_PRINCIPAL', '').strip()
@@ -3361,6 +3493,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'runtime_env':      _RUNTIME_ENV,
             'auth_required':    bool(CAFRESOHQ_API_KEY),
             'oci_vault_ready':  oci_ready,
+            'hq_state_mirror':  (dict(_hq_mirror_stats)
+                                 if _hq_mirror_enabled() else None),  # #417
             'brain':            brain,
         })
 
@@ -5040,6 +5174,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not _re.match(r'^[\w\-]+$', name):
             return self._send_json(400, {'error': f'invalid name: {name!r}'})
 
+        # #417: a fresh container must not answer (or seed defaults over) the
+        # office before the bucket restore has had its chance.
+        if not _hq_restore_done.is_set():
+            _hq_restore_done.wait(20)
+
         if scope == 'state':
             base = _hq_state_dir
         elif scope == 'memory':
@@ -5116,6 +5255,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 # For agent roster, also write a human-readable markdown summary
                 if scope == 'memory' and name == 'agents':
                     self._write_agents_md(base, json.loads(body.decode('utf-8')))
+                _hq_mirror_schedule(scope, name, body)   # #417
                 return self._send_json(200, {'ok': True, 'path': str(filepath)})
             except json.JSONDecodeError:
                 return self._send_json(400, {'error': 'body must be valid JSON'})
@@ -7074,6 +7214,15 @@ if __name__ == '__main__':
         print('  ⚠  bound to a non-loopback interface with NO CAFRESOHQ_API_KEY — '
               'the terminal, agent, vault and /tools routes are refused for '
               'non-loopback callers. Set CAFRESOHQ_API_KEY to use them from the LAN.')
+    # #417: pull the office back from the bucket on an empty state dir.
+    # Daemon thread so a slow bucket never delays the bind; /hq waits
+    # on it (bounded) instead.
+    if _hq_mirror_enabled():
+        _hq_restore_done.clear()
+        threading.Thread(target=_hq_state_restore_from_bucket,
+                         name='hq-restore', daemon=True).start()
+    else:
+        _hq_restore_done.set()
     with ThreadedServer((_bind_host, PORT), Handler) as httpd:
         if _tls_on:
             ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
