@@ -62,8 +62,18 @@ def check(name, cond, detail=''):
 
 
 def run_js(js):
-    proc = subprocess.run(['node', '--input-type=module', '-e', js],
-                          cwd=ROOT, capture_output=True, text=True, timeout=60)
+    # This file's lifted preamble (the real hq-runtime.jsx, minus imports) is
+    # ~280KB on its own, before the test's own cases are appended — as a
+    # single `-e` argv element that clears macOS's limit but not Linux's:
+    # Linux caps any ONE argv/envp string at MAX_ARG_STRLEN (32 pages, 128KiB
+    # on a 4KiB-page kernel), separate from and much smaller than the overall
+    # ARG_MAX bytes the `-e` string was actually checked against here.
+    # Measured: `Argument list too long` / `OSError: [Errno 7]` on GitHub's
+    # Ubuntu runner, 3/3 clean on this Mac. Piped via stdin instead, there is
+    # no such per-argument ceiling on either OS.
+    proc = subprocess.run(['node', '--input-type=module'],
+                          input=js, cwd=ROOT, capture_output=True, text=True,
+                          timeout=60)
     if proc.returncode != 0:
         print(proc.stderr[-1500:], file=sys.stderr)
         raise SystemExit('node harness failed on source lifted from the app')

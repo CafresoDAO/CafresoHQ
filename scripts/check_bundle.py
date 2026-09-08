@@ -101,7 +101,24 @@ def main() -> int:
         missing_local = [r for r in refs if r not in local_tags]
         check('serve.py injector emits every hashed asset',
               not missing_local, f'missing {missing_local}')
-        check('both injectors agree', local_tags == ui_manifest.render_tags(manifest),
+
+        # serve.py's tagger adds exactly ONE line the canister injector never
+        # emits: `window._TERMINAL_CWD`, the standalone Terminal tab's cwd —
+        # meaningless for a pure asset canister with no pty behind it, so
+        # scripts/ui_manifest.py correctly has no equivalent. That is a
+        # deliberate one-line difference (see serve.py's _cafresohq_terminal_cwd
+        # comment), not drift — a byte-for-byte compare here would fail on
+        # every run, on every machine, forever. Strip that one line, by
+        # pattern (not position — a manifest change could move where it
+        # lands) before asserting the rest still agree exactly.
+        local_lines = local_tags.splitlines(keepends=True)
+        cwd_lines = [ln for ln in local_lines if 'window._TERMINAL_CWD=' in ln]
+        check('serve.py emits exactly one terminal-cwd line',
+              len(cwd_lines) == 1, cwd_lines)
+        local_tags_comparable = ''.join(
+            ln for ln in local_lines if 'window._TERMINAL_CWD=' not in ln)
+        check('both injectors agree, apart from the local-only terminal cwd',
+              local_tags_comparable == ui_manifest.render_tags(manifest),
               'the inlined copy in serve.py has drifted from scripts/ui_manifest.py')
 
     print()

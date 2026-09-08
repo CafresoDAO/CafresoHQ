@@ -225,6 +225,12 @@ def drive(base, decision):
                             stderr=subprocess.PIPE, text=True)
     hook.stdin.write(payload)
     hook.stdin.close()
+    # communicate() below still tries to flush/close whatever `hook.stdin`
+    # refers to, even though it is already closed — harmless on some Python
+    # builds, a `ValueError: I/O operation on closed file` on others (measured
+    # on 3.12; not on 3.14 here). None tells communicate() there's nothing
+    # left to write, matching what the hook already received.
+    hook.stdin = None
 
     aid = None
     for _ in range(60):

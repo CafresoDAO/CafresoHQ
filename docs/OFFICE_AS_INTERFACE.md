@@ -45392,3 +45392,84 @@ constraint reproduced locally to confirm cause before treating the fix as
 correct rather than incidental. `eslint.config.mjs` and `serve.py`
 (`ThreadedServer`) are the only files this entry touches. Nothing here
 touched `main.mo`, the II configuration, the fleet repo, or the mainnet.
+
+## 420. what CI never got far enough to hit
+
+`## 419` fixed the two things stopping the `build` job's lint step from
+completing. It did not get the whole `tests` workflow green — fixing lint
+let the job run three steps further than it ever had, and three previously
+untested checks fired on their first real run: one a stale assumption in
+the check itself, two genuine Linux-only bugs `## 417`'s CI Node addition
+had never actually exercised before (CI had no `dist-ui/` before that
+change, so every JS-lifting test failed at "the HQ UI is built" and never
+reached its own logic).
+
+**`scripts/check_bundle.py`'s "both injectors agree" check was stale.**
+It asserts `serve.py`'s inlined manifest-tag injector matches
+`scripts/ui_manifest.py`'s byte for byte — written before the standalone
+Terminal tab's cwd fix added a `window._TERMINAL_CWD` line that ONLY
+`serve.py`'s injector emits, deliberately: a pure asset canister has no pty
+behind it, so `ui_manifest.py` correctly has nothing to inject there. The
+check never learned about that one-line, by-design divergence and would
+have failed on every single build, on every machine, forever — it had
+simply never run far enough (past the lint error) to say so until now.
+Fixed to strip exactly that one line, by pattern, before comparing the
+rest; a second check asserts `serve.py` still emits exactly one such line,
+so the strip can't quietly swallow a REAL drift in that neighbourhood.
+Fire-tested: an injected genuine third difference is still caught.
+
+**Two Python-version and OS-specific bugs, both in test code, not the
+product**, reached for the first time because this was CI's first real run
+of these two files:
+
+- `scripts/test_a_stamp_from_another_window_is_not_filed_as_a_timeout.py`
+  wrote the hook's stdin, closed it, then later called `hook.communicate
+  (timeout=30)`. Python's own `communicate()` still tries to flush
+  `self.stdin` if the attribute is anything other than `None` — even a
+  stdin the caller already closed — and Python 3.12 raises
+  `ValueError: I/O operation on closed file` where 3.14 (this Mac) does
+  not. Reproduced verbatim on a local Python 3.12 install (byte-for-byte
+  the CI traceback), fixed by setting `hook.stdin = None` right after the
+  close, reproduced clean on the same 3.12 afterward.
+- `scripts/test_the_stamp_shows_the_work.py`'s `run_js` passed the lifted
+  `hq-runtime.jsx` (~280KB after import-stripping) as a single `-e` argv
+  string. That is under this Mac's overall `ARG_MAX` and ran fine 3 of 3
+  times here — but Linux caps any ONE argv/envp element at `MAX_ARG_STRLEN`
+  (32 pages, 128KiB on a 4KiB-page kernel) independently of the aggregate
+  `ARG_MAX` the string was actually sized against locally, and GitHub's
+  Ubuntu runner hit exactly that: `OSError: [Errno 7] Argument list too
+  long`. Fixed by piping the script over stdin instead of argv (Node reads
+  a script from stdin under `--input-type=module` with no file argument),
+  which has no such per-element ceiling on either OS. Confirmed unchanged
+  behavior locally.
+
+### The decision, argued: fix what's proven, not what merely resembles it
+
+Every other `run_js` helper in `scripts/` (~59 of them) uses this same
+`-e`-argv pattern and none of them failed here — their lifted JS is smaller.
+Changing all of them on the strength of one measured failure would be
+fixing files nothing has shown are broken; only the one file whose argv
+string actually crossed Linux's per-argument ceiling was touched. The same
+reasoning held for the closed-stdin pattern: only the one call site this
+entry measured on a real 3.12 interpreter was changed.
+
+### The weakest verdict here
+
+**Neither Linux-specific bug was reproduced on the actual CI image** — the
+Ubuntu-runner traceback was matched against a local Python 3.12 install (for
+the stdin bug) and against the documented Linux kernel constant (for the
+argv one), not against a GitHub Actions container itself; Docker was
+unavailable on this machine to build one (a stale daemon left over from a
+prior reboot never answers `docker info`). The 3.12 reproduction is exact
+down to the traceback line; the argv one rests on `MAX_ARG_STRLEN` being
+what it has been across the whole 4KiB-page era, not on watching the real
+CI host enforce it.
+
+### Test
+
+No new test files — all three problems were caught by tests and a check
+already in the repo; each needed its OWN bug fixed, not a new one written.
+`scripts/check_bundle.py`, `scripts/test_the_stamp_shows_the_work.py`, and
+`scripts/test_a_stamp_from_another_window_is_not_filed_as_a_timeout.py` are
+the only files this entry touches. Nothing here touched `main.mo`, the II
+configuration, the fleet repo, or the mainnet.
