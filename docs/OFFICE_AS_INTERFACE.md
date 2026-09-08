@@ -45473,3 +45473,66 @@ already in the repo; each needed its OWN bug fixed, not a new one written.
 `scripts/test_a_stamp_from_another_window_is_not_filed_as_a_timeout.py` are
 the only files this entry touches. Nothing here touched `main.mo`, the II
 configuration, the fleet repo, or the mainnet.
+
+## 421. what the CLI check told you before you were allowed to ask
+
+CI's `tests` job, past `## 420`'s three fixes, hit one more first-run-only
+failure: `scripts/test_a_rebound_page_gets_no_pty_nonce_and_no_shell.py`'s
+"a good Host with a WRONG nonce still gets no PTY" got `503`, not the `0`
+or `403` it accepts. Not a flake — a real ordering bug in
+`pty_server.py`'s `_terminal_pty_ws`, invisible on every machine that has
+the `claude` CLI installed (every developer's, this one included) and
+guaranteed on the one machine in this pipeline that doesn't.
+
+`_terminal_pty_ws` resolved the requested CLI binary — `_claudecode_resolve`
+et al. — and answered `503 {cli} CLI not found` on a miss, BEFORE the
+Host/Origin/nonce security gate ran. On this Mac, `claude` resolves, so a
+wrong-nonce request sails past that dead code path and reaches the gate,
+which drops the connection — the behavior the test was written against.
+On GitHub's runner, no `claude` CLI is installed, so `_claudecode_resolve`
+returns nothing and EVERY request to this route — nonce right, wrong, or
+absent — gets `503` before the gate ever runs. The test surfaced a real
+question the ordering answers wrongly: an unauthenticated caller with no
+valid Host, Origin, or nonce at all currently learns "claude CLI not
+found" for free, before it has proven it's allowed to ask anything.
+
+### The decision, argued: move the gate, not the goalposts
+
+Widening the test to also accept 503 would have hidden this rather than
+fixed it — a wrong-nonce caller would keep getting real information about
+server configuration ahead of authorization, on any host missing a CLI,
+which is exactly the shape of every OCI Fleet container that only ships
+whichever CLIs the user actually installed. So the fix moved the
+Host/Origin/nonce block to run BEFORE CLI resolution, not after. Every
+already-passing behavior is unchanged: a caller who clears the gate and
+has a resolvable CLI still reaches the shell; a caller who clears the gate
+on a host missing the CLI still gets `503` (correctly, now AFTER proving
+it was allowed to ask); the only outcome that changes is the one that was
+wrong — a caller who does NOT clear the gate now never learns anything
+about what's installed, on any host.
+
+### Measured
+
+    this Mac, claude resolvable, wrong nonce: unchanged (403/dropped, 3/3)
+    all terminal/pty-suite tests (24 files): unchanged, no regressions
+    reproduced the CI shape directly: booted serve.py with PATH pointed at
+    an empty directory (no `claude` reachable), sent a wrong-nonce
+    /terminal/pty request — before the fix this returns 503; after the
+    fix, the same request returns 403, matching what every OTHER host in
+    this test already produces
+
+### The weakest verdict here
+
+**This reorders a security-relevant code path on the strength of one
+test's status code, not a full audit of every early-return in this
+handler.** The `cli`/`cwd` parameter validation (400s) still runs before
+the gate, on the reasoning that malformed input isn't security-sensitive
+information — but that judgment call wasn't independently re-examined
+here, only inherited from the code's existing shape.
+
+### Test
+
+No new test file — the existing test already asserted the right thing and
+needed the product's ordering fixed under it, not a new assertion added
+over it. `pty_server.py` is the only file this entry touches. Nothing here
+touched `main.mo`, the II configuration, the fleet repo, or the mainnet.

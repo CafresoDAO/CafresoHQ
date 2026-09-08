@@ -340,21 +340,17 @@ def _terminal_pty_ws(self):
     cwd_path = pathlib.Path(_client_path(cwd)).resolve()
     if not cwd_path.is_dir():
         return _pty_failure(self, 400, 'cwd not a directory', cwd, NO_SUCH_CWD)
-    if cli == 'claude':
-        bin_ = self._claudecode_resolve()
-    elif cli == 'codex':
-        bin_ = self._codex_resolve()
-    elif cli == 'gemini':
-        bin_ = self._gemini_resolve()
-    else:  # hermes — the default agent (unix-only; native here or via WSL)
-        bin_ = self._hermes_resolve()
-    if not bin_:
-        return self._send_json(503, {'error': f'{cli} CLI not found'})
-    # Hermes opens its interactive agent via the `chat` subcommand; the
-    # workspace cwd scopes the agent to that project. Others just exec.
-    cli_extra_args = ['chat'] if cli == 'hermes' else []
 
     # ── Security: Host + Origin + nonce checks ─────────────────────────
+    # Deliberately BEFORE CLI-binary resolution below, not after (#421: it
+    # used to run after, so a caller with no valid Host/Origin/nonce at all
+    # still learned "{cli} CLI not found" whenever this host happened to be
+    # missing that binary — an unauthenticated probe reading back server
+    # configuration, and, measured on CI where no `claude` CLI is installed,
+    # a caller failing the nonce check got a 503 here instead of ever
+    # reaching the check below). A request that cannot pass this gate should
+    # learn nothing about what is or isn't installed.
+    #
     # Host validation — reject a DNS-rebound page. Also applied at dispatch
     # in serve.py for the whole /terminal family; repeated here because this
     # is the route that hands out a shell, and neither of the two checks
@@ -385,6 +381,20 @@ def _terminal_pty_ws(self):
     if not _provided_nonce or not secrets.compare_digest(_provided_nonce, _PTY_NONCE):
         return self.send_error(403, 'Missing or invalid nonce',
                                'Missing or invalid nonce — fetch /terminal/nonce first')
+
+    if cli == 'claude':
+        bin_ = self._claudecode_resolve()
+    elif cli == 'codex':
+        bin_ = self._codex_resolve()
+    elif cli == 'gemini':
+        bin_ = self._gemini_resolve()
+    else:  # hermes — the default agent (unix-only; native here or via WSL)
+        bin_ = self._hermes_resolve()
+    if not bin_:
+        return self._send_json(503, {'error': f'{cli} CLI not found'})
+    # Hermes opens its interactive agent via the `chat` subcommand; the
+    # workspace cwd scopes the agent to that project. Others just exec.
+    cli_extra_args = ['chat'] if cli == 'hermes' else []
 
     # ── WebSocket handshake ─────────────────────────────────────────────
     ws_key = self.headers.get('Sec-WebSocket-Key', '')
