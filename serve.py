@@ -6925,6 +6925,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 class ThreadedServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True
     daemon_threads = True
+    # #419: TCPServer's stdlib default is a 5-connection accept backlog — fine
+    # for one browser tab, not for a real office moment (forty coworkers
+    # dropping files into one folder at once, a burst of tabs mounting after
+    # a reload). Once the backlog fills, the KERNEL refuses the excess
+    # connections before serve.py's accept loop ever sees them: not a 5xx,
+    # not a slow response, no code here to catch it — the client's socket
+    # just fails. Measured: with the backlog artificially pinned to 1, the
+    # exact forty-coworker upload burst (`scripts/test_two_uploads_at_once_
+    # do_not_get_the_same_name.py`) loses several receipts to connection
+    # errors, byte-for-byte the failure this constant's absence produced.
+    # 128 is generous for a single-user-per-container office and cheap: it
+    # only reserves kernel queue slots, not threads or memory.
+    request_queue_size = 128
 
 
 def _ui_sources(root=None):

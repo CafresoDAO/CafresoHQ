@@ -45314,3 +45314,81 @@ before it — the busy-room guard string-matches `import { capChatFair,` at
 the head of that list and the full suite said so; `docs/BETA_READINESS.md`
 — gate 2. Nothing here touched
 `main.mo`, the II configuration, or the mainnet.
+
+## 419. forty coworkers, five kernel slots
+
+CI's `tests` job never went green on this trunk. Two things were wrong with
+it, unrelated to each other and to `## 417`/`## 418`, surfaced only by
+running on a slower, shared machine than the one this office is usually
+built on.
+
+**The trivial one first.** `eslint.config.mjs`'s browser-globals list named
+`HTMLElement` but not `HTMLButtonElement`, which `## 219`'s fix (`e.target
+instanceof HTMLButtonElement`) has used since before this ledger's current
+numbering. A one-identifier gap in an allowlist, not a regression — added.
+
+**The real one.** `scripts/test_two_uploads_at_once_do_not_get_the_same_name.py`
+(`## 137`'s test) failed on GitHub's runner with the exact symptom `## 137`
+itself describes: some receipts said "filed" and the bytes were not there.
+That reads like `## 137`'s race reopened. It had not. Forty threads were
+firing `post_files` at the same instant off one `threading.Barrier`, and
+`ThreadedServer` — `socketserver.TCPServer` with no `request_queue_size`
+override — was answering with the stdlib default: a five-slot accept
+backlog. The sixth simultaneous connection and every one after it, until the
+accept loop drains a slot, is refused by the KERNEL, before `serve.py`'s
+request handler — and `## 137`'s `O_CREAT|O_EXCL` claim inside it — ever
+runs. Not a lie on the receipt: the receipt was never issued, because the
+connection that would have carried it was refused. On this Mac, idle, the
+accept loop drains fast enough that forty threads never queue past five at
+once, so the test passed 3 of 3 local runs unmodified. A CI runner sharing a
+core with everything else in the job does not drain that fast.
+
+### The decision, argued: reproduce the mechanism, not the runner
+
+The temptation was to raise a timeout or add a retry in the TEST and call the
+CI environment noisy. That would have hidden the actual defect: a container
+this office ships to a fleet handles the concurrency of ONE user's tabs and
+uploads, and a real burst — forty files dragged into a folder, a page reload
+that fires several requests at once — hits the same five-slot ceiling on
+constrained hardware, which a per-user OCI Container Instance is closer to
+than an idle laptop. So the fix went into `serve.py`, not the test: reproduce
+the CI failure on this machine on purpose (`request_queue_size = 1`), confirm
+it produces the identical failure shape, then set `request_queue_size = 128`
+on `ThreadedServer` and confirm the same artificial constraint no longer
+reproduces it. 128 costs nothing but a kernel queue-depth number — no new
+thread, no memory held, no behavior change for the common case of one
+request at a time.
+
+### Measured
+
+    request_queue_size=1 (this Mac, deliberately handicapped):
+      Projects  31 of 40 filed, 9 lost — Library  33 of 40 filed, 7 lost
+      (both runs land on the SAME check the CI runner failed, at a similar
+       loss rate, from the same cause)
+    default (no override), this Mac: 3 of 3 clean runs, all 5 checks × 2 doors
+    request_queue_size=128, artificially handicapped the same way: clean
+    npm run lint: 1 error -> 0 errors (4 pre-existing unused-directive
+    warnings untouched, not this entry's concern)
+    full suite: 596, only the two known non-green (`## `-tracked separately:
+    a foreign main.mo change blocks one moc compile check; the other is the
+    already-flaky note-splice test) not passing — same two as before this
+    entry, nothing newly red
+
+### The weakest verdict here
+
+**128 is a guess at "generous enough," not a measured floor.** The two CI
+failures observed lost 5-9 of 40 at backlog=5 (default); nothing here proves
+128 survives every burst a fleet container will ever see, only that it
+survives the two reproductions available (default=5 failing, 1 failing
+harder) with room after either. A future test that fires more than 128
+truly-simultaneous connections at one container would need to establish its
+own number; this entry didn't have that case to measure against.
+
+### Test
+
+No new test file — the existing `## 137` test already asserted the right
+thing and needed nothing added to catch this; it just needed the runner's
+constraint reproduced locally to confirm cause before treating the fix as
+correct rather than incidental. `eslint.config.mjs` and `serve.py`
+(`ThreadedServer`) are the only files this entry touches. Nothing here
+touched `main.mo`, the II configuration, the fleet repo, or the mainnet.
