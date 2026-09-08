@@ -45536,3 +45536,60 @@ No new test file — the existing test already asserted the right thing and
 needed the product's ordering fixed under it, not a new assertion added
 over it. `pty_server.py` is the only file this entry touches. Nothing here
 touched `main.mo`, the II configuration, the fleet repo, or the mainnet.
+
+## 422. the check that could never say yes
+
+`test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py` (added in
+#413/#414's line, guarding `scanWorkerPayouts`'s Nat-safe accrual fix) ends
+with a genuine `moc` compile of `main.mo` — not a source-shape grep, an
+actual `dfx build cafresohq_state --check` against the pinned toolchain
+(`.dfx-version`, 0.24.3). On this Mac that step passes. On GitHub's Ubuntu
+runner it has never once run: `dfx` was never installed in the `tests`
+job, so the check hits `shutil.which('dfx')` returning `None`, prints "dfx
+is on PATH … — skipping the compile check", and FAILS anyway — the test
+treats "I couldn't check" as a hard failure, not a skip. Every CI run on
+this branch, #417 through #421, carried this as its one unavoidable red
+line. It wasn't caused by any of those five commits and none of them could
+have fixed it — the gap is in the workflow, not the suites or the source.
+
+The decision, argued: install dfx in the `tests` job, the same way `#413's
+line` (commit e8652a6) added Node/npm so nineteen esbuild-dependent suites
+could stop reading as failures. `dfx build cafresohq_state --check` is a
+local compile — it resolves imports, runs `moc`, and reports errors: no
+replica, no canister creation, no cycles wallet, no network call to the
+IC. That is categorically different from `dfx deploy` or any canister
+install/upgrade, which stay off-limits here entirely. The installer
+(`internetcomputer.org/install.sh`) itself does reach the network — to
+fetch the dfxvm binary and, on first invocation with `DFX_VERSION` set,
+the pinned 0.24.3 toolchain — the same kind of fetch `npm ci` already does
+in the same job for Node packages, not a mainnet action.
+
+Measured: bare `moc --check` against the committed `main.mo` fails on
+unresolved `base`/`Sha256` package imports — `dfx` is not a thin wrapper
+here, it resolves the vessel/mops package map before invoking `moc`, so
+the real check has to go through `dfx build`, not the compiler directly.
+Ran that properly: a detached git worktree at this branch's HEAD (so the
+foreign, uncommitted `main.mo` edit sitting in the primary checkout was
+never touched or read), `DFX_VERSION=0.24.3 dfx build cafresohq_state
+--check` inside it — exit 0, one expected benign warning ("operator may
+trap" on the Nat-safe floor, the same one this test's docstring already
+names as fine), nothing else. The committed source compiles clean; only
+the runner's missing toolchain was ever red.
+
+The weakest verdict here: this wasn't fire-tested inside GitHub's own
+runner before pushing — Docker on this Mac was unavailable for a true
+Ubuntu repro (a stale daemon from an earlier reboot), so the actual CI run
+after this push is the first time the installer runs on that exact image.
+If the installer's non-interactive flag or its install path assumptions
+have drifted from what's documented, this could still red the job on a
+different step than before — the fix is judged by that next CI run, same
+as #419 through #421 each was.
+
+Test: `.github/workflows/ci.yml` is the only file this entry touches — one
+new step in the `tests` job, before "Python suites", installing dfx and
+adding its bin directory to `$GITHUB_PATH`. Verified locally: the isolated
+worktree build above, confirming the committed `main.mo` compiles; a full
+suite run separately confirmed 596/597 with only this one gap red, on a
+machine where dfx already exists. Nothing here touched `main.mo`, the II
+configuration, the fleet repo, or the mainnet — no `dfx deploy`, no
+canister install/upgrade, no IC network call of any kind.

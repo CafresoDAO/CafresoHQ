@@ -76,5 +76,17 @@ jobs:
       - name: Install deps + build the UI bundle the suites measure
         run: npm ci && npm run build
 
+      # test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py skips its
+      # moc compile check (soft-FAILs the whole suite) without dfx on PATH.
+      # dfxvm lazily fetches the pinned version (.dfx-version, 0.24.3) on
+      # first `dfx build --check` — a local compile, no replica/network touch.
+      - name: Install dfx (for the genuine main.mo compile check)
+        env:
+          DFXVM_INIT_YES: "true"
+        run: |
+          sh -ci "$(curl -fsSL https://internetcomputer.org/install.sh)"
+          echo "$HOME/.local/share/dfx/bin" >> "$GITHUB_PATH"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
       - name: Python suites
         run: python3 scripts/run_tests.py
