@@ -78,8 +78,8 @@ jobs:
 
       # test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py skips its
       # moc compile check (soft-FAILs the whole suite) without dfx on PATH.
-      # dfxvm lazily fetches the pinned version (.dfx-version, 0.24.3) on
-      # first `dfx build --check` — a local compile, no replica/network touch.
+      # dfxvm lazily fetches the pinned version on first `dfx build --check`
+      # — a local compile, no replica/network touch.
       - name: Install dfx (for the genuine main.mo compile check)
         env:
           DFXVM_INIT_YES: "true"
@@ -89,4 +89,12 @@ jobs:
           echo "$HOME/bin" >> "$GITHUB_PATH"
 
       - name: Python suites
+        # .dfx-version (this repo's pin, 0.24.3) is untracked, so a checkout
+        # never carries it — without an explicit pin here, dfxvm's default
+        # (newer) dfx enforces stricter orthogonal-persistence rules main.mo
+        # wasn't written against (M0219 "implicitly transient"). The suite's
+        # own subprocess call inherits DFX_VERSION from the environment
+        # whenever the (absent, here) file doesn't override it.
+        env:
+          DFX_VERSION: "0.24.3"
         run: python3 scripts/run_tests.py

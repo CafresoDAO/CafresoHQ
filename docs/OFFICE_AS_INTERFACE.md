@@ -45593,3 +45593,51 @@ suite run separately confirmed 596/597 with only this one gap red, on a
 machine where dfx already exists. Nothing here touched `main.mo`, the II
 configuration, the fleet repo, or the mainnet — no `dfx deploy`, no
 canister install/upgrade, no IC network call of any kind.
+
+## 423. the pin that never rode along
+
+#422 installed dfx in the `tests` job so `test_worker_payout_sweep_does_not
+_wipe_mid_sweep_accrual.py`'s genuine `moc` compile could finally run.
+It ran — and immediately hit a wall this branch had never seen before:
+eight `type error [M0219], this declaration is currently implicitly
+transient, please declare it explicitly transient` errors against
+`main.mo`, a check that passes clean on this Mac. The difference wasn't
+the source, it was which `dfx` compiled it. `.dfx-version` (this repo's
+0.24.3 pin, the file the test reads to set `DFX_VERSION` before shelling
+out) is untracked — `git status` has always shown it as `??`. A checkout
+carries the tracked tree only, so CI's checkout never had it, dfxvm fell
+back to whatever the installer set as its default (materially newer than
+0.24.3), and that newer compiler enforces stricter orthogonal-persistence
+rules `main.mo` was never written against.
+
+The decision, argued: don't add `.dfx-version` to the checked-in tree —
+it's someone else's untracked, in-progress file sitting in this same
+working copy right now, not this branch's to stage. Set `DFX_VERSION:
+"0.24.3"` as the `env:` for the "Python suites" step in `ci.yml` instead.
+The test's own subprocess call already does `env = dict(os.environ)` and
+only overwrites `DFX_VERSION` when the pin file exists — on a checkout
+that lacks it, the value already sitting in the environment from the
+workflow step is exactly what reaches `dfx build --check`, no source
+change to the test itself required.
+
+Measured: a detached worktree at this branch's HEAD (so `.dfx-version`
+is genuinely absent, the same as a fresh CI checkout, without touching
+the foreign file in the primary checkout at all) reproduced the exact
+failure with `DFX_VERSION` unset — eight M0219s, byte-for-byte the same
+shape CI reported. Setting `DFX_VERSION=0.24.3` on that same invocation:
+exit 0, the one expected "operator may trap" warning, nothing else.
+
+The weakest verdict here: the version pin now lives in two places that
+have to agree by hand — `.dfx-version` (whoever eventually commits it)
+and this workflow's `env:` block — and nothing enforces they match if one
+changes without the other. That's an acceptable seam for now, not a fixed
+one: unifying it means either committing `.dfx-version` (not this
+branch's file to commit) or teaching the test to read a value this
+workflow also owns, and either is a real decision for whoever owns that
+file, not a call to make about someone else's in-progress work.
+
+Test: `.github/workflows/ci.yml` is the only file this entry touches.
+Verified via the worktree repro above (failing bare, passing pinned) and
+this branch's next CI run. Nothing here touched `main.mo`, `.dfx-version`,
+the II configuration, the fleet repo, or the mainnet — no `dfx deploy`,
+no canister install/upgrade, no IC network call of any kind.
