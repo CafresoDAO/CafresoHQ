@@ -78,15 +78,27 @@ jobs:
 
       # test_worker_payout_sweep_does_not_wipe_mid_sweep_accrual.py skips its
       # moc compile check (soft-FAILs the whole suite) without dfx on PATH.
-      # dfxvm lazily fetches the pinned version on first `dfx build --check`
-      # — a local compile, no replica/network touch.
+      # dfxvm does NOT lazily fetch a pinned version on first `dfx build
+      # --check` — it only installs whatever the installer script treats as
+      # current default, so the pinned 0.24.3 needs its own explicit
+      # `dfxvm install`. Both are local compiler installs, no replica/
+      # network touch beyond the download itself. The installer's actual
+      # bin directory on GitHub's Ubuntu runner isn't verified against a
+      # real run yet (no local Linux repro available), so this locates the
+      # binary rather than hardcoding a guessed path.
       - name: Install dfx (for the genuine main.mo compile check)
         env:
           DFXVM_INIT_YES: "true"
         run: |
           sh -ci "$(curl -fsSL https://internetcomputer.org/install.sh)"
-          echo "$HOME/.local/share/dfx/bin" >> "$GITHUB_PATH"
-          echo "$HOME/bin" >> "$GITHUB_PATH"
+          DFXVM_BIN="$(find "$HOME" -maxdepth 6 -type f -name dfxvm 2>/dev/null | head -1)"
+          if [ -z "$DFXVM_BIN" ]; then
+            echo "::error::dfxvm binary not found after install" >&2
+            find "$HOME" -maxdepth 6 -iname 'dfx*' 2>/dev/null
+            exit 1
+          fi
+          echo "$(dirname "$DFXVM_BIN")" >> "$GITHUB_PATH"
+          "$DFXVM_BIN" install 0.24.3
 
       - name: Python suites
         # .dfx-version (this repo's pin, 0.24.3) is untracked, so a checkout

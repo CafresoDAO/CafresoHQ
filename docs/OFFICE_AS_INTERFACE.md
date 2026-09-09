@@ -45641,3 +45641,59 @@ Verified via the worktree repro above (failing bare, passing pinned) and
 this branch's next CI run. Nothing here touched `main.mo`, `.dfx-version`,
 the II configuration, the fleet repo, or the mainnet — no `dfx deploy`,
 no canister install/upgrade, no IC network call of any kind.
+
+## 424. the version that was pinned but never fetched
+
+#423 set `DFX_VERSION: "0.24.3"` so the pin would reach `dfx build
+--check` even without the untracked `.dfx-version` file. It reached it —
+and hit a second, different wall: `error: dfx 0.24.3 is not installed. To
+install it, run: dfxvm install 0.24.3`. #422's install step only runs the
+official installer script, which sets up whatever `dfxvm` treats as the
+current default (materially newer than 0.24.3) and stops there. Nothing
+about `DFX_VERSION` being set makes `dfxvm` go fetch that version on
+demand — the earlier ledger entries assumed a lazy-fetch that doesn't
+exist; `dfxvm` only ever has the versions someone explicitly told it to
+install.
+
+The decision, argued: add `dfxvm install 0.24.3` as an explicit step
+after the installer runs, so the pinned compiler is actually present
+before the test's subprocess call ever asks for it. The installer's own
+final bin directory on GitHub's Ubuntu runner was never verified against
+a real run — no local Linux box or working container runtime was
+available to check it directly (`docker info` hangs on a stale daemon on
+this Mac). Rather than hardcode a path with a documented-but-unconfirmed
+convention and risk a repeat of this same failure loop on a wrong guess,
+the step now finds the installed `dfxvm` binary with `find "$HOME"
+-maxdepth 6 -type f -name dfxvm`, adds its actual directory to
+`$GITHUB_PATH`, and fails loudly with a directory listing if it can't be
+found at all — a missing binary should read as "dfx installer didn't do
+what it claims to," not as a silent no-op three steps later.
+
+Measured: the `find`-then-invoke pattern was sanity-checked against this
+Mac's real `dfxvm` install (a different path convention, under `Library/
+Application Support`, but the same shape of problem) — it locates the
+binary, resolves its directory, and `dfxvm list` against the discovered
+path shows `0.24.2`, `0.24.3`, and `0.29.1` already present, confirming
+the lookup logic itself is sound independent of which OS laid out the
+directory. The genuinely new claim — that GitHub's Ubuntu runner's
+installer places `dfxvm` somewhere this `find` can still reach in 6
+levels from `$HOME` — is judged by the next CI run, same as every fix in
+this chain so far.
+
+The weakest verdict here: this is the fourth consecutive commit whose
+verification had to lean on "the next CI run will tell us," because nothing
+about GitHub's actual Ubuntu runner — its installer's real directory
+layout, whether outbound network calls to `dfxvm`'s release server behave
+identically to this Mac's — is directly observable from here. Each of
+#421 through #424 was root-caused correctly on its own terms and still
+didn't fully predict the next environment-specific gap; there is no
+guarantee #424 is the last one, only that its own claim (a local compiler
+install, no replica or mainnet call) is smaller in scope than the ones
+before it.
+
+Test: `.github/workflows/ci.yml` is the only file this entry touches.
+Verified via the local `find`-and-invoke sanity check above; full
+confirmation is this branch's next CI run. Nothing here touched
+`main.mo`, `.dfx-version`, the II configuration, the fleet repo, or the
+mainnet — no `dfx deploy`, no canister install/upgrade, no IC network
+call of any kind.
