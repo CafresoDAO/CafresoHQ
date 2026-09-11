@@ -45771,3 +45771,94 @@ canvases and computed a real map (10 notes, 6 links, 5 topics) with an
 empty console. Nothing here touched `main.mo`, `.dfx-version`, the II
 configuration, the fleet repo, or the mainnet — no `dfx deploy`, no
 canister install/upgrade, no IC network call of any kind.
+
+## 426. the button that sat on the CEO when the phone turned sideways
+
+#356 took the palette button out of the meeting-room doorway: `left:
+10px; bottom: calc(130px + safe-area)`, the lobby's left end, measured
+clear of every control at 375x812, 375x667 and 320x568. #357 then made
+the office survive being turned sideways. Neither measured the button
+sideways. At 667x375, 130px from the bottom is not the lobby — it is y
+201->245, and the mobile agent strip is y 182->264. The strip is
+`position: sticky; top: 0` inside the office's scroller, so unlike the
+door this is not a scroll-dependent overlap: the box under the button
+never moves. `elementsFromPoint` at the centre of the strip's first chip
+— "CafresoHQ CEO", `onSitWithCEO`, the one control on the strip that
+opens the CEO — returned `SPAN, BUTTON.palette-fab`. The chip is 14->70
+x 188->257; the button is 10->54 x 201->245. A tap on the CEO opened the
+command palette. The fire-test below found the same thing at 568x320
+once the strip is pinned: the old spot covered the CEO there too.
+
+The decision, argued: three homes were measured, two were refused, and
+the refusals are the point. The button is app-wide, so a home has to be
+clear on all six tabs, in every state the app can be in — not the state
+this office happened to be in. The TOP BAR'S MIDDLE was clear on this
+office and failed on a fresh one: with nobody hired, the `⚠ NOBODY
+HIRED` chip sits in the pinned status row at x 270->406 on a 568-wide
+phone, under a centred button, shown to precisely the person who has
+not found the palette yet. The RIGHT OF THE BELL is a band the phone top
+bar reserves (`.status-pinned { padding-right: 152px }`), and it is
+reserved for the receipts pill — `.receipt-tray`, fixed top-right,
+557->659 at 667 wide — which a fresh office does not draw and every
+office with a stamped job does. There is no band in the top bar that
+some state of the app does not fill. So the button takes a slot the app
+RESERVES rather than one it hopes is empty: the tab bar's left end. At
+the landscape gate the bar gets `padding-left: 56px` (plus the left
+safe-area inset) and the button sits in it, `bottom: 13px` inside the
+bar, `z-index: 151` — one above the bar, still under every toast,
+window, modal and the palette it opens. The bar is the one piece of
+chrome identical on all six tabs, it is bottom-anchored like the
+portrait spot, and nothing in any view can flow into a tab bar's
+padding. The gate is #357's own — `(max-width: 768px) and (max-height:
+460px)` — so the three portrait sizes are untouched by construction.
+
+Measured, after: 667x375 — button 6->50 x 318->362 inside a tab bar
+305->375, the first tab starting at x 56 (the six tabs 111 -> 102px
+each); every chip on the strip hit-tests as itself; the button hit-tests
+as itself; with it hidden from hit-testing, nine points inside its box
+find nothing interactive beneath on any of the six tabs; the receipts
+pill (557->659 x 8->52) and the bell untouched. 568x320 — button 6->50 x
+263->307 inside a bar 250->320, tabs 95 -> 85px each (a PROJECTS label
+is ~58); same results on all six tabs; the Chat composer's Send is at
+490->555 x 192->218, nowhere near. On the Tools tab the drawer is a
+full-screen sheet ABOVE the button, so the button is the thing being
+covered there — the sheet's right, and the suite distinguishes it (see
+the weakest verdict). 375x812 — button 10->54 x 638->682, tab bar
+padding 0, first tab at x 0: portrait byte-for-byte as #356 left it.
+The three neighbouring office suites (#352's, #357's, #345's) still
+pass, 40, 36 and 13. The new suite runs 44 checks. Fire-tested by
+cutting the landscape rule out of styles.css: six checks go red —
+"[667x375] before any scroll, the palette button is nowhere above
+'CafresoHQ CEO'", both sizes' "sits inside the tab bar", and at
+568x320 the pinned-strip CEO hit-test, the strip touch, and "hides no
+interactive control — under it: DIV.mas-item". Restored byte-identical;
+44 green again.
+
+The weakest verdict here: two of them. First, the shape of the fix. The
+tab bar gives up 56px and the button reads as a seventh item in it, at
+landscape only — a different identity from the floating button portrait
+users know, and a narrower tab. That is a real cost, chosen because the
+alternative — a floating button over a column that scrolls, on a phone
+with 320px of height — has no empty band to float over, as three
+measurements in a row showed. Second, the suite's "hides no interactive
+control" is a heuristic: a control-sized element (250px or smaller)
+that is a button, link, field, role=button, or carries a React onClick
+within three ancestors, at nine sample points, counted only where the
+button is on top. It found the drawer, the chips and the NOBODY HIRED
+chip during this work, which is the evidence it is looking in the right
+places, and it is not a proof. One more thing it deliberately does not
+assert: at 568x320, before any scroll, the strip's natural box runs on
+past its scroller's clipped edge under the ticker and the bar — a
+rectangle nothing paints — so box-vs-box is asked only once the strip
+is pinned, and the before-scroll question is the hit-test at each chip's
+centre, which is the one that matters.
+
+Test: `styles.css` (one landscape rule — the bar's padding and the
+button's position — and its comment), the new
+`scripts/test_the_command_button_does_not_sit_on_the_ceo_when_the_phone_is_sideways.py`,
+and this entry. Verified live in a browser against the dev server at
+667x375, 568x320 and 375x812, and in the headless harness on a fresh
+office at the same three. Nothing here touched `main.mo`,
+`.dfx-version`, the II configuration, the fleet repo, or the mainnet —
+no `dfx deploy`, no canister install/upgrade, no IC network call of any
+kind.
