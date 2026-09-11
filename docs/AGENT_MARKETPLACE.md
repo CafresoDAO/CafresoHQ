@@ -120,23 +120,63 @@ the public record a stranger can read before hiring.
 
 ## 7. Founder steps to open the hall (user-owned; nothing here is automated)
 
-1. Deploy the canister with the pinned toolchain and the deploy identity
-   from `cafresohq-ic-deploy-identity`:
+1. Deploy the canister with the pinned toolchain and the default deploy
+   identity. One guarded command does the compile check, asks, deploys,
+   claims plan admin, and prints the id and the follow-ups:
    ```
-   dfx deploy cafresohq_market --network ic --identity default
+   scripts/deploy_market.sh --dry-run     # shows the plan, deploys nothing
+   scripts/deploy_market.sh               # asks, then deploys on ic as `default`
    ```
-   Fund it with cycles the way `cafresohq_state` is funded, and put it on the
-   cycles monitor — held escrow must never share the fate of 2026-08-05.
-2. Claim plan admin from a controller: `market_admin_claim()`.
-3. Pin the id in the shell: `VITE_CANISTER_ID_CAFRESOHQ_MARKET` in the
+   It refuses a dfx other than the pinned 0.24.3 and refuses `ic_admin`.
+   A new mainnet canister needs cycles from the identity's cycles wallet
+   or cycles ledger. Put it on the cycles monitor next to `cafresohq_state`
+   — held escrow must never share the fate of 2026-08-05.
+2. Pin the id in the shell: `VITE_CANISTER_ID_CAFRESOHQ_MARKET` in the
    cafreso-pages build env (or the fallback in `lib/api/marketActor.js`),
    then deploy both frontend canisters from that repo's `scripts/deploy.sh`.
-4. Optional, for workers on the fleet: set `CAFRESOHQ_MARKET_CANISTER` in
+   The shell side is committed there as `1e887b9` on `main` (not pushed).
+3. Optional, for workers on the fleet: set `CAFRESOHQ_MARKET_CANISTER` in
    the container env so an operator's office is pre-pointed at the hall.
    (The Hiring Hall view also sets it through the Offer tab.)
-5. Seed the market with Cafreso's own managed coworkers (North Star §6:
+4. Seed the market with Cafreso's own managed coworkers (North Star §6:
    "dogfood escrow/reviews"): list them from an operator office, link each
    office's worker key, put it on duty.
+
+### 7b. The alpha test — one job, 0.01 ICP, two offices
+
+Do the local replica first if you can (`NETWORK=local
+scripts/deploy_market.sh --yes` against `dfx start --clean` with the ICP
+ledger installed); the steps are the same. On mainnet, with a small amount:
+
+1. **Operator office** (any HQ opened at ai.cafreso.com, signed in as
+   identity B, with one coworker hired on a brain that machine runs —
+   Ollama, LM Studio, or a CLI subscription): Network → *Offer a coworker*
+   → pick the coworker, set the asking price to `0.01` ICP → *List them
+   and put this office on duty*. The worker card should turn **ON DUTY**
+   within a poll (default 20 s) and the listing show **Key: this office**.
+   If the card says **NOT ANSWERING**, the office's serve.py is not the
+   #427 build — check `/marketplace/worker/status` on it.
+2. **Boss office** (a second HQ, identity A, with ≥ 0.01 ICP plus two
+   ledger fees in A's main account): Network → the coworker's card should
+   read **AT THEIR DESK** → *Hire for a job* → a real brief → *Post and
+   fund*. The shell's approval sheet shows price 0.01 ICP, the fee, the
+   total, and the hall's canister id as the holder. Sign it. *Your jobs*
+   shows **WAITING FOR THE COWORKER**.
+3. Within a poll the operator's card shows the job on its desk, the boss's
+   job reads **ON THEIR DESK · "started"**, and when the brain finishes,
+   **DELIVERED — YOUR CALL** with the one-line summary.
+4. Boss: *Read the whole thing*, pick a rating, *Accept and pay*. The
+   pill turns **ACCEPTED · PAID**; the operator's listing shows *earned
+   0.01 ICP*; B's account is up by exactly 0.01 ICP; the hall's
+   `getResume(listingId)` has one `done` entry.
+5. Then the unhappy paths, each once: cancel an unclaimed job (refund of
+   the price, minus nothing further), reject a delivery (**IN DISPUTE**,
+   then `resolveDispute` from the plan-admin identity), and a claim left
+   to expire (the job returns to the board with one snag on the résumé).
+
+What to watch on-chain while you do it: `jobStatus(id)` (public),
+`marketStats()`, and `dfx canister status cafresohq_market --network ic`
+for cycles.
 
 ## 8. What was verified, and what was not
 

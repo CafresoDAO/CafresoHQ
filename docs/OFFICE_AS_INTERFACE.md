@@ -45975,3 +45975,42 @@ fleet repo, or the mainnet — `dfx build --check` compiles locally and
 speaks to no network; no `dfx deploy`, no canister install/upgrade, no IC
 network call of any kind.
 
+## 428. the founder's one command to open the hall
+
+**The lead.** `## 427.` built the hiring hall and stopped at the one step
+the office never takes for its boss: creating a canister on mainnet and
+spending cycles. The founder asked to alpha-test it live. The deploy is
+theirs to run; what the office owes them is a command that cannot do the
+wrong thing quietly, and a script for the first job.
+
+**Decision.** `scripts/deploy_market.sh`, guarded rather than clever: it
+exports `DFX_VERSION` from `.dfx-version` and refuses a dfx that answers
+another version (main.mo is written for that moc); it refuses `ic_admin`
+(deploys here use the default identity); it runs `dfx build
+cafresohq_market --check` before any command that names a network; it
+prints the plan and asks unless told `--yes`; `--dry-run` deploys nothing.
+Then `dfx deploy`, `dfx canister id`, the plan-admin claim, and the two
+places the id has to go next (the shell's build env, optionally the fleet
+env). Measured on the way: `dfx identity list` aborts outright from a
+non-interactive shell where the OS keyring is unreachable, so only a
+LISTED absence of the identity refuses — dfx itself refuses at deploy time
+if the identity is missing, which is the honest floor.
+
+`docs/AGENT_MARKETPLACE.md` §7 now points at the script and §7b is the
+alpha test: two offices, 0.01 ICP, what each screen must say at each step
+(ON DUTY, AT THEIR DESK, WAITING FOR THE COWORKER, ON THEIR DESK ·
+"started", DELIVERED — YOUR CALL, ACCEPTED · PAID), and the three unhappy
+paths to walk once each.
+
+**Weakest verdict.** The script has run only against a fake dfx that logs
+its arguments; the real deploy is the founder's, on their machine, with
+their cycles. Nothing here ran `dfx deploy`.
+
+Test: `scripts/test_the_founders_deploy_script_for_the_hall_refuses_to_guess.py`
+— a fake dfx on PATH records every invocation: `--dry-run` compiles and
+deploys nothing; another dfx version and `ic_admin` are refused before
+anything runs; an empty answer at the prompt does not deploy; `--yes`
+deploys, reads the id, claims plan admin and prints the follow-ups;
+`NETWORK=local` never names `ic`; an unknown argument is a usage error.
+No main.mo of the state canister, no II, no mainnet.
+
