@@ -71,7 +71,8 @@ function edgeColorForType(type, isDark) {
 const CONCEPT_NOTE_CAP = 120;
 
 /* InfraNodus-grade WebGL graph view (sigma.js + graphology via
-   window.CafresoGraphEngine). Replaces the legacy Canvas-2D renderer below.
+   window.CafresoGraphEngine). Replaced the legacy Canvas-2D renderer; its
+   force simulation and path helpers came out in #425 once nothing called them.
    Keeps the external contract: props {onOpenNote, embedded, activePath,
    onMinimize, agents}, the window.CafresoHQGraph API, and the popout. Adds an
    analytics side panel (communities, betweenness, structure, gaps) and a second
@@ -670,69 +671,6 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
   );
 }
 
-/* Connected-components labeling. Returns { id → componentIndex } and the
-   total component count. Used for auto-cluster coloring. */
-function connectedComponents(state) {
-  const adj = graphAdjacency(state);
-  const comp = {};
-  let idx = 0;
-  for (const n of state.nodes) {
-    if (comp[n.id] != null) continue;
-    const queue = [n.id]; comp[n.id] = idx;
-    while (queue.length) {
-      const cur = queue.shift();
-      for (const nb of adj.get(cur) || []) {
-        if (comp[nb] == null) { comp[nb] = idx; queue.push(nb); }
-      }
-    }
-    idx++;
-  }
-  return { comp, count: idx };
-}
-
-/* BFS shortest path between two node ids. Returns array of ids inclusive,
-   or null if unreachable. Treats edges as undirected. */
-function shortestPathBetween(state, fromId, toId) {
-  if (!fromId || !toId || fromId === toId) return fromId ? [fromId] : null;
-  const adj = graphAdjacency(state);
-  const prev = new Map(); prev.set(fromId, null);
-  const queue = [fromId];
-  while (queue.length) {
-    const cur = queue.shift();
-    if (cur === toId) {
-      const path = []; let c = cur;
-      while (c != null) { path.unshift(c); c = prev.get(c); }
-      return path;
-    }
-    for (const nb of adj.get(cur) || []) {
-      if (!prev.has(nb)) { prev.set(nb, cur); queue.push(nb); }
-    }
-  }
-  return null;
-}
-
-/* Choose neighbor in roughly the given direction vector (dx,dy). Used by
-   keyboard arrow navigation. */
-function neighborInDirection(state, fromId, dx, dy) {
-  const from = state.byId[fromId]; if (!from) return null;
-  const targetAngle = Math.atan2(dy, dx);
-  let best = null, bestScore = -Infinity;
-  for (const e of state.edges) {
-    const s = e.source.id || e.source, t = e.target.id || e.target;
-    let other = null;
-    if (s === fromId) other = state.byId[t];
-    else if (t === fromId) other = state.byId[s];
-    if (!other) continue;
-    const a = Math.atan2(other.y - from.y, other.x - from.x);
-    let diff = Math.abs(((a - targetAngle + Math.PI) % (Math.PI * 2)) - Math.PI);
-    // Score: prefer aligned direction, secondarily prefer closer nodes.
-    const dist = Math.hypot(other.x - from.x, other.y - from.y) || 1;
-    const score = -diff * 4 - dist * 0.001;
-    if (score > bestScore) { bestScore = score; best = other; }
-  }
-  return best;
-}
-
 /* In-browser semantic similarity using TF-IDF over a node's title tokens,
    tags, and folder path. Returns top-K candidate ghost edges between
    currently-unlinked node pairs. Cheap enough for vaults up to ~5k notes;
@@ -859,120 +797,6 @@ function getNeighbors(state, nodeId) {
   const adj = graphAdjacency(state);
   for (const nb of (adj.get(nodeId) || [])) neighbors.add(nb);
   return neighbors;
-}
-
-function simulate(s) {
-  const cfg = s.settings || {};
-
-  // Settling: freeze on the seed circle for state.freezeUntil ms, then ramp
-  // forces in linearly between freezeUntil and warmupUntil. This produces a
-  // smooth "circle pause → drift → settle" intro instead of an instant explosion.
-  const now = Date.now();
-  let warmth = 1;
-  if (s.freezeUntil && now < s.freezeUntil) {
-    warmth = 0;
-  } else if (s.warmupUntil && now < s.warmupUntil) {
-    const span = s.warmupUntil - (s.freezeUntil || s.warmupUntil);
-    const t = span > 0 ? (now - (s.freezeUntil || 0)) / span : 1;
-    // Ease-in-out cubic — slow start, gentle end. Feels like nodes "drift" into place.
-    const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-    warmth = e < 0 ? 0 : e > 1 ? 1 : e;
-  }
-
-  const REPULSE     = (cfg.repelForce    != null ? cfg.repelForce    : 900)   * warmth;
-  const SPRING      = (cfg.linkForce     != null ? cfg.linkForce     : 0.022) * warmth;
-  const SPRING_LEN  = cfg.linkDistance  != null ? cfg.linkDistance  : 150;
-  const CENTER      = (cfg.centerForce   != null ? cfg.centerForce   : 0.0008) * warmth;
-  const LAYER       = (cfg.layerForce    != null ? cfg.layerForce    : 0.003) * warmth;
-  const DAMP        = 0.85;
-
-  // Stability clamps — cap force per pair, velocity per step, displacement per step.
-  // Without these the inverse-square repulsion explodes when two nodes overlap.
-  // Velocity & step caps are scaled by warmth so the intro drift is gentle.
-  const MIN_DIST2   = 100;
-  const MAX_FORCE   = 12 * warmth;
-  const MAX_VEL     = 4 + 14 * warmth;   // 4 px/frame at start of warmup → 18 at full
-  const MAX_STEP    = 6 + 18 * warmth;   // 6 → 24
-
-  const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
-
-  const { nodes, edges } = s;
-  const D3 = !!s.is3D;
-
-  // During the introductory freeze, keep repainting overlays/pulses but skip
-  // the expensive O(n²) force pass. Previously we multiplied every force by 0
-  // and still paid the full pairwise cost, causing the first seconds to hitch.
-  if (warmth <= 0.0001) return;
-
-  /* Repulsion — every pair pushes apart (Coulomb-like). */
-  for (let i = 0; i < nodes.length; i++) {
-    for (let j = i + 1; j < nodes.length; j++) {
-      const a = nodes[i], b = nodes[j];
-      let dx = b.x - a.x, dy = b.y - a.y;
-      let dz = D3 ? (b.z || 0) - (a.z || 0) : 0;
-      let d2 = dx*dx + dy*dy + dz*dz;
-      if (d2 < 0.01) {
-        dx = (Math.random() - 0.5) * 2;
-        dy = (Math.random() - 0.5) * 2;
-        if (D3) dz = (Math.random() - 0.5) * 2;
-        d2 = dx*dx + dy*dy + dz*dz;
-      }
-      if (d2 < MIN_DIST2) d2 = MIN_DIST2;
-      const d = Math.sqrt(d2);
-      const f = -REPULSE / d2;
-      let fx = clamp(dx / d * f, -MAX_FORCE, MAX_FORCE);
-      let fy = clamp(dy / d * f, -MAX_FORCE, MAX_FORCE);
-      a.vx += fx; a.vy += fy;
-      b.vx -= fx; b.vy -= fy;
-      if (D3) {
-        let fz = clamp(dz / d * f, -MAX_FORCE, MAX_FORCE);
-        a.vz = (a.vz || 0) + fz; b.vz = (b.vz || 0) - fz;
-      }
-    }
-  }
-
-  /* Springs — linked nodes attract toward link distance. */
-  for (const e of edges) {
-    const a = e.source.id ? e.source : s.byId[e.source];
-    const b = e.target.id ? e.target : s.byId[e.target];
-    if (!a || !b) continue;
-    const dx = b.x - a.x, dy = b.y - a.y;
-    const dz = D3 ? (b.z || 0) - (a.z || 0) : 0;
-    const d = Math.sqrt(dx*dx + dy*dy + dz*dz) || 1;
-    const f = (d - SPRING_LEN) * SPRING;
-    let fx = clamp(dx / d * f, -MAX_FORCE, MAX_FORCE);
-    let fy = clamp(dy / d * f, -MAX_FORCE, MAX_FORCE);
-    a.vx += fx; a.vy += fy;
-    b.vx -= fx; b.vy -= fy;
-    if (D3) {
-      let fz = clamp(dz / d * f, -MAX_FORCE, MAX_FORCE);
-      a.vz = (a.vz || 0) + fz; b.vz = (b.vz || 0) - fz;
-    }
-  }
-
-  /* Integrate. */
-  for (const n of nodes) {
-    if (n.fx != null) { n.x = n.fx; n.y = n.fy; n.vx = 0; n.vy = 0; if (D3) n.vz = 0; continue; }
-
-    n.vx += ((n.outlinks || 0) - (n.inlinks || 0)) * LAYER;
-    n.vx -= n.x * CENTER;
-    n.vy -= n.y * CENTER;
-    n.vx *= DAMP; n.vy *= DAMP;
-    n.vx = clamp(n.vx, -MAX_VEL, MAX_VEL);
-    n.vy = clamp(n.vy, -MAX_VEL, MAX_VEL);
-    n.x += clamp(n.vx, -MAX_STEP, MAX_STEP);
-    n.y += clamp(n.vy, -MAX_STEP, MAX_STEP);
-
-    if (D3) {
-      n.z = n.z || 0;
-      // Weaker z-centering so the cloud stays voluminous instead of
-      // collapsing into a flat plane.
-      n.vz = (n.vz || 0) - n.z * (CENTER * 0.25);
-      n.vz *= DAMP;
-      n.vz = clamp(n.vz, -MAX_VEL, MAX_VEL);
-      n.z += clamp(n.vz, -MAX_STEP, MAX_STEP);
-    }
-  }
 }
 
 /* ---- Obsidian-style colour map for tagged notes -------------------------
@@ -1989,4 +1813,4 @@ function render(canvas, state, hover, selected) {
 
 /* ---------------- Custom Markdown renderer (no marked.js) ---------------- */
 
-export { GraphView, simulate };
+export { GraphView };

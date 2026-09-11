@@ -45697,3 +45697,77 @@ confirmation is this branch's next CI run. Nothing here touched
 `main.mo`, `.dfx-version`, the II configuration, the fleet repo, or the
 mainnet — no `dfx deploy`, no canister install/upgrade, no IC network
 call of any kind.
+
+## 425. the renderer that stayed below
+
+`views/graph.jsx`'s docstring for GraphView has said, since the WebGL
+cut-over, that the sigma.js engine behind `window.CafresoGraphEngine`
+"replaces the legacy Canvas-2D renderer below." It replaced it. It did not
+remove it. Still below the WebGL view at HEAD: `simulate` — the O(n²)
+force pass, ~110 lines of repulsion, springs and integration with a
+freeze-then-warm-up intro — plus `connectedComponents`,
+`shortestPathBetween` and `neighborInDirection`, the BFS and keyboard
+helpers the old canvas used. And in `views/vault.jsx`, `useForceGraph`:
+a `requestAnimationFrame` loop that called `simulate` every frame — the
+only caller `simulate` had left — for a hook nothing ever mounted.
+`simulate` was even still exported from graph.jsx and imported into
+vault.jsx, a live import edge whose whole purpose was to feed dead code.
+
+Grepped at HEAD across every shipped `.jsx` (root, views, ui, modals,
+app) plus `.js`/`.mjs` and the Python suites, word-bounded: `useForceGraph`
+had zero call sites; `connectedComponents`, `shortestPathBetween` and
+`neighborInDirection` had none; `simulate(` was called from exactly one
+place, inside `useForceGraph`. The `.js`/`.mjs` hits were comments in
+`graph-viewer.js` and a harness naming the file, not calls.
+
+The decision, argued: remove exactly the set the evidence condemns, and
+nothing the same evidence does not. That meant one correction to the
+report that flagged this. It listed `graphAdjacency` as dead too, on the
+same "no callers" reasoning — and it has callers: `getNeighbors` calls
+it, and `getNeighbors` is called from two live sites in GraphView (the
+focus-neighbour highlight). `graphAdjacency` stays. The new test pins
+that as firmly as it pins the removals, so a later sweep working from the
+same stale list cannot take the adjacency map out. Two more functions
+the grep shows with no callers — `bfsLocal` (the old Local-mode BFS) and
+`computeGhostEdges` (TF-IDF ghost edges) — were deliberately left alone:
+they were not in the ask, and whether the engine now covers what they
+did or whether those features silently fell off is a product question,
+not a cleanup. They are named here so the next person does not have to
+rediscover them.
+
+Measured: 210 lines removed, 4 added (the corrected docstring sentence,
+and the import and export lines shortened to `GraphView` alone), across
+two files. `npm run lint` clean on both. `npm run build` built its 8
+assets with `graphEngine=true` — the live engine path is untouched.
+The new suite runs 15 checks: the four functions absent, the export and
+import reduced to `GraphView`, no shipped `.jsx` referencing any removed
+name, `graphAdjacency` still defined and still called by `getNeighbors`
+with its two live callers, `clusterColor` still called, the engine
+`mount(` still present, and the docstring no longer promising a renderer
+"below". Fire-tested: a `function simulate(s) {}` stub appended to
+graph.jsx tripped two checks (the definition, and a shipped reference at
+the stub's line); the file was restored byte-identical and the suite
+went green again.
+
+The weakest verdict here: the whole proof of "dead" is static — grep
+over source, not a runtime trace. A caller reaching a function through
+a computed name, or an entry point outside the linted `.jsx` roots, is
+invisible to it. The mitigation is structural rather than measured: the
+bundle is built only from those roots, and the one non-`.jsx` graph file
+(`graph-viewer.js`) was in the grep. The same weakness cuts the other
+way for `bfsLocal` and `computeGhostEdges`: the evidence that condemned
+this set condemns them too, and they are still there by choice.
+
+Test: `views/graph.jsx` and `views/vault.jsx` (removals plus the one
+docstring sentence), the new
+`scripts/test_the_graph_dropped_the_renderer_it_replaced.py`, and this
+entry. Full suite after the change: 597 of 599 green, the two red being
+the known pair — the worker-payout sweep, whose `moc` compile trips on a
+foreign, uncommitted `main.mo` edit in this checkout, and the two-note-
+writes flake — with `npm run lint` at zero errors and
+`scripts/check_bundle.py` clean. The Library graph was also opened in a
+browser against the rebuilt bundle: the engine mounted its three WebGL
+canvases and computed a real map (10 notes, 6 links, 5 topics) with an
+empty console. Nothing here touched `main.mo`, `.dfx-version`, the II
+configuration, the fleet repo, or the mainnet — no `dfx deploy`, no
+canister install/upgrade, no IC network call of any kind.

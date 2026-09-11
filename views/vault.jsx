@@ -1,7 +1,7 @@
 import { CafresoHQClient, VaultBridge } from '../claude-client.jsx';
 import { obsidianCause, officeCause, uploadReceipt } from '../app/floor.jsx';
 import { FolderTree } from './core.jsx';
-import { GraphView, simulate } from './graph.jsx';
+import { GraphView } from './graph.jsx';
 import { renderMarkdown } from './ide.jsx';
 const { useState: useSV, useMemo: useMV, useRef: useRV } = React;
 
@@ -1922,35 +1922,5 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     </div>
   );
 }
-
-
-/* ---------------- Vault Graph (force-directed canvas) ---------------- */
-
-const useForceGraph = (initialState) => {
-  const stateRef = React.useRef(initialState);
-  const [_, setTick] = useSV(0);
-
-  const wakeSim = () => {
-    if (stateRef.current.energy < 1) stateRef.current.energy = 1;
-  };
-
-  React.useEffect(() => {
-    let frame;
-    const loop = () => {
-      if (stateRef.current.energy > 0.001) {
-        simulate(stateRef.current);
-        setTick(t => t + 1);
-        stateRef.current.energy *= 0.99; // Cooling
-      }
-      frame = requestAnimationFrame(loop);
-    };
-    frame = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(frame);
-  }, []);
-
-  return [stateRef.current, wakeSim, _];
-};
-
-
 
 export { VaultView };
