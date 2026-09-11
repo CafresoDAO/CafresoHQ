@@ -1,0 +1,141 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>fake shell — hiring hall harness</title>
+<!--
+  A stand-in for the ai.cafreso.com shell, for tests only.
+
+  The real shell iframes the HQ app and answers its `chain:*` and `vault:*`
+  postMessages with the Internet Identity it holds (cafreso-pages,
+  routes/hq/app/+page.svelte). This page iframes the same app from the SAME
+  origin (`?shell=<this origin>` — claude-client.jsx accepts localhost /
+  127.0.0.1 as a trusted shell origin), and answers the hiring-hall ops
+  from an in-memory hall exposed as `window.__fakeShell`, so a headless
+  browser can drive the whole boss-side flow — browse a résumé, post, fund,
+  read a delivery, accept and pay — and the test can read back exactly what
+  the app asked the shell to sign.
+
+  Nothing here signs anything; `approvals` records what the real shell would
+  have put in front of the boss. Served by serve.py at
+  /scripts/harness_fake_shell.html (same origin as /hq.html, so the test can
+  reach the iframe's document directly).
+-->
+</head>
+<body style="margin:0;background:#222">
+<iframe id="hq" style="width:100vw;height:100vh;border:0;display:block"></iframe>
+<script>
+(() => {
+  const ORIGIN = location.origin;
+  const iframe = document.getElementById('hq');
+  const ICP = { symbol: 'ICP', canister: 'ryjl3-tyaaa-aaaaa-aaaba-cai', decimals: 8 };
+  const ns = () => String(Date.now()) + '000000';
+  const S = window.__fakeShell = {
+    log: [], approvals: [], paid: [], seq: 0, declineFunding: false, progress: {},
+    info: { canister: 'fakeh-hall0-aaaaa-aaaaa-cai', host: ORIGIN, configured: true, tokens: { ICP } },
+    listings: {
+      '7': { id: '7', operator: 'op-principal', worker: 'wkey-principal', name: 'Mira', role: 'Research Coworker',
+             pitch: 'Crisp research briefs with sources, under an hour', brain: 'Claude Sonnet 4',
+             tags: ['brief', 'research'], ledger: ICP.canister, token: 'ICP', price: '25000000', payoutSub: null,
+             active: true, lastSeen: ns(), createdAt: '0', updatedAt: '0' },
+    },
+    resumes: { '7': { jobsDone: 12, jobsFailed: 1, disputes: 0, bosses: 5, rehires: 3, ratingSum: 48, ratingCount: 10, lastActive: '0' } },
+    jobs: {},
+    myListings: {},
+    /* the network coworker, simulated */
+    claim(id) { const j = S.jobs[String(id)]; j.status = 'claimed'; j.workerListing = j.listing; j.worker = 'wkey-principal'; j.claimedAt = ns(); j.updatedAt = ns(); S.progress[String(id)] = 'started'; },
+    deliver(id, body, summary) { const j = S.jobs[String(id)]; if (j.status !== 'claimed') S.claim(id); j.status = 'delivered'; j.body = body; j.summary = summary || body.split('\n')[0]; j.bodySha256 = 'ab'.repeat(32); j.deliveredAt = ns(); j.updatedAt = ns(); },
+  };
+  const card = (id) => ({ listing: S.listings[id], resume: S.resumes[id] || { jobsDone: 0, jobsFailed: 0, disputes: 0, bosses: 0, rehires: 0, ratingSum: 0, ratingCount: 0, lastActive: '0' }, online: true });
+
+  window.addEventListener('message', (e) => {
+    if (e.source !== iframe.contentWindow) return;
+    const d = e.data || {};
+    const { type, reqId } = d;
+    const reply = (p) => iframe.contentWindow.postMessage({ ...p, reqId }, ORIGIN);
+    const fail = (message) => reply({ type: 'chain:error', message });
+    if (type && type.startsWith('vault:')) {
+      if (type === 'vault:list') return reply({ type: 'vault:list:response', files: [] });
+      return reply({ type: 'vault:error', message: 'not in the harness' });
+    }
+    if (!type || !type.startsWith('chain:')) return;
+    S.log.push({ type, data: { ...d } });
+    switch (type) {
+      case 'chain:services:list': return reply({ type: 'chain:services:list:response', services: [] });
+      case 'chain:whoami': return reply({ type: 'chain:whoami:response', principal: 'boss-principal' });
+      case 'chain:status': return reply({ type: 'chain:status:response' });
+      case 'chain:market:info': return reply({ type: 'chain:market:info:response', ...S.info });
+      case 'chain:market:browse': return reply({ type: 'chain:market:browse:response', cards: Object.keys(S.listings).map(card) });
+      case 'chain:market:listing': return reply({ type: 'chain:market:listing:response', card: S.listings[String(d.id)] ? card(String(d.id)) : null });
+      case 'chain:market:resume': return reply({ type: 'chain:market:resume:response', entries: [] });
+      case 'chain:market:stats': return reply({ type: 'chain:market:stats:response', stats: { listings: 1, active: 1, jobs: Object.keys(S.jobs).length, open: 0, paid: S.paid.length, escrowed: '0' } });
+      case 'chain:market:post': {
+        const id = String(++S.seq);
+        S.jobs[id] = { id, boss: 'boss-principal', listing: d.listing != null ? String(d.listing) : null, title: d.title, brief: d.brief,
+                       kind: d.kind, tags: d.tags || [], ledger: ICP.canister, token: d.token || 'ICP', price: String(d.price), fee: '10000',
+                       deadlineSecs: d.deadlineSecs, status: 'posted', worker: null, workerListing: null, claimedAt: '0', attempts: 0,
+                       deliveredAt: '0', summary: '', body: '', bodySha256: '', rating: 0, note: '', escrowed: '0', createdAt: ns(), updatedAt: ns() };
+        return reply({ type: 'chain:market:post:response', id });
+      }
+      case 'chain:market:fund': {
+        const j = S.jobs[String(d.id)];
+        if (!j) return fail('no such job');
+        S.approvals.push({ what: 'fund', id: String(d.id), token: d.token, price: String(d.price) });
+        if (S.declineFunding) return reply({ type: 'chain:market:fund:response', status: 'declined' });
+        j.status = 'funded'; j.escrowed = String(BigInt(j.price) + BigInt(j.fee)); j.updatedAt = ns();
+        return reply({ type: 'chain:market:fund:response', status: 'ok', block: '101', price: j.price, fee: j.fee, total: j.escrowed });
+      }
+      case 'chain:market:cancel': {
+        const j = S.jobs[String(d.id)];
+        if (!j) return fail('no such job');
+        j.status = j.status === 'posted' ? 'cancelled' : 'refunded'; j.note = d.reason || ''; j.escrowed = '0';
+        return reply({ type: 'chain:market:cancel:response', status: 'ok', block: '102' });
+      }
+      case 'chain:market:accept': {
+        const j = S.jobs[String(d.id)];
+        if (!j || j.status !== 'delivered') return reply({ type: 'chain:market:accept:response', status: 'error', error: 'nothing has been delivered yet' });
+        j.status = 'accepted'; j.rating = Number(d.rating) || 0; j.escrowed = '0'; j.updatedAt = ns();
+        S.paid.push({ id: j.id, amount: j.price, rating: j.rating });
+        return reply({ type: 'chain:market:accept:response', status: 'ok', block: '103' });
+      }
+      case 'chain:market:reject': {
+        const j = S.jobs[String(d.id)];
+        if (!j) return fail('no such job');
+        j.status = 'disputed'; j.note = d.reason || '';
+        return reply({ type: 'chain:market:reject:response', id: j.id });
+      }
+      case 'chain:market:retry-payout': return reply({ type: 'chain:market:retry-payout:response', status: 'ok', block: '104' });
+      case 'chain:market:jobs': return reply({ type: 'chain:market:jobs:response', jobs: Object.values(S.jobs) });
+      case 'chain:market:job': return reply({ type: 'chain:market:job:response', job: S.jobs[String(d.id)] || null });
+      case 'chain:market:progress': return reply({ type: 'chain:market:progress:response', note: S.progress[String(d.id)] || '' });
+      case 'chain:market:payouts': return reply({ type: 'chain:market:payouts:response', payouts: [] });
+      case 'chain:market:my-listings': return reply({ type: 'chain:market:my-listings:response', listings: Object.values(S.myListings) });
+      case 'chain:market:put-listing': {
+        const id = d.id != null ? String(d.id) : String(100 + Object.keys(S.myListings).length + 1);
+        const prev = S.myListings[id] || {};
+        S.myListings[id] = { id, operator: 'boss-principal', worker: prev.worker || null, name: d.name, role: d.role || '', pitch: d.pitch || '',
+                             brain: d.brain || '', tags: d.tags || [], ledger: ICP.canister, token: d.token || 'ICP', price: String(d.price),
+                             payoutSub: d.payoutSub || null, active: !!d.active, lastSeen: '0', createdAt: '0', updatedAt: '0' };
+        return reply({ type: 'chain:market:put-listing:response', id });
+      }
+      case 'chain:market:link-worker': {
+        const l = S.myListings[String(d.id)];
+        if (!l) return fail('no such listing');
+        l.worker = d.principal;
+        return reply({ type: 'chain:market:link-worker:response', id: l.id });
+      }
+      case 'chain:market:unlink-worker': {
+        const l = S.myListings[String(d.id)];
+        if (!l) return fail('no such listing');
+        l.worker = null; l.active = false;
+        return reply({ type: 'chain:market:unlink-worker:response', id: l.id });
+      }
+      case 'chain:market:operator-jobs': return reply({ type: 'chain:market:operator-jobs:response', jobs: Object.values(S.jobs).filter(j => j.workerListing && S.myListings[j.workerListing]) });
+      default: return fail('not in the harness: ' + type);
+    }
+  });
+  iframe.src = '/hq.html?shell=' + encodeURIComponent(ORIGIN);
+})();
+</script>
+</body>
+</html>

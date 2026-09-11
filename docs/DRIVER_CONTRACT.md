@@ -101,7 +101,7 @@ layer, usage metering, and the approval flow consume **only** this stream.
 | `ollama` / `lmstudio` | http | the `ROUTES` relay entries, wrapped to emit contract events |
 | `openrouter` | http | `night_runner`'s HTTP client, promoted out of the scheduler into a shared driver both night missions and live tasks use |
 | `trial-brain` | http | managed default brain (operator-config gated), same contract |
-| `marketplace` | remote | **future, Phase C** — transport is the on-chain job queue (§6) |
+| `marketplace` | remote | **hall built 2026-09-11, driver still future** — the on-chain job queue, escrow, résumé and the container-side worker exist (§6, `AGENT_MARKETPLACE.md`); a network coworker as a floor sprite needs the browser-driven driver described in §6 |
 
 ## 3. Detection-driven defaults
 
@@ -171,24 +171,38 @@ which is precisely what makes hiring a *stranger's* agent tolerable later.
 Each step ships independently; the UI consumes the contract from step 1 and
 never learns backend specifics again.
 
-## 6. The marketplace driver (Phase C sketch)
+## 6. The marketplace (Phase C — the hall is built, the driver is next)
 
-The "hire an agent from the network" product (North Star §6, Phase C) is **just
-another driver** — same manifest, same events, different transport:
+The "hire an agent from the network" product (North Star §6, Phase C) was
+sketched here as **just another driver**. What shipped 2026-09-11 is the
+room that driver needs, and it moved one thing in the sketch:
 
-- `startTask` → writes a job (with declared budget + capability tier) to the
-  `cafresohq_state` job queue; escrow holds payment.
-- The operator's worker (evolved search-worker container) claims it, executes
-  on their GPU/model, streams events back (relay or poll), submits result.
-- `done` → escrow releases; the canister appends to the agent's **résumé
-  ledger** (jobs completed, disputes, re-hire rate) — the on-chain reputation
-  that makes this a labor market instead of a FLOPs market.
-- Privacy boundary from day one: tasks are `private` (own drivers only) or
-  `marketplace-ok` (explicitly marked shareable); the vault is structurally
-  unreachable from marketplace jobs.
+- The job queue is **its own canister**, `cafresohq_market`, not a table in
+  `cafresohq_state` — held escrow gets its own cycle balance and blast
+  radius. Real ICRC-2 escrow per job; release on the boss's stamp; refund
+  on cancel, on three snags, or on a ruling.
+- The operator's worker is **`market_worker.py` inside the coworker's own
+  container**, on a key of its own (`ic_agent.py`, stdlib-only). It claims,
+  runs the brief through a LOCAL driver from `drivers/` — the same five
+  calls, `tools: []`, no working directory — and delivers.
+- `deliverJob` + the boss's `acceptDelivery` → the canister appends to the
+  listing's **on-chain résumé** (jobs done, re-hires, rating, snags,
+  disputes). This is the labor-market moat, in stable memory.
+- Privacy boundary, enforced not described: the brief is the only input,
+  the reply the only output; the hall cannot address the vault or the
+  state canister; the worker key is scoped to its listing's jobs.
 
-Because approvals, artifacts, XP, and animations all ride the contract, a hired
-network coworker looks and behaves exactly like your own — which is the product.
+Full design and the founder's deploy steps: `AGENT_MARKETPLACE.md`.
+
+**What the sketch still owes — the driver itself.** A network coworker does
+not yet sit at a desk on the boss's floor. `startTask → post + fund`
+cannot run inside the container (no II there, by PHASE2 §3), so the
+`marketplace` driver row in §2 needs either a browser-driven driver (the
+shell posts and funds on `startTask` behind one approval walk, then the
+driver polls the public `jobStatus`) or a scoped delegation, which PHASE2
+§8 rules out for now. Until then the Hiring Hall view is the door, and
+approvals, artifacts and XP for network jobs live in that room rather
+than riding the contract.
 
 ## 7. Non-goals
 

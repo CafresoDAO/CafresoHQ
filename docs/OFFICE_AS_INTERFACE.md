@@ -45862,3 +45862,116 @@ office at the same three. Nothing here touched `main.mo`,
 `.dfx-version`, the II configuration, the fleet repo, or the mainnet —
 no `dfx deploy`, no canister install/upgrade, no IC network call of any
 kind.
+
+## 427. the hiring hall: hire a coworker from the network, pay on the stamp
+
+**The lead.** North Star §6 Phase C — "Hire from the network" — and
+DRIVER_CONTRACT §6 had the marketplace as a sketch: a job queue in the
+state canister, escrow "holds payment", a résumé ledger, a remote driver.
+Phase A (the driver contract) and Phase B (the local experience ledger,
+§5) were built; nothing on the chain side existed — the state canister's
+worker queue is HMAC-over-HTTP with admin-approved workers and an accrual
+counter, not escrow, and the container holds no chain credential at all
+(PHASE2 §3). The founder asked for the overall marketplace, on ICP and in
+this app.
+
+**Decision, argued.** Three things the sketch left open were decided by
+measurement of what already exists rather than by preference:
+
+- *A separate canister, not a table in `cafresohq_state`.* Escrow is money
+  at rest; the state canister ran its cycles to zero and was wiped once
+  (2026-08-05), and its working-tree copy is a foreign, non-compiling
+  edit this office must not touch. Held funds get their own balance and
+  blast radius. `src/cafresohq_market/main.mo`, compiled under the pinned
+  dfx 0.24.3 / moc 0.13.4, with the state canister's own disciplines
+  copied over: caller-keyed rows, claim-or-match plan admin, side tables
+  for anything added later (a stable record may lose a field, never gain
+  one), and exactly-once ledger moves — state before the await, memo +
+  created_at_time for the ledger's dedup, restore only on a known refusal.
+- *A worker key of its own, inside the coworker's container.* PHASE2 §3
+  keeps the container credential-free for the boss's own state and that
+  stands; but a coworker hired from the network has to take a job and
+  file the work while its operator's browser is closed, or it is not a
+  worker. The image is stdlib-only Python plus `oci` (no ic-py, no
+  cryptography, no node_modules), so `ic_agent.py` is a stdlib IC client:
+  ed25519 per RFC 8032, CBOR, a Candid encoder/decoder, the request id,
+  the call / query / read_state envelope and the certificate hash-tree
+  walk. The key's authority on-chain is exactly heartbeat / poll / claim /
+  progress / deliver / fail for the one listing it is linked to; the
+  operator unlinks it in one call.
+- *Real escrow in a per-job subaccount, not accrual.* The boss signs one
+  ICRC-2 allowance for exactly price + fee (the shell's approval sheet,
+  never auto-signed off an iframe request — the payroll rule), the hall
+  pulls it into `"mkt" ‖ zeros ‖ id`, releases the price to the operator on
+  the stamp with the fee riding in the deposit, refunds on cancel / three
+  snags / a ruling. A delivery the boss ignores for a week is accepted on
+  their behalf, because a worker who did the job is not to be ghosted.
+
+**What I found in my own money path before anything was built on it.**
+The timer's auto-accept walks the map and then awaits the ledger; a boss
+who accepts in that window would have produced a second release with a
+fresh created_at_time, which the ledger would NOT dedup — two payments.
+`moveOut` now re-reads the row after any await and refuses when it moved,
+and a payout key that is paid or in flight is never issued again with a
+new stamp; `retryPayout` reuses the old one so the ledger can answer
+#Duplicate.
+
+**The room.** `views/market.jsx`, "HIRING HALL", ninth rail item
+"Network" (measured: all five phone suites still pass with it; the mobile
+tab bar is its own six-item list and did not move). Three tabs. *Hire from
+the network*: résumé cards — jobs done, bosses, re-hires, rating, snags,
+disputes, at their desk / away from a ten-minute heartbeat — and a form
+that names an offer below the asking price and refuses it. *Your jobs*:
+posted → fund it / take it back; funded → take it back (refund); claimed →
+on their desk with the coworker's progress note; delivered → their
+one-line summary, read the whole thing, a ★ rating, accept and pay, or
+reject with a reason; accepted · paid. *Offer a coworker*: this office's
+real worker key (from serve.py's new `/marketplace/worker/*` doors, on the
+key-protected list — a stranger who can reach them can put this office to
+work for other people), on duty / off duty, list one of your own coworkers
+and link the key in one go. Jargon table honoured: coworker, job, boss,
+brain; and `test_the_library_has_one_name` caught this file saying "vault"
+in boss-facing copy — it says "library" now.
+
+**Privacy boundary, enforced not described.** `market_worker.py` runs a
+network job with `tools: []` and no working directory; the brief is the
+only input and the reply the only output; `allowWeb` widens it to web
+search only, per office, opt-in. The hall cannot address the vault or the
+state canister (the guard test greps for it).
+
+**The shell.** cafreso-pages: `lib/api/marketActor.js`, `lib/api/market.js`,
+a hand-written `cafresohq_market.did.js`, twenty-two `chain:market:*`
+cases in `routes/hq/app/+page.svelte` with fund / accept / cancel /
+retry-payout on the money-ops kill switch, and the actor reset on logout.
+`svelte-check` reports nothing in any file touched (its 41 errors are all
+pre-existing, elsewhere).
+
+**Weakest verdict.** The canister has not run on a replica. Every ledger
+interaction is exercised by type and by a stub; the first thing to do
+after the founder deploys it is one job end to end on a local replica,
+then a mainnet dry run with 0.01 ICP. `ic_agent.py` does not verify the
+certificate's BLS signature (trusts TLS to the boundary node; every money
+decision is the canister's from `msg.caller`, so a spoofed reply can
+mislead a worker's log, never the escrow). The network coworker is not
+yet a floor sprite — DRIVER_CONTRACT §6 says what the driver still owes
+and why it cannot run inside the container.
+
+Test: `scripts/test_the_hiring_hall_holds_the_money_and_keeps_its_word.py`
+(a genuine `dfx build --check`, `.did` drift against `moc --idl`, and the
+exactly-once / caller-keying / worker-scope / schema pins);
+`scripts/test_a_coworker_can_sign_a_canister_call_from_its_own_container.py`
+(RFC 8032, RFC 8949, the Candid spec's byte-exact encodings, the
+interface spec's request-id example, a stub replica);
+`scripts/test_a_network_coworker_takes_a_job_and_files_the_work_while_the_boss_is_away.py`
+(the loop against a stub hall that verifies every envelope's signature and
+derives the caller principal, and serve.py's doors);
+`scripts/test_the_hiring_hall_hires_a_coworker_and_pays_on_the_stamp.py`
+(the boss's whole flow in headless Chrome through
+`scripts/harness_fake_shell.html`, same origin and same protocol as the
+real shell). Design and the founder's deploy steps in
+`docs/AGENT_MARKETPLACE.md`. Nothing here touched
+`src/cafresohq_state/main.mo`, `.dfx-version`, the II configuration, the
+fleet repo, or the mainnet — `dfx build --check` compiles locally and
+speaks to no network; no `dfx deploy`, no canister install/upgrade, no IC
+network call of any kind.
+

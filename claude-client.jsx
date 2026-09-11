@@ -2794,6 +2794,37 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
       /* Lifetime recorded spend per agent → { [agentId]: { [token]: rawString } }. */
       totals() { return _req('chain:wallet:totals', {}).then(r => r.totals || {}); },
     },
+    /* The hiring hall — docs/AGENT_MARKETPLACE.md. Hire a coworker from the
+       network, pay from escrow held per job, read the résumé first. Every
+       call is signed by the shell's identity; fund() is a REAL signature
+       (an ICRC-2 approve for price + fee, shell-confirmed) followed by the
+       escrow pull, and accept()/cancel() move money out, so all three are
+       money ops behind the shell's operator kill switch. */
+    market: {
+      /* { canister, host, tokens: { ICP: { canister, decimals } … } } — '' canister = not deployed. */
+      info() { return _req('chain:market:info', {}); },
+      browse(offset, limit) { return _req('chain:market:browse', { offset: offset || 0, limit: limit || 50 }).then(r => r.cards || []); },
+      listing(id) { return _req('chain:market:listing', { id }).then(r => r.card || null); },
+      resume(id) { return _req('chain:market:resume', { id }).then(r => r.entries || []); },
+      stats() { return _req('chain:market:stats', {}).then(r => r.stats || null); },
+      /* boss */
+      post(req) { return _req('chain:market:post', req); },                              // → { id }
+      fund(id, token, price) { return _req('chain:market:fund', { id, token, price }, 240000); },
+      cancel(id, reason) { return _req('chain:market:cancel', { id, reason }, 120000); },
+      accept(id, rating) { return _req('chain:market:accept', { id, rating }, 120000); },
+      reject(id, reason) { return _req('chain:market:reject', { id, reason }); },
+      myJobs() { return _req('chain:market:jobs', {}).then(r => r.jobs || []); },
+      job(id) { return _req('chain:market:job', { id }).then(r => r.job || null); },
+      progress(id) { return _req('chain:market:progress', { id }).then(r => r.note || ''); },
+      payouts(id) { return _req('chain:market:payouts', { id }).then(r => r.payouts || []); },
+      retryPayout(id, key) { return _req('chain:market:retry-payout', { id, key }, 120000); },
+      /* operator */
+      myListings() { return _req('chain:market:my-listings', {}).then(r => r.listings || []); },
+      putListing(req) { return _req('chain:market:put-listing', req); },                 // → { id }
+      linkWorker(id, principal) { return _req('chain:market:link-worker', { id, principal }); },
+      unlinkWorker(id) { return _req('chain:market:unlink-worker', { id }); },
+      operatorJobs() { return _req('chain:market:operator-jobs', {}).then(r => r.jobs || []); },
+    },
     /* Payroll — the state canister's timer pays salaries under a user-signed
        ICRC-2 allowance. approve() is the ONE real signature (shell-confirmed). */
     payroll: {

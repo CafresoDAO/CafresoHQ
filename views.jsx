@@ -6,6 +6,7 @@ import { VaultView } from './views/vault.jsx';
 import { GraphView } from './views/graph.jsx';
 import { TerminalView } from './views/misc.jsx';
 import { ProjectsView, WorkspaceView } from './views/projects.jsx';
+import { MarketView } from './views/market.jsx';
 
 const CafresoHQViews = {
   TasksView,
@@ -17,6 +18,7 @@ const CafresoHQViews = {
   ProjectsView,
   WorkspaceView,
   TerminalView,
+  MarketView,
   VIEW_LABELS,
 };
 

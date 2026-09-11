@@ -42,6 +42,7 @@ function AppGlobalCommands({
     { id: 'nav.team',       label: 'Switch view: Team',      section: 'Navigation', icon: '👥', run: () => navigate('team') },
     { id: 'nav.terminal',   label: 'Switch view: Terminal',  section: 'Navigation', icon: '☼', run: () => navigate('terminal') },
     { id: 'nav.projects',   label: 'Switch view: Projects',  section: 'Navigation', icon: '🗂', run: () => navigate('projects') },
+    { id: 'nav.market',     label: 'Switch view: Network (Hiring Hall)', section: 'Navigation', icon: '🏛', run: () => navigate('market') },
 
     /* Top-level actions. */
     { id: 'act.hire',     label: 'Hire a new coworker',         section: 'Actions', icon: '＋', run: onHire },
@@ -74,7 +75,7 @@ function AppGlobalCommands({
       /* 'Projects', matching nav.projects thirty lines above — this file
          had both names for the same id. See NAV_ITEMS for why Projects
          won. */
-      ['vault','Library'],['projects','Projects'],['terminal','Terminal'],
+      ['vault','Library'],['projects','Projects'],['terminal','Terminal'],['market','Network'],
     ].map(([v, lbl]) => ({
       id: 'win.open.' + v, label: 'Open in window: ' + lbl, section: 'Windows', icon: '🪟',
       run: () => onOpenWindow(v),

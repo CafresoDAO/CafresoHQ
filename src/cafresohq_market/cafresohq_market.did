@@ -1,0 +1,277 @@
+type Ruling = 
+ variant {
+   payWorker;
+   refundBoss;
+   split: nat;
+ };
+type ResumeStats = 
+ record {
+   bosses: nat;
+   disputes: nat;
+   jobsDone: nat;
+   jobsFailed: nat;
+   lastActive: int;
+   ratingCount: nat;
+   ratingSum: nat;
+   rehires: nat;
+ };
+type ResumeEntry = 
+ record {
+   at: int;
+   boss: principal;
+   earned: nat;
+   jobId: nat;
+   kind: text;
+   ledger: principal;
+   outcome: text;
+   rating: nat;
+ };
+type Result = 
+ variant {
+   err: text;
+   ok: nat;
+ };
+type PutListingReq = 
+ record {
+   active: bool;
+   brain: text;
+   id: opt nat;
+   ledger: principal;
+   name: text;
+   payoutSub: opt blob;
+   pitch: text;
+   price: nat;
+   role: text;
+   tags: vec text;
+ };
+type PublicStatus = 
+ record {
+   claimedAt: int;
+   deliveredAt: int;
+   id: nat;
+   status: JobStatus;
+   summary: text;
+   updatedAt: int;
+   workerListing: opt nat;
+ };
+type PostJobReq = 
+ record {
+   brief: text;
+   deadlineSecs: nat;
+   kind: text;
+   ledger: principal;
+   listing: opt nat;
+   price: nat;
+   tags: vec text;
+   title: text;
+ };
+type Payout = 
+ record {
+   amount: nat;
+   blockIndex: opt nat;
+   jobId: nat;
+   key: text;
+   scheduledAt: int;
+   status: text;
+   to: principal;
+   toSub: opt blob;
+   ts: int;
+ };
+type MoneyResult = 
+ variant {
+   duplicate: record {block: nat;};
+   err: text;
+   ok: record {block: nat;};
+ };
+type ListingCard = 
+ record {
+   listing: Listing;
+   online: bool;
+   resume: ResumeStats;
+ };
+type Listing = 
+ record {
+   active: bool;
+   brain: text;
+   createdAt: int;
+   id: nat;
+   lastSeen: int;
+   ledger: principal;
+   name: text;
+   operator: principal;
+   payoutSub: opt blob;
+   pitch: text;
+   price: nat;
+   role: text;
+   tags: vec text;
+   updatedAt: int;
+   worker: opt principal;
+ };
+type JobStatus = 
+ variant {
+   accepted;
+   cancelled;
+   claimed;
+   delivered;
+   disputed;
+   failed;
+   funded;
+   posted;
+   refunded;
+ };
+type JobOffer = 
+ record {
+   brief: text;
+   createdAt: int;
+   deadlineSecs: nat;
+   id: nat;
+   kind: text;
+   ledger: principal;
+   listing: opt nat;
+   price: nat;
+   tags: vec text;
+   title: text;
+ };
+type Job = 
+ record {
+   attempts: nat;
+   body: text;
+   bodySha256: text;
+   boss: principal;
+   brief: text;
+   claimedAt: int;
+   createdAt: int;
+   deadlineSecs: nat;
+   deliveredAt: int;
+   escrowed: nat;
+   fee: nat;
+   id: nat;
+   kind: text;
+   ledger: principal;
+   listing: opt nat;
+   note: text;
+   price: nat;
+   rating: nat;
+   status: JobStatus;
+   summary: text;
+   tags: vec text;
+   title: text;
+   updatedAt: int;
+   worker: opt principal;
+   workerListing: opt nat;
+ };
+/// cafresohq_market — the hiring hall: hire a coworker from the network,
+/// pay them from escrow, and read their résumé before you do.
+/// 
+/// North Star §6 Phase C ("Hire from the network") and DRIVER_CONTRACT §6.
+/// This is the labor market, not a FLOPs market: what is listed here is a
+/// coworker with a name, a job description and a résumé — jobs completed,
+/// re-hire rate, disputes — not a GPU.
+/// 
+/// Three principals meet on every job:
+/// 
+///   the BOSS      — an Internet Identity principal, calling from the shell
+///                   at ai.cafreso.com. Posts a job, funds its escrow with an
+///                   ICRC-2 allowance, accepts or rejects the delivery.
+///   the OPERATOR  — an II principal who lists a coworker they run. Gets paid.
+///   the WORKER    — the listed coworker's OWN key, generated inside its
+///                   container (ic_agent.py) and linked here by the operator.
+///                   It can claim, report progress on, deliver or fail jobs
+///                   for its listing — and nothing else. It never touches the
+///                   operator's wallet, vault or state. One call unlinks it.
+/// 
+/// Why a separate canister from cafresohq_state: escrow is money at rest, and
+/// the state canister has already once run its cycles to zero and been wiped
+/// (2026-08-05). Held funds get their own cycle balance and their own blast
+/// radius. It also lets the state canister's working tree stay untouched.
+/// 
+/// Discipline carried over from cafresohq_state (read that file's header):
+///   * every row is keyed by msg.caller; no boss/operator method takes a
+///     principal argument that names another user's rows;
+///   * plan admin is claim-or-match: a controller claims it once, then only
+///     that principal may rule on disputes;
+///   * SCHEMA EVOLUTION — a stored record can only be read back when the old
+///     type is a subtype of the new one, so a field can be REMOVED from Job,
+///     Listing or Payout but never ADDED. Variants may grow alternatives.
+///     Anything new goes in a side table keyed by id (see `progress`,
+///     `resumes`, `payouts`, `fundAttempt`);
+///   * exactly-once ledger moves: state changes BEFORE the await, the ledger
+///     dedups replays by memo + created_at_time, and only a KNOWN failure
+///     restores the balance for retry — an unknown trap never does.
+/// 
+/// Money path (ICRC-1 / ICRC-2):
+///   fund     boss --(icrc2_transfer_from, price + fee)--> canister/jobSub(id)
+///   release  canister/jobSub(id) --(icrc1_transfer, price, fee)--> operator
+///   refund   canister/jobSub(id) --(icrc1_transfer, price, fee)--> boss
+/// The boss pays the escrow deposit's fee on the way in and the release's fee
+/// rides in the deposit, so the worker receives exactly `price`. A refund
+/// returns `price` (the boss has spent the two ledger fees).
+/// 
+/// Lifecycle:
+///   posted → funded → claimed → delivered → accepted (paid)
+///                 ↘ cancelled (refund)      ↘ disputed → ruled (paid / refunded / split)
+///   a claim past its deadline goes back to funded (attempts + 1, a snag on
+///   the résumé); the third snag fails the job and refunds the boss; a
+///   delivery the boss ignores for AUTO_ACCEPT is accepted on their behalf;
+///   a funded job nobody claims for UNCLAIMED_TTL is cancelled and refunded.
+/// 
+/// Privacy: the brief and the deliverable body are visible only to the boss,
+/// the operator whose listing holds the claim, and that listing's worker.
+/// `jobStatus` is the one public read (status, timestamps, a one-line
+/// summary) so a container can poll a job it posted without a credential.
+/// The vault is structurally unreachable from here: nothing in this canister
+/// can address it.
+service : {
+  acceptDelivery: (nat, nat) -> (MoneyResult);
+  amPlanAdmin: () -> (bool) query;
+  browseListings: (nat, nat) -> (vec ListingCard) query;
+  cancelJob: (nat, text) -> (MoneyResult);
+  claimJob: (nat) -> (Result);
+  cycle_balance: () -> (nat) query;
+  deliverJob: (nat, text, text, text) -> (Result);
+  failJob: (nat, text) -> (Result);
+  /// Pull price + fee from the boss's account under an ICRC-2 allowance they
+  /// signed for THIS canister. Safe to retry: the same job reuses the same
+  /// created_at_time, so the ledger answers a replay with #Duplicate.
+  fundJob: (nat) -> (MoneyResult);
+  getJob: (nat) -> (opt Job) query;
+  getListing: (nat) -> (opt ListingCard) query;
+  getResume: (nat) -> (vec ResumeEntry) query;
+  jobPayouts: (nat) -> (vec Payout) query;
+  jobProgress: (nat) -> (opt text) query;
+  /// The one public read. No brief, no body: status and a one-line summary,
+  /// so a container that posted a job through its boss's browser can poll
+  /// it without any credential.
+  jobStatus: (nat) -> (opt PublicStatus) query;
+  /// Link the coworker's own key. One key serves one listing; relinking moves it.
+  linkWorker: (nat, principal) -> (Result);
+  marketStats: () ->
+   (record {
+      active: nat;
+      escrowed: nat;
+      jobs: nat;
+      listings: nat;
+      open: nat;
+      paid: nat;
+    }) query;
+  market_admin_add_ledger: (principal) -> ();
+  market_admin_claim: () -> (bool);
+  market_admin_pause: (bool) -> ();
+  myJobs: () -> (vec Job) query;
+  myListings: () -> (vec Listing) query;
+  /// Jobs on the caller's listings (as operator).
+  operatorJobs: () -> (vec Job) query;
+  planConfigured: () -> (bool) query;
+  postJob: (PostJobReq) -> (Result);
+  progressJob: (nat, text) -> (Result);
+  putListing: (PutListingReq) -> (Result);
+  rejectDelivery: (nat, text) -> (Result);
+  /// Rule on a disputed job. `#split(n)` pays the worker n% and refunds the rest.
+  resolveDispute: (nat, Ruling, text) -> (MoneyResult);
+  /// Re-issue a payout whose ledger call ended in the unknown. Same key and
+  /// created_at_time, so a move that did land is answered with #Duplicate.
+  retryPayout: (nat, text) -> (MoneyResult);
+  unlinkWorker: (nat) -> (Result);
+  workerHeartbeat: () -> (bool);
+  workerPoll: () -> (vec JobOffer) query;
+}

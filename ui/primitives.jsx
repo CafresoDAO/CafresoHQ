@@ -37,6 +37,9 @@ function Ico({ kind, size=16 }) {
   if (kind === 'settings') return (<svg {...common}><rect x="7" y="2" width="2" height="12" fill={K}/><rect x="2" y="7" width="12" height="2" fill={K}/></svg>);
   if (kind === 'send') return (<svg {...common}><polygon points="2,2 14,8 2,14 5,8" fill={K}/></svg>);
   if (kind === 'delegate') return (<svg {...common}><rect x="2" y="7" width="8" height="2" fill={K}/><polygon points="8,4 13,8 8,12" fill={K}/></svg>);
+  /* The hiring hall: a hall with a roof and two doors — the room you walk
+     into to hire from the network (views/market.jsx). */
+  if (kind === 'market') return (<svg {...common}><polygon points="2,7 8,2 14,7" fill={K}/><rect x="3" y="7" width="10" height="7" fill="none" stroke={K} strokeWidth="2"/><rect x="5" y="9" width="2" height="5" fill={K}/><rect x="9" y="9" width="2" height="5" fill={K}/></svg>);
   return null;
 }
 
@@ -63,6 +66,10 @@ const NAV_ITEMS = [
      the onboarding tells a new boss they are making, and it frees
      "Workspace" to mean the one thing it already names in there. */
   ['projects', 'Projects'],
+  /* The hiring hall — "Network" on the rail because that is what a boss
+     is reaching for (a coworker from the network); the room's own sign
+     says HIRING HALL (VIEW_LABELS). views/market.jsx. */
+  ['market', 'Network'],
 ];
 
 /* ─────────────────────────────────────────────────────────────────────

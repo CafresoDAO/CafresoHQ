@@ -4,7 +4,9 @@
     "cafresohq_ui": {
       "//": "The HQ app UI (hq.html + jsx + css + assets), served from ICP so UI updates are a ~1-min dfx deploy instead of a container rebuild. serve.py becomes API-only; this UI calls it cross-origin (?api=<base>). build_hq_ui.py assembles hq-ui/ from the repo-root UI files.",
       "type": "assets",
-      "source": ["hq-ui"],
+      "source": [
+        "hq-ui"
+      ],
       "build": "python3 scripts/build_hq_ui.py || python scripts/build_hq_ui.py"
     },
     "cafresohq_keys": {
@@ -23,6 +25,15 @@
         "node_compatibility": true,
         "output": "declarations/cafresohq_state"
       }
+    },
+    "cafresohq_market": {
+      "//": "The hiring hall (North Star \u00a76 Phase C): listings of coworkers for hire from the network, jobs with real ICRC-2 escrow held per job, an append-only on-chain r\u00e9sum\u00e9 per listing, worker keys linked by their operator, plan-admin dispute rulings. Separate from cafresohq_state on purpose: held funds get their own cycle balance and blast radius. See docs/AGENT_MARKETPLACE.md.",
+      "type": "motoko",
+      "main": "src/cafresohq_market/main.mo",
+      "declarations": {
+        "node_compatibility": true,
+        "output": "declarations/cafresohq_market"
+      }
     }
   },
   "defaults": {
@@ -33,7 +44,9 @@
   },
   "networks": {
     "ic": {
-      "providers": ["https://icp0.io"],
+      "providers": [
+        "https://icp0.io"
+      ],
       "type": "persistent"
     },
     "local": {

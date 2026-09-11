@@ -164,6 +164,12 @@ Each phase makes the next one stronger; none skips ahead of a legible core.
   in `cafresohq_state`. The labor-market framing — selling *employees with
   résumés*, not FLOPs — is the moat vs io.net/Bittensor commodity compute.
   Cafreso's own managed agents seed the market and dogfood escrow/reviews.
+  > ✅ **Hall built 2026-09-11** (`## 427.`, `../AGENT_MARKETPLACE.md`): its
+  > own canister `cafresohq_market` with real per-job ICRC-2 escrow and the
+  > on-chain résumé; the worker loop on a key of its own inside the
+  > coworker's container; the Hiring Hall room. Not yet deployed — founder
+  > steps in that doc §7. Still owed: the network coworker as a floor
+  > sprite (DRIVER_CONTRACT §6) and the first replica run.
 - **Phase D — own your office literally.** Per-user HQ state canister funded by
   the user's own cycles (identity, vault index, roster, hiring records,
   résumé ledger). Execution stays off-chain where it must (see the serve.py

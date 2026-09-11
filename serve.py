@@ -615,6 +615,10 @@ _KEY_PROTECTED_PREFIXES = (
     '/vault', '/hermes', '/terminal', '/cafresohq', '/codex', '/claudecode',
     '/agents', '/hq/', '/hq-state', '/spawn', '/graph/publish', '/approvals',
     '/browser', '/missions',
+    # /marketplace/worker/* switches the network coworker on and off and
+    # points it at a canister — a stranger who can reach it can put this
+    # office to work for other people's jobs (and stop it working for you).
+    '/marketplace',
     # /brave proxies to the office's own Brave Search subscription — it falls
     # back to the server-side BRAVE_API_KEY env var when the caller sends no
     # X-Brave-Key (see _brave_search), so an unauthenticated caller who omits
@@ -694,7 +698,7 @@ _KEY_PROTECTED_PREFIXES = (
 # and curl has never needed an ACAO header.
 _HOST_DATA_PREFIXES = (
     '/fs', '/vault', '/projects', '/export', '/tools', '/terminal', '/hq/',
-    '/brave', '/gap/', '/news/',
+    '/brave', '/gap/', '/news/', '/marketplace/',
 ) + tuple(ROUTES) + tuple(p for p in _KEY_PROTECTED_PREFIXES
           if not p.startswith(('/fs', '/vault', '/projects', '/export',
                                '/tools', '/terminal', '/hq/', '/brave')))
@@ -2953,6 +2957,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             _LAST_UI_ACTIVITY[0] = time.time()
         if self.path == '/health':
             return self._health()
+        if self.path.startswith('/marketplace/'):
+            return self._marketplace('GET')
         if self.path == '/market/quotes':
             return self._market_quotes()
         if self.path.startswith('/hq/'):
@@ -3382,6 +3388,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._generate_image()
         if self.path == '/generate/video':
             return self._generate_video()
+        if self.path.startswith('/marketplace/'):
+            return self._marketplace('POST')
         prefix, target = self._route()
         if target:
             return self._proxy('POST', prefix, target)
@@ -3892,6 +3900,53 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _missions_runs(self):
         return self._send_json(200, {'runs': _night_load('mission-runs.json', [])})
+
+    def _marketplace(self, method):
+        """/marketplace/worker/* — the network coworker's control surface
+        (docs/AGENT_MARKETPLACE.md). The loop itself lives in market_worker.py;
+        serve.py only holds the door.
+
+          GET  /marketplace/worker/status     the worker's status: its key's
+                                              principal, config, last poll,
+                                              the job on its desk, recent log
+          GET  /marketplace/worker/principal  { principal } — what the operator
+                                              links to the listing on-chain
+          POST /marketplace/worker/config     merge { enabled, driver, model,
+                                              pollSecs, canister, host, system,
+                                              allowWeb } → status
+          POST /marketplace/worker/start      = config { enabled: true }
+          POST /marketplace/worker/stop       = config { enabled: false }
+        """
+        path = self.path.split('?')[0]
+        try:
+            import market_worker
+        except Exception as e:                                   # noqa: BLE001
+            return self._send_json(500, {'error': f'market_worker unavailable: {e}'})
+        state_dir = os.environ.get('CAFRESOHQ_HQ_STATE_DIR') or os.path.join(os.getcwd(), 'hq-state')
+        try:
+            w = market_worker.worker(state_dir)
+        except Exception as e:                                   # noqa: BLE001
+            return self._send_json(500, {'error': f'could not open the worker key: {e}'})
+        if method == 'GET':
+            if path == '/marketplace/worker/status':
+                return self._send_json(200, w.status())
+            if path == '/marketplace/worker/principal':
+                return self._send_json(200, {'principal': w.principal()})
+            return self._send_json(404, {'error': 'no such marketplace route'})
+        if path == '/marketplace/worker/config':
+            length = int(self.headers.get('content-length', 0) or 0)
+            try:
+                body = json.loads(self.rfile.read(length) or b'{}')
+            except ValueError:
+                return self._send_json(400, {'error': 'bad json'})
+            if not isinstance(body, dict):
+                return self._send_json(400, {'error': 'expected an object'})
+            return self._send_json(200, w.configure(body))
+        if path == '/marketplace/worker/start':
+            return self._send_json(200, w.configure({'enabled': True}))
+        if path == '/marketplace/worker/stop':
+            return self._send_json(200, w.configure({'enabled': False}))
+        return self._send_json(404, {'error': 'no such marketplace route'})
 
     def _cron_status_proxy(self):
         """GET /gap/status and /news/status — proxy the standalone search

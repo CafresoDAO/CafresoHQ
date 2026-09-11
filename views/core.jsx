@@ -121,6 +121,7 @@ const { TaskBoard } = CafresoHQV2;
 const VIEW_LABELS = {
   visual:    'AGENT OFFICE',
   tasks:     'TASKS',
+  market:    'HIRING HALL',
   memory:    'MEMORY SHELF',
   /* The Library, not the Vault, and not "Markdown" anything: this room
      holds decks, documents, images, video and research alongside the .md

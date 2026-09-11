@@ -8231,7 +8231,7 @@ body.night .bn-item.active { background: rgba(0,212,181,0.15); color: var(--acce
      whose container was missing from this list, which put its ticker (the
      last thing in the column) entirely behind the tab bar. */
   body { padding-bottom: 0; }
-  .view, .view-projects, .vault-view, .vault-mobile, .view-team, .mobile-chat-view, .view-tasks, .view-memory, .view-calendar, .office-wrap {
+  .view, .view-projects, .vault-view, .vault-mobile, .view-team, .mobile-chat-view, .view-tasks, .view-memory, .view-calendar, .office-wrap, .view-market {
     padding-bottom: calc(72px + env(safe-area-inset-bottom)) !important;
   }
 
@@ -8599,7 +8599,7 @@ body.night .bn-item.active { background: rgba(0,212,181,0.15); color: var(--acce
   /* Content views: clear the larger tab bar + home indicator */
   .view, .view-projects, .vault-view, .vault-view.unified, .vault-mobile,
   .view-team, .mobile-chat-view, .view-tasks, .view-memory, .view-calendar,
-  .office-wrap {
+  .office-wrap, .view-market {
     padding-bottom: calc(80px + env(safe-area-inset-bottom)) !important;
   }
 }
