@@ -37,6 +37,16 @@ that starts `serve.py` at login and restarts it if it dies, then waits for
   Homebrew and system dirs, and the front desk reported every CLI as not
   installed. Re-run `install` after moving a CLI.
 
+- Port memory: after `PORT=8789 … install`, a bare `status`, `restart` or
+  `logs` reads the port from the installed LaunchAgent.
+- The office's default brain is Hermes's managed model through the
+  gateway tunnel. If that host is down, the front desk itself goes quiet
+  (the log says `gateway connect failed`): pick Claude Code or a local
+  brain as the default in Settings until it is back.
+- A Claude session that has expired reads *sign in again* on the front
+  desk (the CLI's own `auth status` says so, whatever file is on disk);
+  the card's button runs `claude auth login` for you.
+
 ## Connecting, once
 
 1. Sign in at https://ai.cafreso.com → **HQ**.

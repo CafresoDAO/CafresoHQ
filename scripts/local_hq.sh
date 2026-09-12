@@ -26,10 +26,15 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LABEL="com.cafreso.hq"
+AGENTS_DIR="${LAUNCH_AGENTS_DIR:-$HOME/Library/LaunchAgents}"
+# The port the installed office actually uses, unless told otherwise — so
+# `status`, `restart` and `logs` after a `PORT=8789 install` look at 8789.
+if [ -z "${PORT:-}" ] && [ -f "$AGENTS_DIR/$LABEL.plist" ]; then
+  PORT="$(plutil -extract EnvironmentVariables.PORT raw -o - "$AGENTS_DIR/$LABEL.plist" 2>/dev/null || true)"
+fi
 PORT="${PORT:-8787}"
 STATE_DIR="${CAFRESOHQ_HQ_STATE_DIR:-$ROOT/hq-state}"
 PY="${CAFRESOHQ_PYTHON:-$(command -v python3 || true)}"
-AGENTS_DIR="${LAUNCH_AGENTS_DIR:-$HOME/Library/LaunchAgents}"
 PLIST="$AGENTS_DIR/$LABEL.plist"
 LOG_DIR="${CAFRESOHQ_LOG_DIR:-$HOME/Library/Logs}"
 LOG="$LOG_DIR/cafreso-hq.log"

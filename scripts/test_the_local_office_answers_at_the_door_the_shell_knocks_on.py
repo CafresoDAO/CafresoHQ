@@ -116,6 +116,24 @@ def main():
     code, out, calls, _ = run(['status'], {'PORT': str(dead)})
     check('status on a dead port says down and exits 1', code == 1 and out.startswith('down') and 'not installed' in out, out[:200])
 
+    # After `PORT=8789 install`, a bare `status`/`restart` must look at 8789,
+    # not the default — measured: the first restart reported 8787 "down"
+    # while the office was up on 8789.
+    with tempfile.TemporaryDirectory() as d:
+        agents = Path(d) / 'agents'
+        agents.mkdir()
+        (agents / 'com.cafreso.hq.plist').write_text(
+            '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>Label</key><string>com.cafreso.hq</string>'
+            '<key>EnvironmentVariables</key><dict><key>PORT</key><string>%d</string></dict></dict></plist>' % dead)
+        binp = Path(d) / 'bin'
+        binp.mkdir()
+        (binp / 'launchctl').write_text(FAKE_LAUNCHCTL)
+        (binp / 'launchctl').chmod(0o755)
+        env = dict(os.environ, PATH=f'{binp}:{os.environ.get("PATH", "")}', FAKE_LOG=str(Path(d) / 'l.log'), LAUNCH_AGENTS_DIR=str(agents))
+        env.pop('PORT', None)
+        r = subprocess.run(['bash', str(SCRIPT), 'status'], cwd=ROOT, env=env, capture_output=True, text=True, timeout=60)
+        check('a bare status looks at the port the installed office uses', f':{dead}/health' in r.stdout, r.stdout[:200])
+
     with tempfile.TemporaryDirectory() as d:
         agents = Path(d) / 'agents'
         agents.mkdir()

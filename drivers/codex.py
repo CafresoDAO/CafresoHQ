@@ -8,6 +8,7 @@ Auth comes from ~/.codex/auth.json or OPENAI_API_KEY — never from us.
 import json
 import os
 import pathlib
+import time
 import re
 import shutil
 import subprocess
@@ -110,9 +111,44 @@ class CodexDriver(Driver):
             pass
         return False, ''
 
+    _LIVE_TTL = 20.0
+
+    def session_live(self):
+        """`codex login status` exits 0 when signed in. None when the CLI
+        cannot run (a broken shim) — then the file is all there is."""
+        bin_ = self.resolve()
+        if not bin_:
+            return None
+        now = time.time()
+        cached = getattr(self, '_live_cache', None)
+        if cached and now - cached[0] < self._LIVE_TTL:
+            return cached[1]
+        value = None
+        try:
+            proc = subprocess.run([bin_, 'login', 'status'], capture_output=True, text=True,
+                                  timeout=8, env=dict(os.environ, TERM='dumb'))
+            out = ((proc.stdout or '') + (proc.stderr or '')).lower()
+            if proc.returncode == 0 and 'not logged in' not in out:
+                value = True
+            elif proc.returncode != 0 and ('not logged in' in out or 'logged out' in out):
+                value = False
+        except Exception:
+            value = None
+        self._live_cache = (now, value)
+        return value
+
+    def forget_session(self):
+        self._live_cache = None
+
+    def detect_auth_live(self):
+        authed, mech = self.detect_auth()
+        if authed and mech == 'oauth' and self.session_live() is False:
+            return False, 'expired'
+        return authed, mech
+
     def detect(self, probe_version=False):
         bin_ = self.resolve()
-        authed, mech = self.detect_auth()
+        authed, mech = self.detect_auth_live() if probe_version else self.detect_auth()
         version, problem, pdetail = (probe_cli(bin_) if (bin_ and probe_version)
                                      else ('', '', ''))
         return {'installed': bool(bin_), 'authenticated': authed,

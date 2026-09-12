@@ -607,7 +607,8 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
              probeError: det.probeError || '',
              probeDetail: det.probeDetail || '',
              needsLogin: !def.cloud && !localDaemon && d.id !== 'hermes'
-                         && !det.probeError && !det.authenticated };
+                         && !det.probeError && !det.authenticated,
+             expired: det.auth === 'expired' };
   }).filter(Boolean)
     /* A sign-in that just finished at the front desk (#434) counts before the
        re-probe lands. Applied here, outside the card literal, because two
@@ -732,9 +733,9 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
                               + 'and start it before their first task.'
                             : 'Signing in will not fix that — it needs repairing or '
                               + 'reinstalling first. You can still hire them and try.')
-                      : c.signedInNow
-                        ? `${c.found} Signed in — ready to hire.`
-                        : `${c.found}${c.needsLogin ? ' Needs a sign-in before their first task.' : ''}`}
+                      : c.needsLogin
+                      ? `${c.found} ${c.expired ? 'Their sign-in on this machine has expired — sign in again' : 'Needs a sign-in'} before their first task.`
+                      : `${c.found}${c.signedInNow ? ' Signed in — ready to hire.' : ''}`}
                   </div>
                   {c.needsLogin && SIGNIN_LABEL[c.driverId] && (() => {
                     const L = signin[c.driverId] || { status: 'idle' };
@@ -743,7 +744,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
                       <div className="frontdesk-signin" data-signin={c.driverId} onClick={stop} onKeyDown={stop}>
                         {(!L.status || L.status === 'idle' || L.status === 'none') && (
                           <button type="button" className="px-btn" onClick={() => startSignin(c.driverId)}>
-                            {SIGNIN_LABEL[c.driverId]}
+                            {c.expired ? SIGNIN_LABEL[c.driverId].replace('Sign in', 'Sign in again') : SIGNIN_LABEL[c.driverId]}
                           </button>
                         )}
                         {L.status === 'running' && (

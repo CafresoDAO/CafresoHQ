@@ -8,6 +8,7 @@ does the auth; serve.py never touches key material.
 import json
 import os
 import pathlib
+import time
 import shutil
 import subprocess
 import sys
@@ -77,9 +78,49 @@ class ClaudeCodeDriver(Driver):
             pass
         return False, ''
 
+    # A credential file that has gone stale (#434): `claude auth status --json`
+    # is the CLI's own verdict — {"loggedIn": false} with .credentials.json
+    # still on disk is exactly what an expired OAuth session looks like, and
+    # the file check alone called it "signed in" while every task failed with
+    # "OAuth session expired and could not be refreshed". Cached briefly so
+    # the roster poll does not spawn the CLI every few seconds.
+    _LIVE_TTL = 20.0
+
+    def session_live(self):
+        """True / False from the CLI's own `auth status`, None when it cannot say."""
+        bin_ = self.resolve()
+        if not bin_:
+            return None
+        now = time.time()
+        cached = getattr(self, '_live_cache', None)
+        if cached and now - cached[0] < self._LIVE_TTL:
+            return cached[1]
+        value = None
+        try:
+            proc = subprocess.run([bin_, 'auth', 'status', '--json'], capture_output=True, text=True,
+                                  timeout=8, env=dict(os.environ, TERM='dumb'))
+            data = json.loads((proc.stdout or '').strip() or '{}')
+            if isinstance(data, dict) and 'loggedIn' in data:
+                value = bool(data['loggedIn'])
+        except Exception:
+            value = None
+        self._live_cache = (now, value)
+        return value
+
+    def forget_session(self):
+        self._live_cache = None
+
+    def detect_auth_live(self):
+        """detect_auth(), then the CLI's own word: a file the CLI no longer
+        honours is 'expired', not signed in."""
+        authed, mech = self.detect_auth()
+        if authed and mech == 'oauth' and self.session_live() is False:
+            return False, 'expired'
+        return authed, mech
+
     def detect(self, probe_version=False):
         bin_ = self.resolve()
-        authed, mech = self.detect_auth()
+        authed, mech = self.detect_auth_live() if probe_version else self.detect_auth()
         version, problem, pdetail = (probe_cli(bin_) if (bin_ and probe_version)
                                      else ('', '', ''))
         return {'installed': bool(bin_), 'authenticated': authed,

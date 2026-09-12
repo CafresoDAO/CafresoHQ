@@ -65,9 +65,12 @@ case "$1 $2" in
     echo "Paste the code here if prompted:"
     read -r code
     [ "$code" = "OK-CODE" ] || { echo "That code is not right"; exit 1; }
-    mkdir -p "$HOME/.claude"; echo '{"claudeAiOauth":{}}' > "$HOME/.claude/.credentials.json"
+    mkdir -p "$HOME/.claude"; echo '{"claudeAiOauth":{}}' > "$HOME/.claude/.credentials.json"; rm -f "$HOME/.claude/.stale"
     echo "Signed in."; exit 0 ;;
   "auth logout") rm -f "$HOME/.claude/.credentials.json"; echo "Logged out"; exit 0 ;;
+  "auth status")
+    # the CLI's own verdict: a stale marker means the file is there but the session is gone
+    if [ -f "$HOME/.claude/.credentials.json" ] && [ ! -f "$HOME/.claude/.stale" ]; then echo '{"loggedIn": true}'; else echo '{"loggedIn": false}'; fi; exit 0 ;;
 esac
 echo "1.0.0 (Claude Code)"; exit 0
 '''
@@ -80,6 +83,7 @@ case "$1" in
     echo "Successfully logged in"; exit 0 ;;
   logout) rm -f "$HOME/.codex/auth.json"; exit 0 ;;
 esac
+if [ "$1 $2" = "login status" ]; then [ -f "$HOME/.codex/auth.json" ] && { echo "Logged in using ChatGPT"; exit 0; } || { echo "Not logged in"; exit 1; }; fi
 echo "codex-cli 0.1.0"; exit 0
 '''
 
@@ -184,6 +188,21 @@ def server_half():
         st = wait_status(base, 'claude-code', lambda s: s.get('status') != 'running')
         check('cancel stops a sign-in that is waiting for a code', code == 200 and st.get('status') == 'error' and st.get('error') == 'cancelled', st)
         check('input with nothing waiting is 404', req(base, 'POST', '/agents/login/input', {'agent': 'claude-code', 'text': 'x'})[0] == 404)
+
+        # ── an expired session: the file is there, the CLI says no (#434) ──
+        Path(home, '.claude').mkdir(exist_ok=True)
+        Path(home, '.claude', '.credentials.json').write_text('{"claudeAiOauth":{}}')
+        Path(home, '.claude', '.stale').write_text('1')
+        agents = req(base, 'GET', '/agents')[1].get('agents', [])
+        cc = next((a for a in agents if a['id'] == 'claude-code'), {})
+        check("a credential file the CLI no longer honours reads 'expired', not signed in",
+              cc.get('authenticated') is False and cc.get('auth') == 'expired', cc)
+        code, r = req(base, 'POST', '/agents/login', {'agent': 'claude-code'})
+        check('a sign-in starts for an expired session instead of answering done', code == 202 and r.get('status') == 'running', (code, r))
+        wait_status(base, 'claude-code', lambda st: st.get('needsCode'))
+        req(base, 'POST', '/agents/login/input', {'agent': 'claude-code', 'text': 'OK-CODE'})
+        st = wait_status(base, 'claude-code', lambda st: st.get('status') != 'running')
+        check('…and the fresh sign-in is honoured the moment the CLI says so', st.get('authenticated') is True and st.get('auth') == 'oauth', st)
     finally:
         proc.terminate()
     tmp2 = tempfile.mkdtemp(prefix='hq-signin2-')
@@ -201,6 +220,13 @@ def server_half():
     check('the sign-in commands are a fixed allowlist, nothing from the request reaches them',
           "'claude-code': (['auth', 'login', '--claudeai']" in src and "'codex':       (['login']" in src and 'body.get' not in login.split('def _agents_login_input')[0].replace("body.get('agent'", ''))
     check('serve.py never reads the credential files, only notices them', '.credentials.json' not in login and 'auth.json' not in login)
+    hire = (ROOT / 'modals' / 'hire.jsx').read_text(encoding='utf-8')
+    check("the card says an expired sign-in has expired and offers 'Sign in again'",
+          "expired: det.auth === 'expired'" in hire and 'has expired — sign in again' in hire
+          and "replace('Sign in', 'Sign in again')" in hire)
+    drv = (ROOT / 'drivers' / 'claude_code.py').read_text(encoding='utf-8')
+    check("the driver asks the CLI's own `auth status --json` and returns 'expired' when it says no",
+          "'auth', 'status', '--json'" in drv and "return False, 'expired'" in drv)
 
 
 def browser_half():

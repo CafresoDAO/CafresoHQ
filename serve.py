@@ -4298,9 +4298,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if aid == 'claude-code':
                 # Moved into the driver — one detection, front desk and legacy
                 # /agents endpoint both read it.
-                return _drivers.get('claude-code').detect_auth()
+                return _drivers.get('claude-code').detect_auth_live()
             elif aid == 'codex':
-                return _drivers.get('codex').detect_auth()
+                return _drivers.get('codex').detect_auth_live()
             elif aid == 'gemini':
                 return _drivers.get('gemini').detect_auth()
             elif aid == 'hermes':
@@ -4389,7 +4389,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not bin_:
             return self._send_json(404, {'error': f'{agent} is not installed on this machine',
                                          'agent': agent, 'status': 'none'})
-        authed, mech = drv.detect_auth()
+        if hasattr(drv, 'forget_session'):
+            drv.forget_session()
+        authed, mech = drv.detect_auth_live() if hasattr(drv, 'detect_auth_live') else drv.detect_auth()
         if authed:
             return self._send_json(200, {'ok': True, 'agent': agent, 'status': 'done',
                                          'authenticated': True, 'auth': mech})
@@ -4495,9 +4497,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if agent not in _LOGIN_CMDS:
             return self._send_json(400, {'error': 'agent must be claude-code or codex'})
         drv = _drivers.get(agent)
-        authed, mech = drv.detect_auth() if drv else (False, '')
         with _LOGIN_JOBS_LOCK:
             job = dict(_LOGIN_JOBS.get(agent) or {})
+        # While a sign-in runs, ask the CLI itself each time (no cache): the
+        # file lands a moment before the CLI honours it.
+        if drv and job.get('status') == 'running' and hasattr(drv, 'forget_session'):
+            drv.forget_session()
+        authed, mech = (drv.detect_auth_live() if hasattr(drv, 'detect_auth_live') else drv.detect_auth()) if drv else (False, '')
         pub = self._login_public(job) if job else {'agent': agent, 'status': 'none', 'url': '', 'code': '',
                                                    'needsCode': False, 'tail': '', 'started': None, 'exit': None, 'error': ''}
         pub['authenticated'] = bool(authed)
@@ -4562,7 +4568,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             ok = proc.returncode == 0
         except Exception as e:
             return self._send_json(500, {'error': f'sign-out failed: {e}'})
-        authed, mech = drv.detect_auth()
+        if hasattr(drv, 'forget_session'):
+            drv.forget_session()
+        authed, mech = drv.detect_auth_live() if hasattr(drv, 'detect_auth_live') else drv.detect_auth()
         return self._send_json(200, {'ok': ok, 'agent': agent, 'authenticated': bool(authed), 'auth': mech})
 
     def _agents_install(self):

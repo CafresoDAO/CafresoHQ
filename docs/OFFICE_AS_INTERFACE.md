@@ -46232,8 +46232,23 @@ office (`## 433.`) reported every CLI *not installed*, because launchd
 hands an agent a PATH without `~/.local/bin` or nvm — the script builds
 the office's PATH from where the CLIs actually are now.
 
+Then the founder said nobody was replying in chat, and the local office's
+log said why, twice over. Every completion had gone to the Hermes gateway
+(the office's default brain) and its tunnel was refusing: the VM's sshd
+closes the connection before authentication, which no office can fix
+from this side. And a Claude Code stream answered *OAuth session expired
+and could not be refreshed* — while the front desk called Claude *signed
+in*, because `.credentials.json` was on disk. The file check is a hint,
+the CLI's own `auth status --json` is the verdict: the driver asks it
+(cached twenty seconds), `/agents` says `expired`, the card reads *Their
+sign-in on this machine has expired — sign in again*, and the login route
+starts a fresh sign-in instead of answering done. Pinned with a fake CLI
+whose status disagrees with its file.
+
 **Weakest verdict.** Driven with fakes; the real `claude auth login`
 opens a real browser and was not driven here. Gemini's CLI has no login
 command of its own (it signs in on first run), so its card still says
-what it said.
+what it said. The Hermes gateway host is a machine, not a setting: until
+its sshd accepts the tunnel again, the office's default brain should be
+one that is here.
 
