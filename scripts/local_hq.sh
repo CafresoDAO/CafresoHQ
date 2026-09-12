@@ -70,10 +70,28 @@ ensure_ui() {
   fi
 }
 
+# The PATH launchd hands a LaunchAgent is not your shell's. The first install
+# on this Mac gave the office /opt/homebrew/bin and the system dirs, and the
+# front desk reported every CLI as "not installed": Claude Code and Hermes
+# live in ~/.local/bin, Codex in an nvm folder. So the office gets a PATH
+# built from where the CLIs ARE right now, your login shell's PATH, and the
+# usual places — deduplicated, in that order.
+office_path() {
+  local parts="" d c
+  for c in claude codex gemini hermes node npm python3; do
+    d="$(command -v "$c" 2>/dev/null || true)"
+    [ -n "$d" ] && parts="$parts:$(dirname "$d")"
+  done
+  parts="$parts:$HOME/.local/bin:$(dirname "$PY")"
+  parts="$parts:$("${SHELL:-/bin/zsh}" -lc 'echo "$PATH"' 2>/dev/null || true)"
+  parts="$parts:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+  printf '%s' "$parts" | tr ':' '\n' | awk 'NF && !seen[$0]++' | paste -sd ':' -
+}
+
 write_plist() {
   mkdir -p "$AGENTS_DIR" "$LOG_DIR" "$STATE_DIR"
-  local node_dir
-  node_dir="$(dirname "$(command -v node 2>/dev/null || echo /usr/local/bin/node)")"
+  local office_path_value
+  office_path_value="$(office_path)"
   cat > "$PLIST" <<PL
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -91,7 +109,7 @@ write_plist() {
     <key>PORT</key><string>$PORT</string>
     <key>CAFRESOHQ_HQ_STATE_DIR</key><string>$STATE_DIR</string>
     <key>HOME</key><string>$HOME</string>
-    <key>PATH</key><string>$node_dir:$(dirname "$PY"):/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>PATH</key><string>$office_path_value</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>

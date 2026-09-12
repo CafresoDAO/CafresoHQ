@@ -30,6 +30,13 @@ that starts `serve.py` at login and restarts it if it dies, then waits for
   for a port it holds. Browsers fall back to IPv4 when `::1` refuses, so the
   shell still finds the office; a script has to ask the right address.
 
+- PATH: launchd does not hand an agent your shell's PATH. The script
+  builds the office's PATH from where `claude`, `codex`, `gemini`, `hermes`,
+  `node` and `python3` are found at install time, `~/.local/bin`, and your
+  login shell's PATH — the first install here gave the office only
+  Homebrew and system dirs, and the front desk reported every CLI as not
+  installed. Re-run `install` after moving a CLI.
+
 ## Connecting, once
 
 1. Sign in at https://ai.cafreso.com → **HQ**.

@@ -31,6 +31,7 @@ import re as _re  # module-scope alias: three handler sites use `_re.…` and
                   # build (DRIVER_CONTRACT §0/§5 — the latent NameError).
 import secrets
 import select
+import signal
 import socket
 import shlex
 import shutil
@@ -707,6 +708,26 @@ _HOST_DATA_PREFIXES = (
 # the UI polls GET /agents/install/status?agent=…). One job per agent id.
 _INSTALL_JOBS = {}
 _INSTALL_JOBS_LOCK = threading.Lock()
+
+# Sign in with the subscription you already pay for (#434). POST /agents/login
+# runs the CLI's OWN sign-in — `claude auth login --claudeai` for a Claude
+# subscription, `codex login` for a ChatGPT subscription — in a pseudo-terminal
+# so it behaves as it would in a terminal: it opens the browser where it can,
+# prints the link either way (and, headless, a code to paste), and any code the
+# boss types goes back in on stdin (POST /agents/login/input). The front desk
+# polls GET /agents/login/status?agent=… until the CLI's credential file
+# appears. No key material passes through here; the CLI writes its own file.
+_LOGIN_JOBS = {}
+_LOGIN_PROCS = {}
+_LOGIN_JOBS_LOCK = threading.Lock()
+_LOGIN_CMDS = {
+    'claude-code': (['auth', 'login', '--claudeai'], ['auth', 'logout']),
+    'codex':       (['login'], ['logout']),
+}
+_LOGIN_URL_RE = re.compile(r'https?://[^\s\x1b"\'<>\)\]]+')
+_LOGIN_CODE_RE = re.compile(r'\b([A-Z0-9]{4,5}-[A-Z0-9]{4,5})\b')
+_LOGIN_ANSI_RE = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07|\r')
+_LOGIN_TIMEOUT_S = 600
 
 # ── Market quotes (Trading Floor theme ticker) ──────────────────────────────
 # GET /market/quotes proxies Yahoo Finance's public chart endpoint: stock
@@ -2994,6 +3015,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._cafresohq_status()
         if self.path == '/codex/status':
             return self._codex_status()
+        if self.path.split('?')[0] == '/agents/login/status':
+            return self._agents_login_status()
         if self.path.startswith('/agents/install/status'):
             return self._agents_install_status()
         if self.path == '/agents':
@@ -3329,6 +3352,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._vault('POST')
         if self.path == '/graph/publish':
             return self._graph_publish()
+        if self.path == '/agents/login':
+            return self._agents_login()
+        if self.path == '/agents/login/input':
+            return self._agents_login_input()
+        if self.path == '/agents/login/cancel':
+            return self._agents_login_cancel()
+        if self.path == '/agents/logout':
+            return self._agents_logout()
         if self.path == '/agents/install':
             return self._agents_install()
         if self.path == '/claudecode/configure':
@@ -4323,6 +4354,216 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             for (aid, label, dflt, rem, _resolve, desc) in specs
         ]
         return self._send_json(200, {'agents': agents})
+
+    # ── Sign in with the subscription you already pay for (#434) ─────────
+    def _login_body(self):
+        length = int(self.headers.get('content-length', 0) or 0)
+        try:
+            body = json.loads(self.rfile.read(length) or b'{}')
+        except Exception:
+            return None, ''
+        return body, str((body or {}).get('agent', '')).strip().lower()
+
+    @staticmethod
+    def _login_public(job):
+        """The job as the front desk may see it: no file descriptors, the
+        output as a short, ANSI-free tail."""
+        out = _LOGIN_ANSI_RE.sub('', job.get('output', ''))
+        low = out.lower()
+        needs_code = job.get('status') == 'running' and any(
+            k in low for k in ('paste the code', 'paste the authorization code', 'enter the code',
+                               'authorization code:', 'enter code', 'paste code'))
+        return {'agent': job.get('agent'), 'status': job.get('status'), 'url': job.get('url', ''),
+                'code': job.get('code', ''), 'needsCode': needs_code, 'tail': out[-600:],
+                'started': job.get('started'), 'exit': job.get('exit'), 'error': job.get('error', '')}
+
+    def _agents_login(self):
+        """POST /agents/login { agent: 'claude-code'|'codex' } — run the CLI's own
+        sign-in for the boss. 202 while it runs; 200 done when the credential
+        is already there; 404 when the CLI is not on this machine."""
+        _body, agent = self._login_body()
+        if agent not in _LOGIN_CMDS:
+            return self._send_json(400, {'error': 'agent must be claude-code or codex'})
+        drv = _drivers.get(agent)
+        bin_ = drv.resolve() if drv else ''
+        if not bin_:
+            return self._send_json(404, {'error': f'{agent} is not installed on this machine',
+                                         'agent': agent, 'status': 'none'})
+        authed, mech = drv.detect_auth()
+        if authed:
+            return self._send_json(200, {'ok': True, 'agent': agent, 'status': 'done',
+                                         'authenticated': True, 'auth': mech})
+        with _LOGIN_JOBS_LOCK:
+            cur = _LOGIN_JOBS.get(agent)
+            if cur and cur.get('status') == 'running':
+                return self._send_json(202, {'ok': True, 'note': 'sign-in already in progress',
+                                             **self._login_public(cur)})
+        cmd = [bin_] + list(_LOGIN_CMDS[agent][0])
+        env = dict(os.environ)
+        env.setdefault('HOME', str(pathlib.Path.home()))
+        env['TERM'] = 'xterm-256color'
+        env.setdefault('LANG', 'C.UTF-8')
+        master = None
+        try:
+            import pty
+            master, slave = pty.openpty()
+            proc = subprocess.Popen(cmd, stdin=slave, stdout=slave, stderr=slave, env=env,
+                                    start_new_session=True, close_fds=True)
+            os.close(slave)
+            read = lambda: os.read(master, 4096)                          # noqa: E731
+            write_fd = master
+        except Exception:
+            # No pty here (Windows): pipes. The CLI still prints its link.
+            proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, env=env, start_new_session=True)
+            read = lambda: proc.stdout.read1(4096) if hasattr(proc.stdout, 'read1') else proc.stdout.read(4096)  # noqa: E731
+            write_fd = None
+        job = {'agent': agent, 'status': 'running', 'started': time.time(), 'url': '',
+               'code': '', 'output': '', 'exit': None, 'error': '', 'pid': proc.pid}
+        with _LOGIN_JOBS_LOCK:
+            _LOGIN_JOBS[agent] = job
+            _LOGIN_PROCS[agent] = (proc, write_fd)
+
+        def _absorb(chunk):
+            text = chunk.decode('utf-8', 'replace')
+            with _LOGIN_JOBS_LOCK:
+                job['output'] = (job['output'] + text)[-65536:]
+                clean = _LOGIN_ANSI_RE.sub('', job['output'])
+                if not job['url']:
+                    urls = _LOGIN_URL_RE.findall(clean)
+                    best = [u for u in urls if any(k in u.lower() for k in
+                            ('oauth', 'auth', 'login', 'device', 'claude', 'anthropic', 'openai', 'chatgpt'))]
+                    if best or urls:
+                        job['url'] = (best or urls)[0].rstrip('.,;')
+                if not job['code']:
+                    m = _LOGIN_CODE_RE.search(clean)
+                    if m:
+                        job['code'] = m.group(1)
+
+        def _reader():
+            try:
+                while True:
+                    try:
+                        chunk = read()
+                    except OSError:
+                        break
+                    if not chunk:
+                        break
+                    _absorb(chunk)
+            finally:
+                rc = proc.wait()
+                with _LOGIN_JOBS_LOCK:
+                    if job['status'] == 'running':
+                        job['exit'] = rc
+                        if rc == 0:
+                            job['status'] = 'done'
+                        else:
+                            job['status'] = 'error'
+                            job['error'] = (_LOGIN_ANSI_RE.sub('', job['output']).strip()[-300:]
+                                            or f'the sign-in ended with exit code {rc}')
+                    _LOGIN_PROCS.pop(agent, None)
+                if master is not None:
+                    try:
+                        os.close(master)
+                    except OSError:
+                        pass
+
+        def _watchdog():
+            deadline = time.time() + _LOGIN_TIMEOUT_S
+            while time.time() < deadline:
+                time.sleep(2)
+                if proc.poll() is not None:
+                    return
+            with _LOGIN_JOBS_LOCK:
+                if job['status'] == 'running':
+                    job['status'] = 'error'
+                    job['error'] = 'the sign-in was not finished within 10 minutes'
+            try:
+                proc.kill()
+            except Exception:
+                pass
+
+        threading.Thread(target=_reader, daemon=True, name=f'login-{agent}').start()
+        threading.Thread(target=_watchdog, daemon=True, name=f'login-watch-{agent}').start()
+        return self._send_json(202, {'ok': True, **self._login_public(job)})
+
+    def _agents_login_status(self):
+        """GET /agents/login/status?agent=<id> → the sign-in as it stands, plus a
+        fresh look for the credential — the CLI writes it, we only notice."""
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        agent = (qs.get('agent', [''])[0] or '').strip().lower()
+        if agent not in _LOGIN_CMDS:
+            return self._send_json(400, {'error': 'agent must be claude-code or codex'})
+        drv = _drivers.get(agent)
+        authed, mech = drv.detect_auth() if drv else (False, '')
+        with _LOGIN_JOBS_LOCK:
+            job = dict(_LOGIN_JOBS.get(agent) or {})
+        pub = self._login_public(job) if job else {'agent': agent, 'status': 'none', 'url': '', 'code': '',
+                                                   'needsCode': False, 'tail': '', 'started': None, 'exit': None, 'error': ''}
+        pub['authenticated'] = bool(authed)
+        pub['auth'] = mech
+        return self._send_json(200, pub)
+
+    def _agents_login_input(self):
+        """POST /agents/login/input { agent, text } — the code the boss pasted,
+        handed to the CLI on its own stdin."""
+        body, agent = self._login_body()
+        text = str((body or {}).get('text', '')).strip()
+        if agent not in _LOGIN_CMDS or not text:
+            return self._send_json(400, {'error': 'agent and text are required'})
+        with _LOGIN_JOBS_LOCK:
+            proc, fd = _LOGIN_PROCS.get(agent, (None, None))
+        if proc is None or proc.poll() is not None:
+            return self._send_json(404, {'error': 'no sign-in is waiting for input'})
+        data = (text + '\n').encode('utf-8')
+        try:
+            if fd is not None:
+                os.write(fd, data)
+            else:
+                proc.stdin.write(data)
+                proc.stdin.flush()
+        except OSError as e:
+            return self._send_json(500, {'error': f'could not hand the code to the sign-in: {e}'})
+        return self._send_json(200, {'ok': True, 'agent': agent})
+
+    def _agents_login_cancel(self):
+        """POST /agents/login/cancel { agent } — stop a sign-in that is waiting."""
+        _body, agent = self._login_body()
+        if agent not in _LOGIN_CMDS:
+            return self._send_json(400, {'error': 'agent must be claude-code or codex'})
+        with _LOGIN_JOBS_LOCK:
+            proc, _fd = _LOGIN_PROCS.get(agent, (None, None))
+            job = _LOGIN_JOBS.get(agent)
+            if job and job.get('status') == 'running':
+                job['status'] = 'error'
+                job['error'] = 'cancelled'
+        if proc is not None:
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+        return self._send_json(200, {'ok': True, 'agent': agent, 'status': 'cancelled'})
+
+    def _agents_logout(self):
+        """POST /agents/logout { agent } — the CLI's own sign-out."""
+        _body, agent = self._login_body()
+        if agent not in _LOGIN_CMDS:
+            return self._send_json(400, {'error': 'agent must be claude-code or codex'})
+        drv = _drivers.get(agent)
+        bin_ = drv.resolve() if drv else ''
+        if not bin_:
+            return self._send_json(404, {'error': f'{agent} is not installed on this machine'})
+        try:
+            proc = subprocess.run([bin_] + list(_LOGIN_CMDS[agent][1]), capture_output=True, text=True,
+                                  timeout=30, env=dict(os.environ, TERM='dumb'))
+            ok = proc.returncode == 0
+        except Exception as e:
+            return self._send_json(500, {'error': f'sign-out failed: {e}'})
+        authed, mech = drv.detect_auth()
+        return self._send_json(200, {'ok': ok, 'agent': agent, 'authenticated': bool(authed), 'auth': mech})
 
     def _agents_install(self):
         """POST /agents/install { agent: 'claude-code'|'codex'|'gemini'|'hermes' }

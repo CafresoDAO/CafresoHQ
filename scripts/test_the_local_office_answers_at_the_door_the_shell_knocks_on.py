@@ -24,6 +24,7 @@ Run: python3 scripts/test_the_local_office_answers_at_the_door_the_shell_knocks_
 import os
 import plistlib
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -94,6 +95,11 @@ def main():
     env = pl.get('EnvironmentVariables', {})
     check('it carries the requested port and a PATH with node on it (the drivers need it)',
           env.get('PORT') == '8790' and '/bin' in env.get('PATH', '') and env.get('HOME') == os.environ.get('HOME'), env)
+    # The first install on this Mac gave the office a PATH without ~/.local/bin
+    # or the nvm folder, and the front desk reported every CLI "not installed".
+    check("the office's PATH starts where the CLIs are: ~/.local/bin and the folder of each CLI found now",
+          os.path.expanduser('~/.local/bin') in env.get('PATH', '').split(':')
+          and all(os.path.dirname(shutil.which(c)) in env.get('PATH', '').split(':') for c in ('claude', 'codex', 'hermes', 'node') if shutil.which(c)), env.get('PATH'))
     check('it starts at login, is kept alive, and logs to a file',
           pl.get('RunAtLoad') is True and pl.get('KeepAlive') is True and pl.get('StandardOutPath', '').endswith('cafreso-hq.log'), pl)
     check('its label is the one uninstall removes', pl.get('Label') == 'com.cafreso.hq' and 'launchctl bootout "$DOMAIN/$LABEL"' in src)

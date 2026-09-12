@@ -46204,3 +46204,36 @@ custom-port field. Runbook: `docs/LOCAL_HQ.md`.
 are the founder's (Internet Identity); everything up to that door is
 measured. Safari needs mkcert's CA, which is theirs to install.
 
+## 434. sign in with the subscription you already pay for
+
+North Star §3.3 promised the front desk would say "we found your Claude
+subscription — want them on the team?", and it did find it. What it could
+not do was the sign-in: a Claude or Codex on the machine with no credential
+said *Needs a sign-in before their first task* and left the boss to open a
+terminal and run the CLI's login themselves — the one thing §2 says they
+will never do.
+
+The card does it now. serve.py runs the CLI's own sign-in (`claude auth
+login --claudeai` for a Claude subscription, `codex login` for a ChatGPT
+subscription) in a pseudo-terminal, so it behaves exactly as it would in a
+terminal: it opens the browser where it can, prints the link either way,
+and — headless, on the fleet — prints a code to paste. The front desk
+shows one button, *Sign in with your Claude subscription* / *…your ChatGPT
+subscription*, then the link, then a code field when the CLI asks for
+one, and reads *Signed in — ready to hire* the moment the CLI writes its
+own credential file. serve.py never reads that file; it only notices it.
+Cancel and sign-out ride the same routes, under the key-protected
+`/agents` prefix, with the commands a fixed allowlist.
+
+Measured twice: the routes with fake CLIs on a scratch server, and the
+real card in a headless browser clicking through link, code and *Signed
+in*. And measured on the founder's own machine on the way: the local
+office (`## 433.`) reported every CLI *not installed*, because launchd
+hands an agent a PATH without `~/.local/bin` or nvm — the script builds
+the office's PATH from where the CLIs actually are now.
+
+**Weakest verdict.** Driven with fakes; the real `claude auth login`
+opens a real browser and was not driven here. Gemini's CLI has no login
+command of its own (it signs in on first run), so its card still says
+what it said.
+

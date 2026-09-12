@@ -220,6 +220,12 @@ than riding the contract.
   the delivery sheet (`sharePage()` — user-initiated, so the click is the
   approval). Still out: night_runner missions and CLI-native runs, which
   execute their tools outside the browser runtime.
+- **Bring-your-own-subscription includes the sign-in (#434).** A Claude or
+  Codex found on the machine with no credential is signed in from the front
+  desk: `POST /agents/login` runs the CLI's own login in a pty and reports
+  the link and any code to paste (`/agents/login/status`, `/agents/login/input`,
+  `/agents/login/cancel`, `/agents/logout`); the CLI writes its own
+  credential, serve.py only notices it.
 - **Coworkers do pull each other in — inside a run (#430).** `ASK_COWORKER`
   is the second host tool on the shared surface: a coworker writes
   `[ASK_COWORKER: <name>]…[/ASK_COWORKER]` mid-task, the browser runtime

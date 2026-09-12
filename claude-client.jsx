@@ -1093,6 +1093,31 @@ async function agentsStatus() {
   } catch (_e) { return { agents: [] }; }
 }
 
+/* Sign in with the subscription you already pay for (#434): serve.py runs
+   the CLI's own sign-in and reports the link (and a code, headless); the
+   front desk polls until the credential lands. Nothing here sees a key. */
+async function agentLogin(agent) {
+  const r = await fetch(_API_BASE + '/agents/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agent }) });
+  const j = await r.json().catch(() => ({}));
+  return { httpStatus: r.status, ...j };
+}
+async function agentLoginStatus(agent) {
+  const r = await fetch(_API_BASE + '/agents/login/status?agent=' + encodeURIComponent(agent), { cache: 'no-store' });
+  return await r.json().catch(() => ({ status: 'none' }));
+}
+async function agentLoginInput(agent, text) {
+  const r = await fetch(_API_BASE + '/agents/login/input', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agent, text }) });
+  return r.ok;
+}
+async function agentLoginCancel(agent) {
+  const r = await fetch(_API_BASE + '/agents/login/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agent }) });
+  return r.ok;
+}
+async function agentLogout(agent) {
+  const r = await fetch(_API_BASE + '/agents/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agent }) });
+  return await r.json().catch(() => ({ ok: false }));
+}
+
 async function agentsInstall(agent) {
   const r = await fetch(_API_BASE + '/agents/install', {
     method: 'POST',
@@ -2937,6 +2962,7 @@ const CafresoHQClient = {
   hermesLocalModels,
   hermesExportConfig, hermesImportConfig,
   agentsStatus, agentsInstall, agentDrivers, streamAgentContract,
+  agentLogin, agentLoginStatus, agentLoginInput, agentLoginCancel, agentLogout,
   cafresohqStatus, codexStatus, toolExec, cloneRepo, fsUpload, fsMkdir, fsRename, fsDelete, fsReadText, fsStat, fsCollect, publishSite, sharePage,
   ANTHROPIC_MODELS, CLAUDECODE_MODELS, CAFRESOHQ_MODELS, CODEX_MODELS, GEMINI_MODELS, HERMES_MODELS,
 };

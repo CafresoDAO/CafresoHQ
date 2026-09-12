@@ -388,19 +388,72 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
      — CLI version spawns + local-daemon liveness), [] = nothing found. */
   const [driverList, setDriverList] = useStateM(null);
 
+  const driversAlive = useRefM(true);
+  const loadDrivers = async (quiet) => {
+    if (!quiet) setDriverList(null);
+    try {
+      const d = await (CafresoHQClient.agentDrivers
+        ? CafresoHQClient.agentDrivers(true) : Promise.resolve({ drivers: [] }));
+      if (driversAlive.current) setDriverList(d.drivers || []);
+    } catch (_e) { if (driversAlive.current) setDriverList([]); }
+  };
   useEffectM(() => {
     if (!open) return;
-    let dead = false;
-    setDriverList(null);
-    (async () => {
-      try {
-        const d = await (CafresoHQClient.agentDrivers
-          ? CafresoHQClient.agentDrivers(true) : Promise.resolve({ drivers: [] }));
-        if (!dead) setDriverList(d.drivers || []);
-      } catch (_e) { if (!dead) setDriverList([]); }
-    })();
-    return () => { dead = true; };
+    driversAlive.current = true;
+    loadDrivers(false);
+    return () => { driversAlive.current = false; };
   }, [open]);
+
+  /* Sign in with the subscription you already pay for (#434). A FOUND card
+     that "needs a sign-in" used to send the boss to a terminal to run the
+     CLI's login themselves. Now the card runs it: serve.py starts the CLI's
+     own sign-in, this polls for the link, a code to paste (headless), and
+     the moment the credential lands — then re-probes so the card reads
+     signed in. Words: subscription, sign in; never the protocol's. */
+  const [signin, setSignin] = useStateM({});
+  const signinTimers = useRefM({});
+  const SIGNIN_LABEL = {
+    'claude-code': 'Sign in with your Claude subscription',
+    'codex': 'Sign in with your ChatGPT subscription',
+  };
+  const patchSignin = (id, patch) => setSignin(prev => ({ ...prev, [id]: { ...(prev[id] || {}), ...patch } }));
+  const stopSigninPoll = (id) => { clearInterval(signinTimers.current[id]); delete signinTimers.current[id]; };
+  const pollSignin = (id) => {
+    stopSigninPoll(id);
+    signinTimers.current[id] = setInterval(async () => {
+      let st;
+      try { st = await CafresoHQClient.agentLoginStatus(id); } catch (_e) { return; }
+      if (!driversAlive.current) { stopSigninPoll(id); return; }
+      if (st.authenticated) {
+        stopSigninPoll(id);
+        patchSignin(id, { status: 'done', authenticated: true, url: st.url, needsCode: false });
+        loadDrivers(true);
+        return;
+      }
+      patchSignin(id, { status: st.status, url: st.url || '', code: st.code || '', needsCode: !!st.needsCode, error: st.error || '' });
+      if (st.status !== 'running') stopSigninPoll(id);
+    }, 1500);
+  };
+  const startSignin = async (id) => {
+    patchSignin(id, { status: 'running', url: '', code: '', needsCode: false, error: '', text: '' });
+    let r;
+    try { r = await CafresoHQClient.agentLogin(id); } catch (e) { patchSignin(id, { status: 'error', error: String(e && e.message || e) }); return; }
+    if (r.httpStatus === 404) { patchSignin(id, { status: 'error', error: 'that coworker is not on this machine any more' }); return; }
+    if (r.status === 'done' && r.authenticated) { patchSignin(id, { status: 'done', authenticated: true }); loadDrivers(true); return; }
+    pollSignin(id);
+  };
+  const sendSigninCode = async (id) => {
+    const text = String((signin[id] || {}).text || '').trim();
+    if (!text) return;
+    await CafresoHQClient.agentLoginInput(id, text);
+    patchSignin(id, { text: '', needsCode: false });
+  };
+  const cancelSignin = async (id) => {
+    stopSigninPoll(id);
+    try { await CafresoHQClient.agentLoginCancel(id); } catch (_e) { /* it may already be gone */ }
+    patchSignin(id, { status: 'idle', error: '' });
+  };
+  useEffectM(() => () => { Object.keys(signinTimers.current).forEach(stopSigninPoll); }, []);
 
   /* Reset the form whenever the modal (re)opens so a previous draft never bleeds
      into a fresh hire. Mirrors MeetingRoomModal's [open]-effect. */
@@ -554,7 +607,8 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
              probeError: det.probeError || '',
              probeDetail: det.probeDetail || '',
              needsLogin: !def.cloud && !localDaemon && d.id !== 'hermes'
-                         && !det.probeError && !det.authenticated };
+                         && !det.probeError && !det.authenticated
+                         && !(signin[d.id] && signin[d.id].authenticated) };
   }).filter(Boolean);
 
   const hireDetected = async (c) => {
@@ -675,8 +729,56 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
                               + 'and start it before their first task.'
                             : 'Signing in will not fix that — it needs repairing or '
                               + 'reinstalling first. You can still hire them and try.')
-                      : `${c.found}${c.needsLogin ? ' Needs a sign-in before their first task.' : ''}`}
+                      : (signin[c.driverId] && signin[c.driverId].authenticated)
+                        ? `${c.found} Signed in — ready to hire.`
+                        : `${c.found}${c.needsLogin ? ' Needs a sign-in before their first task.' : ''}`}
                   </div>
+                  {c.needsLogin && SIGNIN_LABEL[c.driverId] && (() => {
+                    const L = signin[c.driverId] || { status: 'idle' };
+                    const stop = (e) => { e.stopPropagation(); };
+                    return (
+                      <div className="frontdesk-signin" data-signin={c.driverId} onClick={stop} onKeyDown={stop}>
+                        {(!L.status || L.status === 'idle' || L.status === 'none') && (
+                          <button type="button" className="px-btn" onClick={() => startSignin(c.driverId)}>
+                            {SIGNIN_LABEL[c.driverId]}
+                          </button>
+                        )}
+                        {L.status === 'running' && (
+                          <>
+                            <div className="frontdesk-signin-line">Opening your browser to sign in…</div>
+                            {L.url && (
+                              <a className="frontdesk-signin-link" href={L.url} target="_blank" rel="noopener noreferrer">
+                                If nothing opened, use this link ↗
+                              </a>
+                            )}
+                            {L.code && <div className="frontdesk-signin-line">Your code: <code>{L.code}</code></div>}
+                            {L.needsCode && (
+                              <div className="frontdesk-signin-code">
+                                <input type="text" value={L.text || ''} placeholder="Paste the code from that page"
+                                       aria-label="Paste the code from that page"
+                                       onChange={(e) => patchSignin(c.driverId, { text: e.target.value })}
+                                       onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); sendSigninCode(c.driverId); } }} />
+                                <button type="button" className="px-btn" onClick={() => sendSigninCode(c.driverId)}>Done</button>
+                              </div>
+                            )}
+                            <button type="button" className="px-btn ghost" onClick={() => cancelSignin(c.driverId)}>Cancel</button>
+                          </>
+                        )}
+                        {L.status === 'error' && (
+                          <div className="frontdesk-signin-line">
+                            That sign-in did not finish{L.error ? ` — ${L.error}` : ''}.{' '}
+                            <button type="button" className="px-btn ghost" onClick={() => startSignin(c.driverId)}>Try again</button>
+                          </div>
+                        )}
+                        {L.status === 'done' && !L.authenticated && (
+                          <div className="frontdesk-signin-line">
+                            The sign-in finished but no sign-in was found here yet.{' '}
+                            <button type="button" className="px-btn ghost" onClick={() => loadDrivers(true)}>Look again</button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <div className="post-meta">
                     <span>powered by {c.poweredBy}</span>
                     <span>·</span>

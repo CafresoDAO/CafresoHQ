@@ -11808,3 +11808,19 @@ body.night .px-bubble.quiet { opacity: 0.5; }
 }
 @keyframes px-think { from { opacity: 0.32; } to { opacity: 0.85; } }
 
+
+/* ── #434 · sign in with the subscription you already pay for ──────────
+   The front desk's FOUND card grows a sign-in: one button, then the link
+   the CLI printed, a code field when the CLI asks for one, Cancel. It sits
+   inside a clickable card, so it stops its own clicks (hire.jsx). */
+.frontdesk-signin {
+  margin-top: 6px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  font-size: 11px;
+}
+.frontdesk-signin .px-btn { font-size: 8px; }
+.frontdesk-signin-line { flex-basis: 100%; color: var(--text-dim, #6b6a5c); }
+.frontdesk-signin-line code { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 1px; }
+.frontdesk-signin-link { flex-basis: 100%; color: var(--accent-sun, #c68a32); text-decoration: underline; }
+.frontdesk-signin-code { display: flex; gap: 6px; flex-basis: 100%; }
+.frontdesk-signin-code input { flex: 1; min-width: 0; font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 4px 6px; }
