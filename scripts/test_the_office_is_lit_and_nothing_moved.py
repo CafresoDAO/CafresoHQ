@@ -119,12 +119,22 @@ MEASURE = r"""(() => {
   document.head.appendChild(st);
   const after = heights();
   st.remove();
+  /* Hit-testing is compared WITH and WITHOUT the layer rather than against
+     an expected element: a runner may have a modal or a coach card over
+     the floor (it did — the hire modal's role text), and that is not the
+     layer's doing. What the layer must not do is change what is under the
+     pointer, anywhere on the scene. */
   const plate = q('.px-room .px-plate'); const pr = plate.getBoundingClientRect();
-  const hit = document.elementFromPoint(pr.left + 6, pr.top + pr.height / 2);
-  const hitOk = !!hit && plate.contains(hit);
   const desk = q('.px-deskset .px-desk'); const dr = desk ? desk.getBoundingClientRect() : null;
-  const dhit = dr ? document.elementFromPoint(dr.left + dr.width / 2, dr.top + dr.height / 2) : null;
-  const deskOk = !!dhit && !!dhit.closest('.px-deskset');
+  const under = () => [document.elementFromPoint(pr.left + 6, pr.top + pr.height / 2),
+                       dr ? document.elementFromPoint(dr.left + dr.width / 2, dr.top + dr.height / 2) : null];
+  const withLayer = under();
+  document.head.appendChild(st);
+  const without = under();
+  st.remove();
+  const hitOk = withLayer[0] === without[0] && !!withLayer[0];
+  const deskOk = !dr || (withLayer[1] === without[1] && !!withLayer[1]);
+  const hit = withLayer[0];
   document.body.classList.add('night');
   return { count: ints.length, day, bld: { pe: bld.pointerEvents, z: bld.zIndex, bg: bld.backgroundImage.slice(0, 30) },
            sky: sky.backgroundImage.slice(0, 30), sun: sun.backgroundImage.slice(0, 30), sunZ: getComputedStyle(q('.px-sun')).zIndex,
@@ -251,6 +261,7 @@ def main():
         H.evaluate(ws, "(() => { const b = document.querySelector('button[title^=\"Office\"]'); b.click(); return !!b; })()")
         H.wait_for(ws, "document.querySelectorAll('.px-int').length >= 2", 20, 'the pixel scene to draw its rooms')
         time.sleep(0.8)
+        dismiss(ws)
         H.evaluate(ws, "(() => { window.__litWasNight = document.body.classList.contains('night'); document.body.classList.remove('night'); return 1; })()")
         time.sleep(0.5)
         m = H.evaluate(ws, MEASURE)
@@ -266,8 +277,8 @@ def main():
         check('the horizon haze and the sun glow are there by day', m['sky'].startswith('linear-gradient') and m['sun'].startswith('radial-gradient') and m['sunZ'] == '1', (m['sky'], m['sun'], m['sunZ']))
         check('NOTHING MOVED: floors, interiors, lobby, street and scroll height are identical with the whole layer switched off',
               m['before'] == m['after'], (m['before'], m['after']))
-        check('a desk sign is still the thing under the pointer, through the edge shade', m['hitOk'], m['hitTag'])
-        check('a desk is still the thing under the pointer, through the daylight layer', (not m['hasDesk']) or m['deskOk'], m['deskOk'])
+        check('what is under the pointer at a desk sign is the same with the layer on and off', m['hitOk'], m['hitTag'])
+        check('what is under the pointer at a desk is the same with the layer on and off', m['deskOk'], m['deskOk'])
         check('by night an occupied room gets a lamp pool (radial), a vacant unit gets none',
               m['hasOcc'] and m['nOccRadial'] and ((not m['hasVacant']) or not m['nVacRadial']), (m['hasOcc'], m['nOccRadial'], m['hasVacant'], m['nVacRadial']))
         check('by night the lobby spills light and takes no clicks', m['lobbyPe'] == 'none' and m['lobbyRadial'], (m['lobbyPe'], m['lobbyRadial'], m['lobbyContent'], m['night']))
