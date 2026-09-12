@@ -162,6 +162,8 @@ async function drive(scene) {
   const opts = scene.opts;
   const HQ = { displacedTask };
   const agentAbortersRef = { current: new Map(scene.registry || []) };
+  // #430: the lifted segment reads the desk-work registry for an 'ask' entry.
+  const deskWorkRef = { current: new Map() };
   /* #390 added startingTaskIdsRef (a Set claimed synchronously at the top of
      onTaskDropOnAgent) and its releaseStartClaim() helper, called on every
      path that doesn't end in a real dispatch. The prelude lifted below starts
