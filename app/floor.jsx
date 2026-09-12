@@ -72,6 +72,10 @@ const PROP_PLACARD = {
    evidence to the contrary. The boss scanning headers (which is what
    headers are FOR) reads that as a directory that was opened. */
 const VISIT_WORDS = [
+  /* Asking a colleague (ASK_COWORKER). Neither a look nor a save: the
+     coworker walked to another desk, and the answer is the result under
+     the header. Ahead of the noun rows so nothing in the name matches one. */
+  [/ASK_COWORKER/,               { now: 'asking',        past: 'Asked',     fail: "Couldn't ask",      icon: '🗣' }],
   [/SEARCH|LIBRARY|RESEARCH/,    { now: 'searching for', past: 'Looked up', fail: "Couldn't look up", icon: '🔎' }],
   /* Asking, not doing. PUBLISH_SITE is the one tool here whose SUCCESS is a
      request: `run()` queues an approval and returns "Asked the boss to

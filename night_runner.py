@@ -101,6 +101,7 @@ NIGHT_ERROR_MAX = 50
 # TOOL_REGISTRY, so a tool added to the browser cannot quietly become a
 # 24th silent no-op.
 NIGHT_CANNOT = {
+    'ASK_COWORKER':       'a colleague',
     'BASH':               'shell commands',
     'BROWSER_SCREENSHOT': 'screenshots',
     'DM_TO':              'messaging',

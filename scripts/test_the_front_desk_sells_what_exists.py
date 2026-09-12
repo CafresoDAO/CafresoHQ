@@ -120,7 +120,7 @@ def main():
     # ── 2. every remaining promise maps to a real grant ──────────────────
     # The generalising arm. `toolsForAgent` is the only place a claim becomes
     # a tool; anything a card promises must be reachable there.
-    grant = brace_lift(runtime, 'async function toolsForAgent(agent, { peers = [] } = {}) {')
+    grant = brace_lift(runtime, 'async function toolsForAgent(agent, { peers = [], askDepth = 0 } = {}) {')
     granted_claims = set(re.findall(r"claimed\.has\('(\w+)'\)", grant))
     needs = brace_lift(cast, 'const CAN_DO_NEEDS = {')
     conditional = set(re.findall(r'^\s*(\w+):', needs, re.M))

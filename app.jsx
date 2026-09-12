@@ -2314,7 +2314,7 @@ ${d.text}` : d.text,
     if (!now || now === since) return null;
     const held = deskWorkRef.current.get(agentId);
     if (!held || held.controller !== now) return null;
-    const whose = held.from ? `${held.from}'s note` : 'a note';
+    const whose = held.kind === 'ask' ? `${held.from}'s question` : held.from ? `${held.from}'s note` : 'a note';
     if (held.messageId) {
       MessageRegistry.transition(held.messageId, 'cancelled', {
         by: 'host',
@@ -5773,21 +5773,31 @@ ${d.text}` : d.text,
        on claiming a conversation because the only registrant that reaches
        here is one. */
     const chatCut = !displaced && running;
+    /* The one cardless registrant that is NOT a conversation (#430): a
+       colleague answering another coworker's ASK_COWORKER. The desk entry
+       says so, and the sentences below say who they are answering. */
+    const heldNow = deskWorkRef.current.get(agent.id);
+    const helping = heldNow && heldNow.kind === 'ask' ? heldNow.from : null;
     if (chatCut && opts.auto) {
       setTasks(prev => prev.map(t => t.id === taskId
         ? { ...t, assignedTo: agent.id,
-            stalledNote: `${agent.name} was mid-conversation when this step came up — start it when they're free` }
+            stalledNote: helping
+              ? `${agent.name} was answering ${helping}'s question when this step came up — start it when they're free`
+              : `${agent.name} was mid-conversation when this step came up — start it when they're free` }
         : t));
       logActivity({ agentId: agent.id, agentName: agent.name, color: agent.color, taskId,
-        action: 'progress', text: `couldn't pick up "${task.title}" — mid-conversation` });
+        action: 'progress', text: `couldn't pick up "${task.title}" — ${helping ? `answering ${helping}` : 'mid-conversation'}` });
       releaseStartClaim();
       return;
     }
     if (chatCut) {
       const ok = await window.hqConfirm(
-        `${agent.name} is mid-conversation in chat.\n\n` +
-        `Start "${task.title}" now? Their reply stops where it is, ` +
-        `and the rest of it is lost.`, { danger: true, okLabel: 'Start it' });
+        (helping
+          ? `${agent.name} is answering a question from ${helping}.\n\n` +
+            `Start "${task.title}" now? Their answer stops where it is, and ${helping} carries on without it.`
+          : `${agent.name} is mid-conversation in chat.\n\n` +
+            `Start "${task.title}" now? Their reply stops where it is, ` +
+            `and the rest of it is lost.`), { danger: true, okLabel: 'Start it' });
       if (!ok) { releaseStartClaim(); return; }
     }
 
@@ -6424,6 +6434,72 @@ ${d.text}` : d.text,
     };
     window.addEventListener('cafresohq:publishRequest', onPub);
     return () => window.removeEventListener('cafresohq:publishRequest', onPub);
+  }, []);
+
+  /* A coworker asking a colleague mid-run (ASK_COWORKER, hq-runtime.jsx —
+     #430). The runtime streams the colleague itself; this is the floor's
+     half, on the same one-event pattern as the publish request above:
+     'start' answers whether the desk is free — the DM rule at the dispatch
+     door, an office-initiated visit WAITS for a busy desk and never evicts
+     it; 'begin' registers the run on that desk so the stop button and any
+     later DM see it as busy, and puts "helping <asker>" on the placard;
+     'end' hands the desk back and writes the two activity rows. Status is
+     RESTORED, not reset: a colleague pulled in between iterations of a
+     mission goes back to `active · on mission`, not to `idle`. */
+  const askDesksRef = useRefA(new Map());
+  useEffectA(() => {
+    const live = (id) => (agentsRef.current || []).find(a => a.id === id);
+    const onAsk = (e) => {
+      const d = e.detail || {};
+      if (!d.toId) return;
+      if (d.phase === 'start') {
+        if (!live(d.toId)) { d.gone = true; return; }
+        d.waitForDesk = (ms) => new Promise((resolve) => {
+          const t0 = Date.now();
+          const tick = () => {
+            if (!live(d.toId)) return resolve(false);
+            if (!agentAbortersRef.current.has(d.toId)) return resolve(true);
+            if (Date.now() - t0 > ms) return resolve(false);
+            setTimeout(tick, 750);
+          };
+          tick();
+        });
+        return;
+      }
+      if (d.phase === 'begin') {
+        const to = live(d.toId);
+        if (!to) return;
+        const controller = beginAgentRun(d.toId);
+        if (typeof d.abort === 'function') controller.signal.addEventListener('abort', () => d.abort(), { once: true });
+        /* Not a conversation: the busy-desk dialogs read this kind so a card
+           dropped on Kai while he answers Mira says so, instead of the
+           "mid-conversation in chat" every other cardless run earns. */
+        deskWorkRef.current.set(d.toId, { controller, kind: 'ask', from: d.fromName });
+        askDesksRef.current.set(d.toId, { controller, was: { status: to.status, mood: to.mood, task: to.task } });
+        onUpdateAgent(d.toId, { status: 'busy', mood: 'thinking', task: `helping ${d.fromName}` });
+        const from = live(d.fromId);
+        logActivity({ agentId: d.fromId, agentName: d.fromName, color: from && from.color, action: 'dm',
+          text: `asked ${d.toName}: ${String(d.question || '').slice(0, 80)}` });
+        return;
+      }
+      if (d.phase === 'end') {
+        const held = askDesksRef.current.get(d.toId);
+        askDesksRef.current.delete(d.toId);
+        const to = live(d.toId);
+        if (held) {
+          endAgentRun(d.toId, held.controller);
+          if (to) onUpdateAgent(d.toId, { status: held.was.status || 'idle', mood: held.was.mood || 'idle', task: held.was.task || 'standing by' });
+        }
+        logActivity({ agentId: d.toId, agentName: d.toName, color: to && to.color, action: 'dm',
+          text: d.failed
+            ? `couldn't answer ${d.fromName}${d.reason === 'busy' ? ' — mid-task the whole time' : d.reason === 'stopped' ? ' — stopped' : ''}`
+            : `answered ${d.fromName}` });
+        // Credit on the colleague's résumé: an assist is work done for the team.
+        if (!d.failed && to) recordXp({ agentId: d.toId, kind: 'help', outcome: 'done', title: `helped ${d.fromName}: ${String(d.question || '').slice(0, 60)}` });
+      }
+    };
+    window.addEventListener('cafresohq:peerAsk', onAsk);
+    return () => window.removeEventListener('cafresohq:peerAsk', onAsk);
   }, []);
 
   /* External approvals: the local `claude` CLI's PreToolUse hook posts

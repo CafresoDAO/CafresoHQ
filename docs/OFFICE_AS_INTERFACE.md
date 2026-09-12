@@ -46067,3 +46067,71 @@ the daemon reparents to launchd.
 the ICP ledger; the alpha in `AGENT_MARKETPLACE.md` §7b is still the first
 real-token job. BLS certificate verification is still owed.
 
+## 430. a coworker walks over to a colleague's desk — and comes back with the answer
+
+The office promised coworkers work together, and in the meeting room, in
+chat hand-offs and in workflows they did. At a desk they did not: a
+coworker running a task card who needed a colleague had only `DM_TO`,
+which ends the turn and delivers the colleague's reply later as a new
+message — after the board has already filed the deliverable. So "ask Kai
+and use what he says" was true in the meeting room and false on the floor.
+
+`ASK_COWORKER` closes that. A coworker writes the block mid-task; the
+runtime streams the named colleague right there, hands the answer back as
+the tool result, and the asker carries on with it in hand — the same tool
+loop every other visit rides, so the desk bubble reads **🗣 Asked Kai**
+with the answer under it, the activity feed gets "Mira asked Kai: …" and
+"Kai answered Mira", and Kai's desk shows *helping Mira* while he answers
+and then goes back to exactly what it was (a colleague pulled in between
+mission iterations returns to `active`, not `idle`).
+
+What keeps it an office and not a corridor:
+
+- **One desk deep.** The colleague answers with their own tools and NO
+  roster — the tool is not even in their prompt — so nobody can chain the
+  whole floor behind one question.
+- **Three asks per run**, a rolling office-wide budget, a hard timeout.
+- **A busy desk is waited for, never evicted** (the #97 rule at the
+  dispatch door, reused): if it never frees, the asker is told so in words
+  and carries on.
+- **The stop button follows the ask.** Stopping the asker aborts the
+  colleague's stream; the colleague's desk is registered as a real run
+  while it lasts, so a later DM waits its turn.
+- **A colleague's answer is data.** It arrives wrapped as untrusted input,
+  and any marker the colleague wrote is stripped rather than executed.
+- **Refusals in words:** an unknown name (with the roster), asking
+  yourself, an empty question, a fourth ask, a colleague who left.
+
+The front desk asks too: the chief of staff gets the same tool bound to
+the live roster, so "ask Kai which day the stand-up is" is answered in
+that reply — the demo-critical sentence shape that the DM fan-out got
+right in three runs out of five (#`dispatchToAgent`'s own note) — instead
+of a DM round trip and a synthesis afterwards. And an answered ask is an
+**assist** on the colleague's résumé (XP kind `help`): two of them are an
+affinity on the stat card, which is Phase B groundwork for the hall's
+résumé.
+
+Measured, not read: the suite bundles the runtime under node with the
+network client stubbed and a canned brain playing both coworkers, and
+drives every path above — including the abort, timed — plus the front
+desk's own ask.
+
+The full suite caught what a canned brain cannot: the busy-desk dialog
+(#86/#90) reasons "every cardless registrant is a chat surface", and a
+colleague answering an ask is a cardless registrant that is NOT one. The
+ask now registers desk work of its own kind, so a card dropped on Kai
+while he answers Mira reads *Kai is answering a question from Mira* — and
+a chain step parks with *was answering Mira's question* — instead of
+"mid-conversation in chat". The call-site census in
+`test_a_conversation_is_work_in_flight.py` counts four now and drives
+both sentences. Also found on the way, unrelated: the 50 MB note-race
+suite was failing on macOS with `ENOBUFS` raised by the client's own
+socket (twelve 50 MB sends at once exhaust the kernel's buffers) before
+serve.py ever saw the request — host pressure, not a splice; the suite
+retries that one errno with a backoff and says so.
+
+**Weakest verdict.** Driven against a canned brain, not a live one; the
+floor walk (a sprite crossing to the colleague's desk) is not drawn yet —
+the placard and the feed carry it. Night missions and CLI-native runs
+still have no roster to ask.
+

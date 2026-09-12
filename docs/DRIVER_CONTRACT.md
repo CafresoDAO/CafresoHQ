@@ -220,6 +220,21 @@ than riding the contract.
   the delivery sheet (`sharePage()` — user-initiated, so the click is the
   approval). Still out: night_runner missions and CLI-native runs, which
   execute their tools outside the browser runtime.
+- **Coworkers do pull each other in — inside a run (#430).** `ASK_COWORKER`
+  is the second host tool on the shared surface: a coworker writes
+  `[ASK_COWORKER: <name>]…[/ASK_COWORKER]` mid-task, the browser runtime
+  streams the named colleague right there (their own tools, **no peers** —
+  an ask is one desk deep by construction), and the answer comes back as
+  the tool result so the asker folds it into the deliverable. `DM_TO` stays
+  the asynchronous hand-off that ends the turn. Limits: three asks per run,
+  a rolling office-wide budget, a wait for a busy desk (never an eviction),
+  a hard timeout, and the asker's stop aborts the colleague. The floor's
+  half rides `cafresohq:peerAsk` (start → begin → end): the colleague's
+  desk shows "helping <asker>" and goes back to what it was, and an
+  answered ask is an assist on the colleague's XP ledger. The front desk's
+  `ceoStream` binds the same tool, so the chief of staff answers "ask Kai
+  …" inline. Same exclusions as above: night missions and CLI-native runs
+  have no roster.
 - **Not on-chain inference.** Execution stays where GPUs are (see the serve.py
   ICP-portability audit); canisters hold state, identity, payment, reputation.
 - **Not a plugin store (yet).** Third-party driver *code* is out of scope until

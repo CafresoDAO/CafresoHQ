@@ -54,6 +54,10 @@ const XP_KIND_LABEL = {
   page:    ['page', 'pages'],
   mission: ['night shift', 'night shifts'],
   task:    ['job', 'jobs'],
+  /* A colleague's question answered mid-run (ASK_COWORKER, #430). Not a
+     starter kind — nothing is filed under it from a card — but it is work
+     the coworker did for the team, and two of them are an affinity. */
+  help:    ['assist', 'assists'],
 };
 
 /* The task-type a task earns XP under: its starter card if it came from

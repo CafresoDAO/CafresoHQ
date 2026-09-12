@@ -90,13 +90,24 @@ def get(url):
         return 0, str(e).encode()
 
 
-def put_bytes(url, body):
+def put_bytes(url, body, _tries=8):
     req = urllib.request.Request(url, data=body, method='PUT')
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
             return r.status, r.read()
     except urllib.error.HTTPError as e:
         return e.code, e.read()
+    except OSError as e:
+        # macOS runs out of socket buffers when twelve threads push 50 MB at
+        # once (ENOBUFS, errno 55) — the CLIENT's socket failed before the
+        # request left this process, so serve.py never saw it. That is host
+        # pressure, not a splice, and the point of this suite is the splice:
+        # send it again. Measured 2026-09-12: nine of twelve writers hit it
+        # in the same 50 ms, with the three that got through all 200.
+        if getattr(e, 'errno', None) == 55 and _tries > 1:
+            time.sleep(0.25 * (9 - _tries))   # back off a little more each time
+            return put_bytes(url, body, _tries - 1)
+        return 0, str(e).encode()
     except Exception as e:
         return 0, str(e).encode()
 

@@ -88,7 +88,7 @@ def main():
     can_do = brace_lift(bare, 'const CAN_DO = {')
     needs = brace_lift(bare, 'const CAN_DO_NEEDS = {')
     unlock = brace_lift(bare, 'const CAN_DO_UNLOCK = {')
-    grant = brace_lift(runtime, 'async function toolsForAgent(agent, { peers = [] } = {}) {')
+    grant = brace_lift(runtime, 'async function toolsForAgent(agent, { peers = [], askDepth = 0 } = {}) {')
     facts = brace_lift(runtime, 'function capabilityFacts(subject) {')
 
     # ── 1. the two tables line up, id by id ──────────────────────────────

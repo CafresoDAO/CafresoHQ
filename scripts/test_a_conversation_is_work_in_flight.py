@@ -118,6 +118,8 @@ def main():
         '  const task = tasks.find(t => t.id === taskId);\n'
         '  const opts = s.opts || {};\n'
         '  const agentAbortersRef = { current: new Map(s.running ? [["a1", 1]] : []) };\n'
+        # #430: the ask registers desk work of kind 'ask'; the dialog reads it.
+        '  const deskWorkRef = { current: new Map(s.ask ? [["a1", { kind: "ask", from: "Mira" }]] : []) };\n'
         # #390 added startingTaskIdsRef (a Set claimed synchronously at the top
         # of onTaskDropOnAgent) and its releaseStartClaim() helper, called on
         # every path that doesn't end in a real dispatch. The lifted segment
@@ -148,6 +150,8 @@ def main():
         f'  chat_auto:     {{ tasks: [{NEW}], running: true, opts: {{ auto: true }} }},\n'
         f'  parked_chat:   {{ tasks: [{NEW}, {PARKED}], running: true }},\n'
         f'  parked_idle:   {{ tasks: [{NEW}, {PARKED}], running: false }},\n'
+        f'  ask_manual:    {{ tasks: [{NEW}], running: true, ask: true }},\n'
+        f'  ask_auto:      {{ tasks: [{NEW}], running: true, ask: true, opts: {{ auto: true }} }},\n'
         '};\n'
         'const R = {};\n'
         'Promise.all(Object.keys(S).map(async k => { R[k] = await drive(S[k]); }))\n'
@@ -173,6 +177,18 @@ def main():
           r['card_auto']['out'] == 'not-started'
           and any('still on "cherry"' in n for _, n in r['card_auto']['notes']),
           r['card_auto'])
+    # #430: a colleague answering ASK_COWORKER is the one cardless run that
+    # is not a conversation, and the dialog must not call it one.
+    check('a desk answering a colleague says so, and names the asker',
+          r['ask_manual']['out'] == 'started'
+          and any('is answering a question from Mira' in d for d in r['ask_manual']['dialogs'])
+          and not any('mid-conversation' in d for d in r['ask_manual']['dialogs']),
+          r['ask_manual'])
+    check('a chain step parks behind an answer in flight with the same honesty',
+          r['ask_auto']['out'] == 'not-started'
+          and any("answering Mira's question" in n for _, n in r['ask_auto']['notes'])
+          and any('answering Mira' in a for a in r['ask_auto']['activity']),
+          r['ask_auto'])
     check('a conversation in flight draws the danger dialog',
           any('mid-conversation in chat' in d for d in r['chat_ok']['dialogs']),
           r['chat_ok'])
@@ -202,10 +218,18 @@ def main():
     # beginAgentRun's only cardless callers. Count the call sites: the task
     # path plus exactly two others (the @mention and delegate paths).
     sites = re.findall(r'beginAgentRun\(', bare)
-    check('beginAgentRun has exactly three call sites (task, @mention, delegate)',
-          len(sites) == 3,
+    check('beginAgentRun has exactly four call sites (task, @mention, delegate, ask)',
+          len(sites) == 4,
           f'{len(sites)} call sites — a new one must decide whether a '
           'cardless run is still a conversation before riding this dialog')
+    # The fourth (#430) decided: a colleague answering ASK_COWORKER is NOT a
+    # conversation. It registers desk work of kind 'ask' and the dialog
+    # names who they are answering instead of claiming a chat.
+    check("the ask registers desk work of kind 'ask' with the asker's name",
+          "deskWorkRef.current.set(d.toId, { controller, kind: 'ask', from: d.fromName })" in bare)
+    check('the card-drop dialog reads that kind and names the asker',
+          "heldNow.kind === 'ask'" in bare and 'is answering a question from ${helping}' in bare
+          and "was answering ${helping}'s question when this step came up" in bare)
 
     print()
     if FAILS:
