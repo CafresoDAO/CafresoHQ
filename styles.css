@@ -11781,3 +11781,30 @@ body.night .px-lobby::after {
   z-index: 1;
   background: radial-gradient(ellipse at 50% 100%, rgba(248, 200, 64, 0.32), rgba(248, 200, 64, 0.09) 55%, transparent 72%);
 }
+
+/* ── #432 · the office, alive ──────────────────────────────────────────
+   Three things the eye landed on after the light (#431): "standing by" said
+   three times over in bright paper bubbles; a coworker thinking with a dark
+   monitor, because the screen only ever lit for a running tool; a sun nailed
+   to one spot. Still overlay-only, still no layout change. */
+
+/* An idle coworker's bubble is a murmur, not an announcement: same words,
+   same place, three-fifths the presence. A busy one keeps the full bubble. */
+.px-bubble.quiet {
+  opacity: 0.62;
+  color: #4a5070;
+  background: rgba(255, 254, 248, 0.88);
+  box-shadow: inset 0 0 0 2px #e8e4d0, 2px 2px 0 rgba(26, 28, 44, 0.22);
+  padding: 4px 6px;
+}
+.px-bubble.quiet::after { background: rgba(255, 254, 248, 0.88); }
+body.night .px-bubble.quiet { opacity: 0.5; }
+
+/* A monitor lit by thought: softer and slower than the tool flicker, the
+   same screen. Gated like every ambient motion in the scene. */
+.px-glow.thinking { background: rgba(88, 200, 216, 0.36); animation: none; opacity: 0.6; }
+@media (prefers-reduced-motion: no-preference) {
+  .px-glow.thinking { animation: px-think 2.6s ease-in-out infinite alternate; }
+}
+@keyframes px-think { from { opacity: 0.32; } to { opacity: 0.85; } }
+

@@ -106,3 +106,23 @@ the pixel — this layer can never be why a phone suite drifts.
 Invariants above still hold: no JS loop, pixel identity stays in the
 Office, mobile keeps the same rooms with the same light.
 
+## 2026-09-12 · the office, alive (#432)
+
+After the light, the three things the eye landed on:
+
+- **"standing by" three times over.** An idle coworker's bubble is now
+  `.px-bubble.quiet`: same words, same place, three-fifths the presence. A
+  working coworker keeps the full bubble. (`ui/office.jsx` marks it from
+  `status`; the words are untouched.)
+- **A dark monitor on a thinking coworker.** `.px-glow` used to light only
+  for a running tool; it now lights while `status === 'busy'` too, with a
+  slower, softer `thinking` pulse behind `prefers-reduced-motion:
+  no-preference`. A tool run keeps the flicker.
+- **A sun nailed to one spot.** `skyArc()` places the sun (6→20) and the
+  moon (19→7) on a low arc from the local hour — a `setInterval` tick a
+  minute, which is a clock, not an animation loop; inline `left`/`top`
+  only, size and layer stay the stylesheet's.
+
+Same suite as #431 measures the quiet opacity on a placed bubble, the sun
+and moon against the arc for the hour the browser is in, and the gating.
+

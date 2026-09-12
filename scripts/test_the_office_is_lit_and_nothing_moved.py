@@ -126,6 +126,32 @@ MEASURE = r"""(() => {
            before, after, hitOk, hitTag: hit && hit.className, deskOk, hasDesk: !!desk };
 })()"""
 
+MEASURE_LIFE = r"""(() => {
+  const q = (s) => document.querySelector(s);
+  const quiet = [...document.querySelectorAll('.px-bubble.quiet')];
+  const loud = [...document.querySelectorAll('.px-bubble:not(.quiet)')];
+  const sun = q('.px-sun'); const moon = q('.px-moon');
+  const d = new Date(); const h = d.getHours() + d.getMinutes() / 60;
+  const arc = (hour, start, end) => { const f = Math.min(1, Math.max(0, (hour - start) / (end - start))); return { left: (8 + f * 84).toFixed(1) + '%', top: Math.round(112 - Math.sin(f * Math.PI) * 92) + 'px' }; };
+  const want = arc(h, 6, 20), wantMoon = arc(h < 12 ? h + 24 : h, 19, 31);
+  /* A fresh office has no bubble yet ("standing by" is written after a
+     first run), so the quiet style is measured on a bubble placed for the
+     purpose, inside a real desk set, and removed again. */
+  const host = q('.px-deskset') || q('.px-int');
+  const probe = document.createElement('div'); probe.className = 'px-bubble quiet'; probe.textContent = 'standing by';
+  host.appendChild(probe);
+  const quietOpacity = parseFloat(getComputedStyle(probe).opacity);
+  const loudProbe = document.createElement('div'); loudProbe.className = 'px-bubble'; loudProbe.textContent = 'x';
+  host.appendChild(loudProbe);
+  const loudOpacity = parseFloat(getComputedStyle(loudProbe).opacity);
+  probe.remove(); loudProbe.remove();
+  const num = (v) => parseFloat(v);
+  return { quiet: quiet.length, loud: loud.length, quietOpacity, loudOpacity,
+           sunLeft: num(sun && sun.style.left), sunTop: num(sun && sun.style.top), sunRight: sun && sun.style.right,
+           moonLeft: num(moon && moon.style.left), moonTop: num(moon && moon.style.top),
+           wantSun: { left: num(want.left), top: num(want.top) }, wantMoon: { left: num(wantMoon.left), top: num(wantMoon.top) }, hour: h };
+})()"""
+
 MEASURE_NIGHT = r"""(() => {
   const q = (s) => document.querySelector(s);
   const ps = (el, p) => getComputedStyle(el, p);
@@ -158,7 +184,17 @@ def source_pins():
           rules and all('pointer-events: none' in body for _, body in rules), [sel.strip()[:40] for sel, body in rules if 'pointer-events: none' not in body])
     gate = re.search(r"@media \(prefers-reduced-motion: no-preference\) \{[^}]*px-twinkle[^}]*\}\s*\}", sec)
     check('the one new animation is gated behind prefers-reduced-motion: no-preference', bool(gate))
-    check('no other animation was added to the scene by this section', sec.count('animation:') == 1)
+    check('no other animation was added to the scene by this section', sec[:sec.index('#432 · the office, alive')].count('animation:') == 1 if '#432 · the office, alive' in sec else sec.count('animation:') == 1)
+    # ── #432: alive ─────────────────────────────────────────────────────
+    alive = css[css.index('#432 · the office, alive'):]
+    check('the thinking glow is gated behind prefers-reduced-motion: no-preference',
+          re.search(r"@media \(prefers-reduced-motion: no-preference\) \{[^}]*px-think[^}]*\}\s*\}", alive) and alive.count('animation:') == 2)
+    jsx = (ROOT / 'ui' / 'office.jsx').read_text(encoding='utf-8')
+    check('a busy coworker lights the monitor while thinking, a tool run keeps the flicker',
+          "a.status === 'busy') && !away && <span className={`px-glow${(screen || liveTool) ? '' : ' thinking'}`}" in jsx)
+    check('the idle bubble is marked quiet from the coworker\'s status, text untouched',
+          "className={`px-bubble${(a.status || 'idle') === 'idle' ? ' quiet' : ''}`}>{a.task}" in jsx)
+    check('the clock is a tick a minute, not an animation loop', 'setInterval(() => { const d = new Date(); setClockHour' in jsx and '60000' in jsx)
 
 
 def main():
@@ -211,6 +247,7 @@ def main():
         H.wait_for(ws, "document.querySelectorAll('.px-int').length >= 2", 20, 'the pixel scene to draw its rooms')
         time.sleep(0.8)
         m = H.evaluate(ws, MEASURE)
+        life = H.evaluate(ws, MEASURE_LIFE)
         time.sleep(0.5)
         m.update(H.evaluate(ws, MEASURE_NIGHT))
         check('the scene drew rooms to measure', m['count'] >= 2, m['count'])
@@ -230,6 +267,13 @@ def main():
         check('the moon has its glow', m['moonRadial'])
         # Headless Chrome answers neither `reduce` nor `no-preference` on some
         # builds; only a browser that says motion is welcome must twinkle.
+        # ── #432: alive ───────────────────────────────────────────────────
+        check('an idle "standing by" bubble is quiet — three-fifths the presence of a working one',
+              0.4 < life['quietOpacity'] < 0.8 and life['loudOpacity'] == 1, life)
+        check('the sun sits where the local hour puts it on the arc (inline left/top, right released)',
+              abs(life['sunLeft'] - life['wantSun']['left']) < 0.2 and abs(life['sunTop'] - life['wantSun']['top']) < 1.5 and life['sunRight'] == 'auto', life)
+        check('the moon keeps its own hours on the same arc',
+              abs(life['moonLeft'] - life['wantMoon']['left']) < 0.2 and abs(life['moonTop'] - life['wantMoon']['top']) < 1.5, life)
         check('the stars twinkle only when motion is welcome',
               (m['starsAnim'] == 'px-twinkle') if m['noPref'] else (m['starsAnim'] == 'none'), (m['reduced'], m['noPref'], m['starsAnim']))
     finally:

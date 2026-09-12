@@ -46162,3 +46162,41 @@ lands on, and they are untouched. A sun that moves with the hour, and
 screens that glow when a coworker is thinking rather than only when a
 tool runs, are the two ambient moves worth making next.
 
+## 432. the office, alive — a murmur, a lit screen, and a sun that keeps the hour
+
+#431's weakest verdict named three things; this does them. An idle
+coworker's "standing by" is a murmur now — same words, three-fifths the
+presence — so a floor of coworkers waiting no longer shouts it. A coworker
+who is thinking has a lit monitor (softer and slower than the tool
+flicker), because a dark screen on a busy desk was the office saying
+nothing was happening while something was. And the sun and the moon keep
+the local hour on a low arc across the sky: a clock tick a minute, every
+motion still CSS, nothing measured by a phone suite moved.
+Detail in `OFFICE_REVAMP.md` (#432).
+
+**Weakest verdict.** Night is still a toggle, so the moon can be up in a
+sunlit office if the boss never flips it — tying the toggle to the hour is
+a decision, not a default.
+
+## 433. your own office on this machine, at the door the shell knocks on
+
+Asked for a local HQ reachable from the Cafreso sign-in. The shell already
+knew how to find one — it probes `localhost` 8787 and 8788 for a *Local
+machine* office the moment you open HQ — and serve.py already listens on
+8787. What was missing was the office staying up: `scripts/local_hq.sh
+install` writes a per-user LaunchAgent that runs serve.py from the repo at
+login and keeps it alive, waits for `/health`, and says the three clicks
+that follow. `status`, `restart`, `logs`, `uninstall`.
+
+Measured on the founder's Mac: Docker Desktop holds IPv6 `*:8787` and
+`*:8788` for the search-worker container and answers nothing there, and
+`localhost` resolves to `::1` first — so the first install "hung" on a
+health loop that was asking Docker. The script now probes `127.0.0.1`,
+accepts only serve.py's own body, refuses a port another program holds and
+names the way round; this office runs on 8789, typed once into the shell's
+custom-port field. Runbook: `docs/LOCAL_HQ.md`.
+
+**Weakest verdict.** The sign-in and the Connect click at ai.cafreso.com
+are the founder's (Internet Identity); everything up to that door is
+measured. Safari needs mkcert's CA, which is theirs to install.
+

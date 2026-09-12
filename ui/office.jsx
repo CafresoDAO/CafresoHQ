@@ -291,6 +291,16 @@ const PX_SIZES = {
   sign_hq: [146, 48], sun: [20, 20], moon: [16, 16], phone: [14, 15],
 };
 
+/* Where in the sky a body is at this hour: `start`→`end` is its day (the sun
+   6→20, the moon 19→31 i.e. 7 the next morning), traced as a low arc from
+   the left horizon to the right. Outside its hours it is parked at the
+   horizon it set on, behind the canopy. Inline `left`/`top` only — the
+   sprite's size and layer stay the stylesheet's (#432). */
+function skyArc(hour, start, end) {
+  const f = Math.min(1, Math.max(0, (hour - start) / (end - start)));
+  return { left: `${(8 + f * 84).toFixed(1)}%`, right: 'auto', top: `${Math.round(112 - Math.sin(f * Math.PI) * 92)}px` };
+}
+
 function Px({ n, s = 2, style = {}, className = '', title, onClick, night, ...rest }) {
   // `night` swaps window_day → window_night; anything else ignores it.
   const name = night && n === 'window_day' ? 'window_night' : n;
@@ -864,6 +874,13 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
      it never claims depth the floor does not have. */
   const sceneRef = React.useRef(null);
   const [moreBelow, setMoreBelow] = React.useState(false);
+  /* The sun and the moon keep the local hour (#432): a tick a minute, which is
+     a clock, not an animation loop — the CSS still does every motion. */
+  const [clockHour, setClockHour] = useState(() => { const d = new Date(); return d.getHours() + d.getMinutes() / 60; });
+  useEffect(() => {
+    const t = setInterval(() => { const d = new Date(); setClockHour(d.getHours() + d.getMinutes() / 60); }, 60000);
+    return () => clearInterval(t);
+  }, []);
   React.useEffect(() => {
     const el = sceneRef.current;
     if (!el) return;
@@ -1125,8 +1142,8 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
       <div className={`pxhq${moreBelow ? ' has-more' : ''}`}>
         <div className="px-sky" aria-hidden="true" />
         <div className="px-stars" aria-hidden="true" />
-        <Px n="sun" s={3} className="px-sun" />
-        <Px n="moon" s={3} className="px-moon" />
+        <Px n="sun" s={3} className="px-sun" style={skyArc(clockHour, 6, 20)} />
+        <Px n="moon" s={3} className="px-moon" style={skyArc(clockHour < 12 ? clockHour + 24 : clockHour, 19, 31)} />
         <div className="px-cloud c1" aria-hidden="true" />
         <div className="px-cloud c2" aria-hidden="true" />
         <div className="px-skyline far" aria-hidden="true" />
@@ -1489,7 +1506,7 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
                                   : awayCooler ? 'stretching legs'
                                   : 'at your desk, asking'}
                               </div>
-                            : (a.task && !propVisit ? <div className="px-bubble">{a.task}</div> : null)}
+                            : (a.task && !propVisit ? <div className={`px-bubble${(a.status || 'idle') === 'idle' ? ' quiet' : ''}`}>{a.task}</div> : null)}
                           {!away && !propVisit && (
                             <div className="px-charwrap">
                               <PxChar color={a.color} pose={pose}
@@ -1499,7 +1516,7 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
                             </div>
                           )}
                           <Px n="desk_agent" className="px-desk" />
-                          {(screen || liveTool) && !away && <span className="px-glow" aria-hidden="true" />}
+                          {(screen || liveTool || a.status === 'busy') && !away && <span className={`px-glow${(screen || liveTool) ? '' : ' thinking'}`} aria-hidden="true" />}
                           <Px n="mug" className={'px-mug clickable' + (coffeeSteam[a.id] ? ' is-fresh' : '')}
                               title={`Send ${a.name} for coffee — stops anything running and clears their desk`}
                               onClick={(e)=>{e.stopPropagation(); onCoffee(a);}}
