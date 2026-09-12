@@ -607,9 +607,12 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
              probeError: det.probeError || '',
              probeDetail: det.probeDetail || '',
              needsLogin: !def.cloud && !localDaemon && d.id !== 'hermes'
-                         && !det.probeError && !det.authenticated
-                         && !(signin[d.id] && signin[d.id].authenticated) };
-  }).filter(Boolean);
+                         && !det.probeError && !det.authenticated };
+  }).filter(Boolean)
+    /* A sign-in that just finished at the front desk (#434) counts before the
+       re-probe lands. Applied here, outside the card literal, because two
+       suites lift that literal and run it under node with no React state. */
+    .map(c => (signin[c.driverId] && signin[c.driverId].authenticated) ? { ...c, needsLogin: false, signedInNow: true } : c);
 
   const hireDetected = async (c) => {
     if (c.elevated && !(await window.hqConfirm(
@@ -729,7 +732,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
                               + 'and start it before their first task.'
                             : 'Signing in will not fix that — it needs repairing or '
                               + 'reinstalling first. You can still hire them and try.')
-                      : (signin[c.driverId] && signin[c.driverId].authenticated)
+                      : c.signedInNow
                         ? `${c.found} Signed in — ready to hire.`
                         : `${c.found}${c.needsLogin ? ' Needs a sign-in before their first task.' : ''}`}
                   </div>
