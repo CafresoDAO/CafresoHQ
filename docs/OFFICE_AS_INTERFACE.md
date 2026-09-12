@@ -46048,6 +46048,16 @@ It found two things that would have ended the alpha on its first click:
   says what the three fees are for; the hall's hint says two fees; the
   docs' money section explains why.
 
+A third one turned up while writing the founder's runbook: `docker/
+Dockerfile` copies files by name and never copied `ic_agent.py` or
+`market_worker.py`. serve.py imports them lazily, so the #427/#428 image
+(`sha-30a5c79`) booted fine and every fleet office's Offer tab would have
+answered 500. Copied now, and the worker suite pins the COPY list. The
+same runbook pass found that fleet offices reached through the gateway
+load the UI from the `cafresohq_ui` canister, not the container — so the
+Hiring Hall room is not on any fleet office until that canister is
+redeployed (§7 step 3).
+
 Measured on the way: `dfx start --background` leaves children holding the
 caller's stdio, so a Python harness must give it files, not pipes — and
 stopping the shell that started it takes the replica with it even though
