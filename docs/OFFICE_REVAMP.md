@@ -72,3 +72,37 @@ purely with styling:
 - Drop-target feedback uses `outline` (survives the borderless rooms).
 - No new JS animation loop; everything ambient is CSS.
 - Pixel-art identity stays scoped to the Office (per docs/strategy/05-design-cohesion.md).
+
+## 2026-09-12 · the office, lit (#431)
+
+The building above was structurally right and visually flat: every
+interior one tile fill, no light source, no ceiling, no floor under the
+desks, the tower pasted on the sky. Night had atmosphere only because its
+assets did. #431 is a light-and-depth pass in CSS alone — the last section
+of `styles.css`, "the office, lit":
+
+- **Rooms** — `.px-int::before`: a wall wash from above, a beam through
+  the window, a baseboard line where wall meets floor, a floor shadow
+  where the desks stand. z1: under the desk set, over the tiles, the plane
+  the night overlay already used. By night the moon takes the window and a
+  **lamp pools on the desk** — only where somebody sits; a vacant or away
+  unit gets the moon and no lamp.
+- **Building** — `.px-building::after` shades both edges so the tower
+  stands in front of the sky; the sign throws a hard pixel shadow by day.
+- **Sky** — a warm horizon haze between the sky and the far skyline (city
+  glow, violet, at night), the sun and moon with a glow of their own, and
+  the stars twinkling — the one animation added, behind
+  `prefers-reduced-motion: no-preference` like every other ambient motion.
+- **Desk signs** — a bevel and a one-pixel text shadow; colours untouched.
+- **Lobby** — light spills from under the awning onto the doors at night.
+
+Two promises, measured in a real headless browser by
+`scripts/test_the_office_is_lit_and_nothing_moved.py`: every overlay is
+`pointer-events: none` and a plate or a desk is still what is under the
+pointer through it; and with the whole layer `display:none`'d, floors,
+interiors, lobby, street and the scene's scroll height are identical to
+the pixel — this layer can never be why a phone suite drifts.
+
+Invariants above still hold: no JS loop, pixel identity stays in the
+Office, mobile keeps the same rooms with the same light.
+

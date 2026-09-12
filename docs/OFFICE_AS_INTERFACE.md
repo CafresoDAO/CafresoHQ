@@ -46135,3 +46135,30 @@ floor walk (a sprite crossing to the colleague's desk) is not drawn yet —
 the placard and the feed carry it. Night missions and CLI-native runs
 still have no roster to ask.
 
+## 431. the office, lit — a room has a window, a ceiling, and a floor
+
+Asked for the office to *feel* different, the first honest look said the
+building was a diagram: correct floors, correct desks, correct coworkers,
+and every room one flat fill. A place you can watch work happen in needs
+light coming from somewhere. So this is light and depth, nothing else —
+every interior now has a wall wash from above, a beam through its window,
+a baseboard where the wall meets the floor and a shadow where the desks
+stand; the tower has edges; the horizon has haze; the sun and the moon
+glow; by night a lamp pools on every desk someone sits at, and only
+those, and the lobby spills light onto the street. Desk signs got a bevel.
+Detail in `OFFICE_REVAMP.md` (2026-09-12).
+
+It is all overlay: pseudo-elements that take no clicks on planes the
+scene already had, and one gated animation. The suite drives a real
+headless browser and holds two lines — a plate and a desk are still what
+is under the pointer through the new layers, and with the whole layer
+switched off not one measured height changes — because the phone suites
+measure this scene, and a feeling must never be the reason a ticker
+drifts under a tab bar.
+
+**Weakest verdict.** Light, not life: the coworkers' idle bubbles ("standing
+by" three times over) and the desk monitors are the next thing the eye
+lands on, and they are untouched. A sun that moves with the hour, and
+screens that glow when a coworker is thinking rather than only when a
+tool runs, are the two ambient moves worth making next.
+

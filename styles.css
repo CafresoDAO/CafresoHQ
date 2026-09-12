@@ -11670,3 +11670,114 @@ body.night .px-lobby .px-int, body.night .px-lobby { filter: brightness(0.85); }
   font-family: 'VT323', monospace; font-size: 12px; line-height: 1.2;
   color: var(--warn, #e8a33d);
 }
+
+/* ── #431 · the office, lit ────────────────────────────────────────────
+   Every interior was one tile fill: no light source, no ceiling, no floor
+   under the desks, and the building stood flat against the sky. Daytime
+   read as a diagram; night had atmosphere only because the assets did.
+   This section is light and depth ONLY — pointer-events:none overlays and
+   gradients on layers that already exist. Nothing here moves a pixel the
+   phone suites measure (ticker, lobby door, floor height); nothing here
+   adds a JS loop (docs/OFFICE_REVAMP.md invariants). Every new animation
+   sits behind prefers-reduced-motion: no-preference. */
+
+/* Daylight in a room: a wall wash from above, a beam through the window, a
+   baseboard line where wall meets floor, and a floor shadow where the desks
+   stand. z1 = under the desk set (z2+), over the tiles — the plane the
+   night overlay (.px-int::after) already uses. */
+.px-int::before {
+  content: '';
+  position: absolute; inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background:
+    linear-gradient(112deg, transparent 52%, rgba(255, 250, 222, 0.17) 53%, rgba(255, 250, 222, 0.17) 68%, transparent 69%),
+    linear-gradient(180deg, transparent 46px, rgba(26, 28, 44, 0.22) 46px, rgba(26, 28, 44, 0.22) 48px, transparent 48px),
+    linear-gradient(180deg, rgba(255, 244, 210, 0.24) 0, rgba(255, 244, 210, 0.07) 34%, transparent 52%, rgba(26, 28, 44, 0.17) 100%);
+}
+/* Night: the moon through the same window, the ceiling darker than the
+   floor, and — on a desk somebody sits at — a lamp pooled where the desk
+   set stands (left 50%, bottom 8px). A vacant or away room gets the moon
+   and no lamp: nobody is there to switch it on. */
+body.night .px-int::before {
+  background:
+    linear-gradient(112deg, transparent 52%, rgba(150, 170, 255, 0.11) 53%, rgba(150, 170, 255, 0.11) 68%, transparent 69%),
+    linear-gradient(180deg, transparent 46px, rgba(6, 8, 24, 0.35) 46px, rgba(6, 8, 24, 0.35) 48px, transparent 48px),
+    linear-gradient(180deg, rgba(10, 12, 40, 0.30) 0, transparent 40%, rgba(10, 8, 30, 0.24) 100%);
+}
+body.night .px-room:not(.vacant):not(.is-away) .px-int::before {
+  background:
+    radial-gradient(76px 44px at 50% 94%, rgba(248, 200, 64, 0.40), rgba(248, 200, 64, 0.10) 55%, transparent 76%),
+    linear-gradient(112deg, transparent 52%, rgba(150, 170, 255, 0.11) 53%, rgba(150, 170, 255, 0.11) 68%, transparent 69%),
+    linear-gradient(180deg, transparent 46px, rgba(6, 8, 24, 0.35) 46px, rgba(6, 8, 24, 0.35) 48px, transparent 48px),
+    linear-gradient(180deg, rgba(10, 12, 40, 0.30) 0, transparent 40%, rgba(10, 8, 30, 0.24) 100%);
+}
+
+/* The building has edges: a soft shade down both sides so the tower reads
+   as a solid standing in front of the sky, not a panel pasted on it. z5 in
+   .px-scene's own stacking context — above floors (z1) and rooftop (z2),
+   below nothing that takes a click, because it takes none itself. */
+.px-building::after {
+  content: '';
+  position: absolute; inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  background: linear-gradient(90deg, rgba(26, 28, 44, 0.16), transparent 9%, transparent 91%, rgba(26, 28, 44, 0.16));
+}
+/* The sign throws a hard pixel shadow by day; by night it already glows. */
+body:not(.night) .px-sign { filter: drop-shadow(3px 3px 0 rgba(26, 28, 44, 0.32)); }
+
+/* Sky: a warm haze on the horizon between the sky and the far skyline (the
+   distance the flat gradient never had), and the sun with a glow of its own.
+   At night the haze is the city's own glow, faint and violet. */
+.px-sky::after {
+  content: '';
+  position: absolute; left: 0; right: 0; bottom: 0; height: 46%;
+  pointer-events: none;
+  background: linear-gradient(to top, rgba(255, 238, 205, 0.58), rgba(255, 238, 205, 0));
+}
+body.night .px-sky::after { background: linear-gradient(to top, rgba(120, 90, 170, 0.32), rgba(120, 90, 170, 0)); }
+.px-sun { z-index: 1; }
+.px-sun::before {
+  content: '';
+  position: absolute; inset: -56px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: -1;
+  background: radial-gradient(circle, rgba(255, 228, 140, 0.55) 0, rgba(255, 228, 140, 0.18) 42%, transparent 68%);
+}
+.px-moon { z-index: 1; }
+.px-moon::before {
+  content: '';
+  position: absolute; inset: -40px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: -1;
+  background: radial-gradient(circle, rgba(200, 210, 255, 0.35) 0, rgba(200, 210, 255, 0.10) 45%, transparent 70%);
+}
+@media (prefers-reduced-motion: no-preference) {
+  body.night .px-stars { animation: px-twinkle 7s ease-in-out infinite alternate; }
+}
+@keyframes px-twinkle { from { opacity: 0.55; } to { opacity: 0.88; } }
+
+/* Desk signs get a bevel — a light edge on top, a dark one underneath — and
+   the pixel text a one-pixel shadow so it sits ON the plate. Colours are
+   untouched (test_vacant_plate_contrast reads them); the elevated sign
+   keeps its gold underline alongside the bevel. */
+.px-plate {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10), inset 0 -1px 0 rgba(0, 0, 0, 0.28);
+  text-shadow: 1px 1px 0 var(--px-ink);
+}
+.px-room.elevated .px-plate { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10), inset 0 -2px 0 var(--px-gold); }
+
+/* The lobby at night: light spills from under the awning onto the doors.
+   z1 — under the doors, cooler and walkers (z2+), over the facade. */
+body.night .px-lobby::after {
+  content: '';
+  position: absolute; left: 50%; bottom: 0;
+  width: 250px; height: 66px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 1;
+  background: radial-gradient(ellipse at 50% 100%, rgba(248, 200, 64, 0.32), rgba(248, 200, 64, 0.09) 55%, transparent 72%);
+}
