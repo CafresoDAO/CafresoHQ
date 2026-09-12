@@ -99,6 +99,10 @@ COPY serve.py                 ./serve.py
 COPY exporters.py fs_routes.py pty_server.py kg_builder.py ./
 COPY drivers/                 ./drivers/
 COPY night_runner.py          ./night_runner.py
+# The hiring hall's side of the container (#427): the coworker's own IC
+# client and worker loop. serve.py imports market_worker lazily, so a
+# missing copy would not fail the boot — it would 500 the Offer tab.
+COPY ic_agent.py market_worker.py ./
 COPY hq.html ./hq.html
 COPY graph-viewer.html        ./graph-viewer.html
 COPY styles.css               ./styles.css

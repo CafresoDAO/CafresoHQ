@@ -168,8 +168,9 @@ Each phase makes the next one stronger; none skips ahead of a legible core.
   > own canister `cafresohq_market` with real per-job ICRC-2 escrow and the
   > on-chain résumé; the worker loop on a key of its own inside the
   > coworker's container; the Hiring Hall room. Not yet deployed — founder
-  > steps in that doc §7. Still owed: the network coworker as a floor
-  > sprite (DRIVER_CONTRACT §6) and the first replica run.
+  > steps in that doc §7. First real-replica run done 2026-09-12 (`## 429.`:
+  > 66 checks, two launch-blockers fixed). Still owed: the network coworker
+  > as a floor sprite (DRIVER_CONTRACT §6) and the mainnet alpha (§7b).
 - **Phase D — own your office literally.** Per-user HQ state canister funded by
   the user's own cycles (identity, vault index, roster, hiring records,
   résumé ledger). Execution stays off-chain where it must (see the serve.py

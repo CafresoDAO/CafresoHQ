@@ -322,6 +322,13 @@ def test_doors(host):
     hd = re.search(r'_HOST_DATA_PREFIXES = \((.*?)\n\)', src, re.S).group(1)
     check("'/marketplace' is on the key-protected prefix list", "'/marketplace'," in kp)
     check("'/marketplace/' is on the host-data prefix list", "'/marketplace/'," in hd)
+    # The fleet image copies files by name; serve.py imports market_worker
+    # lazily, so a copy missing from docker/Dockerfile would not fail the
+    # boot — it would 500 the Offer tab on every fleet office (found #429).
+    dockerfile = (ROOT / 'docker' / 'Dockerfile').read_text(encoding='utf-8')
+    copied = ' '.join(l for l in dockerfile.splitlines() if l.startswith('COPY '))
+    check('the fleet image ships ic_agent.py and market_worker.py (docker/Dockerfile COPY)',
+          'ic_agent.py' in copied and 'market_worker.py' in copied)
     with tempfile.TemporaryDirectory() as d:
         base, proc = boot(d)
         check('serve.py boots', base is not None)

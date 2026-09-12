@@ -46014,3 +46014,46 @@ deploys, reads the id, claims plan admin and prints the follow-ups;
 `NETWORK=local` never names `ic`; an unknown argument is a usage error.
 No main.mo of the state canister, no II, no mainnet.
 
+## 429. the hall runs a whole job on a real replica — and two launch-blockers fall out
+
+Until now the hiring hall had only ever been verified against stubs that
+`ic_agent.py` wrote for itself: moc compiled `main.mo`, the worker loop
+talked to a fake hall that decoded ic_agent's own bytes, the boss's flow
+ran through a fake shell. None of that had touched a replica. #429 is the
+first run against the real thing, and it is a test the suite keeps:
+`scripts/test_the_hall_runs_a_whole_job_on_a_real_replica.py` starts dfx
+0.24.3's local replica on a port of its own (`scripts/replica_harness/`,
+project-scoped so it never touches the shared network dir or a replica
+another project has running — Terra Sovereign's 0.29.1 pocket-ic was on
+4943 the whole time), deploys the hall next to a mock ICRC-1/ICRC-2 ledger
+with the real ledger's arithmetic, and walks the whole loop with three
+fresh keys and a stranger: refused allowance → funded → claimed →
+delivered → paid on the stamp; a rejected delivery ruled a 40/60 split by
+the plan admin (the boss's own ruling is thrown out); a cancel refund; a
+brain that throws (failJob, attempt spent, snag on the résumé, progress
+cleared); unlink. Sixty-six checks, every balance to the base unit.
+
+It found two things that would have ended the alpha on its first click:
+
+- **Replicas answer with indefinite-length CBOR.** ic_agent's reader
+  refused it ("not used by the IC" — wrong), so every container call to
+  the hall would have died decoding the very first reply. RFC 8949 §3.2.3
+  is now read, its own examples pinned in the ic_agent suite, malformed
+  items refused.
+- **The shell's allowance was one fee short.** An ICRC-2 ledger takes
+  `amount + fee` out of the allowance; the hall pulls `price + fee`, so the
+  boss must sign `price + 2·fee`. The shell signed `price + fee` and the
+  hall's pull would have been refused with `InsufficientAllowance` on
+  mainnet. cafreso-pages now signs the right amount and the approval sheet
+  says what the three fees are for; the hall's hint says two fees; the
+  docs' money section explains why.
+
+Measured on the way: `dfx start --background` leaves children holding the
+caller's stdio, so a Python harness must give it files, not pipes — and
+stopping the shell that started it takes the replica with it even though
+the daemon reparents to launchd.
+
+**Weakest verdict.** The ledger is a mock with the ICP ledger's rules, not
+the ICP ledger; the alpha in `AGENT_MARKETPLACE.md` §7b is still the first
+real-token job. BLS certificate verification is still owed.
+

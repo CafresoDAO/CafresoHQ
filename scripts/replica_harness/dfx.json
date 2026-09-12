@@ -1,0 +1,26 @@
+{
+  "//": "The replica harness: the hiring hall next to a mock ICRC-1/ICRC-2 ledger on a LOCAL replica of its own (port 4977, project-scoped so it never touches the shared network dir or a replica another project is running). Driven by scripts/test_the_hall_runs_a_whole_job_on_a_real_replica.py. Never deploy this dfx.json anywhere but local.",
+  "version": 1,
+  "canisters": {
+    "cafresohq_market": {
+      "type": "motoko",
+      "main": "../../src/cafresohq_market/main.mo"
+    },
+    "mock_ledger": {
+      "type": "motoko",
+      "main": "mock_ledger.mo"
+    }
+  },
+  "defaults": {
+    "build": {
+      "args": "",
+      "packtool": ""
+    }
+  },
+  "networks": {
+    "local": {
+      "bind": "127.0.0.1:4977",
+      "type": "ephemeral"
+    }
+  }
+}

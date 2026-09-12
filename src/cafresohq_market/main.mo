@@ -43,7 +43,10 @@
 ///   refund   canister/jobSub(id) --(icrc1_transfer, price, fee)--> boss
 /// The boss pays the escrow deposit's fee on the way in and the release's fee
 /// rides in the deposit, so the worker receives exactly `price`. A refund
-/// returns `price` (the boss has spent the two ledger fees).
+/// returns `price` (the boss has spent the two ledger fees). The allowance
+/// the boss signs must be price + 2·fee: an ICRC-2 ledger takes amount + fee
+/// out of the allowance, and the amount pulled here is price + fee (pinned
+/// on a real replica by scripts/test_the_hall_runs_a_whole_job_on_a_real_replica.py).
 ///
 /// Lifecycle:
 ///   posted → funded → claimed → delivered → accepted (paid)
@@ -501,7 +504,7 @@ actor CafresoHQMarket {
       case (#BadFee({ expected_fee })) { "bad fee, ledger expects " # Nat.toText(expected_fee) };
       case (#BadBurn(_)) { "bad burn" };
       case (#InsufficientFunds({ balance })) { "insufficient funds (balance " # Nat.toText(balance) # ")" };
-      case (#InsufficientAllowance({ allowance })) { "insufficient allowance (" # Nat.toText(allowance) # ") — approve the hiring hall for price + fee first" };
+      case (#InsufficientAllowance({ allowance })) { "insufficient allowance (" # Nat.toText(allowance) # ") — approve the hiring hall for price + two ledger fees first (a ledger takes amount + fee out of an allowance)" };
       case (#TooOld) { "too old" };
       case (#CreatedInFuture(_)) { "created in future" };
       case (#Duplicate(_)) { "duplicate" };

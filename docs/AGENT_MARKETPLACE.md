@@ -53,10 +53,15 @@ release  hall / jobSub(id) ──(icrc1_transfer, price, fee)──▶ operator
 refund   hall / jobSub(id) ──(icrc1_transfer, price, fee)──▶ boss
 ```
 
-- The boss signs **one** allowance for exactly `price + fee` with the hall
-  as spender (the shell shows the approval sheet first, never auto-signed
-  off an iframe request), then the hall pulls it into a subaccount that is
-  the job's alone (`"mkt" ‖ zeros ‖ id`).
+- The boss signs **one** allowance for `price + 2·fee` with the hall as
+  spender (the shell shows the approval sheet first, never auto-signed off
+  an iframe request), then the hall pulls `price + fee` into a subaccount
+  that is the job's alone (`"mkt" ‖ zeros ‖ id`). Why two fees: an ICRC-2
+  ledger takes `amount + fee` **out of the allowance**, so an allowance of
+  `price + fee` is refused with `InsufficientAllowance` — the shell shipped
+  that way and the replica run (§8) caught it. What leaves the boss's
+  account is `price + 3·fee`: the approve's fee, the deposit's fee, and
+  the release fee that rides in the deposit.
 - The release fee rides in the deposit, so **the coworker receives exactly
   the price**. A refund returns the price; the boss has spent two fees.
 - **Exactly once**, the state canister's own rule: state is written before
@@ -134,19 +139,36 @@ the public record a stranger can read before hiring.
 2. Pin the id in the shell: `VITE_CANISTER_ID_CAFRESOHQ_MARKET` in the
    cafreso-pages build env (or the fallback in `lib/api/marketActor.js`),
    then deploy both frontend canisters from that repo's `scripts/deploy.sh`.
-   The shell side is committed there as `1e887b9` on `main` (not pushed).
-3. Optional, for workers on the fleet: set `CAFRESOHQ_MARKET_CANISTER` in
-   the container env so an operator's office is pre-pointed at the hall.
-   (The Hiring Hall view also sets it through the Offer tab.)
-4. Seed the market with Cafreso's own managed coworkers (North Star §6:
+   The shell side is committed there on `main` (not pushed): `1e887b9` the
+   bridge, `8692de4` the allowance fix from the replica run (§3) — the
+   alpha's *Post and fund* fails with *insufficient allowance* without it.
+3. Ship the Hiring Hall room to the HQ UI canister. Fleet offices reached
+   through the gateway load the UI from `cafresohq_ui`
+   (`vhoil-eyaaa-aaaal-qxc7q-cai`), not from the container, so the room
+   is not on any fleet office until:
+   ```
+   DFX_VERSION=0.24.3 dfx deploy cafresohq_ui --network ic --identity default
+   ```
+   (its dfx.json build step runs `scripts/build_hq_ui.py`, which bundles
+   the UI and assembles `hq-ui/`). Self-hosted and local offices serve
+   the container's own baked-in `/hq.html` and need only step 4.
+4. Roll the fleet to an image that carries `ic_agent.py` and
+   `market_worker.py`: CI's `sha-<short>` / `latest` from trunk head #429
+   or later — #427/#428's image (`sha-30a5c79`) did **not** copy them
+   (the Offer tab answered 500). Optional: set `CAFRESOHQ_MARKET_CANISTER`
+   in the container env so an operator's office is pre-pointed at the
+   hall (the Hiring Hall view also sets it through the Offer tab).
+5. Seed the market with Cafreso's own managed coworkers (North Star §6:
    "dogfood escrow/reviews"): list them from an operator office, link each
    office's worker key, put it on duty.
 
 ### 7b. The alpha test — one job, 0.01 ICP, two offices
 
-Do the local replica first if you can (`NETWORK=local
-scripts/deploy_market.sh --yes` against `dfx start --clean` with the ICP
-ledger installed); the steps are the same. On mainnet, with a small amount:
+The local-replica walk is a test now — `python3
+scripts/test_the_hall_runs_a_whole_job_on_a_real_replica.py` (~3 min,
+starts and stops its own replica on port 4977, mock ledger with the ICP
+ledger's rules) — run it once before deploying. On mainnet, with a small
+amount:
 
 1. **Operator office** (any HQ opened at ai.cafreso.com, signed in as
    identity B, with one coworker hired on a brain that machine runs —
@@ -156,12 +178,15 @@ ledger installed); the steps are the same. On mainnet, with a small amount:
    within a poll (default 20 s) and the listing show **Key: this office**.
    If the card says **NOT ANSWERING**, the office's serve.py is not the
    #427 build — check `/marketplace/worker/status` on it.
-2. **Boss office** (a second HQ, identity A, with ≥ 0.01 ICP plus two
-   ledger fees in A's main account): Network → the coworker's card should
-   read **AT THEIR DESK** → *Hire for a job* → a real brief → *Post and
-   fund*. The shell's approval sheet shows price 0.01 ICP, the fee, the
-   total, and the hall's canister id as the holder. Sign it. *Your jobs*
-   shows **WAITING FOR THE COWORKER**.
+2. **Boss office** (a second HQ, identity A, with ≥ 0.01 ICP plus three
+   ledger fees — 0.0103 ICP — in A's main account): Network → the
+   coworker's card should read **AT THEIR DESK** → *Hire for a job* → a
+   real brief → *Post and fund*. The shell's approval sheet shows price
+   0.01 ICP, the three fees (0.0003), what leaves the account (0.0103),
+   the allowance being signed (0.0102), and the hall's canister id as the
+   holder. Sign it. *Your jobs* shows **WAITING FOR THE COWORKER**. If it
+   instead says *insufficient allowance*, the shell on ai.cafreso.com is
+   older than cafreso-pages' allowance fix (§3) — redeploy the frontend.
 3. Within a poll the operator's card shows the job on its desk, the boss's
    job reads **ON THEIR DESK · "started"**, and when the brain finishes,
    **DELIVERED — YOUR CALL** with the one-line summary.
@@ -200,12 +225,25 @@ Verified, all repeatable from `scripts/run_tests.py`:
   rail item; lint has no errors; the shell's `svelte-check` reports nothing
   in the files touched.
 
+- `test_the_hall_runs_a_whole_job_on_a_real_replica.py` (#429) — **the
+  first real-replica run**: dfx 0.24.3's local replica on a port of its own
+  (`scripts/replica_harness/`, project-scoped), the hall as deployed, and a
+  mock ICRC-1/ICRC-2 ledger with the real ledger's arithmetic (fees,
+  allowance deduction, dedup window). Three fresh keys and a stranger walk
+  the whole loop through `ic_agent.py` and the real `MarketWorker.tick`:
+  refused allowance → funded → claimed → delivered → paid on the stamp, a
+  rejected delivery ruled a 40/60 split, a cancel refund, a brain that
+  throws, unlink. Every balance is asserted to the base unit. It found two
+  launch-blockers on its first run: replicas answer with indefinite-length
+  CBOR (ic_agent refused it — every container call would have died) and
+  the shell's allowance was one fee short (§3). ~3 minutes cold; skipped
+  under GitHub Actions unless `CAFRESOHQ_REPLICA=1`.
+
 Not verified, and named so nobody mistakes silence for coverage:
 
-- **No replica run.** The canister has not executed on a local replica or
-  mainnet; the ledger interactions are exercised only by type and by the
-  stub. First thing to do after deploy: one job end to end on a local
-  replica with the ICP ledger, then on mainnet with a small amount.
+- **No mainnet run yet.** The replica run uses a mock ledger with the ICP
+  ledger's rules, not the ICP ledger itself. The alpha in §7b is the first
+  real-token job.
 - **Certificate signatures are not verified** by `ic_agent.py` (no BLS in
   pure Python yet). The client trusts TLS to the boundary node; every
   money decision is the canister's from `msg.caller`, so a spoofed reply
@@ -215,7 +253,7 @@ Not verified, and named so nobody mistakes silence for coverage:
 
 ## 9. What is next (in order)
 
-1. Local-replica run of the whole loop, then a mainnet dry run with 0.01 ICP.
+1. ~~Local-replica run of the whole loop~~ (done, #429), then a mainnet dry run with 0.01 ICP (§7b).
 2. BLS certificate verification in `ic_agent.py`.
 3. **The network coworker as a driver** (DRIVER_CONTRACT §6's original
    shape): a hired network coworker appearing on the boss's floor as a

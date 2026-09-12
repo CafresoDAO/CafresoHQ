@@ -133,6 +133,21 @@ def test_cbor():
           hx(ic.cbor_encode(list(range(25)))).startswith('9819'))
     check('self-describe tag 55799 is transparent on decode',
           ic.cbor_decode(bytes.fromhex('d9d9f7' + 'a1616101')) == {'a': 1})
+    # Indefinite lengths (RFC 8949 §3.2.3). Replicas DO emit these — the
+    # first real-replica run (#429) died on a pocket-ic query reply until
+    # the reader learned them. The RFC's own examples, then a reply shape.
+    for hexs, want in (('5f42010243030405ff', b'\x01\x02\x03\x04\x05'),
+                       ('7f657374726561646d696e67ff', 'streaming'),
+                       ('9f018202039f0405ffff', [1, [2, 3], [4, 5]]),
+                       ('bf6346756ef563416d7421ff', {'Fun': True, 'Amt': -2}),
+                       ('d9d9f7bf667374617475736772657' + '06c696564ff', {'status': 'replied'})):
+        check(f'indefinite-length decode {hexs[:12]}… → {want!r}', ic.cbor_decode(bytes.fromhex(hexs)) == want)
+    for bad in ('5f7f61ffff', '1f', '5f4101'):
+        try:
+            ic.cbor_decode(bytes.fromhex(bad))
+            check(f'malformed indefinite item {bad} is refused', False, 'decoded')
+        except ValueError:
+            check(f'malformed indefinite item {bad} is refused', True)
     check('a principal encodes as its raw bytes',
           ic.cbor_encode(ic.Principal.anonymous()) == b'\x41\x04')
 

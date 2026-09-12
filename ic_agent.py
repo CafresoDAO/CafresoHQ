@@ -422,7 +422,49 @@ def _cbor_len(buf: bytes, i: int, info: int) -> tuple[int, int]:
         return int.from_bytes(buf[i:i + 4], 'big'), i + 4
     if info == 27:
         return int.from_bytes(buf[i:i + 8], 'big'), i + 8
-    raise ValueError('cbor: indefinite lengths are not used by the IC')
+    if info == 31:
+        # Indefinite length (RFC 8949 §3.2.3): the item runs until a 0xff
+        # break. Replicas DO emit these — pocket-ic answers queries with
+        # indefinite-length maps and text — so a reader that refuses them
+        # cannot read a real reply. Found on the replica harness, #429.
+        return -1, i
+    raise ValueError(f'cbor: reserved additional info {info}')
+
+
+def _cbor_indefinite(buf: bytes, i: int, major: int):
+    """Read an indefinite-length string/array/map body up to its break."""
+    if major in (2, 3):
+        chunks = b''
+        while True:
+            if i >= len(buf):
+                raise ValueError('cbor: truncated indefinite string')
+            if buf[i] == 0xff:
+                break
+            cm, ci = buf[i] >> 5, buf[i] & 0x1f
+            if cm != major or ci == 31:
+                raise ValueError('cbor: an indefinite string may only hold definite chunks of its own type')
+            n, j = _cbor_len(buf, i + 1, ci)
+            chunks += buf[j:j + n]
+            i = j + n
+        return (chunks if major == 2 else chunks.decode('utf-8')), i + 1
+    if major == 4:
+        out = []
+        while True:
+            if i >= len(buf):
+                raise ValueError('cbor: truncated indefinite array')
+            if buf[i] == 0xff:
+                return out, i + 1
+            v, i = _cbor_item(buf, i)
+            out.append(v)
+    out = {}
+    while True:
+        if i >= len(buf):
+            raise ValueError('cbor: truncated indefinite map')
+        if buf[i] == 0xff:
+            return out, i + 1
+        k, i = _cbor_item(buf, i)
+        v, i = _cbor_item(buf, i)
+        out[k] = v
 
 
 def _cbor_item(buf: bytes, i: int):
@@ -430,26 +472,28 @@ def _cbor_item(buf: bytes, i: int):
         raise ValueError('cbor: truncated')
     major, info = buf[i] >> 5, buf[i] & 0x1f
     i += 1
+    if major in (0, 1, 6) and info == 31:
+        raise ValueError(f'cbor: major type {major} has no indefinite form')
     if major == 0:
         return _cbor_len(buf, i, info)
     if major == 1:
         n, i = _cbor_len(buf, i, info)
         return -1 - n, i
-    if major == 2:
+    if major in (2, 3, 4, 5):
         n, i = _cbor_len(buf, i, info)
+        if n < 0:
+            return _cbor_indefinite(buf, i, major)
+    if major == 2:
         return buf[i:i + n], i + n
     if major == 3:
-        n, i = _cbor_len(buf, i, info)
         return buf[i:i + n].decode('utf-8'), i + n
     if major == 4:
-        n, i = _cbor_len(buf, i, info)
         out = []
         for _ in range(n):
             v, i = _cbor_item(buf, i)
             out.append(v)
         return out, i
     if major == 5:
-        n, i = _cbor_len(buf, i, info)
         out = {}
         for _ in range(n):
             k, i = _cbor_item(buf, i)
