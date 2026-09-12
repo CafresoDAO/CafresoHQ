@@ -46174,9 +46174,13 @@ the local hour on a low arc across the sky: a clock tick a minute, every
 motion still CSS, nothing measured by a phone suite moved.
 Detail in `OFFICE_REVAMP.md` (#432).
 
-**Weakest verdict.** Night is still a toggle, so the moon can be up in a
-sunlit office if the boss never flips it — tying the toggle to the hour is
-a decision, not a default.
+**Weakest verdict.** The office already goes dark on its own after 19:00
+and before 7:00 (`app.jsx`'s hour check), which is exactly the moon's
+shift, so the two agree by construction; a boss who flips night on at
+noon gets the moon parked at the horizon, which is honest. What this
+found instead: the first CI run of the suite was in the evening, the
+office started dark, and the day layer was measured under the lamp — the
+suite now sets the mode it measures and puts it back.
 
 ## 433. your own office on this machine, at the door the shell knocks on
 

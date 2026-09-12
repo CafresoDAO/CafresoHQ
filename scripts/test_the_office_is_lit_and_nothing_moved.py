@@ -95,6 +95,11 @@ def dismiss(ws):
 MEASURE = r"""(() => {
   const q = (s) => document.querySelector(s);
   const ps = (el, p) => getComputedStyle(el, p);
+  /* Measure the mode, do not assume it: a runner in the evening (or a boss
+     who left night on) starts dark, and the day layer is what this half
+     reads. Remembered so the night half can put the office back. */
+  if (typeof window.__litWasNight !== 'boolean') window.__litWasNight = document.body.classList.contains('night');
+  document.body.classList.remove('night');
   const ints = [...document.querySelectorAll('.px-int')];
   const rooms = [...document.querySelectorAll('.px-room')];
   const day = ints.map(i => { const b = ps(i, '::before'); const r = i.getBoundingClientRect();
@@ -170,7 +175,7 @@ MEASURE_NIGHT = r"""(() => {
            starsAnim: stars && stars.animationName, moonRadial: /radial-gradient/.test(moon.backgroundImage),
            reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
            noPref: matchMedia('(prefers-reduced-motion: no-preference)').matches };
-  document.body.classList.remove('night');
+  document.body.classList.toggle('night', !!window.__litWasNight);
   return out;
 })()"""
 
@@ -246,6 +251,8 @@ def main():
         H.evaluate(ws, "(() => { const b = document.querySelector('button[title^=\"Office\"]'); b.click(); return !!b; })()")
         H.wait_for(ws, "document.querySelectorAll('.px-int').length >= 2", 20, 'the pixel scene to draw its rooms')
         time.sleep(0.8)
+        H.evaluate(ws, "(() => { window.__litWasNight = document.body.classList.contains('night'); document.body.classList.remove('night'); return 1; })()")
+        time.sleep(0.5)
         m = H.evaluate(ws, MEASURE)
         life = H.evaluate(ws, MEASURE_LIFE)
         time.sleep(0.5)
