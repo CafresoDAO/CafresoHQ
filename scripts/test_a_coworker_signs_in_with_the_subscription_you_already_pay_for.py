@@ -65,6 +65,9 @@ case "$1 $2" in
     echo "Paste the code here if prompted:"
     read -r code
     [ "$code" = "OK-CODE" ] || { echo "That code is not right"; exit 1; }
+    # a beat between the code and the credential: a status poll in here caches
+    # "not signed in", and the verdict after exit must not be that poll (#434)
+    sleep 1
     mkdir -p "$HOME/.claude"; echo '{"claudeAiOauth":{}}' > "$HOME/.claude/.credentials.json"; rm -f "$HOME/.claude/.stale"
     echo "Signed in."; exit 0 ;;
   "auth logout") rm -f "$HOME/.claude/.credentials.json"; echo "Logged out"; exit 0 ;;

@@ -4463,7 +4463,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                             job['status'] = 'error'
                             job['error'] = (_LOGIN_ANSI_RE.sub('', job['output']).strip()[-300:]
                                             or f'the sign-in ended with exit code {rc}')
+                    job['finished'] = time.time()
                     _LOGIN_PROCS.pop(agent, None)
+                # The verdict after the CLI exits must be the CLI's fresh word:
+                # a status poll a moment before exit may have cached "no".
+                if hasattr(drv, 'forget_session'):
+                    drv.forget_session()
                 if master is not None:
                     try:
                         os.close(master)
@@ -4499,9 +4504,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         drv = _drivers.get(agent)
         with _LOGIN_JOBS_LOCK:
             job = dict(_LOGIN_JOBS.get(agent) or {})
-        # While a sign-in runs, ask the CLI itself each time (no cache): the
-        # file lands a moment before the CLI honours it.
-        if drv and job.get('status') == 'running' and hasattr(drv, 'forget_session'):
+        # While a sign-in runs — and just after it ends — ask the CLI itself
+        # each time (no cache): the file lands a moment before the CLI honours
+        # it, and a poll cached a moment before exit would outlive the exit.
+        just_ended = bool(job.get('finished')) and time.time() - job['finished'] < 30
+        if drv and (job.get('status') == 'running' or just_ended) and hasattr(drv, 'forget_session'):
             drv.forget_session()
         authed, mech = (drv.detect_auth_live() if hasattr(drv, 'detect_auth_live') else drv.detect_auth()) if drv else (False, '')
         pub = self._login_public(job) if job else {'agent': agent, 'status': 'none', 'url': '', 'code': '',
