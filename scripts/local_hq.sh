@@ -29,8 +29,27 @@ LABEL="com.cafreso.hq"
 AGENTS_DIR="${LAUNCH_AGENTS_DIR:-$HOME/Library/LaunchAgents}"
 # The port the installed office actually uses, unless told otherwise — so
 # `status`, `restart` and `logs` after a `PORT=8789 install` look at 8789.
-if [ -z "${PORT:-}" ] && [ -f "$AGENTS_DIR/$LABEL.plist" ]; then
-  PORT="$(plutil -extract EnvironmentVariables.PORT raw -o - "$AGENTS_DIR/$LABEL.plist" 2>/dev/null || true)"
+# Read with plistlib (python3 is on every machine this runs on, plutil is
+# macOS-only — CI's Linux runner has none, and a missing reader must not
+# silently mean "8787").
+installed_port() {
+  local f="$AGENTS_DIR/$LABEL.plist"
+  [ -f "$f" ] || return 0
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$f" <<'PY' 2>/dev/null || true
+import plistlib, sys
+try:
+    with open(sys.argv[1], 'rb') as fh:
+        print(str(plistlib.load(fh).get('EnvironmentVariables', {}).get('PORT', '')))
+except Exception:
+    pass
+PY
+  elif command -v plutil >/dev/null 2>&1; then
+    plutil -extract EnvironmentVariables.PORT raw -o - "$f" 2>/dev/null || true
+  fi
+}
+if [ -z "${PORT:-}" ]; then
+  PORT="$(installed_port)"
 fi
 PORT="${PORT:-8787}"
 STATE_DIR="${CAFRESOHQ_HQ_STATE_DIR:-$ROOT/hq-state}"
