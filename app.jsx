@@ -163,7 +163,7 @@ function App() {
           const recent = d.probeError
             ? `on this machine, but it ${d.probeError} — a sign-in will not fix it`
             : 'detected on this machine'
-              + (d.authenticated ? ' · logged in' : ' · needs login — open a Terminal tab');
+              + (d.authenticated ? ' · signed in' : ' · needs a sign-in — the button is under Settings → Connections');
           const i = next.findIndex(a => a.id === def.id);
           if (i === -1) {
             continue;   // not hired — the front desk offers them instead

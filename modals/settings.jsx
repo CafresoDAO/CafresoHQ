@@ -2,6 +2,9 @@ import { CafresoHQChain, CafresoHQClient } from '../claude-client.jsx';
 import { HQ } from '../hq-runtime.jsx';
 import { Sprite } from '../sprites.jsx';
 import { Modal, ModelPicker } from './base.jsx';
+/* The sign-in control the front desk uses (#434), mounted here too (#435):
+   a row that says "needs a sign-in" must be where the sign-in happens. */
+import { AgentSignin, useAgentSignin } from '../ui/signin.jsx';
 /* cleanCause, NOT snagCause. Every sentence in snagCause's table names a
    BRAIN, and nothing on this screen is one: the probe below asks the
    office's own backend which brains exist, and the modules panel talks to
@@ -231,6 +234,9 @@ function ConnectionsPanel() {
     } finally { setProbing(false); }
   }, []);
   useEffectM(() => { probeDrivers(); }, [probeDrivers]);
+  /* One sign-in per CLI row; when the CLI's credential is honoured the
+     probe runs again and the row's own sentence flips to signed in. */
+  const signinCtl = useAgentSignin({ onSignedIn: probeDrivers });
   const detectOf = (id) => {
     const d = (drivers || []).find(x => x.id === id);
     return (d && d.detect) || null;
@@ -309,9 +315,16 @@ function ConnectionsPanel() {
                        not exist. What was established is that it answered. */
                     ? (isDaemon ? 'answering on this machine'
                        : det.authenticated ? 'found · signed in'
+                       : det.auth === 'expired' ? 'found · its sign-in here has expired — sign in again'
                        : 'found · needs a sign-in before its first task')
                     : offText}
                 </div>
+                {/* The door the sentence names (#435): the same control as the
+                    front desk, under the sentence, never in the chip column. */}
+                {live && !isDaemon && !det.authenticated && (
+                  <AgentSignin id={id} expired={det.auth === 'expired'} ctl={signinCtl}
+                               onLookAgain={probeDrivers} where="settings" />
+                )}
               </div>
               <span className="tiny">
                 {live ? (isDaemon ? '● running' : det.authenticated ? '● ready' : '● sign in')

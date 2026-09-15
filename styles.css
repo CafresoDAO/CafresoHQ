@@ -11824,3 +11824,6 @@ body.night .px-bubble.quiet { opacity: 0.5; }
 .frontdesk-signin-link { flex-basis: 100%; color: var(--accent-sun, #c68a32); text-decoration: underline; }
 .frontdesk-signin-code { display: flex; gap: 6px; flex-basis: 100%; }
 .frontdesk-signin-code input { flex: 1; min-width: 0; font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 4px 6px; }
+/* #435 · the same control under a Settings → Connections row. .row-knob
+   sets VT323 18px for its label; the control keeps the front desk's face. */
+.row-knob .frontdesk-signin { margin-top: 4px; font-family: 'Inter'; text-transform: none; letter-spacing: 0; }

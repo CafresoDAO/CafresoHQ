@@ -24,6 +24,11 @@ real ones would open a real browser):
     clicking it shows the link, then the code field; typing the code ends
     with "Signed in — ready to hire." and the button gone; clicking inside
     the sign-in never fires the card's hire.
+  * Settings → Connections → ON THIS MACHINE (#435): the Claude row that
+    reads "found · needs a sign-in" carries the SAME control (ui/signin.jsx);
+    clicking through link and code ends with the row reading "found ·
+    signed in" and the control gone. The front desk and Settings mount one
+    component, and a hired desk's status no longer points at a terminal.
 
 Run: python3 scripts/test_a_coworker_signs_in_with_the_subscription_you_already_pay_for.py
 """
@@ -224,12 +229,64 @@ def server_half():
           "'claude-code': (['auth', 'login', '--claudeai']" in src and "'codex':       (['login']" in src and 'body.get' not in login.split('def _agents_login_input')[0].replace("body.get('agent'", ''))
     check('serve.py never reads the credential files, only notices them', '.credentials.json' not in login and 'auth.json' not in login)
     hire = (ROOT / 'modals' / 'hire.jsx').read_text(encoding='utf-8')
+    signin_ui = (ROOT / 'ui' / 'signin.jsx').read_text(encoding='utf-8')
     check("the card says an expired sign-in has expired and offers 'Sign in again'",
           "expired: det.auth === 'expired'" in hire and 'has expired — sign in again' in hire
-          and "replace('Sign in', 'Sign in again')" in hire)
+          and "replace('Sign in', 'Sign in again')" in signin_ui and 'expired={c.expired}' in hire)
     drv = (ROOT / 'drivers' / 'claude_code.py').read_text(encoding='utf-8')
     check("the driver asks the CLI's own `auth status --json` and returns 'expired' when it says no",
           "'auth', 'status', '--json'" in drv and "return False, 'expired'" in drv)
+
+
+def open_office(base):
+    """A headless browser on the office at `base`, boot splash and coach
+    cleared. Returns (chrome process, ws) — ws is None when the browser
+    never announced itself (the caller has already logged a FAIL)."""
+    chrome = H.find_chrome()
+    profile = tempfile.mkdtemp(prefix='cafresohq-cdp-signin-')
+    proc = subprocess.Popen(
+        [str(chrome), '--headless=new', '--remote-debugging-port=0', f'--user-data-dir={profile}', '--no-sandbox',
+         '--disable-gpu', '--hide-scrollbars', '--mute-audio', '--no-first-run', '--no-default-browser-check',
+         '--disable-extensions', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', 'about:blank'],
+        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    endpoint = None
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        line = proc.stderr.readline().decode('utf-8', 'replace')
+        if not line:
+            break
+        hit = re.search(r'ws://\S+', line)
+        if hit:
+            endpoint = hit.group(0)
+            break
+    if not check('the browser announced a DevTools endpoint', bool(endpoint)):
+        return proc, None
+    host = re.match(r'ws://([^/]+)/', endpoint).group(1)
+    with urllib.request.urlopen(f'http://{host}/json/list', timeout=15) as fh:
+        targets = json.load(fh)
+    page = next(t for t in targets if t['type'] == 'page')
+    ws = H.WS(page['webSocketDebuggerUrl'])
+    ws.call('Page.enable')
+    ws.call('Runtime.enable')
+    ws.call('Emulation.setDeviceMetricsOverride', {'width': 1280, 'height': 900, 'deviceScaleFactor': 1, 'mobile': False})
+    ws.call('Page.navigate', {'url': base + '/hq.html'})
+    H.wait_for(ws, "!!document.querySelector('button[title^=\"Office\"]')", 45, 'the rail')
+    H.wait_for(ws, "!document.getElementById('cafreso-boot')", 20, 'the boot splash to clear')
+    for _ in range(8):
+        if not H.evaluate(ws, "document.querySelectorAll('.backdrop').length"):
+            break
+        H.press_escape(ws)
+        time.sleep(0.4)
+    H.evaluate(ws, "(() => { const x = document.querySelector('.gs-coach button.gs-dismiss'); if (x) x.click(); return !!x; })()")
+    return proc, ws
+
+
+def type_code(ws, sel, code):
+    """Set the code field's value the way React sees it, then press Enter."""
+    H.evaluate(ws, """(() => { const i = document.querySelector('%s input');
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, '%s');
+      i.dispatchEvent(new Event('input', { bubbles: true }));
+      i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); return 1; })()""" % (sel, code))
 
 
 def browser_half():
@@ -245,43 +302,10 @@ def browser_half():
     base, server, home = boot(tmp)
     if not check('serve.py boots for the browser half', base is not None):
         return
-    profile = tempfile.mkdtemp(prefix='cafresohq-cdp-signin-')
-    proc = subprocess.Popen(
-        [str(chrome), '--headless=new', '--remote-debugging-port=0', f'--user-data-dir={profile}', '--no-sandbox',
-         '--disable-gpu', '--hide-scrollbars', '--mute-audio', '--no-first-run', '--no-default-browser-check',
-         '--disable-extensions', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', 'about:blank'],
-        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-    ws = None
+    proc, ws = open_office(base)
     try:
-        endpoint = None
-        deadline = time.time() + 30
-        while time.time() < deadline:
-            line = proc.stderr.readline().decode('utf-8', 'replace')
-            if not line:
-                break
-            hit = re.search(r'ws://\S+', line)
-            if hit:
-                endpoint = hit.group(0)
-                break
-        if not check('the browser announced a DevTools endpoint', bool(endpoint)):
+        if ws is None:
             return
-        host = re.match(r'ws://([^/]+)/', endpoint).group(1)
-        with urllib.request.urlopen(f'http://{host}/json/list', timeout=15) as fh:
-            targets = json.load(fh)
-        page = next(t for t in targets if t['type'] == 'page')
-        ws = H.WS(page['webSocketDebuggerUrl'])
-        ws.call('Page.enable')
-        ws.call('Runtime.enable')
-        ws.call('Emulation.setDeviceMetricsOverride', {'width': 1280, 'height': 900, 'deviceScaleFactor': 1, 'mobile': False})
-        ws.call('Page.navigate', {'url': base + '/hq.html'})
-        H.wait_for(ws, "!!document.querySelector('button[title^=\"Office\"]')", 45, 'the rail')
-        H.wait_for(ws, "!document.getElementById('cafreso-boot')", 20, 'the boot splash to clear')
-        for _ in range(8):
-            if not H.evaluate(ws, "document.querySelectorAll('.backdrop').length"):
-                break
-            H.press_escape(ws)
-            time.sleep(0.4)
-        H.evaluate(ws, "(() => { const x = document.querySelector('.gs-coach button.gs-dismiss'); if (x) x.click(); return !!x; })()")
         H.evaluate(ws, "(() => { const b = document.querySelector('button[title^=\"Office\"]'); b && b.click(); return 1; })()")
         H.wait_for(ws, "!!document.querySelector('.px-room.vacant')", 20, 'a vacant unit on the floor')
         H.evaluate(ws, "(() => { document.querySelector('.px-room.vacant').click(); return 1; })()")
@@ -298,10 +322,7 @@ def browser_half():
         check('clicking it shows the link the CLI printed, opening in a new tab', ok and href == 'https://claude.ai/oauth/authorize?state=abc', href)
         ok = H.wait_for(ws, "!!document.querySelector('.frontdesk-signin[data-signin=\"claude-code\"] input')", 15, 'the code field')
         check('when the CLI asks for a code, a field appears', ok)
-        H.evaluate(ws, """(() => { const i = document.querySelector('.frontdesk-signin[data-signin="claude-code"] input');
-          const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, 'OK-CODE');
-          i.dispatchEvent(new Event('input', { bubbles: true }));
-          i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); return 1; })()""")
+        type_code(ws, '.frontdesk-signin[data-signin="claude-code"]', 'OK-CODE')
         ok = H.wait_for(ws, "(() => { const c = [...document.querySelectorAll('.frontdesk-card')].find(x => /Claude/.test(x.textContent)); return !!c && /Signed in — ready to hire/.test(c.querySelector('.frontdesk-note').textContent); })()", 20, 'the card to read signed in')
         check('typing the code ends with "Signed in — ready to hire."', ok)
         gone = H.evaluate(ws, "!document.querySelector('.frontdesk-signin[data-signin=\"claude-code\"]')")
@@ -319,10 +340,83 @@ def browser_half():
         server.terminate()
 
 
+
+def settings_half():
+    print('Settings → Connections — the same control, in a real browser')
+    if not (ROOT / 'dist-ui' / 'manifest.json').exists():
+        return
+    if H.find_chrome() is None:
+        print('  SKIPPED — no headless browser on this machine.')
+        return
+    tmp = tempfile.mkdtemp(prefix='hq-signin-settings-')
+    base, server, home = boot(tmp)
+    if not check('serve.py boots for the Settings half', base is not None):
+        return
+    proc, ws = open_office(base)
+    try:
+        if ws is None:
+            return
+        H.evaluate(ws, "(() => { window.dispatchEvent(new CustomEvent('cafresohq:openSettings', { detail: { tab: 'connections' } })); return 1; })()")
+        row_sel = '.cb-panel .frontdesk-signin[data-signin="claude-code"][data-where="settings"]'
+        ok = H.wait_for(ws, f"!!document.querySelector('{row_sel} button')", 30, "the Claude row's sign-in button under Settings → Connections")
+        check('the Claude row under ON THIS MACHINE carries the sign-in button', ok)
+        sub = H.evaluate(ws, f"(() => {{ const c = document.querySelector('{row_sel}'); return c ? c.closest('.row-knob').querySelector('.sub').textContent : ''; }})()")
+        check('its sentence still says a sign-in is needed', 'needs a sign-in' in sub, sub)
+        label = H.evaluate(ws, f"(() => {{ const b = document.querySelector('{row_sel} button'); return b ? b.textContent.trim() : ''; }})()")
+        check('worded as the subscription you pay for, same as the front desk', label == 'Sign in with your Claude subscription', label)
+        H.evaluate(ws, f"(() => {{ document.querySelector('{row_sel} button').click(); return 1; }})()")
+        ok = H.wait_for(ws, f"!!document.querySelector('{row_sel} .frontdesk-signin-link')", 15, 'the link the CLI printed')
+        check('clicking it shows the link the CLI printed', ok)
+        ok = H.wait_for(ws, f"!!document.querySelector('{row_sel} input')", 15, 'the code field')
+        check('when the CLI asks for a code, a field appears', ok)
+        type_code(ws, row_sel, 'OK-CODE')
+        ok = H.wait_for(ws, "(() => { const r = [...document.querySelectorAll('.cb-panel .row-knob')].find(x => /Claude Code/.test(x.textContent)); return !!r && /found · signed in/.test(r.querySelector('.sub').textContent); })()", 25, 'the row to read signed in')
+        check('typing the code ends with the row reading "found · signed in"', ok)
+        gone = H.evaluate(ws, f"!document.querySelector('{row_sel}')")
+        check('the control is gone once signed in', gone)
+        chip = H.evaluate(ws, "(() => { const r = [...document.querySelectorAll('.cb-panel .row-knob')].find(x => /Claude Code/.test(x.textContent)); return r ? r.querySelector('.tiny').textContent.trim() : ''; })()")
+        check('and the dot says ready', chip == '● ready', chip)
+        check("the CLI's credential landed in the scratch HOME, written by the CLI", Path(home, '.claude', '.credentials.json').is_file())
+    finally:
+        try:
+            if ws:
+                ws.close()
+        except Exception:      # noqa: BLE001
+            pass
+        proc.kill()
+        server.terminate()
+
+
+def one_control_everywhere():
+    """Structural: the two surfaces mount ONE component, and the desk status
+    line no longer sends anyone to a terminal for a sign-in the office does."""
+    print('one control, wherever the office says a sign-in is needed')
+    hire = (ROOT / 'modals' / 'hire.jsx').read_text(encoding='utf-8')
+    settings = (ROOT / 'modals' / 'settings.jsx').read_text(encoding='utf-8')
+    app = (ROOT / 'app.jsx').read_text(encoding='utf-8')
+    ui = (ROOT / 'ui' / 'signin.jsx').read_text(encoding='utf-8')
+    check('ui/signin.jsx exports the hook and the control', 'export function useAgentSignin' in ui and 'export function AgentSignin' in ui)
+    check('the front desk mounts it', "from '../ui/signin.jsx'" in hire and '<AgentSignin' in hire and 'where="frontdesk"' in hire)
+    check('...and no longer carries its own copy', 'setInterval' not in hire.split('useAgentSignin')[0] and 'startSignin' not in hire)
+    check('Settings → Connections mounts it', "from '../ui/signin.jsx'" in settings and '<AgentSignin' in settings and 'where="settings"' in settings)
+    rows_i = settings.find("['claude-code'")
+    rows = settings[rows_i:settings.find('cb-panel', rows_i)] if rows_i >= 0 else ''
+    check('...inside the ON THIS MACHINE rows, only for a live CLI that is not signed in',
+          '<AgentSignin' in rows and 'live && !isDaemon && !det.authenticated' in rows)
+    check('...and its sentence has the expired case, worded sign in again',
+          "det.auth === 'expired' ? 'found · its sign-in here has expired — sign in again'" in rows)
+    check('a hired desk no longer sends the boss to a terminal for a sign-in',
+          'open a Terminal tab' not in app and 'Settings → Connections' in app)
+    check('the labels are the subscription, never the protocol',
+          "'Sign in with your Claude subscription'" in ui and "'Sign in with your ChatGPT subscription'" in ui and 'OAuth' not in ui)
+
+
 def main():
     print('a coworker signs in with the subscription you already pay for')
+    one_control_everywhere()
     server_half()
     browser_half()
+    settings_half()
     print()
     if FAILS:
         print(f'sign in: {len(FAILS)} FAILED — ' + ', '.join(FAILS[:6]))

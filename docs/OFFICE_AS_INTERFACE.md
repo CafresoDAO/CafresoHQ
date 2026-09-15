@@ -46252,3 +46252,36 @@ what it said. The Hermes gateway host is a machine, not a setting: until
 its sshd accepts the tunnel again, the office's default brain should be
 one that is here.
 
+
+## 435. the sign-in is wherever the office says one is needed
+
+`## 434.` put the sign-in on the front desk's FOUND card and nowhere else.
+Two other surfaces kept saying the need without offering the door:
+Settings → Connections → ON THIS MACHINE read *found · needs a sign-in
+before its first task* with a *● sign in* dot and nothing to press, and a
+hired desk's status line still read *needs login — open a Terminal tab* —
+the sentence §2 says the office never says, one bug-fix after it was
+built out of the front desk. The founder's report was exactly that: "where
+it says needs sign in, actually create the sign in buttons".
+
+The control and its state machine now live in one place, `ui/signin.jsx`
+(`useAgentSignin`, `AgentSignin`), and both surfaces mount it. The front
+desk lost its private copy; the Settings row grows the same button under
+its own sentence (never in the chip column), the sentence gains the
+expired case (*found · its sign-in here has expired — sign in again*), and
+when the CLI's credential is honoured the panel re-probes so the row reads
+*found · signed in* and the dot *● ready*. The desk status line names the
+door instead of a terminal: *needs a sign-in — the button is under
+Settings → Connections*. `data-where` on the control says which surface
+mounted it, so a suite can tell them apart.
+
+Measured in a headless browser against a scratch server with fake CLIs,
+on both surfaces: button → link → code → the surface's own sentence
+flips. Structural pins hold the two mounts to one component and keep the
+terminal sentence gone.
+
+**Weakest verdict.** Still fakes; a real `claude auth login` was not
+driven. Gemini has no login command, so its row keeps its sentence. The
+deployed ai.cafreso.com UI (`cafresohq_ui`) is a founder deploy away from
+any of this — until it is redeployed the live front desk shows `## 433`'s
+copy, button-less.
