@@ -127,6 +127,16 @@ the public record a stranger can read before hiring.
 
 ## 7. Founder steps to open the hall (user-owned; nothing here is automated)
 
+> **Done 2026-09-15.** Step 1 (the canister), step 2 (the shell — both
+> domains, parity verified; the id is also pinned as the fallback in
+> `marketActor.js`) and the `cafresohq_ui` deploy are live. Step 3 (the
+> fleet roll) is optional. On the way: paying from the cycles ledger needs
+> `NEXT_TO`; the shell repo's dfx 0.29.1 needs
+> `DFX_WARNING=-mainnet_plaintext_identity` for the `default` identity; and
+> `cafreso_pages` (dqcmv) refused its upgrade at 0.33 T until a 0.1 T top-up
+> — an asset canister needs headroom above that to take an install. What is
+> not done: §7b, the first job on mainnet.
+
 1. Deploy the canister with the pinned toolchain and the default deploy
    identity. One guarded command does the compile check, asks, deploys,
    claims plan admin, and prints the id and the follow-ups:
