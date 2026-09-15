@@ -30,6 +30,13 @@ IDENTITY="${IDENTITY:-default}"
 # 0.085 T; neither creates a canister, so the deploy said so and stopped.
 NO_WALLET="${NO_WALLET:-0}"
 WITH_CYCLES="${WITH_CYCLES:-}"
+# Where the canister lands. Paying from the cycles ledger, dfx cannot pick a
+# subnet on its own ("Cannot automatically decide which subnet to target"),
+# so NEXT_TO=<canister id> puts the hall on that canister's subnet — use
+# cafresohq_state's id so the office's canisters share one subnet — or
+# SUBNET=<subnet id> names one outright.
+NEXT_TO="${NEXT_TO:-}"
+SUBNET="${SUBNET:-}"
 DRY=0
 YES=0
 for a in "$@"; do
@@ -83,8 +90,12 @@ echo
 PAY_FLAGS=()
 [ "$NO_WALLET" = 1 ] && PAY_FLAGS+=(--no-wallet)
 [ -n "$WITH_CYCLES" ] && PAY_FLAGS+=(--with-cycles "$WITH_CYCLES")
+[ -n "$NEXT_TO" ] && PAY_FLAGS+=(--next-to "$NEXT_TO")
+[ -n "$SUBNET" ] && PAY_FLAGS+=(--subnet "$SUBNET")
 echo "plan: deploy cafresohq_market  network=$NETWORK  identity=$IDENTITY"
 echo "      paid from the identity's $([ "$NO_WALLET" = 1 ] && echo 'cycles ledger' || echo 'cycles wallet')$([ -n "$WITH_CYCLES" ] && echo ", starting balance $WITH_CYCLES cycles" || echo ", dfx's default starting balance")"
+[ -n "$NEXT_TO" ] && echo "      on the same subnet as $NEXT_TO"
+[ -n "$SUBNET" ] && echo "      on subnet $SUBNET"
 echo "      then claim plan admin with that identity (market_admin_claim)"
 if [ "$DRY" = 1 ]; then
   echo "dry run: nothing deployed."

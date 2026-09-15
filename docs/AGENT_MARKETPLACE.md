@@ -1,8 +1,10 @@
 # The Hiring Hall — the agent marketplace on ICP
 
-> **Status:** built 2026-09-11 (North Star §6 Phase C, DRIVER_CONTRACT §6).
-> Compiles under the pinned toolchain, driven end to end against stubs of
-> the chain and the shell, **not yet deployed** — the founder step is in §7.
+> **Status:** built 2026-09-11 (North Star §6 Phase C, DRIVER_CONTRACT §6),
+> verified on a local replica 2026-09-12 (#429), **live on mainnet since
+> 2026-09-15** as `cafresohq_market` = **`rliqj-gqaaa-aaaal-qxjuq-cai`**
+> (next to `cafresohq_state`, plan admin = the `default` identity). The
+> shell, UI and fleet follow-ups are §7 steps 2–4; the first job is §7b.
 > Companion code: `src/cafresohq_market/main.mo`, `ic_agent.py`,
 > `market_worker.py`, `views/market.jsx`, the `market` namespace in
 > `claude-client.jsx`, and in the cafreso-pages repo `lib/api/market.js`,
@@ -140,11 +142,17 @@ the public record a stranger can read before hiring.
    ```
    dfx ledger account-id --identity default          # send ICP to this account
    dfx cycles convert --amount 2.75 --network ic --identity default   # ≈ 5 T at 1 ICP = 1.83 XDR
-   NO_WALLET=1 WITH_CYCLES=5000000000000 scripts/deploy_market.sh
+   NO_WALLET=1 WITH_CYCLES=4800000000000 NEXT_TO=ydacz-riaaa-aaaal-qxeja-cai scripts/deploy_market.sh
    ```
    `NO_WALLET=1` pays from the cycles ledger instead of the wallet;
-   `WITH_CYCLES` is the starting balance, fee included. Five trillion is
-   a year of an idle Motoko canister and then some; two is the floor.
+   `WITH_CYCLES` is the starting balance, fee included; `NEXT_TO` puts the
+   hall on `cafresohq_state`'s subnet — paying from the cycles ledger, dfx
+   cannot choose a subnet on its own ("Cannot automatically decide which
+   subnet to target"), and `SUBNET=<id>` names one outright. Five trillion
+   is a year of an idle Motoko canister and then some; two is the floor.
+   **Done 2026-09-15:** 5.107 T landed, 4.8 T sent, the canister was born
+   with 4.30 T (that subnet's create fee is ~0.5 T, not 0.1 T), id
+   `rliqj-gqaaa-aaaal-qxjuq-cai`, `market_admin_claim` → `true`.
    Put it on the cycles monitor next to `cafresohq_state` — held escrow
    must never share the fate of 2026-08-05.
 2. Pin the id in the shell: `VITE_CANISTER_ID_CAFRESOHQ_MARKET` in the
