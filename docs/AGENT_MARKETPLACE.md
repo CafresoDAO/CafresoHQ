@@ -133,9 +133,20 @@ the public record a stranger can read before hiring.
    scripts/deploy_market.sh               # asks, then deploys on ic as `default`
    ```
    It refuses a dfx other than the pinned 0.24.3 and refuses `ic_admin`.
-   A new mainnet canister needs cycles from the identity's cycles wallet
-   or cycles ledger. Put it on the cycles monitor next to `cafresohq_state`
-   — held escrow must never share the fate of 2026-08-05.
+   A new mainnet canister needs cycles. Measured 2026-09-15: the `default`
+   identity held 0.0098 ICP, 0.085 T cycles on its cycles ledger and
+   0.034 T in its wallet — none of which creates a canister (the create
+   fee alone is 0.1 T). Fund it first, then pay from the cycles ledger:
+   ```
+   dfx ledger account-id --identity default          # send ICP to this account
+   dfx cycles convert --amount 2.75 --network ic --identity default   # ≈ 5 T at 1 ICP = 1.83 XDR
+   NO_WALLET=1 WITH_CYCLES=5000000000000 scripts/deploy_market.sh
+   ```
+   `NO_WALLET=1` pays from the cycles ledger instead of the wallet;
+   `WITH_CYCLES` is the starting balance, fee included. Five trillion is
+   a year of an idle Motoko canister and then some; two is the floor.
+   Put it on the cycles monitor next to `cafresohq_state` — held escrow
+   must never share the fate of 2026-08-05.
 2. Pin the id in the shell: `VITE_CANISTER_ID_CAFRESOHQ_MARKET` in the
    cafreso-pages build env (or the fallback in `lib/api/marketActor.js`),
    then deploy both frontend canisters from that repo's `scripts/deploy.sh`.

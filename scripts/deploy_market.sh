@@ -22,6 +22,14 @@ cd "$ROOT"
 
 NETWORK="${NETWORK:-ic}"
 IDENTITY="${IDENTITY:-default}"
+# Who pays for the new canister. By default dfx charges the identity's
+# cycles WALLET; NO_WALLET=1 pays from the identity's cycles LEDGER (the
+# balance `dfx cycles convert` fills), and WITH_CYCLES sets the starting
+# balance in cycles — the create fee (0.1 T on a 13-node subnet) comes out
+# of it. Measured 2026-09-15: the default wallet held 0.034 T, the ledger
+# 0.085 T; neither creates a canister, so the deploy said so and stopped.
+NO_WALLET="${NO_WALLET:-0}"
+WITH_CYCLES="${WITH_CYCLES:-}"
 DRY=0
 YES=0
 for a in "$@"; do
@@ -72,7 +80,11 @@ dfx build cafresohq_market --check
 
 # ── 4. the plan ────────────────────────────────────────────────────────────
 echo
+PAY_FLAGS=()
+[ "$NO_WALLET" = 1 ] && PAY_FLAGS+=(--no-wallet)
+[ -n "$WITH_CYCLES" ] && PAY_FLAGS+=(--with-cycles "$WITH_CYCLES")
 echo "plan: deploy cafresohq_market  network=$NETWORK  identity=$IDENTITY"
+echo "      paid from the identity's $([ "$NO_WALLET" = 1 ] && echo 'cycles ledger' || echo 'cycles wallet')$([ -n "$WITH_CYCLES" ] && echo ", starting balance $WITH_CYCLES cycles" || echo ", dfx's default starting balance")"
 echo "      then claim plan admin with that identity (market_admin_claim)"
 if [ "$DRY" = 1 ]; then
   echo "dry run: nothing deployed."
@@ -85,9 +97,10 @@ if [ "$YES" != 1 ]; then
 fi
 
 # ── 5. deploy + claim ──────────────────────────────────────────────────────
-if ! dfx deploy cafresohq_market --network "$NETWORK" --identity "$IDENTITY"; then
+if ! dfx deploy cafresohq_market --network "$NETWORK" --identity "$IDENTITY" ${PAY_FLAGS[@]+"${PAY_FLAGS[@]}"}; then
   echo "deploy_market.sh: dfx deploy failed. On mainnet a NEW canister needs cycles from the identity's" >&2
-  echo "  cycles wallet or cycles ledger — see \`dfx cycles balance --network ic --identity $IDENTITY\`." >&2
+  echo "  cycles wallet (the default) or, with NO_WALLET=1, its cycles ledger —" >&2
+  echo "  see \`dfx wallet balance --network ic --identity $IDENTITY\` / \`dfx cycles balance --network ic --identity $IDENTITY\`." >&2
   exit 1
 fi
 ID="$(dfx canister id cafresohq_market --network "$NETWORK")"

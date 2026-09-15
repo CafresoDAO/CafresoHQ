@@ -11,6 +11,9 @@ Pinned, by reading the script and by running it where that is safe:
   * it refuses IDENTITY=ic_admin (deploys here use the default identity);
   * it compile-checks (`dfx build cafresohq_market --check`) BEFORE any
     command that names a network;
+  * NO_WALLET=1 / WITH_CYCLES=<n> put `--no-wallet` / `--with-cycles n` on
+    the deploy (the cycles ledger pays, with that starting balance) and the
+    plan names the payer; by default neither flag is passed;
   * `--dry-run` prints the plan and exits 0 without running `dfx deploy`,
     `dfx canister create` or `dfx canister call` (asserted by a fake dfx on
     PATH that logs every invocation);
@@ -108,6 +111,14 @@ def main():
           code == 0 and any(c.startswith('deploy cafresohq_market --network ic --identity default') for c in calls)
           and any(c.startswith('canister call cafresohq_market market_admin_claim --network ic --identity default') for c in calls)
           and 'VITE_CANISTER_ID_CAFRESOHQ_MARKET=aaaaa-aa' in out and 'CAFRESOHQ_MARKET_CANISTER=aaaaa-aa' in out, (code, calls, out[-300:]))
+
+    code, out, calls = run(['--yes'], {'NO_WALLET': '1', 'WITH_CYCLES': '5000000000000'})
+    check('NO_WALLET=1 WITH_CYCLES=… pays from the cycles ledger with that starting balance, and the plan says so',
+          code == 0 and any(c == 'deploy cafresohq_market --network ic --identity default --no-wallet --with-cycles 5000000000000' for c in calls)
+          and 'cycles ledger' in out and '5000000000000' in out, (calls, out[-300:]))
+    code, out, calls = run(['--yes'])
+    check('by default neither flag is passed (the wallet pays, as dfx does)',
+          code == 0 and any(c == 'deploy cafresohq_market --network ic --identity default' for c in calls) and 'cycles wallet' in out, calls)
 
     code, out, calls = run(['--yes'], {'NETWORK': 'local'})
     check('NETWORK=local deploys to local, not ic', code == 0 and any(c.startswith('deploy cafresohq_market --network local') for c in calls) and not any('--network ic' in c for c in calls))
