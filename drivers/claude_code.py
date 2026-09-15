@@ -120,6 +120,11 @@ class ClaudeCodeDriver(Driver):
 
     def detect(self, probe_version=False):
         bin_ = self.resolve()
+        # A deep probe is the boss asking "check now": a sign-in finished in
+        # a terminal, or on a page that had stopped looking, must not be
+        # outlived by the twenty-second verdict cache (#436).
+        if probe_version:
+            self.forget_session()
         authed, mech = self.detect_auth_live() if probe_version else self.detect_auth()
         version, problem, pdetail = (probe_cli(bin_) if (bin_ and probe_version)
                                      else ('', '', ''))

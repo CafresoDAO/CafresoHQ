@@ -46285,3 +46285,55 @@ driven. Gemini has no login command, so its row keeps its sentence. The
 deployed ai.cafreso.com UI (`cafresohq_ui`) is a founder deploy away from
 any of this — until it is redeployed the live front desk shows `## 433`'s
 copy, button-less.
+
+## 436. install from where it says not found
+
+The founder, one message after `## 435.`: is there a quick way to add the
+CLI's install command, opened in a terminal, to Settings? The quick way
+was already half there. serve.py has carried an allow-listed installer
+(`POST /agents/install`: `npm install -g` for Claude Code, Codex and
+Gemini, pip for Hermes, a background job with a status route) since the
+fleet work, and nothing in the UI called it — the client helper existed,
+the button did not. Meanwhile ON THIS MACHINE said *not found on this
+machine* under Gemini and *installed, but it will not start* under the
+founder's own Codex, and stopped there.
+
+"Open it in the terminal" is not the door the office has: its Terminal tab
+spawns a CLI session (`/terminal/spawn?cli=…`), not a shell, so a command
+typed into it goes nowhere useful. The door it does have is better — the
+office runs the install itself. The row grows *Install Gemini CLI* (or
+*Reinstall Codex* when the program is present and crashing), says out loud
+which command it will run on this machine, and offers *Copy command* for a
+terminal of your own. The control (`ui/install.jsx`) shares the sign-in
+control's face and state machine shape: installing → the panel re-probes →
+the row's own sentence flips, and for Claude and Codex the sign-in control
+from `## 435.` takes its place. npm exiting 0 is not the verdict: the job
+carries the probe's word, so a package that installed and will not start
+reads *it installed, but it will not start*, never *Installed*.
+
+Measured with a fake npm that "installs" by writing a runnable fake CLI
+into the scratch bin: the routes end-to-end (not found → 202 → done →
+found; broken → reinstalled), the display table pinned to serve.py's
+allowlist, and the row in a headless browser clicking through to *found*.
+
+And the founder's first real sign-in through `## 435.`'s button found the
+seam `## 434.` had left. The office's own record was unambiguous — the CLI
+printed *Login successful.*, exited 0, the job read done and authenticated
+— and the page said nothing had been caught. Two gaps. The page's poll
+stopped when its surface closed (the boss had gone to the browser to
+finish the sign-in, and the front desk closed behind them), and the
+reopened front desk's deep probe read the driver's twenty-second verdict
+cache, filled *not signed in* by a poll a beat before the credential
+landed. Now a deep probe forgets that cache first — a probe is the boss
+asking "check now" — and the control asks the office, on mount, what
+sign-in is in flight and picks it back up; after the CLI exits it keeps
+looking for forty-five seconds before saying nothing was found. Pinned:
+the cache is poisoned on purpose and the next deep probe still reads
+signed in; the front desk is closed with the code field showing and
+reopened, and is still signing in.
+
+**Weakest verdict.** The real npm was not run; a real global install on a
+machine whose npm prefix is not writable will fail with serve.py's
+permission hint, which the row now shows instead of swallowing. Gemini's
+row after the install reads *it signs you in on its first run*, because
+that CLI has no login command of its own. Hermes is not on this panel.

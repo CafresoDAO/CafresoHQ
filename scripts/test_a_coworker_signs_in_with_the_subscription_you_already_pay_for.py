@@ -211,6 +211,19 @@ def server_half():
         req(base, 'POST', '/agents/login/input', {'agent': 'claude-code', 'text': 'OK-CODE'})
         st = wait_status(base, 'claude-code', lambda st: st.get('status') != 'running')
         check('…and the fresh sign-in is honoured the moment the CLI says so', st.get('authenticated') is True and st.get('auth') == 'oauth', st)
+
+        # ── signed in somewhere else (a terminal, or a page that stopped
+        # looking): the next DEEP probe must ask the CLI afresh. Measured on
+        # the founder's machine: "Login successful." printed, the reopened
+        # front desk still read "sign in again" from a 20-second cache. ──
+        Path(home, '.claude', '.stale').write_text('1')
+        req(base, 'GET', '/agents/login/status?agent=claude-code')   # just ended → asks the CLI afresh → caches "no"
+        cc = next((a for a in req(base, 'GET', '/agents')[1].get('agents', []) if a['id'] == 'claude-code'), {})
+        check('(setup) the cheap list reads the cached verdict', cc.get('auth') == 'expired', cc)
+        Path(home, '.claude', '.stale').unlink()      # the sign-in lands, elsewhere
+        det = next((d.get('detect') for d in req(base, 'GET', '/agent/drivers?probe=1')[1].get('drivers', []) if d['id'] == 'claude-code'), {})
+        check('a deep probe right after a sign-in done elsewhere reads signed in, not the cached expired',
+              det.get('authenticated') is True and det.get('auth') == 'oauth', det)
     finally:
         proc.terminate()
     tmp2 = tempfile.mkdtemp(prefix='hq-signin2-')
@@ -322,6 +335,13 @@ def browser_half():
         check('clicking it shows the link the CLI printed, opening in a new tab', ok and href == 'https://claude.ai/oauth/authorize?state=abc', href)
         ok = H.wait_for(ws, "!!document.querySelector('.frontdesk-signin[data-signin=\"claude-code\"] input')", 15, 'the code field')
         check('when the CLI asks for a code, a field appears', ok)
+        # The boss goes to the browser to finish the sign-in and the front
+        # desk closes behind them; reopened, it must still be signing in.
+        H.press_escape(ws)
+        H.wait_for(ws, "!document.querySelector('.frontdesk-signin[data-signin=\"claude-code\"]')", 10, 'the front desk to close')
+        H.evaluate(ws, "(() => { document.querySelector('.px-room.vacant').click(); return 1; })()")
+        ok = H.wait_for(ws, "!!document.querySelector('.frontdesk-signin[data-signin=\"claude-code\"] input')", 30, 'the reopened front desk to pick the sign-in back up')
+        check('closed and reopened mid-sign-in, the card is still signing in — not offering the button again', ok)
         type_code(ws, '.frontdesk-signin[data-signin="claude-code"]', 'OK-CODE')
         ok = H.wait_for(ws, "(() => { const c = [...document.querySelectorAll('.frontdesk-card')].find(x => /Claude/.test(x.textContent)); return !!c && /Signed in — ready to hire/.test(c.querySelector('.frontdesk-note').textContent); })()", 20, 'the card to read signed in')
         check('typing the code ends with "Signed in — ready to hire."', ok)
@@ -409,6 +429,13 @@ def one_control_everywhere():
           'open a Terminal tab' not in app and 'Settings → Connections' in app)
     check('the labels are the subscription, never the protocol',
           "'Sign in with your Claude subscription'" in ui and "'Sign in with your ChatGPT subscription'" in ui and 'OAuth' not in ui)
+    check('the page keeps looking for a while after the CLI exits, instead of giving up on the first non-running status',
+          'DONE_GRACE_MS' in ui and "st.status === 'done'" in ui and 'Date.now() - doneSince.current < DONE_GRACE_MS' in ui)
+    check('a surface that reopens asks the office what sign-in is in flight',
+          'agentLoginStatus(id)' in ui.split('useEffect(() => {\n    let cancelled')[1] if 'let cancelled' in ui else False)
+    drivers = [(ROOT / 'drivers' / n).read_text(encoding='utf-8') for n in ('claude_code.py', 'codex.py')]
+    check("a deep probe forgets the drivers' cached verdict first",
+          all('forget_session()' in d.split('def detect(self, probe_version=False)')[1].split('def ')[0] for d in drivers))
 
 
 def main():

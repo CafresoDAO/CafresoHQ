@@ -34,6 +34,11 @@ export const signinLabel = (id, expired) =>
    needsCode) → done | error. `onSignedIn` fires once the CLI's credential
    is honoured; `isAlive` lets a host that unmounts its surface without
    unmounting itself (a closed modal) stop the polls. */
+/* After the CLI exits 0 the credential can take a beat to be honoured (the
+   founder's own sign-in: "Login successful." printed, the page had already
+   stopped looking). Keep asking this long before saying it was not found. */
+export const DONE_GRACE_MS = 45_000;
+
 export function useAgentSignin({ onSignedIn, isAlive } = {}) {
   const [signin, setSignin] = useState({});
   const timers = useRef({});
@@ -41,22 +46,64 @@ export function useAgentSignin({ onSignedIn, isAlive } = {}) {
   const alive = () => mounted.current && (!isAlive || isAlive());
   const patch = (id, p) => setSignin(prev => ({ ...prev, [id]: { ...(prev[id] || {}), ...p } }));
   const stop = (id) => { clearInterval(timers.current[id]); delete timers.current[id]; };
+  const absorb = (id, st, doneSince) => {
+    if (st.authenticated) {
+      stop(id);
+      patch(id, { status: 'done', authenticated: true, url: st.url, needsCode: false });
+      if (onSignedIn) onSignedIn(id);
+      return true;
+    }
+    if (st.status === 'running') {
+      patch(id, { status: 'running', url: st.url || '', code: st.code || '', needsCode: !!st.needsCode, error: '' });
+      return false;
+    }
+    if (st.status === 'done') {
+      /* Exit 0, not honoured yet: still "running" to the eye, for a while. */
+      if (Date.now() - doneSince.current < DONE_GRACE_MS) {
+        patch(id, { status: 'running', url: st.url || '', code: st.code || '', needsCode: false, error: '' });
+        return false;
+      }
+      stop(id);
+      patch(id, { status: 'done', authenticated: false, needsCode: false });
+      return true;
+    }
+    stop(id);
+    patch(id, { status: st.status === 'none' ? 'idle' : st.status, url: st.url || '', code: st.code || '',
+                needsCode: false, error: st.error || '' });
+    return true;
+  };
   const poll = (id) => {
     stop(id);
+    const doneSince = { current: 0 };
     timers.current[id] = setInterval(async () => {
       let st;
       try { st = await CafresoHQClient.agentLoginStatus(id); } catch (_e) { return; }
       if (!alive()) { stop(id); return; }
-      if (st.authenticated) {
-        stop(id);
-        patch(id, { status: 'done', authenticated: true, url: st.url, needsCode: false });
-        if (onSignedIn) onSignedIn(id);
-        return;
-      }
-      patch(id, { status: st.status, url: st.url || '', code: st.code || '', needsCode: !!st.needsCode, error: st.error || '' });
-      if (st.status !== 'running') stop(id);
+      if (st.status === 'done' && !doneSince.current) doneSince.current = Date.now();
+      absorb(id, st, doneSince);
     }, 1500);
   };
+  /* A surface that closed mid-sign-in (the boss went to the browser to
+     finish it) and reopened must pick the sign-in back up, not offer the
+     button again: ask the office what is in flight, once, on mount. */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      for (const id of Object.keys(SIGNIN_LABEL)) {
+        let st;
+        try { st = await CafresoHQClient.agentLoginStatus(id); } catch (_e) { continue; }
+        if (cancelled || !alive()) return;
+        if (st.status === 'running') {
+          patch(id, { status: 'running', url: st.url || '', code: st.code || '', needsCode: !!st.needsCode, error: '' });
+          poll(id);
+        } else if (st.status === 'done' && st.finished && Date.now() / 1000 - st.finished < DONE_GRACE_MS / 1000 && !st.authenticated) {
+          patch(id, { status: 'running', url: st.url || '', code: '', needsCode: false, error: '' });
+          poll(id);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
   const start = async (id) => {
     patch(id, { status: 'running', url: '', code: '', needsCode: false, error: '', text: '' });
     let r;

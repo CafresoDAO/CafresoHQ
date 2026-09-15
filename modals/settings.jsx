@@ -5,6 +5,8 @@ import { Modal, ModelPicker } from './base.jsx';
 /* The sign-in control the front desk uses (#434), mounted here too (#435):
    a row that says "needs a sign-in" must be where the sign-in happens. */
 import { AgentSignin, useAgentSignin } from '../ui/signin.jsx';
+/* And the install, for a row that says not found / will not start (#436). */
+import { AgentInstall, useAgentInstall } from '../ui/install.jsx';
 /* cleanCause, NOT snagCause. Every sentence in snagCause's table names a
    BRAIN, and nothing on this screen is one: the probe below asks the
    office's own backend which brains exist, and the modules panel talks to
@@ -92,7 +94,7 @@ const SETTINGS_TAB_ALIAS = {
    etc. jump straight to the right drawer. kw = extra match terms. */
 const SETTINGS_INDEX = [
   { tab:'account', label:'Plan & hosting', hint:'managed cloud or self-hosted — see which one this is', kw:'plan premium account subscription container backend health status gateway api runtime connected self-hosted' },
-  { tab:'connections', label:'Brains found on this machine', hint:'which coworkers this box can already run', kw:'connections claude codex gemini ollama lmstudio cli detected found local brain' },
+  { tab:'connections', label:'Brains found on this machine', hint:'which coworkers this box can already run', kw:'connections claude codex gemini ollama lmstudio cli detected found local brain install reinstall missing' },
   { tab:'connections', label:'Cloud provider keys', hint:'OpenRouter · Groq · Gemini — set as environment variables', kw:'connections key api openrouter groq gemini google env environment variable byok self-hosted' },
   /* Two entries, not one, because a boss sent here by a hire warning is
      searching the brand on the brain they picked — "claude" or "gemini" —
@@ -237,6 +239,7 @@ function ConnectionsPanel() {
   /* One sign-in per CLI row; when the CLI's credential is honoured the
      probe runs again and the row's own sentence flips to signed in. */
   const signinCtl = useAgentSignin({ onSignedIn: probeDrivers });
+  const installCtl = useAgentInstall({ onInstalled: probeDrivers });
   const detectOf = (id) => {
     const d = (drivers || []).find(x => x.id === id);
     return (d && d.detect) || null;
@@ -316,6 +319,7 @@ function ConnectionsPanel() {
                     ? (isDaemon ? 'answering on this machine'
                        : det.authenticated ? 'found · signed in'
                        : det.auth === 'expired' ? 'found · its sign-in here has expired — sign in again'
+                       : id === 'gemini' ? 'found · it signs you in on its first run'
                        : 'found · needs a sign-in before its first task')
                     : offText}
                 </div>
@@ -324,6 +328,12 @@ function ConnectionsPanel() {
                 {live && !isDaemon && !det.authenticated && (
                   <AgentSignin id={id} expired={det.auth === 'expired'} ctl={signinCtl}
                                onLookAgain={probeDrivers} where="settings" />
+                )}
+                {/* Not found, or found and crashing: the office installs it
+                    itself (#436) — reinstall repairs the broken one. */}
+                {!live && !isDaemon && (
+                  <AgentInstall id={id} broken={broken} ctl={installCtl}
+                                onLookAgain={probeDrivers} where="settings" />
                 )}
               </div>
               <span className="tiny">

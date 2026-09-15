@@ -4375,7 +4375,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                'authorization code:', 'enter code', 'paste code'))
         return {'agent': job.get('agent'), 'status': job.get('status'), 'url': job.get('url', ''),
                 'code': job.get('code', ''), 'needsCode': needs_code, 'tail': out[-600:],
-                'started': job.get('started'), 'exit': job.get('exit'), 'error': job.get('error', '')}
+                'started': job.get('started'), 'finished': job.get('finished'),
+                'exit': job.get('exit'), 'error': job.get('error', '')}
 
     def _agents_login(self):
         """POST /agents/login { agent: 'claude-code'|'codex' } — run the CLI's own

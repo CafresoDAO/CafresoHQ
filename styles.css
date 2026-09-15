@@ -11827,3 +11827,6 @@ body.night .px-bubble.quiet { opacity: 0.5; }
 /* #435 · the same control under a Settings → Connections row. .row-knob
    sets VT323 18px for its label; the control keeps the front desk's face. */
 .row-knob .frontdesk-signin { margin-top: 4px; font-family: 'Inter'; text-transform: none; letter-spacing: 0; }
+/* #436 · the install control shares the face; the command it names is a
+   whole line, not a code to copy by eye. */
+.agent-install code { letter-spacing: 0; font-size: 10px; overflow-wrap: anywhere; }
