@@ -61,9 +61,24 @@ import market_worker as mw     # noqa: E402
 PORT = 4977
 HOST = f'http://127.0.0.1:{PORT}'
 FAILS = []
-FEE = 10_000
-PRICE = 25_000_000
-MINT = 1_000_000_000
+# The ledger's shape. Default is ICP's (8 decimals, a 0.0001 fee); set
+# CAFRESOHQ_LEDGER_SHAPE=ckbat to run the identical job at ckBAT's, where a
+# unit is 1e18 and the fee is 0.1 (1e17). Nothing below is written in terms
+# of a scale -- every assertion is arithmetic on FEE/PRICE/MINT -- so the
+# same suite proves the hall's price + 3*fee discipline holds for a token
+# whose fee is thirteen orders of magnitude larger than ICP's. That is the
+# case the Hiring Hall's ckBAT listings actually run: a Brave creator's job
+# is escrowed and released by this exact path.
+SHAPES = {
+    #          fee                       decimals  price                        mint
+    'icp':   (10_000,                    8,        25_000_000,                  1_000_000_000),
+    'ckbat': (100_000_000_000_000_000,   18,       25_000_000_000_000_000_000,
+              1_000_000_000_000_000_000_000),
+}
+SHAPE = os.environ.get('CAFRESOHQ_LEDGER_SHAPE', 'icp').strip().lower()
+if SHAPE not in SHAPES:
+    raise SystemExit(f'CAFRESOHQ_LEDGER_SHAPE must be one of {sorted(SHAPES)}, got {SHAPE!r}')
+FEE, DECIMALS, PRICE, MINT = SHAPES[SHAPE]
 
 
 def check(name, cond, detail=''):
@@ -176,7 +191,8 @@ class Replica:
 
 # ── the run ─────────────────────────────────────────────────────────────────
 def main():
-    print('the hall runs a whole job on a real replica')
+    print(f'the hall runs a whole job on a real replica - {SHAPE}-shaped ledger '
+          f'(fee {FEE}, {DECIMALS} decimals)')
     if not shutil.which('dfx'):
         print('  skipped: dfx is not on PATH (the replica run needs the pinned dfx)')
         return 0
@@ -197,6 +213,10 @@ def main():
         check('the deploy identity claims plan admin (a controller, claim-or-match)', '(true)' in r.stdout, r.stdout + r.stderr)
         r = rep.dfx('canister', 'call', 'cafresohq_market', 'market_admin_add_ledger', f'(principal "{L}")')
         check('the mock ledger is allowlisted without an upgrade', r.returncode == 0, r.stdout + r.stderr)
+        if SHAPE != 'icp':
+            r = rep.dfx('canister', 'call', 'mock_ledger', 'mock_set_shape', f'({FEE} : nat, {DECIMALS} : nat8)')
+            check(f'the mock ledger wears the {SHAPE} shape (fee {FEE}, {DECIMALS} decimals)',
+                  r.returncode == 0, r.stdout + r.stderr)
         run_flow(rep, M, L, tmp)
     finally:
         rep.stop()
@@ -256,6 +276,8 @@ def run_flow(rep, M, L, tmp):
 
     # ── the money faucet, and the ledger's fee as the hall will read it ─────
     check('ic_agent reads the ledger fee with an anonymous query', anon.call(L, 'icrc1_fee', ret_types=['nat'], query=True)[0] == FEE)
+    check("the ledger reports the shape's decimals",
+          anon.call(L, 'icrc1_decimals', ret_types=['nat8'], query=True)[0] == DECIMALS)
     boss.call(L, 'mint', [ACCOUNT, 'nat'], [{'owner': boss_id.principal, 'subaccount': None}, MINT], ret_types=['nat'])
     check('a signed update through ic_agent lands (mint → balance)', bal(boss_id.principal) == MINT, bal(boss_id.principal))
 

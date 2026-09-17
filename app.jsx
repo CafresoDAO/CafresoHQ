@@ -4597,7 +4597,7 @@ ${d.text}` : d.text,
      (WALLET_SEND, self-funding) only re-baseline — naive deltas can't be
      trusted there. Sprint 2: payroll payouts are checked FIRST — a payday
      credit celebrates as kind:'payday' and never misclassifies as a tip. */
-  const TIP_DECIMALS = { ICP: 8, ckUSDT: 6, ckUNI: 18, sGLDT: 8, nanas: 8 };
+  const TIP_DECIMALS = { ICP: 8, ckUSDT: 6, ckUNI: 18, sGLDT: 8, ckBAT: 18, nanas: 8 };
   const fmtTokenAmount = (raw, token) => {
     const dec = TIP_DECIMALS[token] ?? 8;
     const s = raw.toString().padStart(dec + 1, '0');

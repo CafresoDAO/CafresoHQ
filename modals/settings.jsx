@@ -455,7 +455,7 @@ const visibleToolsCatalog = () =>
     .filter(t => !GRANTED_ELSEWHERE_TOOL_IDS.has(t.id))
     .filter(t => t.id !== 'wallet' || (window.hqMoneyOn && window.hqMoneyOn()));
 
-const WALLET_TOKEN_DECIMALS = { ICP: 8, ckUSDT: 6, ckUNI: 18, sGLDT: 8, nanas: 8 };
+const WALLET_TOKEN_DECIMALS = { ICP: 8, ckUSDT: 6, ckUNI: 18, sGLDT: 8, ckBAT: 18, nanas: 8 };
 function toBaseUnits(whole, decimals) {
   const s = String(whole == null ? '' : whole).trim();
   if (!s || isNaN(Number(s))) return '0';

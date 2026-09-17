@@ -1002,7 +1002,7 @@ const _uuid = () =>
    CafresoHQChain bridge — so `hq` commands resolve here, never in the
    container shell. Commands live in an extensible registry so later sprints
    (payroll, receipts, night shift) just append entries. */
-const HQSH_DECIMALS = { ICP: 8, ckUSDT: 6, ckUNI: 18, sGLDT: 8, nanas: 8 };
+const HQSH_DECIMALS = { ICP: 8, ckUSDT: 6, ckUNI: 18, sGLDT: 8, ckBAT: 18, nanas: 8 };
 function _hqshFmt(raw, token) {
   try {
     const dec = HQSH_DECIMALS[token] ?? 8;

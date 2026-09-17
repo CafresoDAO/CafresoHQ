@@ -836,7 +836,7 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
     window.addEventListener('cafresohq:moneyEvent', onMoney);
     return () => { dead = true; window.removeEventListener('cafresohq:moneyEvent', onMoney); };
   }, [walletServiceOn]);
-  const PL_DECIMALS = { ICP: 8, ckUSDT: 6, ckUNI: 18, sGLDT: 8, nanas: 8, BANK: 8 };
+  const PL_DECIMALS = { ICP: 8, ckUSDT: 6, ckUNI: 18, sGLDT: 8, ckBAT: 18, nanas: 8, BANK: 8 };
   const plFmt = (raw, token) => {
     try {
       const dec = PL_DECIMALS[token] != null ? PL_DECIMALS[token] : 8;

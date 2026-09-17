@@ -61,7 +61,14 @@ actor MockLedger {
   public type AllowanceArgs = { account : Account; spender : Account };
   public type Allowance = { allowance : Nat; expires_at : ?Nat64 };
 
-  let FEE : Nat = 10_000;
+  // The ledger's shape is settable so one mock can stand in for ledgers that
+  // are not ICP-shaped. ckBAT is the case that matters: 18 decimals and a
+  // 0.1 ckBAT fee (1e17), i.e. a fee thirteen orders of magnitude larger
+  // than ICP's, which is exactly the arithmetic the hall's price + 3·fee
+  // discipline has to survive. `mock_set_shape` is a harness faucet in the
+  // same spirit as `mint` — this canister is never deployed off a replica.
+  var FEE : Nat = 10_000;
+  var DECIMALS : Nat8 = 8;
   let WINDOW_NS : Int = 24 * 3_600 * 1_000_000_000;   // the dedup window, like the ICP ledger
   let DRIFT_NS : Int = 60 * 1_000_000_000;            // permitted clock drift into the future
 
@@ -102,7 +109,15 @@ actor MockLedger {
   public shared query func icrc1_fee() : async Nat = async FEE;
   public shared query func icrc1_name() : async Text = async "Mock Token";
   public shared query func icrc1_symbol() : async Text = async "MOCK";
-  public shared query func icrc1_decimals() : async Nat8 = async 8;
+  public shared query func icrc1_decimals() : async Nat8 = async DECIMALS;
+
+  /// Harness only: restate the ledger's fee and decimals (e.g. ckBAT's
+  /// 1e17 / 18). Call it before any money moves — it does not rewrite
+  /// balances already minted at another scale.
+  public shared func mock_set_shape(fee : Nat, decimals : Nat8) : async () {
+    FEE := fee;
+    DECIMALS := decimals;
+  };
   public shared query func icrc1_balance_of(a : Account) : async Nat = async bal(a);
   public shared query func icrc2_allowance(a : AllowanceArgs) : async Allowance {
     switch (allowances.get(key(a.account) # "|" # key(a.spender))) {

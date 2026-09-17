@@ -229,15 +229,27 @@ actor CafresoHQMarket {
     icrc2_transfer_from : shared TransferFromArgs -> async { #Ok : Nat; #Err : TransferFromError };
   };
 
-  // Same allowlist as cafresohq_state's KNOWN_LEDGERS, plus the two chain-key
+  // Same allowlist as cafresohq_state's KNOWN_LEDGERS, plus the chain-key
   // stablecoins a marketplace price is most naturally quoted in. The plan
-  // admin can add more without an upgrade (`market_admin_add_ledger`).
+  // admin can add more without an upgrade (`market_admin_add_ledger`), which
+  // is how a ledger reaches a hall that is already deployed.
+  //
+  // ckBAT is here because a Brave creator is paid in BAT and should be able
+  // to spend it on a coworker without first selling it: minegold.brave
+  // bridges BAT -> ckBAT, the hall prices a job in ckBAT, and the operator
+  // who earns it can refine it into sGLDT without ever touching Ethereum.
+  //
+  // The ckUSDT row carried a principal that is not a canister at all
+  // (cngnf-gddge-...-3ae) from #427 until 2026-09-17, so every ckUSDT job was
+  // refused as an unknown ledger. The real ledger is cngnf-vqaaa-aaaar-qag4q-cai,
+  // which is what the shell's TOKENS table has always used.
   let KNOWN_LEDGERS : [Text] = [
     "ryjl3-tyaaa-aaaaa-aaaba-cai",     // ICP
-    "cngnf-gddge-nq2mj-vjyfl-v76et-6c2pt-xg3n3-jzihw-d3iyp-ughtf-3ae",  // ckUSDT
+    "cngnf-vqaaa-aaaar-qag4q-cai",     // ckUSDT   (6 decimals)
     "xevnm-gaaaa-aaaar-qafnq-cai",     // ckUSDC
     "mxzaz-hqaaa-aaaar-qaada-cai",     // ckBTC
-    "ilzky-ayaaa-aaaar-qahha-cai",     // ckUNI
+    "ilzky-ayaaa-aaaar-qahha-cai",     // ckUNI    (18 decimals)
+    "j7x7x-syaaa-aaaar-qcbea-cai",     // ckBAT    (18 decimals, 0.1 ckBAT fee)
     "i2s4q-syaaa-aaaan-qz4sq-cai",     // sGLDT
     "mwen2-oqaaa-aaaam-adaca-cai",     // $nanas
   ];

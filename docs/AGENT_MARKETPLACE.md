@@ -46,8 +46,25 @@ operator's wallet, or any other listing.
 ## 3. Money
 
 Real escrow, held per job, in any ICRC-1/ICRC-2 ledger on the allowlist
-(ICP, ckUSDT, ckUSDC, ckBTC, ckUNI, sGLDT, $nanas; the plan admin can add
-one without an upgrade).
+(ICP, ckUSDT, ckUSDC, ckBTC, ckUNI, **ckBAT**, sGLDT, $nanas; the plan admin
+can add one without an upgrade, which is the only way to reach a hall that
+is already deployed — `extraLedgers` is stable, so it survives upgrades).
+
+**ckBAT (2026-09-17).** A Brave creator is paid in BAT and should be able to
+spend it on a coworker without selling it first: minegold.brave bridges
+BAT → ckBAT, a listing is priced in ckBAT, and the operator who earns it can
+refine it into sGLDT rather than pay Ethereum gas to bridge back out. Its
+shape is unlike ICP's — 18 decimals, and a 0.1 ckBAT fee (1e17) that is
+thirteen orders of magnitude larger — so the replica run below is
+parameterised by ledger shape and the whole job is proven at both
+(`CAFRESOHQ_LEDGER_SHAPE=ckbat`).
+
+**The ckUSDT row was wrong from #427 until 2026-09-17.** It held
+`cngnf-gddge-…-3ae`, which is not a canister at all, so every ckUSDT job was
+refused as an unknown ledger; the same bad value sat in `cafresohq_state`'s
+payroll allowlist. The real ledger is `cngnf-vqaaa-aaaar-qag4q-cai`, which is
+what the shell's `TOKENS` table always used. Both are corrected in source;
+the deployed hall is corrected by `market_admin_add_ledger`.
 
 ```
 fund     boss ──(icrc2_transfer_from, price + fee)──▶ hall / jobSub(id)
@@ -295,4 +312,14 @@ Not verified, and named so nobody mistakes silence for coverage:
    funds (the PUBLISH_SITE pattern). Not built.
 5. Filing a delivery straight into the Library from Your jobs (today: copy).
 6. Disputes UI for the plan admin (today: the canister method only).
-7. $CF as the hall's default token once the SNS token exists (04 §3).
+7. BANK as the hall's default token, with a discount against paying in any
+   other ledger, and ckBAT as the native alternative. (Supersedes "$CF once
+   the SNS token exists" from `strategy/04 §3`: the separate CafresoHQ token
+   is retired in favour of one platform token — see the reserve/BANK notes.)
+8. Quote a listing once and settle in any allowlisted ledger at an oracle
+   rate, rather than a price per ledger. minegold's backend already runs a
+   ckBAT/USD feed with a freshness gate; reuse it rather than a second
+   oracle. This is what makes a BANK discount expressible.
+9. A hall fee, kept in the job's own ledger, so jobs paid in ckBAT leave
+   ckBAT in the treasury in proportion to real usage. Today the hall keeps
+   nothing: the coworker receives exactly the price.
