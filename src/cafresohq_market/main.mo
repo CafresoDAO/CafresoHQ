@@ -67,6 +67,7 @@ import Blob "mo:base/Blob";
 import Buffer "mo:base/Buffer";
 import Error "mo:base/Error";
 import ExperimentalCycles "mo:base/ExperimentalCycles";
+import Int "mo:base/Int";
 import Nat "mo:base/Nat";
 import Nat64 "mo:base/Nat64";
 import Nat8 "mo:base/Nat8";
@@ -581,6 +582,7 @@ actor CafresoHQMarket {
       claimedAt = 0; attempts = 0; deliveredAt = 0; summary = ""; body = ""; bodySha256 = "";
       rating = 0; note = ""; escrowed = 0; createdAt = t; updatedAt = t;
     });
+    rearmTend<system>();
     #ok(jobSeq)
   };
 
@@ -615,10 +617,11 @@ actor CafresoHQMarket {
     switch (outcome) {
       case (#Ok(block)) {
         storeJob(withUpdated({ cur with status = #funded; fee; escrowed = j.price + fee }));
+        rearmTend<system>();
         #ok({ block })
       };
       case (#Err(#Duplicate({ duplicate_of }))) {
-        if (cur.status == #posted) { storeJob(withUpdated({ cur with status = #funded; fee; escrowed = j.price + fee })) };
+        if (cur.status == #posted) { storeJob(withUpdated({ cur with status = #funded; fee; escrowed = j.price + fee })); rearmTend<system>() };
         #duplicate({ block = duplicate_of })
       };
       case (#Err(#TooOld)) {
@@ -912,6 +915,7 @@ actor CafresoHQMarket {
     if (not allowed) { return #err("this job is not for your listing") };
     let t = now();
     storeJob({ j with status = #claimed; worker = ?msg.caller; workerListing = ?l.id; claimedAt = t; updatedAt = t });
+    rearmTend<system>();
     storeListing({ l with lastSeen = t });
     #ok(id)
   };
@@ -934,6 +938,7 @@ actor CafresoHQMarket {
     if (bodySha256.size() != 64) { return #err("bodySha256 must be 64 hex characters") };
     let t = now();
     storeJob({ j with status = #delivered; summary; body; bodySha256; deliveredAt = t; updatedAt = t });
+    rearmTend<system>();
     switch (listingOfWorker(msg.caller)) { case (?l) { storeListing({ l with lastSeen = t }) }; case null {} };
     #ok(id)
   };
@@ -943,6 +948,7 @@ actor CafresoHQMarket {
     if (j.worker != ?msg.caller or j.status != #claimed) { return #err("not your claim") };
     if (reason.size() > NOTE_MAX) { return #err("reason too long") };
     releaseClaim(j, reason);
+    rearmTend<system>();
     #ok(id)
   };
 
@@ -1015,6 +1021,66 @@ actor CafresoHQMarket {
   public shared query (msg) func amPlanAdmin() : async Bool = async isPlanAdminP(msg.caller);
 
   // ── Timer: leases, ghosted deliveries, stale posts ────────────────────────
+  //
+  // Measured on the live hall, 2026-09-17: ONE timer tick costs ~28.6 M cycles
+  // on its 13-node subnet whether or not there is a job to look at — the
+  // message itself plus the collector's pass over the heap — so the old
+  // 60-second recurring timer burned ~41 B/day (4.2 T in a hundred days)
+  // while the hall stood empty; storage was 0.95 B/day beside it. So the
+  // hall no longer ticks on a clock. It sets ONE timer for the next moment
+  // a job can change on its own (a lease expiring, a delivery a week old, a
+  // funded post a month old, an unfunded post a week old, a failed job
+  // owed a refund), runs `tend` then, and aims the next timer from what is
+  // left. No such job, no timer at all. Every transition INTO one of those
+  // states calls rearmTend, and an upgrade re-aims from the jobs on record
+  // (timers never survive an upgrade).
+  var tendTimerId : ?Timer.TimerId = null;   // flexible on purpose: timers never survive an upgrade
+  let TEND_MIN_WAIT_NS : Int = 1_000_000_000;              // never a busy loop
+  let TEND_MAX_WAIT_NS : Int = 86_400_000_000_000;         // re-check daily regardless
+
+  /// When this job next needs the hall's attention, or null if it never will.
+  func dueAt(j : Job) : ?Int {
+    switch (j.status) {
+      case (#claimed) { ?(j.claimedAt + j.deadlineSecs * 1_000_000_000) };
+      case (#delivered) { ?(j.deliveredAt + AUTO_ACCEPT_NS) };
+      case (#failed) { if (j.escrowed > 0) { ?now() } else { null } };
+      case (#funded) { ?(j.updatedAt + UNCLAIMED_TTL_NS) };
+      case (#posted) { ?(j.createdAt + POSTED_TTL_NS) };
+      case _ { null };
+    };
+  };
+
+  func nextDue() : ?Int {
+    var best : ?Int = null;
+    for ((_, j) in natMap.entries(jobs)) {
+      switch (dueAt(j)) {
+        case (?d) { best := switch (best) { case (?b) { ?(if (d < b) { d } else { b }) }; case null { ?d } } };
+        case null {};
+      };
+    };
+    best;
+  };
+
+  /// Aim the one timer at the next due moment. A no-op while one is armed:
+  /// the tick re-aims after it runs, so an earlier due time set meanwhile
+  /// is picked up at most one tick late, never lost.
+  func rearmTend<system>() {
+    switch (tendTimerId) { case (?_) { return }; case null {} };
+    switch (nextDue()) {
+      case null {};
+      case (?due) {
+        let wait = due - now();
+        let ns : Nat = Int.abs(if (wait < TEND_MIN_WAIT_NS) { TEND_MIN_WAIT_NS } else if (wait > TEND_MAX_WAIT_NS) { TEND_MAX_WAIT_NS } else { wait });
+        tendTimerId := ?Timer.setTimer<system>(#nanoseconds ns, tendOnce);
+      };
+    };
+  };
+
+  func tendOnce() : async () {
+    tendTimerId := null;
+    try { await tend() } catch (_) {};
+    rearmTend<system>();
+  };
 
   func tend() : async () {
     let t = now();
@@ -1050,5 +1116,7 @@ actor CafresoHQMarket {
     };
   };
 
-  ignore Timer.recurringTimer<system>(#seconds 60, tend);   // MUST be the last declaration
+  system func postupgrade() { rearmTend<system>() };
+
+  rearmTend<system>();   // fresh install; MUST be the last declaration
 };

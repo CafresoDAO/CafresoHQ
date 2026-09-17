@@ -249,6 +249,42 @@ What to watch on-chain while you do it: `jobStatus(id)` (public),
 `marketStats()`, and `dfx canister status cafresohq_market --network ic`
 for cycles.
 
+### 7c. Cycles: the hall does not tick on a clock any more
+
+Measured on the live hall on 2026-09-17, by sampling `cycle_balance` every
+few seconds (the trace is reproducible with a query loop; queries are free):
+
+| charge | size | cadence | per day |
+|---|---|---|---|
+| one timer tick, empty job map | ~28.6 M cycles | every 60 s | ~41 B |
+| storage (3.8 MB) | ~0.24 M | every ~20 s | ~0.95 B |
+| one HTTP request answered through `http_request_update` | ~7.7 M | per request | — |
+
+The tick is the message itself plus the collector's pass over the heap; it
+costs the same with nothing to do. So the 60-second `recurringTimer` was
+~97% of the hall's burn — 4.2 T in about a hundred days — while the hall
+stood empty, and `cafresohq_state` died of the same thing in August (its
+wake timer every 120 s and payroll scan every 300 s came to ~29 B/day of its
+33 B/day).
+
+Since this change the hall sets ONE `setTimer` for the next moment a job can
+change on its own — a lease expiring, a delivery a week old, a funded post a
+month old, an unfunded post a week old, a failed job owed a refund — runs
+`tend` then, and re-aims from what is left. No such job, no timer. Every
+transition into one of those states re-arms it; an upgrade re-aims from the
+jobs on record. Pinned by
+`scripts/test_the_hall_ticks_only_while_a_job_can_change_on_its_own.py`.
+Expected idle burn after the upgrade: ~1 B/day (storage), i.e. the 4.2 T
+lasts years instead of a season.
+
+The same two changes are owed to `cafresohq_state` (its `main.mo` is edited
+by hand, not by the office): arm the wake timer only while wake is enabled,
+arm the payroll scan only while a salary or a worker payout is pending (or
+scan hourly at most), and answer public GETs (`/operator/config.json`,
+`/health`, 404s) from the query `http_request` instead of upgrading every
+request to a paid update — machine clients then read via
+`…raw.icp0.io`, which skips certification, or via an agent query.
+
 ## 8. What was verified, and what was not
 
 Verified, all repeatable from `scripts/run_tests.py`:

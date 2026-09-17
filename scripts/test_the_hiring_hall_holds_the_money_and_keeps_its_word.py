@@ -23,8 +23,9 @@ What is pinned:
     the old record is a subtype of the new one, so a field may be REMOVED
     from these but never ADDED; anything new goes in a side table. If this
     check fails on an added field, that is the check working;
-  * the ICP ledger is in the allowlist, the body cap is 64 KiB, the timer is
-    the last declaration, and dfx.json declares the canister.
+  * the ICP ledger is in the allowlist, the body cap is 64 KiB, arming the
+    timer is the last declaration (and there is no fixed-clock timer), and
+    dfx.json declares the canister.
 
 Run: python3 scripts/test_the_hiring_hall_holds_the_money_and_keeps_its_word.py
 """
@@ -196,7 +197,12 @@ def main():
     check('the deliverable body is capped at 64 KiB', 'let BODY_MAX : Nat = 65_536;' in src)
     check('a job needs at least three snags to fail', 'let MAX_ATTEMPTS : Nat = 3;' in src)
     tail = src.rstrip().rsplit('\n', 3)[-3:]
-    check('the timer is the last declaration in the actor', any('Timer.recurringTimer<system>' in l for l in tail), tail)
+    # Since 2026-09-17 the hall aims one setTimer at the next due moment instead
+    # of ticking every minute (a tick costs ~28.6 M cycles with nothing to do);
+    # the fresh-install arming is still the last declaration, because it
+    # reaches every function above it.
+    check('arming the timer is the last declaration in the actor', any('rearmTend<system>();' in l for l in tail), tail)
+    check('the hall never ticks on a fixed clock', 'recurringTimer' not in src)
     dfx = json.loads((ROOT / 'dfx.json').read_text(encoding='utf-8'))
     check('dfx.json declares cafresohq_market from src/cafresohq_market/main.mo',
           dfx.get('canisters', {}).get('cafresohq_market', {}).get('main') == 'src/cafresohq_market/main.mo')
