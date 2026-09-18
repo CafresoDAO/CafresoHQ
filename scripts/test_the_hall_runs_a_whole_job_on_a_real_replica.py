@@ -281,6 +281,24 @@ def run_flow(rep, M, L, tmp):
     boss.call(L, 'mint', [ACCOUNT, 'nat'], [{'owner': boss_id.principal, 'subaccount': None}, MINT], ret_types=['nat'])
     check('a signed update through ic_agent lands (mint → balance)', bal(boss_id.principal) == MINT, bal(boss_id.principal))
 
+    # ── the price floor: 100 fees, the point a 99% split stops being payable ─
+    # Below it resolveDispute answers "escrow short" and the middle ruling
+    # quietly stops existing. Unreachable on ICP (the floor is 0.01, what the
+    # alpha walk already spends); on ckBAT the floor is 10 and a person would
+    # type 0.15 without blinking.
+    floor = 100 * FEE
+    r = op.call(M, 'putListing', [PUT], [{'id': None, 'name': 'Underpriced', 'role': 'Copywriter', 'pitch': 'too cheap to rule on',
+                                          'brain': 'ollama:llama3.1', 'tags': ['copy'], 'ledger': Lp, 'price': floor - 1,
+                                          'payoutSub': None, 'active': True}], ret_types=[RESULT])[0]
+    check('an ask one base unit under a hundred fees is refused', 'err' in r and 'too small' in r.get('err', ''), r)
+    r = op.call(M, 'putListing', [PUT], [{'id': None, 'name': 'AtTheFloor', 'role': 'Copywriter', 'pitch': 'exactly a hundred fees',
+                                          'brain': 'ollama:llama3.1', 'tags': ['copy'], 'ledger': Lp, 'price': floor,
+                                          'payoutSub': None, 'active': True}], ret_types=[RESULT])[0]
+    check('an ask of exactly a hundred fees is accepted', 'ok' in r, r)
+    r = boss.call(M, 'postJob', [POST], [{'title': 'under the floor', 'brief': 'x', 'kind': 'copy', 'tags': ['copy'],
+                                          'ledger': Lp, 'price': floor - 1, 'deadlineSecs': 3600, 'listing': None}], ret_types=[RESULT])[0]
+    check('a job priced under the floor is refused too', 'err' in r and 'too small' in r.get('err', ''), r)
+
     # ── the operator lists a coworker; the coworker's own key gets linked ───
     r = op.call(M, 'putListing', [PUT], [{'id': None, 'name': 'Mira', 'role': 'Copywriter', 'pitch': 'Blog posts that read like a person wrote them.',
                                          'brain': 'ollama:llama3.1', 'tags': ['copy', 'blog'], 'ledger': Lp, 'price': PRICE,

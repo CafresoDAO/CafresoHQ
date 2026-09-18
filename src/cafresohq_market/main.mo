@@ -327,6 +327,46 @@ actor CafresoHQMarket {
 
   func ledgerOf(p : Principal) : Ledger = actor (Principal.toText(p)) : Ledger;
 
+  /// The floor a price has to clear, counted in the ledger's own fee.
+  ///
+  /// A dispute may be ruled anywhere from 1% to 99%. The escrow holds
+  /// price + fee, and paying the coworker `pct` while returning the rest to
+  /// the boss costs two moves, so a ruling is payable only while
+  ///
+  ///     price + fee  >=  price * pct/100  +  2 * fee
+  ///
+  /// At the worst legal case, a 99% ruling, that is exactly price >= 100*fee.
+  /// Below the floor `resolveDispute` answers "escrow short" and the split
+  /// ruling quietly stops existing — an admin is left holding only pay-all or
+  /// refund-all, on the very job where someone asked for a middle. Nothing
+  /// traps and no money is lost; the remedy just isn't there.
+  ///
+  /// This rule arrives with ckBAT rather than before it because on ICP it is
+  /// unreachable: 100 fees is 0.01 ICP, which is already what the alpha walk
+  /// spends. ckBAT's fee is thirteen orders of magnitude larger, so the floor
+  /// is 10 ckBAT and "0.15 ckBAT" — a price a person would type without
+  /// blinking — lands under it.
+  let PRICE_FLOOR_FEES : Nat = 100;
+
+  /// The ledger's own fee, or null if it would not say. Callers fail closed:
+  /// a money rule derived from a number we could not read is not a rule.
+  func ledgerFee(p : Principal) : async ?Nat {
+    try { ?(await ledgerOf(p).icrc1_fee()) } catch (_) { null };
+  };
+
+  func priceFloorRefusal(ledger : Principal, price : Nat) : async ?Text {
+    switch (await ledgerFee(ledger)) {
+      case (?f) {
+        let floor = PRICE_FLOOR_FEES * f;
+        if (price < floor) {
+          ?("that price is too small for this token — at least " # Nat.toText(floor)
+            # " (a hundred of its " # Nat.toText(f) # " transfer fee), or a disputed job cannot be split");
+        } else { null };
+      };
+      case null { ?"that ledger would not say what its transfer fee is — try again in a moment" };
+    };
+  };
+
   /// The escrow subaccount for a job: "mkt" then zeros then the id, 32 bytes.
   func jobSub(id : Nat) : Blob {
     let bytes = Array.tabulate<Nat8>(32, func (i : Nat) : Nat8 {
@@ -552,11 +592,15 @@ actor CafresoHQMarket {
   public shared (msg) func postJob(req : PostJobReq) : async Result {
     if (Principal.isAnonymous(msg.caller)) { throw Error.reject("sign in") };
     if (paused) { return #err("the hiring hall is paused right now") };
+    if (not isKnownLedger(req.ledger)) { return #err("unknown ledger") };
+    if (req.price == 0) { return #err("price must be positive") };
+    // The only await in this function, and it happens before anything is
+    // read that the write below depends on: every check that could race a
+    // second caller stays on the near side of the state change.
+    switch (await priceFloorRefusal(req.ledger, req.price)) { case (?e) { return #err(e) }; case null {} };
     if (req.title.size() == 0 or req.title.size() > TITLE_MAX) { return #err("title must be 1–" # Nat.toText(TITLE_MAX) # " characters") };
     if (req.brief.size() == 0 or req.brief.size() > BRIEF_MAX) { return #err("brief must be 1–" # Nat.toText(BRIEF_MAX) # " characters") };
     if (req.kind.size() == 0 or req.kind.size() > TAG_MAX) { return #err("kind is required") };
-    if (not isKnownLedger(req.ledger)) { return #err("unknown ledger") };
-    if (req.price == 0) { return #err("price must be positive") };
     if (req.deadlineSecs < DEADLINE_MIN_SECS or req.deadlineSecs > DEADLINE_MAX_SECS) { return #err("deadline must be between 5 minutes and 7 days") };
     if (openJobsOf(msg.caller) >= JOBS_OPEN_PER_BOSS) { return #err("you already have " # Nat.toText(JOBS_OPEN_PER_BOSS) # " open jobs") };
     let tags = switch (cleanTags(req.tags)) { case (?t) { t }; case null { return #err("tags: at most 12, each 1–32 characters") } };
@@ -759,6 +803,9 @@ actor CafresoHQMarket {
     if (req.pitch.size() > PITCH_MAX) { return #err("pitch is " # Nat.toText(PITCH_MAX) # " characters at most") };
     if (not isKnownLedger(req.ledger)) { return #err("unknown ledger") };
     if (req.price == 0) { return #err("asking price must be positive") };
+    // An ask under the floor would take jobs postJob then refuses, so the
+    // listing would look open and be unhireable. Refuse it here instead.
+    switch (await priceFloorRefusal(req.ledger, req.price)) { case (?e) { return #err(e) }; case null {} };
     switch (req.payoutSub) { case (?s) { if (s.size() != 32) { return #err("payout subaccount must be 32 bytes") } }; case null {} };
     let tags = switch (cleanTags(req.tags)) { case (?t) { t }; case null { return #err("tags: at most 12, each 1–32 characters") } };
     let t = now();

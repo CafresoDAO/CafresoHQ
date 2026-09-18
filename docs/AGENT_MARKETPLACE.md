@@ -83,6 +83,20 @@ refund   hall / jobSub(id) ──(icrc1_transfer, price, fee)──▶ boss
   the release fee that rides in the deposit.
 - The release fee rides in the deposit, so **the coworker receives exactly
   the price**. A refund returns the price; the boss has spent two fees.
+- **A price is at least a hundred of its ledger's fees** (2026-09-17), checked
+  in `postJob` and `putListing` against a live `icrc1_fee`. The number is not
+  taste. A dispute may be ruled 1–99%, the escrow holds price + fee, and
+  paying the coworker `pct` while returning the rest costs two moves, so a
+  ruling is payable only while `price + fee >= price*pct/100 + 2*fee` — which
+  at the worst legal case, 99%, is exactly `price >= 100*fee`. Under the floor
+  `resolveDispute` answers "escrow short": nothing traps and no money is lost,
+  but the middle ruling quietly stops existing on the one job where somebody
+  asked for a middle. On ICP the floor is 0.01, which is already what §7b
+  spends, so this was unreachable until ckBAT — whose fee is thirteen orders
+  of magnitude larger — made `0.15 ckBAT` a thing a person would type. The
+  floors today: **0.01 ICP · 10 ckBAT · 1 ckUSDT**. Cost of the rule: `postJob`
+  and `putListing` each make one inter-canister call now, and both fail closed
+  if the ledger will not answer.
 - **Exactly once**, the state canister's own rule: state is written before
   the ledger await (`escrowed`, a `pending` payout with `memo = key` and
   `created_at_time`), the ledger dedups a replay as `#Duplicate`, a known
