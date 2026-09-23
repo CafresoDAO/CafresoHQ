@@ -2032,7 +2032,7 @@ function AgentCards({ agents, onHire, onClick, onDismiss }) {
   return (
     <div className="agents-bar">
       {agents.map(a => (
-        <div key={a.id} className={`agent-card ${a.elevated ? 'elevated' : ''}`} onClick={()=>onClick(a)}>
+        <div key={a.id} className={`agent-card ${a.elevated ? 'elevated' : ''} ${a.source === 'marketplace' ? 'is-marketplace' : ''}`} onClick={()=>onClick(a)}>
           <div className={`status-pill ${a.status}`}>{a.status.toUpperCase()}</div>
           {a.elevated && <div className="elevated-badge" title="Has file and shell access">🛡</div>}
           {a.source === 'marketplace' && (
@@ -2043,7 +2043,13 @@ function AgentCards({ agents, onHire, onClick, onDismiss }) {
             <Sprite data={a.color} scale={2} className="bob"/>
           </div>
           <div className="name">{a.name}</div>
-          <div className="role">{a.role}</div>
+          {a.source === 'marketplace' ? (
+            <div className="marketplace-hire-label" title={`Hired from Hiring hall · Spent: ${a.nanasSpent || 0} $nanas`}>
+              hired from Hiring hall
+            </div>
+          ) : (
+            <div className="role">{a.role}</div>
+          )}
           {(a.lastRun || a.nextRun) ? (
             <div className="meta">
               {a.lastRun && <span>last: {a.lastRun}</span>}

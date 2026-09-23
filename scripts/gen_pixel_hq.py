@@ -411,6 +411,7 @@ HUMANS = {
     'mint':      ('2c1a10', '120804', 'b6e0c8', '6fa890'),
     'blush':     ('6a3a28', '3a1c12', 'f3c1b2', 'b87866'),
     'lavender':  ('3a2c20', '1e140c', 'b6a8e0', '7d6bb0'),
+    'marketplace': ('1e1e1e', '000000', '39ff14', '28b30e'),
 }
 
 

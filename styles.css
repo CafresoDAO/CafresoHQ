@@ -11944,38 +11944,155 @@ body.night .px-bubble.quiet { opacity: 0.5; }
   white-space: nowrap;
 }
 
-/* Marketplace Worker UI */
+/* ─────────────────────────────────────────────────────────────────────────────
+   Marketplace Worker & Pixel-Art UI Polish
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* Illuminated Aura for Hired Marketplace Workers */
 .marketplace-illuminated {
-  filter: drop-shadow(0 0 8px rgba(57, 255, 20, 0.6));
-  animation: pulse-marketplace 2s infinite alternate;
+  filter: drop-shadow(0 0 6px rgba(57, 255, 20, 0.8)) drop-shadow(0 0 12px rgba(57, 255, 20, 0.4));
+  animation: pulse-marketplace 2s ease-in-out infinite alternate;
 }
 
 @keyframes pulse-marketplace {
-  from { filter: drop-shadow(0 0 4px rgba(57, 255, 20, 0.4)); }
-  to { filter: drop-shadow(0 0 10px rgba(57, 255, 20, 0.8)); }
+  0% { filter: drop-shadow(0 0 4px rgba(57, 255, 20, 0.5)); }
+  100% { filter: drop-shadow(0 0 10px rgba(57, 255, 20, 0.95)) drop-shadow(0 0 16px rgba(57, 255, 20, 0.45)); }
 }
 
+/* Crisp Retro Pixel Cancel Button */
 .agent-cancel-btn {
   position: absolute;
-  top: 4px;
-  left: 4px;
-  background: rgba(20, 20, 31, 0.8);
-  border: 1px solid rgba(255, 51, 102, 0.3);
-  color: #ff3366;
-  border-radius: 50%;
-  width: 18px;
-  height: 18px;
-  font-size: 10px;
+  top: -6px;
+  left: 6px;
+  background: #ff3366;
+  border: 2px solid var(--ink);
+  color: #fff;
+  border-radius: 0;
+  width: 16px;
+  height: 16px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   z-index: 10;
-  transition: all 0.15s ease;
+  box-shadow: 1px 1px 0 #000;
+  transition: transform 80ms, background 80ms, box-shadow 80ms;
 }
 
 .agent-cancel-btn:hover {
-  background: #ff3366;
-  color: #fff;
-  border-color: #ff3366;
+  background: #ff1144;
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 #000;
+}
+
+.agent-cancel-btn:active {
+  transform: translate(1px, 1px);
+  box-shadow: 0 0 0 #000;
+}
+
+/* Agent Card Marketplace Variant */
+.agent-card.is-marketplace {
+  border-color: #27ae60;
+  box-shadow: 2px 2px 0 #1b5e20, 0 0 12px rgba(57, 255, 20, 0.2);
+}
+
+.agent-card.is-marketplace:hover {
+  box-shadow: 3px 3px 0 #1b5e20, 0 0 16px rgba(57, 255, 20, 0.35);
+}
+
+.marketplace-hire-label {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  color: #39ff14;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 6px rgba(57, 255, 20, 0.6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Office Building Floor - Marketplace Room */
+.px-room.is-marketplace .px-plate {
+  background: #142a1b;
+  box-shadow: inset 0 1px 0 rgba(57, 255, 20, 0.3), inset 0 -2px 0 #39ff14;
+}
+
+.px-room.is-marketplace .px-int {
+  box-shadow: inset 0 0 20px rgba(57, 255, 20, 0.15);
+}
+
+.px-hall-badge {
+  margin-left: 6px;
+  flex: none;
+  color: #051608;
+  background: #39ff14;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 6px;
+  padding: 2px 4px;
+  border-radius: 2px;
+  letter-spacing: 0.04em;
+  box-shadow: 0 0 8px rgba(57, 255, 20, 0.7);
+  animation: px-hall-glow 2s infinite alternate;
+}
+
+@keyframes px-hall-glow {
+  from { box-shadow: 0 0 4px rgba(57, 255, 20, 0.4); }
+  to { box-shadow: 0 0 10px rgba(57, 255, 20, 0.85); }
+}
+
+/* Polished CRT Green Phosphor Scanlines for Desk Monitors */
+.px-screen {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 48%;
+  max-height: 46px;
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.3) 0px, rgba(0, 0, 0, 0.3) 1px, transparent 1px, transparent 2px),
+    linear-gradient(180deg, #0d1428 0%, #060a16 100%);
+  border: 2px solid var(--px-plate);
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.1), inset -1px -1px 0 rgba(0, 0, 0, 0.6), 2px 2px 0 rgba(26, 28, 44, 0.5);
+  color: #58ffaa;
+  text-shadow: 0 0 4px rgba(88, 255, 170, 0.55);
+  font-family: ui-monospace, monospace;
+  font-size: 8px;
+  line-height: 1.3;
+  padding: 4px 6px;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-all;
+  z-index: 5;
+  border-radius: 1px;
+}
+
+/* Warm Ambient Drop-Shadow Under Furniture */
+.px-deskset::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 84%;
+  height: 6px;
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: 50%;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* GBA Retro HUD Elevation Polish */
+.pxhq .px-hud {
+  position: absolute;
+  top: 10px;
+  z-index: 6;
+  background: rgba(14, 18, 42, 0.94);
+  border: 2px solid var(--px-plate);
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.2), inset -1px -1px 0 rgba(0, 0, 0, 0.5), 3px 3px 0 rgba(10, 12, 24, 0.6);
+  border-radius: 2px;
+  padding: 6px 9px;
+  backdrop-filter: blur(4px);
 }

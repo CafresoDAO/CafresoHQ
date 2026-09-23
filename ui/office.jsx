@@ -351,7 +351,7 @@ function pressable(onActivate, label) {
    sideB · stretch · stuck. Working = facing the monitor (back to camera);
    idle = turned toward you. A real state a newcomer reads untaught. */
 function PxChar({ color = 'cafresohq', pose = 'front', className = '', style = {}, title, phase = 0 }) {
-  const safe = ['cafresohq', 'rose', 'teal', 'sun', 'leaf', 'sky', 'mint', 'blush', 'lavender']
+  const safe = ['cafresohq', 'rose', 'teal', 'sun', 'leaf', 'sky', 'mint', 'blush', 'lavender', 'marketplace']
     .indexOf(color) !== -1 ? color : 'cafresohq';
   return (
     <div
@@ -439,8 +439,9 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
     jobId: j.id,
     token: j.token,
     price: j.price,
-    color: 'teal',
-    sprite: 'ceo',
+    color: 'marketplace',
+    sprite: 'marketplace',
+    source: 'marketplace',
     status: j.status === 'delivered' ? 'idle' : (j.status === 'claimed' ? 'busy' : 'idle'),
     task: j.title
   }));
@@ -1501,9 +1502,10 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
                   const pose = stretching[a.id] ? 'stretch'
                     : a.mood === 'stuck' ? 'stuck'
                     : busy ? 'back' : 'front';
+                  const isMkt = a.isMarket || a.source === 'marketplace' || a.color === 'marketplace';
                   return (
                     <div key={a.id}
-                         className={`px-room status-${a.status || 'idle'}${dropTarget === a.id ? ' drop-target' : ''}${a.elevated ? ' elevated' : ''}${liveTool ? ' tool-live' : ''}${away ? ' is-away' : ''}${movedIn === a.id ? ' just-leased' : ''}`}
+                         className={`px-room status-${a.status || 'idle'}${dropTarget === a.id ? ' drop-target' : ''}${a.elevated ? ' elevated' : ''}${liveTool ? ' tool-live' : ''}${away ? ' is-away' : ''}${movedIn === a.id ? ' just-leased' : ''}${isMkt ? ' is-marketplace' : ''}`}
                          onClick={() => onInspect(a)}
                          role="group"
                          aria-label={`${a.name}, ${a.role} — ${a.status || 'idle'}${a.task ? ', ' + a.task : ''}`}
@@ -1528,6 +1530,11 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
                             can't — a reduced-motion or mobile boss still
                             sees WHICH unit just became theirs. */}
                         {movedIn === a.id && <span className="px-leased">MOVED IN</span>}
+                        {isMkt && (
+                          <span className="px-hall-badge" title={`Hired from Hiring hall · Spent: ${a.price || a.nanasSpent || 0} ${a.token || '$nanas'}`}>
+                            HIRING HALL
+                          </span>
+                        )}
                         {subs.length > 0 && (
                           <span className="px-subct" title={`${subs.length} subordinate${subs.length === 1 ? '' : 's'}`}>
                             +{subs.length}
