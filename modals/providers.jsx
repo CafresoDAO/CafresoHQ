@@ -1150,14 +1150,32 @@ export function MediaTab() {
 export function BrowserKeysTab() {
   const [s, update] = useSettingsStore();
   const C = CafresoHQClient;
+  const [keys, setKeys] = useStateM({});
+
+  useEffectM(() => {
+    let mounted = true;
+    Promise.all([
+      C.getAgentKey('anthropic').catch(() => ''),
+      C.getAgentKey('google').catch(() => '')
+    ]).then(([a, g]) => {
+      if (mounted) setKeys({ anthropicKey: a, googleKey: g });
+    });
+    return () => { mounted = false; };
+  }, [C]);
+
+  const updateKey = (field, providerId, val) => {
+    setKeys(prev => ({ ...prev, [field]: val }));
+    C.setAgentKey(providerId, val).catch(() => {});
+  };
+
   const rows = [
     { id: 'anthropic', h: '🧠 ANTHROPIC (CLAUDE API)', ph: 'sk-ant-…',
-      keyField: 'anthropicKey', modelField: 'anthropicModel',
+      keyField: 'anthropicKey', modelField: 'anthropicModel', providerId: 'anthropic',
       models: C.ANTHROPIC_MODELS,
       where: 'console.anthropic.com/settings/keys',
       link: 'https://console.anthropic.com/settings/keys' },
     { id: 'google', h: '🧠 GOOGLE (GEMINI API)', ph: 'AIza…',
-      keyField: 'googleKey', modelField: 'googleModel',
+      keyField: 'googleKey', modelField: 'googleModel', providerId: 'google',
       models: C.GEMINI_MODELS,
       where: 'aistudio.google.com/apikey',
       link: 'https://aistudio.google.com/apikey' },
@@ -1169,9 +1187,9 @@ export function BrowserKeysTab() {
           <h4>{r.h}</h4>
           <div className="form-row" style={{ marginBottom: 8 }}>
             <label>API KEY</label>
-            <input type="password" placeholder={r.ph} value={s[r.keyField] || ''}
+            <input type="password" placeholder={r.ph} value={keys[r.keyField] || ''}
               {...NO_MANGLE_PROPS}
-              onChange={e => update({ [r.keyField]: e.target.value })} />
+              onChange={e => updateKey(r.keyField, r.providerId, e.target.value)} />
             {/* Where to get one, the same way SELF_HOST_PROVIDERS does it in
                 the CLOUD KEYS panel — a boss who has got this far because a
                 hire warning sent them here does not necessarily have a key
@@ -1211,6 +1229,22 @@ export function BraveTab() {
   const [s, update] = useSettingsStore();
   const [probing, setProbing] = useStateM(false);
   const [result, setResult] = useStateM(null);
+  const [keyHas, setKeyHas] = useStateM(() => CafresoHQClient.hasAgentKey('brave'));
+  
+  useEffectM(() => {
+    let live = true;
+    CafresoHQClient.getAgentKey('brave').then(v => { if (live) setKeyHas(!!v); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
+
+  const save = async (e) => {
+    const val = e.target.value.trim();
+    if (!val) return;
+    e.target.value = '';
+    await CafresoHQClient.setAgentKey('brave', val);
+    setKeyHas(true);
+  };
+  
   const test = async () => {
     setProbing(true); setResult(null);
     try { setResult(await CafresoHQClient.braveProbe()); }
@@ -1226,9 +1260,9 @@ export function BraveTab() {
       </div>
       <div className="form-row" style={{marginBottom:8}}>
         <label>API KEY</label>
-        <input type="password" placeholder="BSA-…"
+        <input type="password" placeholder={keyHas ? 'BSA-… (saved)' : 'BSA-…'}
           {...NO_MANGLE_PROPS}
-          value={s.braveKey} onChange={e=>update({braveKey: e.target.value})}/>
+          onBlur={save} />
         <span className="hint">stored in this browser's localStorage; sent to /brave/search on this proxy only</span>
       </div>
       <div className="row-knob">
@@ -1238,7 +1272,7 @@ export function BraveTab() {
             {probing ? 'probing…' : result ? (result.ok ? `✓ ${result.detail}` : `✕ ${result.detail}`) : 'verifies key works'}
           </div>
         </div>
-        <button className="px-btn secondary" onClick={test} disabled={probing || !s.braveKey}>
+        <button className="px-btn secondary" onClick={test} disabled={probing || !keyHas}>
           {probing ? '…' : 'TEST'}
         </button>
       </div>

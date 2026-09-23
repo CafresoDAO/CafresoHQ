@@ -26,7 +26,6 @@ const TOOLS_CATALOG = [
   { id: 'code',   label: 'Code Exec'  },
   { id: 'files',  label: 'File Access'},
   { id: 'email',  label: 'Email Send' },
-  { id: 'cal',    label: 'Calendar'   },
   { id: 'db',     label: 'Database'   },
   { id: 'slack',  label: 'Slack'      },
   { id: 'img',    label: 'Image Gen'  },
@@ -51,7 +50,21 @@ const MODELS = [
    first-launch onboarding tour (gated on an empty roster) from ever firing.
    The CEO's scripted welcome + the HireModal candidates deck do the
    introduction instead. */
-const INITIAL_AGENTS = [];
+const INITIAL_AGENTS = [
+  {
+    id: 'agent_guide_001',
+    name: 'HQ Guide',
+    role: 'Onboarding',
+    color: 'sun',
+    sprite: 'ceo',
+    tools: ['vault'],
+    model: 'cafresohq:sonnet',
+    temperature: 0.3,
+    systemPrompt: "You are the Cafreso HQ Onboarding Guide. Welcome the user, explain how to hire from the Hiring Hall, and answer any questions. Keep answers very short and encouraging.",
+    status: 'idle',
+    task: 'Waiting to start the tour'
+  }
+];
 
 /* OpenSwarm-style specialist roster.
    Seven specialists modeled on github.com/VRSEN/openswarm. CafresoHQ (CEO) is
@@ -2020,7 +2033,7 @@ const TOOL_REGISTRY = {
   search: {
     name: 'SEARCH',
     re: /\[\s*SEARCH\s*:\s*([^\]\n]+)\]/i,
-    requires: () => CafresoHQClient.getSettings().braveEnabled && CafresoHQClient.getSettings().braveKey,
+    requires: () => CafresoHQClient.getSettings().braveEnabled && CafresoHQClient.hasAgentKey('brave'),
     doc: '- [SEARCH: <query>] — Brave web search. Use for facts, news, current state. Stop after the line; results will be appended.',
     docShort: 'Web search via Brave. Use for facts, news, current state.',
     run: async (query, { signal }) => {
@@ -4638,7 +4651,11 @@ async function agentStream(agent, prompt, onToken, { chat, signal, onUsage, onTo
   const fileDelivery = canFile
     ? `
 
-FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, reports, analyses, summaries) MUST be saved to the Library using [VAULT_NEW: <path>]…[/VAULT_NEW] or [VAULT_APPEND: <path>]…[/VAULT_APPEND]. In your chat reply, return ONLY a 1-3 sentence summary plus the Library path. Do NOT paste the full content into chat unless the boss explicitly asks for the raw text. Suggested paths: Research/<topic>.md for findings, Drafts/<topic>.md for drafts, Reports/<topic>.md for analyses.`
+FILE-DELIVERY RULE: Any deliverable longer than ~200 words (notes, drafts, reports, analyses, summaries) MUST be saved to the Library using [VAULT_NEW: <path>]…[/VAULT_NEW] or [VAULT_APPEND: <path>]…[/VAULT_APPEND]. 
+
+CRITICAL - KNOWLEDGE GRAPH AUTO-LINKING: You are building an Obsidian-style semantic web. When writing your markdown notes, you MUST aggressively cross-link to other entities, people, companies, technologies, or topics using double brackets like [[Steve Jobs]] or [[Artificial Intelligence]]. Do this inline as you write the note. This allows the Library Graph to map the connections automatically!
+
+In your chat reply, return ONLY a 1-3 sentence summary plus the Library path. Do NOT paste the full content into chat unless the boss explicitly asks for the raw text. Suggested paths: Research/<topic>.md for findings, Drafts/<topic>.md for drafts, Reports/<topic>.md for analyses.`
     : `
 
 FILE-DELIVERY RULE: There is no Library wired up this session, so there is nowhere to file a long deliverable — keep it in your reply and keep it tight. Do not claim you saved anything to a path.`;

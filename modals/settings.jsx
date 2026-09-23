@@ -176,10 +176,7 @@ const SETTINGS_INDEX = [
    drivers/local_http.py's configure() actively REFUSES runtime settings
    ("this driver has no runtime settings", 400), and hire.jsx's own note
    says the key "lives server-side, so … keys never reach the browser".
-   A browser form would need a new secret-accepting endpoint — fighting a
-   deliberate security posture rather than filling a gap. So: show what is
-   connected, and for what isn't, name the exact environment variable and
-   where to get the key. The boss sets it where secrets belong.
+   We use the secure /hermes/provider endpoint to proxy these keys straight to the .env file without storing them in the browser. The boss can set it directly here via the /hermes/provider endpoint.
 
    Managed installs never see this tab (gated on health.managed in
    SettingsModal) — there the container already holds the keys. */
@@ -240,6 +237,12 @@ function ConnectionsPanel() {
      probe runs again and the row's own sentence flips to signed in. */
   const signinCtl = useAgentSignin({ onSignedIn: probeDrivers });
   const installCtl = useAgentInstall({ onInstalled: probeDrivers });
+  const saveProvider = async (id, val) => {
+    try {
+      await CafresoHQClient.hermesSetProvider(id, val, '');
+      probeDrivers();
+    } catch (e) {}
+  };
   const detectOf = (id) => {
     const d = (drivers || []).find(x => x.id === id);
     return (d && d.detect) || null;
@@ -362,17 +365,25 @@ function ConnectionsPanel() {
              about the CLAIM, not louder. */
           const state = !det ? (err ? 'unknown' : 'checking')
                              : (det.authenticated ? 'on' : 'off');
+          
           const body = {
             on:       'connected — hire them at the front desk',
             checking: 'checking…',
             unknown:  'couldn’t check just now — reopen this tab to retry',
-          }[state] || <>set <code>{p.env}</code> · key from {p.where}<br/>{p.note}</>;
+          }[state] || <>{p.note}</>;
           const badge = { on: '● connected', checking: '· checking', unknown: '· unknown' }[state] || '○ not set';
           return (
             <div className="row-knob" key={p.id} style={{ alignItems: 'flex-start' }}>
               <div>
                 <div className="lbl">{p.label}</div>
                 <div className="sub" style={{ maxWidth: 300 }}>{body}</div>
+                <div style={{ marginTop: 6 }}>
+                  <input type="password" 
+                    placeholder={state === 'on' ? '(saved — type to replace)' : `API Key from ${p.where}`}
+                    style={{ fontSize: 10, padding: '4px 6px', width: 220, fontFamily: 'monospace' }}
+                    onBlur={e => { if (e.target.value.trim() !== '') saveProvider(p.id, e.target.value.trim()); }} 
+                    autoComplete="off" spellCheck="false" autoCorrect="off" autoCapitalize="off" />
+                </div>
               </div>
               <span className="tiny" style={{ whiteSpace: 'nowrap' }}>{badge}</span>
             </div>
@@ -1725,6 +1736,16 @@ function AccountTab({ usageTokens = 0 }) {
             <div className="row-knob">
               <div><div className="lbl">AI brain</div><div className="sub">included — no keys to manage</div></div>
               <span className="tiny">{health && health.brain && health.brain.model ? health.brain.model : 'not set yet'}</span>
+            </div>
+            <div className="row-knob">
+              <div>
+                <div className="lbl">Compute Tier & Quota</div>
+                <div className="sub">{(health && health.fleet && health.fleet.plan === 'pro') ? 'PRO (Unlimited OCI compute)' : 'FREE TIER (Container idle-stopped)'}</div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                 <span className="tiny">{(health && health.fleet && health.fleet.plan === 'pro') ? '∞' : `${Math.max(0, 100 - (health?.fleet?.usage || 0))}% remaining`}</span>
+                 {(!health || !health.fleet || health.fleet.plan !== 'pro') && <button className="px-btn ghost" style={{fontSize:9, padding:'4px 6px'}} onClick={() => window.alert('Top up via Internet Identity / ICRC-2 wallet integration.')}>TOP-UP CYCLES</button>}
+              </div>
             </div>
           </>
         ) : (

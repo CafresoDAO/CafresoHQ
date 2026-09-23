@@ -192,6 +192,7 @@ function EmbeddedTerminal({ project, cli, sessionId, visible, authMethod }) {
         // an unrelated provider's key is still fine to pass through.
         const _auth = authRef.current ||
           ((cli === 'claude' || cli === 'gemini') ? 'subscription' : 'apikey');
+
         const _sub = _auth === 'subscription';
         let ak = '', ok = '', gk = '';
         if (oc?.getAgentKey) {
@@ -199,6 +200,13 @@ function EmbeddedTerminal({ project, cli, sessionId, visible, authMethod }) {
           ok = await oc.getAgentKey('openai').catch(() => '');
           if (!(_sub && cli === 'gemini')) gk = await oc.getAgentKey('google').catch(() => '');   // Gemini CLI
         }
+        
+        let authMsg = _sub ? "OAuth Subscription" : "Local Environment";
+        if (cli === 'claude' && ak) authMsg = "Injected Anthropic Vault Key";
+        if (cli === 'gemini' && gk) authMsg = "Injected Google Vault Key";
+        if (cli === 'codex' && ok) authMsg = "Injected OpenAI Vault Key";
+        term.writeln(`\r\n\x1b[32m[Auth: ${authMsg}]\x1b[0m\r\n`);
+
         ws.send(JSON.stringify({
           type: 'init',
           auth_method: _auth,
@@ -346,10 +354,17 @@ function EmbeddedTerminal({ project, cli, sessionId, visible, authMethod }) {
           </span>
         )}
       </div>
-      <div ref={containerRef} style={{
+      <div ref={containerRef} className="terminal-container" style={{
         flex: 1, minHeight: 0, width: '100%',
         overflow: 'hidden', padding: '4px 0 0 6px', boxSizing: 'border-box',
       }} />
+      <div className="mobile-term-bar">
+        <button onClick={() => wsRef.current?.send('\x1b')}>ESC</button>
+        <button onClick={() => wsRef.current?.send('\x09')}>TAB</button>
+        <button onClick={() => wsRef.current?.send('\x03')}>CTRL+C</button>
+        <button onClick={() => wsRef.current?.send('\x1b[A')}>▲</button>
+        <button onClick={() => wsRef.current?.send('\x1b[B')}>▼</button>
+      </div>
     </div>
   );
 }

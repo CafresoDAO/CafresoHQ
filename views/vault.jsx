@@ -1215,20 +1215,19 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     } catch (e) { snag(isFolder ? "Couldn't move that folder" : "Couldn't move that file", e); }
   };
 
-  const backlinksRow = backlinks.length ? (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
-                  padding: '4px 10px', fontSize: 10,
-                  borderBottom: '1px solid rgba(124,107,255,0.15)' }}>
-      <span style={{ opacity: 0.55 }}>⇐ linked from</span>
-      {backlinks.map(p => (
-        <span key={p} role="button" tabIndex={0}
-          onClick={() => openByPath(p)}
-          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openByPath(p); } }}
-          style={{ cursor: 'pointer', textDecoration: 'underline', opacity: 0.9 }}
-          title={p}>
-          {p.split('/').pop().replace(/\.(md|markdown)$/i, '')}
-        </span>
-      ))}
+  const backlinksPane = backlinks.length ? (
+    <div className="vault-backlinks-pane">
+      <div className="vault-backlinks-header">Linked Mentions</div>
+      <div className="vault-backlinks-list">
+        {backlinks.map(p => (
+          <div key={p} className="vault-backlink-item" role="button" tabIndex={0}
+               onClick={() => openByPath(p)}
+               onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openByPath(p); } }}>
+            <div className="vault-backlink-title">{p.split('/').pop().replace(/\.(md|markdown)$/i, '')}</div>
+            <div className="vault-backlink-path">{p}</div>
+          </div>
+        ))}
+      </div>
     </div>
   ) : null;
 
@@ -1805,7 +1804,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
                 )}
                 <button className="px-btn ghost" onClick={async () => { if (await closeNote()) setVaultTab('tree'); }} title="Close" style={{fontSize:11}}>{'✕'}</button>
               </div>
-              {backlinksRow}
+              {backlinksPane}
               {openNote.binary ? (
                 <FiledFilePanel path={openNote.path} size={openNote.size} />
               ) : preview ? (
@@ -1892,7 +1891,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
               style={{fontSize:11}}
             >✕</button>
           </div>
-          {backlinksRow}
+          {backlinksPane}
           {openNote.binary ? (
             <FiledFilePanel path={openNote.path} size={openNote.size} />
           ) : preview ? (

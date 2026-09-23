@@ -133,7 +133,6 @@ const VIEW_LABELS = {
   vault:     'LIBRARY',
   graph:     'LIBRARY GRAPH',
   team:      'STAFF ROSTER',
-  calendar:  'CALENDAR',
   projects:  'WORKSPACE',
   terminal:  'TERMINAL',
 };

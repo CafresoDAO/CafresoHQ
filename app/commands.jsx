@@ -36,7 +36,6 @@ function AppGlobalCommands({
     /* Switch view — one entry per nav item. */
     { id: 'nav.office',     label: 'Switch view: Office',    section: 'Navigation', icon: '🏢', run: () => navigate('visual') },
     { id: 'nav.tasks',      label: 'Switch view: Tasks',     section: 'Navigation', icon: '📋', run: () => navigate('tasks') },
-    { id: 'nav.calendar',   label: 'Switch view: Calendar',  section: 'Navigation', icon: '🗓', run: () => navigate('calendar') },
     { id: 'nav.memory',     label: 'Switch view: Memory',    section: 'Navigation', icon: '📁', run: () => navigate('memory') },
     { id: 'nav.vault',      label: 'Switch view: Library',     section: 'Navigation', icon: '📓', run: () => navigate('vault') },
     { id: 'nav.team',       label: 'Switch view: Team',      section: 'Navigation', icon: '👥', run: () => navigate('team') },
@@ -71,8 +70,7 @@ function AppGlobalCommands({
     },
     /* Open a specific app as a window (desktop mode). */
     ...(onOpenWindow ? [
-      ['tasks','Tasks'],['memory','Memory'],['team','Team'],['calendar','Calendar'],
-      /* 'Projects', matching nav.projects thirty lines above — this file
+      ['tasks','Tasks'],['memory','Memory'],['team','Team'],/* 'Projects', matching nav.projects thirty lines above — this file
          had both names for the same id. See NAV_ITEMS for why Projects
          won. */
       ['vault','Library'],['projects','Projects'],['terminal','Terminal'],['market','Network'],

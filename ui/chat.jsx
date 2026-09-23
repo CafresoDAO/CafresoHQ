@@ -2035,7 +2035,13 @@ function AgentCards({ agents, onHire, onClick, onDismiss }) {
         <div key={a.id} className={`agent-card ${a.elevated ? 'elevated' : ''}`} onClick={()=>onClick(a)}>
           <div className={`status-pill ${a.status}`}>{a.status.toUpperCase()}</div>
           {a.elevated && <div className="elevated-badge" title="Has file and shell access">🛡</div>}
-          <div className="sprite-box"><Sprite data={a.color} scale={2} className="bob"/></div>
+          {a.source === 'marketplace' && (
+            <button className="agent-cancel-btn" title="Cancel Worker" onClick={(e) => { e.stopPropagation(); onDismiss && onDismiss(a.id); }}>✕</button>
+          )}
+          <div className={`sprite-box ${a.source === 'marketplace' ? 'marketplace-illuminated' : ''}`}
+               title={a.source === 'marketplace' ? `Hired from Hiring hall (Spent: ${a.nanasSpent || 0} $nanas)` : ''}>
+            <Sprite data={a.color} scale={2} className="bob"/>
+          </div>
           <div className="name">{a.name}</div>
           <div className="role">{a.role}</div>
           {(a.lastRun || a.nextRun) ? (

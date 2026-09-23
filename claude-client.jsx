@@ -1883,10 +1883,11 @@ async function braveSearch(query, { count = 6, signal } = {}) {
      stale most quietly of all, because the panel it meant was mounted
      nowhere, so nobody who followed the instruction ever got far enough to
      report that it dead-ended. §5, pointing the boss at the wrong thing. */
-  if (!s.braveKey) throw new Error('No web-search key yet — open Settings → Connections');
+  const braveKey = await getAgentKey('brave');
+  if (!braveKey) throw new Error('No web-search key yet — open Settings → Connections');
   const params = new URLSearchParams({ q: query, count: String(count), safesearch: 'moderate' });
   const r = await fetch(_API_BASE + '/brave/search?' + params.toString(), {
-    headers: { 'X-Brave-Key': s.braveKey },
+    headers: { 'X-Brave-Key': braveKey },
     signal,
   });
   if (!r.ok) {
@@ -1903,10 +1904,13 @@ async function braveSearch(query, { count = 6, signal } = {}) {
 }
 
 async function braveProbe() {
+  const braveKey = await getAgentKey('brave');
+  if (!braveKey) return { ok: false, detail: 'no key saved' };
   try {
-    const results = await braveSearch('hello world', { count: 1 });
-    return { ok: true, detail: results.length ? `key works · ${results[0].title.slice(0,40)}` : 'key works' };
-  } catch (e) { return { ok: false, detail: e.message }; }
+    const r = await fetch(_API_BASE + '/brave/search?q=test', { headers: { 'X-Brave-Key': braveKey } });
+    if (r.ok) return { ok: true, detail: 'key works' };
+    return { ok: false, detail: 'server ' + r.status + ': ' + (await r.text().catch(()=>'')) };
+  } catch (e) { return { ok: false, detail: 'offline — ' + e.message }; }
 }
 
 /* ---- Markdown Vault (local filesystem, optional Obsidian REST plugin) ---- */
@@ -2175,7 +2179,19 @@ async function getAgentKey(provider) {
     return _keychainKeys[provider] || '';
   }
   const store = _vaultLoad();
-  return store[provider] ? _vaultDecrypt(store[provider]) : '';
+  const keychainVal = store[provider] ? _vaultDecrypt(store[provider]) : '';
+  if (keychainVal) return keychainVal;
+
+  // Fallback: Check if the key was saved in the unencrypted Settings store 
+  // (e.g., via BrowserKeysTab or MediaTab).
+  const s = getSettings();
+  if (provider === 'anthropic' && s.anthropicKey) return s.anthropicKey;
+  if (provider === 'google' && s.googleKey) return s.googleKey;
+  if (provider === 'openai' && s.openaiKey) return s.openaiKey;
+  if (provider === 'fal' && s.falKey) return s.falKey;
+  if (provider === 'brave' && s.braveKey) return s.braveKey;
+  
+  return '';
 }
 
 /** True if a key for this provider is stored (without decrypting). */

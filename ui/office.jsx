@@ -132,7 +132,7 @@ function Rail({ onOpenSettings, onShowCEO, active, setActive, collapsed = false,
    Chat is the primary mobile entry point; Office, Team, Library, Projects
    are secondary. Settings lives behind the ⚙ More button. */
 function MobileTabBar({ active, setActive, onOpenSettings, onOpenInbox, onOpenStandup, onOpenResearch, onOpenMeeting, onOpenWorkflow, onOpenMemory, onToggleNight, night, inboxCount, missionCount, meetingCount }) {
-  const ALL_VIEWS = ['chat','visual','tasks','calendar','memory','vault','team','projects'];
+  const ALL_VIEWS = ['chat','visual','tasks','memory','vault','team','projects'];
   const TAB_BOOKMARKS = [
     ['chat',     '💬', 'Chat'],
     ['visual',   '🏢', 'Office'],
@@ -401,6 +401,52 @@ function freshCacheEntries(bucket) {
 
 function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, onAgentClick, onCoffee, onInspect, stickies, corkPins = [], onAddSticky, onRemoveSticky, onUnpin, onSitWithCEO, onOpenMemory, onOpenMeeting, onTaskDropOnAgent, tasks = [], onAssignTask, onGoToTasks, onOpenArtifact, maxSlots = 5, ceoBusy = false, attentionCount = 0, onOpenAttention, approvals = [], nightShiftBoard = [], onOpenMissions, meetingActive = false, meetingIds = [], experience = [] }) {
 
+  const [marketJobs, setMarketJobs] = useState([]);
+  useEffect(() => {
+    let dead = false;
+    const mkt = CafresoHQClient.market;
+    if (!mkt) return;
+    const poll = async () => {
+      try {
+        const jobs = await mkt().myJobs();
+        if (!dead && jobs) {
+          const active = jobs.filter(j => j.status === 'funded' || j.status === 'claimed' || j.status === 'delivered');
+          const names = {};
+          for (const j of active) {
+            const listId = j.workerListing || j.listing;
+            if (listId && !names[listId]) {
+              try {
+                const card = await mkt().listing(listId);
+                names[listId] = card && card.listing ? card.listing.name : 'Network Worker';
+              } catch (e) {}
+            }
+            j.workerName = names[listId] || 'Network Worker';
+          }
+          setMarketJobs(active);
+        }
+      } catch (e) {}
+    };
+    poll();
+    const iv = setInterval(poll, 6000);
+    return () => { dead = true; clearInterval(iv); };
+  }, []);
+
+  const marketAgents = marketJobs.map(j => ({
+    id: `market_${j.id}`,
+    name: j.workerName,
+    role: 'Hired Coworker',
+    isMarket: true,
+    jobId: j.id,
+    token: j.token,
+    price: j.price,
+    color: 'teal',
+    sprite: 'ceo',
+    status: j.status === 'delivered' ? 'idle' : (j.status === 'claimed' ? 'busy' : 'idle'),
+    task: j.title
+  }));
+
+  const allAgents = [...agents, ...marketAgents];
+
   /* Hierarchy: assistants and transient sub-agents nest visually inside
      their senior's desk rather than getting their own. This keeps the
      office floor uncluttered and shows org structure at a glance. We
@@ -409,8 +455,8 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
      to boss — reportsTo cleared). Transient sub-agents are nested under
      their parentAgentId. Anything we couldn't nest stays visible. */
   const isNested = (a) => !!(a.reportsTo || a.parentAgentId);
-  const seniorAgents = agents.filter(a => !isNested(a));
-  const subordinatesOf = (seniorId) => agents.filter(a =>
+  const seniorAgents = allAgents.filter(a => !isNested(a));
+  const subordinatesOf = (seniorId) => allAgents.filter(a =>
     a.reportsTo === seniorId || a.parentAgentId === seniorId);
   const emptySlots = Math.max(0, maxSlots - seniorAgents.length);
   /* The tower is two units per storey. Vacant units belong in that SAME
@@ -1508,7 +1554,9 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
                               </div>
                             : (a.task && !propVisit ? <div className={`px-bubble${(a.status || 'idle') === 'idle' ? ' quiet' : ''}`}>{a.task}</div> : null)}
                           {!away && !propVisit && (
-                            <div className="px-charwrap">
+                            <div className="px-charwrap" 
+                                 title={a.isMarket ? `Hired from Hiring Hall\nCost: ${a.price} ${a.token || ''}` : a.name}
+                                 style={a.isMarket ? { filter: 'drop-shadow(0 0 4px #00ff00)' } : {}}>
                               <PxChar color={a.color} pose={pose}
                                       className={pose === 'front' ? 'idle-anim' : pose === 'stretch' ? 'pop' : ''}
                                       phase={i * 0.83} title={a.name} />
@@ -1516,11 +1564,26 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
                             </div>
                           )}
                           <Px n="desk_agent" className="px-desk" />
-                          {(screen || liveTool || a.status === 'busy') && !away && <span className={`px-glow${(screen || liveTool) ? '' : ' thinking'}`} aria-hidden="true" />}
-                          <Px n="mug" className={'px-mug clickable' + (coffeeSteam[a.id] ? ' is-fresh' : '')}
-                              title={`Send ${a.name} for coffee — stops anything running and clears their desk`}
-                              onClick={(e)=>{e.stopPropagation(); onCoffee(a);}}
-                              {...pressable(()=>onCoffee(a), `Send ${a.name} for coffee — stops anything running and clears their desk`)} />
+                          {(screen || liveTool || a.status === 'busy') && !away && <span className={`px-glow${(screen || liveTool) ? '' : ' thinking'} ${a.isMarket ? 'market-glow' : ''}`} aria-hidden="true" />}
+                          {a.isMarket ? (
+                            <div className="px-market-cancel" 
+                                 title="Cancel this worker and refund escrow"
+                                 onClick={(e)=>{
+                                   e.stopPropagation();
+                                   if(window.confirm('Cancel this worker and refund escrow?')) {
+                                     const m = CafresoHQClient.market;
+                                     if (m) m().cancel(a.jobId, 'cancelled from floor');
+                                   }
+                                 }}
+                                 style={{ position: 'absolute', top: -10, right: -10, color: '#ff4444', fontWeight: 'bold', cursor: 'pointer', background: '#222', borderRadius: '50%', width: 16, height: 16, textAlign: 'center', lineHeight: '14px', fontSize: 12, border: '1px solid #ff4444', zIndex: 10 }}>
+                              ✕
+                            </div>
+                          ) : (
+                            <Px n="mug" className={'px-mug clickable' + (coffeeSteam[a.id] ? ' is-fresh' : '')}
+                                title={`Send ${a.name} for coffee — stops anything running and clears their desk`}
+                                onClick={(e)=>{e.stopPropagation(); onCoffee(a);}}
+                                {...pressable(()=>onCoffee(a), `Send ${a.name} for coffee — stops anything running and clears their desk`)} />
+                          )}
                           {coffeeSteam[a.id] ? <span className="px-steam" aria-hidden="true" /> : null}
                           {/* The pile grows with the real filed-report count
                               (capped at 5 sheets so a busy desk stays legible)

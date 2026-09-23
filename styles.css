@@ -178,7 +178,7 @@ body {
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: clamp(14px, 3.8vw, 15px);
   line-height: 1.45;
-  min-height: 100vh;
+  min-height: 100dvh;
   overflow: auto;
   background-image:
     radial-gradient(circle at 20% 10%, rgba(255,240,200,0.7), transparent 40%),
@@ -825,7 +825,7 @@ body.night .oc-palette-backdrop { background: rgba(0, 0, 0, 0.55); }
   top: 80px; left: 50%;
   transform: translateX(-50%);
   width: min(580px, calc(100vw - var(--sp-6) * 2));
-  max-height: calc(100vh - 160px);
+  max-height: calc(100dvh - 160px);
   z-index: calc(var(--z-modal) + 1);
   background: var(--paper);
   border: 2px solid var(--ink);
@@ -1428,7 +1428,7 @@ body.theme-wallstreet.night {
   0%   { transform: translateY(-10px) rotate(0deg); opacity: 0; }
   10%  { opacity: 0.7; }
   90%  { opacity: 0.5; }
-  100% { transform: translateY(calc(100vh)) rotate(360deg); opacity: 0; }
+  100% { transform: translateY(calc(100dvh)) rotate(360deg); opacity: 0; }
 }
 body.theme-wallstreet .office::before {
   content: '$  $  $  $  $  $  $  $  $  $  $  $  $  $  $  $  $  $  $  $';
@@ -1759,7 +1759,7 @@ body.theme-coffeeshop .desk::after {
 .app {
   display: grid;
   grid-template-columns: 232px minmax(0, 1fr);
-  /* `height: 100vh` sets the BOX, not the row. With no grid-template-rows the
+  /* `height: 100dvh` sets the BOX, not the row. With no grid-template-rows the
      shell had one implicit `auto` track, and an auto track grows to its
      content's max-content height whatever the box says — so the whole shell
      grew past the window and `overflow: visible` spilled the excess off the
@@ -1780,7 +1780,7 @@ body.theme-coffeeshop .desk::after {
      `52px minmax(0,1fr) auto` with `min-height: 0`, and the rail's nav scrolls
      (see `.rail nav` below). */
   grid-template-rows: minmax(0, 1fr);
-  height: 100vh;
+  height: 100dvh;
   width: 100vw;
   min-width: 0;
 }
@@ -5557,7 +5557,7 @@ body.night .toast { background: #3a3050; color: #f3e8ff; border-color: #7a6d92; 
   position: fixed;
   top: 80px; right: 20px;
   width: 340px;
-  max-height: calc(100vh - 100px);
+  max-height: calc(100dvh - 100px);
   display: flex;
   flex-direction: column;
   background: var(--paper);
@@ -5633,7 +5633,7 @@ body.night .toast { background: #3a3050; color: #f3e8ff; border-color: #7a6d92; 
     top: 64px;
     left: 12px; right: 12px;
     width: auto;
-    max-height: calc(100vh - 64px - 82px - env(safe-area-inset-bottom));
+    max-height: calc(100dvh - 64px - 82px - env(safe-area-inset-bottom));
   }
 }
 
@@ -5825,7 +5825,7 @@ body.night .toast { background: #3a3050; color: #f3e8ff; border-color: #7a6d92; 
 
 /* Mobile: stack action grid 2-up, slightly smaller room */
 @media (max-width: 768px) {
-  .ceo-panel { width: 100%; max-height: 100vh; border-radius: 16px 16px 0 0; }
+  .ceo-panel { width: 100%; max-height: 100dvh; border-radius: 16px 16px 0 0; }
   .ceo-panel-backdrop { padding: 0; align-items: flex-end; }
   .ceo-panel-actions { grid-template-columns: repeat(3, 1fr); }
   .ceo-panel-room { height: 200px; }
@@ -6240,7 +6240,7 @@ body.night .team-ceo-arrow { color: var(--brand-coffee); }
 /* ==============================
    Projects tab
    ============================== */
-.view-projects { display: flex; flex-direction: column; height: calc(100vh - 110px); min-height: 0; }
+.view-projects { display: flex; flex-direction: column; height: calc(100dvh - 110px); min-height: 0; }
 .projects-layout { display: grid; grid-template-columns: 240px 1fr; flex: 1; min-height: 0; overflow: hidden; }
 .projects-list-pane {
   border-right: 2px solid var(--ink); background: var(--paper-2);
@@ -6917,9 +6917,9 @@ body.night .delivery-path { background: #241d33; color: #e8dcff; }
    so the (now removed) right column doesn't reserve empty space. */
 .content.full-width { grid-template-columns: 1fr; padding: 0; gap: 0; overflow: hidden; }
 .content.full-width .view-area { width: 100%; min-width: 0; }
-.content.full-width .view-vault.unified { height: calc(100vh - 110px); }
+.content.full-width .view-vault.unified { height: calc(100dvh - 110px); }
 
-.view-vault.unified { display: flex; flex-direction: column; min-height: 0; height: calc(100vh - 130px); }
+.view-vault.unified { display: flex; flex-direction: column; min-height: 0; height: calc(100dvh - 130px); }
 .vault-layout-3col {
   display: grid;
   /* grid-template-columns is set inline by VaultView based on what panes are open */
@@ -8345,7 +8345,7 @@ body.night .bn-item.active { background: rgba(0,212,181,0.15); color: var(--acce
   /* Projects view: flatten the 3-column layout into a scrollable stack.
      flex: 1 fills the view-area flex container; the padding-bottom above
      provides clearance for the tab bar without dead space.
-     height: auto overrides the desktop calc(100vh-110px).
+     height: auto overrides the desktop calc(100dvh-110px).
      background fills the empty space so the dark app bg doesn't show through. */
   .view-projects { flex: 1; height: auto !important; overflow: auto; background: var(--paper); }
   /* The direct div children include both the section-title spacer and the
@@ -8446,7 +8446,7 @@ body.night .bn-item.active { background: rgba(0,212,181,0.15); color: var(--acce
      wider than the screen. */
   .gs-coach {
     bottom: calc(70px + 14px + env(safe-area-inset-bottom, 0px));
-    max-height: calc(100vh - 70px - 96px);
+    max-height: calc(100dvh - 70px - 96px);
     overflow-y: auto;
   }
 
@@ -11830,3 +11830,152 @@ body.night .px-bubble.quiet { opacity: 0.5; }
 /* #436 · the install control shares the face; the command it names is a
    whole line, not a code to copy by eye. */
 .agent-install code { letter-spacing: 0; font-size: 10px; overflow-wrap: anywhere; }
+
+/* Pillar 2: Agent Simulation Game Feel & Mobile Overhaul */
+:root {
+  --hq-touch-target: 44px;
+  --hq-sheet-radius: 20px;
+}
+
+@media (max-width: 768px) {
+  /* Enforce 44px touch targets on buttons, links, tabs */
+  button, a, .oc-tab, .px-btn, input, select {
+    min-height: var(--hq-touch-target);
+  }
+
+  /* Bottom sheet styling */
+  .modal, .cb-panel, .drawer {
+    border-radius: var(--hq-sheet-radius) var(--hq-sheet-radius) 0 0 !important;
+    margin-bottom: 0 !important;
+    transform: translateY(0);
+    transition: transform 0.3s cubic-bezier(0.1, 0.9, 0.2, 1);
+  }
+
+  /* Pinch-to-zoom is supported by omitting maximum-scale=1, ensure text is readable */
+  body {
+    touch-action: manipulation;
+  }
+}
+
+/* Mobile Terminal Toolbar */
+.mobile-term-bar {
+  display: none;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border-light);
+  padding: 4px;
+  gap: 4px;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+}
+.mobile-term-bar button {
+  flex: 1;
+  min-height: var(--hq-touch-target, 44px);
+  background: var(--bg-hover);
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+@media (max-width: 768px) {
+  .mobile-term-bar {
+    display: flex;
+  }
+  .terminal-container {
+    padding-bottom: 50px; /* Room for the toolbar */
+  }
+}
+
+/* Obsidian-like Backlinks Pane */
+.vault-backlinks-pane {
+  background: var(--bg-alt, rgba(20, 20, 31, 0.5));
+  border-bottom: 1px solid rgba(124, 107, 255, 0.15);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.vault-backlinks-header {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.6;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.vault-backlinks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vault-backlink-item {
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.vault-backlink-item:hover, .vault-backlink-item:focus {
+  background: rgba(124, 107, 255, 0.1);
+  outline: none;
+}
+
+.vault-backlink-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent-sun, #7c6bff);
+  margin-bottom: 2px;
+}
+
+.vault-backlink-path {
+  font-size: 10px;
+  opacity: 0.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Marketplace Worker UI */
+.marketplace-illuminated {
+  filter: drop-shadow(0 0 8px rgba(57, 255, 20, 0.6));
+  animation: pulse-marketplace 2s infinite alternate;
+}
+
+@keyframes pulse-marketplace {
+  from { filter: drop-shadow(0 0 4px rgba(57, 255, 20, 0.4)); }
+  to { filter: drop-shadow(0 0 10px rgba(57, 255, 20, 0.8)); }
+}
+
+.agent-cancel-btn {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  background: rgba(20, 20, 31, 0.8);
+  border: 1px solid rgba(255, 51, 102, 0.3);
+  color: #ff3366;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10;
+  transition: all 0.15s ease;
+}
+
+.agent-cancel-btn:hover {
+  background: #ff3366;
+  color: #fff;
+  border-color: #ff3366;
+}

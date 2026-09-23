@@ -2898,7 +2898,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         # which is what makes the browser refuse to hand over the response.
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
         self.send_header('Access-Control-Allow-Headers',
-                         'Content-Type, Authorization, X-User-Principal, X-API-Key, '
+                         'Content-Type, Authorization, X-User-Principal, X-Hq-Principal, X-API-Key, '
                          'anthropic-version, x-api-key, X-Vault-Format, X-Brave-Key')
         self.send_header('Access-Control-Max-Age', '86400')
         self.send_header('Vary', 'Origin')
@@ -2916,6 +2916,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         (for WebSocket handshakes). Public paths (static UI, /health, /idle) are
         exempt.
 
+        If the gateway (Caddy) has authenticated the user, it injects X-Hq-Principal
+        (or X-User-Principal). We trust this if present.
+        
         With no key configured the protected prefixes are restricted to LOOPBACK
         callers rather than opened to everyone. These routes are RCE- and
         write-equivalent (/tools/exec runs a shell, /terminal spawns a PTY), so
@@ -2926,6 +2929,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         path = self.path.split('?', 1)[0]
         if not path.startswith(_KEY_PROTECTED_PREFIXES):
             return True
+            
+        # Trust fleet gateway authentication
+        if self.headers.get('X-Hq-Principal') or self.headers.get('X-User-Principal'):
+            return True
+            
         if not CAFRESOHQ_API_KEY:
             try:
                 peer = (self.client_address[0] or '').strip()

@@ -747,7 +747,7 @@ function App() {
       if ((firstRunChatRef.current || []).length === 0) {
         setChat([{
           id: HQ.uid('m'), from: 'ceo', name: 'CafresoHQ',
-          text: "Welcome to your HQ — I'm CafresoHQ, your chief of staff. Right now it's just me and a floor of empty desks: nothing here is pre-staged, so everything you see happen from here on is real. Let me check what we've got to work with.",
+          text: "Welcome to your HQ — I'm CafresoHQ, your chief of staff. I've been assigned here to take care of any questions you might have, so I'll be queued up and ready for some time. Right now it's just me and a floor of empty desks: nothing here is pre-staged, so everything you see happen from here on is real. Let me check what we've got to work with.",
         }]);
         (async () => {
           let brain = null;

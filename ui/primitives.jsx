@@ -47,7 +47,6 @@ function Ico({ kind, size=16 }) {
 const NAV_ITEMS = [
   ['visual', 'Office'],
   ['tasks', 'Tasks'],
-  ['calendar', 'Calendar'],
   ['memory', 'Memory'],
   ['vault', 'Library'],
   ['team', 'Team'],

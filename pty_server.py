@@ -471,8 +471,10 @@ def _terminal_pty_ws(self):
                 _ok = (_init_msg.get('openai_key')    or '').strip()
                 _gk = (_init_msg.get('gemini_key')    or '').strip()
                 if _pty_auth == 'subscription':
-                    # Strip API key so CLI uses its own OAuth login
+                    # Strip API keys so CLIs use their own OAuth logins
                     agent_env.pop('ANTHROPIC_API_KEY', None)
+                    agent_env.pop('GEMINI_API_KEY', None)
+                    agent_env.pop('GOOGLE_API_KEY', None)
                 elif _ak and not agent_env.get('ANTHROPIC_API_KEY', '').strip():
                     agent_env['ANTHROPIC_API_KEY'] = _ak
                 if _ok and not agent_env.get('OPENAI_API_KEY', '').strip():
