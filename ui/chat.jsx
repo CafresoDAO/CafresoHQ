@@ -309,7 +309,7 @@ function ChatPanel({ agents, chat, setChat, projects = [], meetings = [], setMee
   const tabIdsKey = allTabs.map(t => t.id).join('|');
   useEffect(() => {
     if (!allTabs.some(t => t.id === activeThread)) setActiveThread('direct');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [activeThread, tabIdsKey]);
 
   /* Resolve participant agents for the active thread. Used both to fan out

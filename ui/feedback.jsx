@@ -664,7 +664,7 @@ function useCommands(commands, deps = []) {
     if (!ctx) return;
     ctx.register(slot, commands || []);
     return () => ctx.unregister(slot);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, deps);
 }
 

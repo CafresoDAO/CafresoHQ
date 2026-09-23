@@ -168,7 +168,7 @@ EXPOSE 8787
 
 # Liveness check — fleet-manager and OCI health monitor both hit this
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD curl -sf http://localhost:8787/health | python3 -c \
+    CMD curl -sf http://127.0.0.1:8787/health | python3 -c \
         "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('status')=='ok' else 1)"
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────

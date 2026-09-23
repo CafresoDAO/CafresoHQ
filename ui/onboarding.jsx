@@ -353,7 +353,7 @@ function OnboardingKeyStep() {
       C.probeManagedBrain().then(b => { if (!dead) setManagedBrain(b || false); }).catch(() => {});
     }
     return () => { dead = true; window.removeEventListener('cafresohq:managedBrain', onProbe); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
   const onTrial = (!!managedBrain || (!!(trial && trial.active))) && !existing;
 

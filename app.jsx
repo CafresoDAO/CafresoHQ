@@ -1277,7 +1277,7 @@ function App() {
     if (window.matchMedia('(max-width: 768px)').matches && activeView === 'visual') {
       setActiveView('chat');
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, []);
   /* Same live-ref + merge-on-fetch discipline as activity above: the async
      file read REPLACES receipts after mount, so the Gazette effect (which reads

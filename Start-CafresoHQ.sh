@@ -87,12 +87,15 @@ if command -v hermes >/dev/null 2>&1; then
     echo "[start] hermes gateway not responding — starting it…"
     [ -f docker/hermes-bootstrap.py ] && python3 docker/hermes-bootstrap.py || true
     nohup hermes gateway run >"${HERMES_HOME}/gateway.log" 2>&1 &
-    i=0
-    while [ "$i" -lt 30 ]; do
-      if _gateway_up; then echo "[start] hermes gateway is up on :${HERMES_API_PORT}"; break; fi
-      i=$((i + 1)); sleep 1
-    done
-    [ "$i" -ge 30 ] && echo "[start] WARN gateway not up after 30s — see ${HERMES_HOME}/gateway.log"
+    # Poll for the API server to bind in the background, so serve.py starts immediately
+    (
+      i=0
+      while [ "$i" -lt 30 ]; do
+        if _gateway_up; then echo "[start] hermes gateway is up on :${HERMES_API_PORT}"; exit 0; fi
+        i=$((i + 1)); sleep 1
+      done
+      echo "[start] WARN gateway not up after 30s — see ${HERMES_HOME}/gateway.log"
+    ) &
   fi
 else
   echo "[start] WARN hermes CLI not installed — /hermes will 502 until you install it (Settings → Agents)"

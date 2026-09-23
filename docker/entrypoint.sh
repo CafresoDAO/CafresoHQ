@@ -108,18 +108,21 @@ if command -v hermes >/dev/null 2>&1; then
     echo "[entrypoint] Starting hermes gateway (API server :${HERMES_API_PORT:-8642})…"
     mkdir -p /data
     nohup hermes gateway run >/data/hermes-gateway.log 2>&1 &
-    # Poll for the API server to bind (non-fatal; serve.py serves regardless).
-    i=0
-    while [ "$i" -lt 30 ]; do
-      if curl -sf -o /dev/null "http://127.0.0.1:${HERMES_API_PORT:-8642}/v1/models" \
-           -H "Authorization: Bearer ${API_SERVER_KEY}"; then
-        echo "[entrypoint] Hermes API server is up on :${HERMES_API_PORT:-8642}"
-        break
-      fi
-      i=$((i + 1))
-      sleep 1
-    done
-    [ "$i" -ge 30 ] && echo "[entrypoint] WARN Hermes API server not up after 30s — see /data/hermes-gateway.log"
+    # Poll for the API server to bind in the background so serve.py can start instantly.
+    # Blocking here for 30s (if hermes crashes or is slow) would fail OCI health probes and cause boot loops.
+    (
+      i=0
+      while [ "$i" -lt 30 ]; do
+        if curl -sf -o /dev/null "http://127.0.0.1:${HERMES_API_PORT:-8642}/v1/models" \
+             -H "Authorization: Bearer ${API_SERVER_KEY}"; then
+          echo "[entrypoint] Hermes API server is up on :${HERMES_API_PORT:-8642}"
+          exit 0
+        fi
+        i=$((i + 1))
+        sleep 1
+      done
+      echo "[entrypoint] WARN Hermes API server not up after 30s — see /data/hermes-gateway.log"
+    ) &
   fi
 else
   echo "[entrypoint] WARN hermes CLI not found in image — /hermes proxy will 502 until installed"

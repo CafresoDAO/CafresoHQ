@@ -45,7 +45,7 @@ import Array "mo:base/Array";
 import Timer "mo:base/Timer";
 import Sha256 "Sha256";
 
-actor CafresoHQState {
+persistent actor CafresoHQState {
 
   // ── Types ────────────────────────────────────────────────────────────────
   public type HqDoc = { body : Blob; sha256 : Blob; version : Nat; updatedAt : Int };
@@ -105,15 +105,15 @@ actor CafresoHQState {
   };
 
   // ── Limits / defaults ──────────────────────────────────────────────────────
-  let MAX_DOC_BYTES : Nat = 1_900_000;        // < 2 MiB ingress cap (Candid headroom)
-  let MAX_CHUNK_BYTES : Nat = 1_900_000;      // vault ciphertext slice cap
-  let DEFAULT_VAULT_QUOTA : Nat = 2 * 1024 * 1024 * 1024;  // 2 GiB
-  let DOC_QUOTA : Nat = 8 * 1024 * 1024;      // 8 MB of HQ docs/user (generous)
-  let PLAN_TTL_SLACK : Int = 0;
+  transient let MAX_DOC_BYTES : Nat = 1_900_000;        // < 2 MiB ingress cap (Candid headroom)
+  transient let MAX_CHUNK_BYTES : Nat = 1_900_000;      // vault ciphertext slice cap
+  transient let DEFAULT_VAULT_QUOTA : Nat = 2 * 1024 * 1024 * 1024;  // 2 GiB
+  transient let DOC_QUOTA : Nat = 8 * 1024 * 1024;      // 8 MB of HQ docs/user (generous)
+  transient let PLAN_TTL_SLACK : Int = 0;
 
   // ── Ordered-map operations (functional, stable-persistable) ───────────────
-  let pOps = OrderedMap.Make<Principal>(Principal.compare);
-  let tOps = OrderedMap.Make<Text>(Text.compare);
+  transient let pOps = OrderedMap.Make<Principal>(Principal.compare);
+  transient let tOps = OrderedMap.Make<Text>(Text.compare);
 
   type DocMap = OrderedMap.Map<Text, HqDoc>;
   type MetaMap = OrderedMap.Map<Text, VaultMeta>;
@@ -139,8 +139,8 @@ actor CafresoHQState {
   type SiteMap = OrderedMap.Map<Text, SiteFile>;
   stable var siteFiles : OrderedMap.Map<Principal, SiteMap> = pOps.empty<SiteMap>();
   stable var siteUsage : OrderedMap.Map<Principal, Nat> = pOps.empty<Nat>();
-  let MAX_SITE_FILE_BYTES : Nat = 2_000_000;             // ~2 MiB per file
-  let MAX_SITE_USER_BYTES : Nat = 200 * 1024 * 1024;     // 200 MiB of sites per user
+  transient let MAX_SITE_FILE_BYTES : Nat = 2_000_000;             // ~2 MiB per file
+  transient let MAX_SITE_USER_BYTES : Nat = 200 * 1024 * 1024;     // 200 MiB of sites per user
 
   // Plan-quota HMAC secret (mirrors cafresohq_keys; gates QUOTA only, never data).
   stable var planSecret : Blob = "";
@@ -659,12 +659,15 @@ actor CafresoHQState {
   // Allowlist of the app's supported ICRC ledgers (ICP, ckUNI, sGLDT, $nanas,
   // ckUSDT) — mirrors frontend/src/lib/api/icrc1.js TOKENS. putSalary rejects
   // any other ledger so the payroll timer never awaits an unknown canister.
-  let KNOWN_LEDGERS : [Text] = [
-    "ryjl3-tyaaa-aaaaa-aaaba-cai",
-    "ilzky-ayaaa-aaaar-qahha-cai",
-    "i2s4q-syaaa-aaaan-qz4sq-cai",
-    "mwen2-oqaaa-aaaam-adaca-cai",
-    "cngnf-gddge-nq2mj-vjyfl-v76et-6c2pt-xg3n3-jzihw-d3iyp-ughtf-3ae",
+  transient let KNOWN_LEDGERS : [Text] = [
+    "ryjl3-tyaaa-aaaaa-aaaba-cai",     // ICP
+    "ilzky-ayaaa-aaaar-qahha-cai",     // ckUNI
+    "i2s4q-syaaa-aaaan-qz4sq-cai",     // sGLDT
+    "mwen2-oqaaa-aaaam-adaca-cai",     // $nanas
+    // Was cngnf-gddge-...-3ae, which is not a canister — every ckUSDT salary
+    // was refused here. Corrected 2026-09-17, same fix as the hall's.
+    "cngnf-vqaaa-aaaar-qag4q-cai",     // ckUSDT
+    "j7x7x-syaaa-aaaar-qcbea-cai",     // ckBAT — a coworker can be paid in it
   ];
   func isKnownLedger(p : Principal) : Bool {
     let t = Principal.toText(p);
@@ -672,12 +675,12 @@ actor CafresoHQState {
     false;
   };
 
-  let PAYROLL_SCAN_SECS : Nat = 300;
-  let MAX_PAYOUTS_KEPT : Nat = 200;
+  transient let PAYROLL_SCAN_SECS : Nat = 300;
+  transient let MAX_PAYOUTS_KEPT : Nat = 200;
   // Retry `pending` payouts only inside the ledger's 24h TX window (with slack).
-  let PENDING_RETRY_MAX_NS : Int = 22 * 3600 * 1_000_000_000;
+  transient let PENDING_RETRY_MAX_NS : Int = 22 * 3600 * 1_000_000_000;
   // Don't re-attempt a pending created moments ago in this same scan.
-  let PENDING_RETRY_MIN_AGE_NS : Int = 60 * 1_000_000_000;
+  transient let PENDING_RETRY_MIN_AGE_NS : Int = 60 * 1_000_000_000;
 
   func secsToNs(s : Nat) : Int { s * 1_000_000_000 };
   func salariesOf(p : Principal) : SalaryMap { switch (pOps.get(salaries, p)) { case (?m) m; case null tOps.empty<Salary>() } };
@@ -873,7 +876,7 @@ actor CafresoHQState {
   // a full period AFTER creation, so re-arming from the user-facing putSalary
   // path (called per save) would reset the countdown and, if hit every <period,
   // starve scanPayroll for ALL users (cross-tenant DoS).
-  var payrollTimerId : ?Timer.TimerId = null;
+  transient var payrollTimerId : ?Timer.TimerId = null;
   // One tick drives BOTH money loops: user payroll and search-worker payout
   // sweeps (defined in the search-network section below). A second recurring
   // timer would double the idle cycle burn for no scheduling benefit.
@@ -1067,7 +1070,7 @@ actor CafresoHQState {
   };
   stable var workReceipts : OrderedMap.Map<Principal, [WorkReceipt]> = pOps.empty<[WorkReceipt]>();
   stable var receiptSeq : OrderedMap.Map<Principal, Nat> = pOps.empty<Nat>();
-  let MAX_RECEIPTS_KEPT : Nat = 1000;
+  transient let MAX_RECEIPTS_KEPT : Nat = 1000;
 
   func receiptsOf(p : Principal) : [WorkReceipt] {
     switch (pOps.get(workReceipts, p)) { case (?a) a; case null [] };
@@ -1292,14 +1295,14 @@ actor CafresoHQState {
   stable var libraryCounts : OrderedMap.Map<Principal, Nat> = pOps.empty<Nat>();
   stable var librarySeq : Nat = 0;
 
-  let LIB_MAX_QUERY : Nat = 400;
-  let LIB_MAX_ANSWER : Nat = 4_000;
-  let LIB_MAX_SOURCES : Nat = 10;
-  let LIB_MAX_SOURCE_TEXT : Nat = 600;
-  let LIB_MAX_GRAPH : Nat = 200_000;
-  let LIB_MAX_PROV_TEXT : Nat = 80;
-  let LIB_MAX_PER_OWNER : Nat = 200;
-  let LIB_INDEX_LIMIT : Nat = 500;
+  transient let LIB_MAX_QUERY : Nat = 400;
+  transient let LIB_MAX_ANSWER : Nat = 4_000;
+  transient let LIB_MAX_SOURCES : Nat = 10;
+  transient let LIB_MAX_SOURCE_TEXT : Nat = 600;
+  transient let LIB_MAX_GRAPH : Nat = 200_000;
+  transient let LIB_MAX_PROV_TEXT : Nat = 80;
+  transient let LIB_MAX_PER_OWNER : Nat = 200;
+  transient let LIB_INDEX_LIMIT : Nat = 500;
 
   // ASCII-lowercase + collapse whitespace. NOT just a cache key: headerValue
   // and the signature check below both normalize with this, so it must keep
@@ -1474,7 +1477,7 @@ actor CafresoHQState {
   // without clicking. This caps at ~a sentence, cutting on the last space
   // before the budget so a word isn't sliced mid-token, and appends an ellipsis
   // only when something was actually dropped.
-  let LIB_SNIPPET_CHARS : Nat = 160;
+  transient let LIB_SNIPPET_CHARS : Nat = 160;
   func libSnippet(answer : Text) : Text {
     if (Text.size(answer) <= LIB_SNIPPET_CHARS) { return answer };
     var out = "";
@@ -1634,8 +1637,8 @@ actor CafresoHQState {
   // the centroid of its linked questions, pushed outward — organic clustering
   // without a physics engine. Entry node keys are the entry ids so the
   // explore page can deep-link node → drawer.
-  let LIB_MERGED_MAX : Nat = 300;
-  let GRAPH_PALETTE : [Text] = ["#7DC9B0", "#C9B8E0", "#E8A9A9", "#F0C987",
+  transient let LIB_MERGED_MAX : Nat = 300;
+  transient let GRAPH_PALETTE : [Text] = ["#7DC9B0", "#C9B8E0", "#E8A9A9", "#F0C987",
                                 "#9BC0E8", "#B8E09A", "#E0A47C", "#D89BE0"];
   func textHash(t : Text) : Nat {
     var h : Nat32 = 0;
@@ -1788,8 +1791,8 @@ actor CafresoHQState {
   // HMAC verification below. The browser generates the secret (the canister
   // must hold plaintext to verify HMACs, and this avoids a raw_rand round trip).
   stable var workerSecrets : OrderedMap.Map<Principal, Blob> = pOps.empty<Blob>();
-  let MAX_WORKERS : Nat = 500;
-  let WORKER_ACTIVE_WINDOW_NS : Int = 600_000_000_000;   // heartbeat within 10 min = active
+  transient let MAX_WORKERS : Nat = 500;
+  transient let WORKER_ACTIVE_WINDOW_NS : Int = 600_000_000_000;   // heartbeat within 10 min = active
 
   public shared (msg) func worker_register(name : Text, secretHex : Text, payoutSubHex : Text) : async Text {
     if (Principal.isAnonymous(msg.caller)) { throw Error.reject("sign in to register a worker") };
@@ -1983,23 +1986,23 @@ actor CafresoHQState {
   // angles, not just a courtesy delay.
   stable var jobNextRunAt : OrderedMap.Map<Text, Int> = tOps.empty<Int>();
 
-  let MAX_PENDING_JOBS : Nat = 25;
-  let JOB_PENDING_TTL_NS : Int = 900_000_000_000;     // 15 min unclaimed → expired
-  let CLAIM_LEASE_NS : Int = 240_000_000_000;         // 4 min claimed → back to pending
+  transient let MAX_PENDING_JOBS : Nat = 25;
+  transient let JOB_PENDING_TTL_NS : Int = 900_000_000_000;     // 15 min unclaimed → expired
+  transient let CLAIM_LEASE_NS : Int = 240_000_000_000;         // 4 min claimed → back to pending
   // Deep research runs a multi-pass loop, so it needs longer than a fast job —
   // but the lease is what protects the QUEUE from a dead worker, not a courtesy
   // to the worker. Keep it as tight as the work honestly needs.
-  let DEEP_LEASE_NS : Int = 380_000_000_000;          // ~6.3 min
-  let MAX_JOB_ATTEMPTS : Nat = 3;
-  let MAX_JOBS_KEPT : Nat = 500;
+  transient let DEEP_LEASE_NS : Int = 380_000_000_000;          // ~6.3 min
+  transient let MAX_JOB_ATTEMPTS : Nat = 3;
+  transient let MAX_JOBS_KEPT : Nat = 500;
   // Resumable deep research caps — a job the submitter never comes back to
   // must not squat on Brave quota / worker slots forever, and no single
   // submitter should be able to occupy the whole deep pipeline.
-  let DEEP_MAX_TOPICS_USER : Nat = 24;                 // ceiling on requested angles
-  let DEEP_MAX_INTERVAL_SEC : Nat = 21_600;            // 6h ceiling on pacing between angles
-  let DEEP_DEFAULT_INTERVAL_SEC : Nat = 60;            // used when the submitter didn't ask for pacing
-  let DEEP_JOB_MAX_LIFETIME_NS : Int = 86_400_000_000_000; // 24h wall-clock cap, resting time included
-  let MAX_INFLIGHT_DEEP_JOBS : Nat = 10;                // concurrent pending+claimed deep jobs, network-wide
+  transient let DEEP_MAX_TOPICS_USER : Nat = 24;                 // ceiling on requested angles
+  transient let DEEP_MAX_INTERVAL_SEC : Nat = 21_600;            // 6h ceiling on pacing between angles
+  transient let DEEP_DEFAULT_INTERVAL_SEC : Nat = 60;            // used when the submitter didn't ask for pacing
+  transient let DEEP_JOB_MAX_LIFETIME_NS : Int = 86_400_000_000_000; // 24h wall-clock cap, resting time included
+  transient let MAX_INFLIGHT_DEEP_JOBS : Nat = 10;                // concurrent pending+claimed deep jobs, network-wide
   // DAY_NS reused from the Night Shift wake section below (same 24h constant).
 
   func jobMode(id : Text) : Text {
@@ -2163,8 +2166,8 @@ actor CafresoHQState {
   // Signature: hex(HMAC-SHA256(secret, raw body bytes)) in x-worker-signature.
   // Replay: the signed ts must STRICTLY exceed the worker's last accepted ts —
   // O(1) and airtight because a worker's loop serializes its calls.
-  let WORKER_MAX_BODY : Nat = 262_144;
-  let WORKER_MAX_SKEW_MS : Int = 300_000;
+  transient let WORKER_MAX_BODY : Nat = 262_144;
+  transient let WORKER_MAX_SKEW_MS : Int = 300_000;
 
   func headerValue(req : HttpRequest, name : Text) : ?Text {
     for ((k, v) in req.headers.vals()) {
@@ -2559,7 +2562,7 @@ actor CafresoHQState {
     scheduledAt : Int; status : Text; blockIndex : ?Nat; ts : Int;
   };
   stable var workerPayouts : [WorkerPayout] = [];
-  let MAX_WORKER_PAYOUTS_KEPT : Nat = 500;
+  transient let MAX_WORKER_PAYOUTS_KEPT : Nat = 500;
 
   func appendWorkerPayout(po : WorkerPayout) {
     let buf = Buffer.fromArray<WorkerPayout>(workerPayouts);
@@ -2720,7 +2723,7 @@ actor CafresoHQState {
   // interpreted; the canister only stores + serves the string (the admin UI
   // always writes valid JSON.stringify output). Empty → clients see "{}".
   stable var operatorConfig : Text = "";
-  let OPERATOR_CONFIG_MAX : Nat = 8_192;
+  transient let OPERATOR_CONFIG_MAX : Nat = 8_192;
 
   public shared (msg) func operator_set_config(json : Text) : async () {
     if (not isPlanAdminP(msg.caller)) { throw Error.reject("plan admin only") };
@@ -2806,11 +2809,11 @@ actor CafresoHQState {
   stable var wakeGatewayUrl : Text = "";
   stable var wakeSecret : Blob = "";
 
-  let WAKE_SCAN_SECS : Nat = 120;
-  let MAX_MISSION_SCHEDULES : Nat = 20;                // mirrors serve.py cap
-  let WAKE_STALE_NS : Int = 6 * 3600 * 1_000_000_000;  // roll, don't wake, past this
-  let DAY_NS : Int = 24 * 3600 * 1_000_000_000;
-  let WAKE_OUTCALL_CYCLES : Nat = 300_000_000;         // unspent cycles refund
+  transient let WAKE_SCAN_SECS : Nat = 120;
+  transient let MAX_MISSION_SCHEDULES : Nat = 20;                // mirrors serve.py cap
+  transient let WAKE_STALE_NS : Int = 6 * 3600 * 1_000_000_000;  // roll, don't wake, past this
+  transient let DAY_NS : Int = 24 * 3600 * 1_000_000_000;
+  transient let WAKE_OUTCALL_CYCLES : Nat = 300_000_000;         // unspent cycles refund
 
   func missionsOf(p : Principal) : MissionMap {
     switch (pOps.get(missionSchedules, p)) { case (?m) m; case null tOps.empty<MissionSchedule>() };
@@ -2847,7 +2850,7 @@ actor CafresoHQState {
     method : { #get; #post; #head };
     transform : ?{ function : shared query OutcallTransformArgs -> async OutcallResponse; context : Blob };
   };
-  let mgmt : actor { http_request : OutcallArgs -> async OutcallResponse } = actor ("aaaaa-aa");
+  transient let mgmt : actor { http_request : OutcallArgs -> async OutcallResponse } = actor ("aaaaa-aa");
 
   // Strip headers/body so replicas reach consensus on the status code alone.
   public query func wakeTransform(args : OutcallTransformArgs) : async OutcallResponse {
@@ -2912,7 +2915,7 @@ actor CafresoHQState {
   // timer; re-armed in postupgrade. Must NOT cancel-then-recreate — the
   // user-facing putMissionSchedule path would otherwise let any caller reset
   // the 120s countdown and starve scanWake for all users.
-  var wakeTimerId : ?Timer.TimerId = null;
+  transient var wakeTimerId : ?Timer.TimerId = null;
   func armWakeTimer<system>() {
     switch (wakeTimerId) { case (?_) { return }; case null {} };
     wakeTimerId := ?Timer.recurringTimer<system>(#seconds WAKE_SCAN_SECS, scanWake);
