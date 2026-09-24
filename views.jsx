@@ -1,3 +1,4 @@
+import { CanistersView } from './views/canisters.jsx';
 /* views.jsx — barrel for the main-area views (split into views/).
    Keeps the top-level module name so the build entry and app.jsx imports
    stay unchanged; the actual components live in views/<area>.jsx. */
@@ -21,4 +22,5 @@ const CafresoHQViews = {
   VIEW_LABELS,
 };
 
-export { CafresoHQViews };
+export {
+  CanistersView, CafresoHQViews };

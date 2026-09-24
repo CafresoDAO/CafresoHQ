@@ -49,6 +49,7 @@ const NAV_ITEMS = [
   ['tasks', 'Tasks'],
   ['vault', 'Library'],
   ['terminal', 'Terminal'],
+  ['canisters', 'Canisters'],
   /* One destination had two names. The mobile tab bar, the command
      palette's own `nav.projects` entry, and the onboarding step all say
      "Projects"; this rail and the palette's view-switch list said

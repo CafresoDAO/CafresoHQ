@@ -27,7 +27,7 @@ const { HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal, F
         StarterTasksModal, DeliverySheet } = CafresoHQModals;
 const { TaskBoard, MeetingRoom, MeetingPicker, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, SEED_TASKS, SEED_MEMORY } = CafresoHQV2;
 const { MissionsModal, useMissionRunner } = CafresoHQMissions;
-const { TasksView, MemoryPage, TeamView, VaultView, GraphView, ProjectsView, WorkspaceView, TerminalView, MarketView, VIEW_LABELS } = CafresoHQViews;
+const { TasksView, MemoryPage, TeamView, VaultView, GraphView, ProjectsView, WorkspaceView, TerminalView, MarketView, VIEW_LABELS, CanistersView} = CafresoHQViews;
 
 /* How much of a brief a message record keeps. Module scope so the check
    that the trim reports itself can lift the cap instead of restating the
