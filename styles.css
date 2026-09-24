@@ -1804,6 +1804,53 @@ body.theme-coffeeshop .desk::after {
   background: linear-gradient(180deg, #fff6e0 0%, #f5ead6 100%);
   box-shadow: var(--shadow-hard);
 }
+.rail .brand.brand-cf-clean {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 8px;
+  border: 2px solid var(--ink);
+  background: linear-gradient(180deg, #fffaf0 0%, #f4ebd9 100%);
+  box-shadow: var(--shadow-hard);
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.rail .brand.brand-cf-clean:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 0 var(--ink);
+  background: #fffdf5;
+}
+.rail .brand.brand-cf-clean:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 0 var(--ink);
+}
+.brand-cf-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+.rail-cf-logo {
+  height: 44px;
+  width: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.12));
+  transition: transform 0.15s ease;
+}
+.rail.collapsed .rail-cf-logo {
+  height: 30px;
+}
+.rail .brand.brand-cf-clean:hover .rail-cf-logo {
+  transform: scale(1.06);
+}
+body.night .rail .brand.brand-cf-clean {
+  background: linear-gradient(180deg, #252238 0%, #1a1829 100%);
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 2px 2px 0 0 rgba(0, 0, 0, 0.6);
+}
+body.night .rail .brand.brand-cf-clean:hover {
+  box-shadow: 3px 3px 0 0 var(--live);
+}
 .rail .brand .title {
   font-family: 'Press Start 2P', monospace;
   font-size: 11px;
@@ -1822,6 +1869,14 @@ body.theme-coffeeshop .desk::after {
   width: 8px; height: 8px; background: var(--live);
   box-shadow: 0 0 0 2px rgba(111,168,111,0.25);
   animation: pulse 1.8s ease-in-out infinite;
+}
+.rail .me .avatar.me-avatar {
+  background: transparent;
+  border: none;
+  overflow: visible;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 @keyframes pulse { 50% { opacity: 0.5; } }
 

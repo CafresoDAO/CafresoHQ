@@ -47,9 +47,7 @@ function Ico({ kind, size=16 }) {
 const NAV_ITEMS = [
   ['visual', 'Office'],
   ['tasks', 'Tasks'],
-  ['memory', 'Memory'],
   ['vault', 'Library'],
-  ['team', 'Team'],
   ['terminal', 'Terminal'],
   /* One destination had two names. The mobile tab bar, the command
      palette's own `nav.projects` entry, and the onboarding step all say

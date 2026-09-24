@@ -49,16 +49,17 @@ function Rail({ onOpenSettings, onShowCEO, active, setActive, collapsed = false,
         </button>
       )}
       <div
-        className={'brand' + (onShowCEO ? ' brand-clickable' : '')}
+        className={'brand brand-cf-clean' + (onShowCEO ? ' brand-clickable' : '')}
         role={onShowCEO ? 'button' : undefined}
         tabIndex={onShowCEO ? 0 : undefined}
         onClick={onShowCEO || undefined}
         onKeyDown={onShowCEO ? brandKeyDown : undefined}
-        title={onShowCEO ? 'Open CEO panel' : undefined}
+        title={onShowCEO ? 'Open CEO panel' : 'Cafreso HQ'}
       >
-        <Sprite data={SPRITES.cafresohq} scale={collapsed ? 1 : 2} className="bob" />
-        {!collapsed && <div className="title">CAFRESO<br/>HQ</div>}
-        {!collapsed && <div className="sub"><span className="dot pixel"></span> CAFRESOHQ · CEO</div>}
+        <div className="brand-cf-wrap">
+          <img src="assets/cf-mark-coffee.png" alt="Cafreso" className="rail-cf-logo cf-mark--light" />
+          <img src="assets/cf-mark-white.png" alt="Cafreso" className="rail-cf-logo cf-mark--dark" />
+        </div>
       </div>
       <nav>
         {/* Chat sits with the brand, not in NAV_ITEMS, for two reasons.
@@ -116,7 +117,9 @@ function Rail({ onOpenSettings, onShowCEO, active, setActive, collapsed = false,
         <Ico kind="settings"/> {!collapsed && 'SETTINGS'}
       </a>
       <div className="me">
-        <div className="avatar">B</div>
+        <div className="avatar me-avatar">
+          <Sprite data="boss" scale={1.5} className="bob" />
+        </div>
         {!collapsed && (
           <div style={{display:'flex',flexDirection:'column'}}>
             <div style={{fontFamily:'Press Start 2P',fontSize:9}}>BOSS</div>
@@ -202,12 +205,7 @@ function MobileTabBar({ active, setActive, onOpenSettings, onOpenInbox, onOpenSt
      reporting it is what kept a real finding from becoming three. */
   const toolItems = [
     { icon: '📬', label: 'Inbox',    badge: inboxCount || 0,   action: onOpenInbox },
-    { icon: '🗓', label: 'Calendar', badge: 0,                  action: () => setActive('calendar') },
-    { icon: '📁', label: 'Memory',   badge: 0,                  action: onOpenMemory },
-    { icon: '🌅', label: 'Stand-up', badge: 0,                  action: onOpenStandup },
     { icon: '🔬', label: 'Research', badge: missionCount || 0,  action: onOpenResearch },
-    { icon: '📋', label: 'Meeting',  badge: meetingCount || 0,  action: onOpenMeeting },
-    { icon: '⚡', label: 'Workflow', badge: 0,                  action: onOpenWorkflow },
     { icon: night ? '☀' : '☾', label: night ? 'Day' : 'Night', badge: 0, action: onToggleNight },
     { icon: '⚙️', label: 'Settings', badge: 0,                  action: onOpenSettings },
   ];
