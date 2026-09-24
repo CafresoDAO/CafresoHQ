@@ -18,12 +18,6 @@ import http.server
 import json
 import mimetypes
 import os
-# ── env compat shim: mirror legacy OPENCLAW_* vars to CAFRESOHQ_* ───────────────
-# Deployed container/entrypoint still export OPENCLAW_* names; mirror them so the
-# renamed CAFRESOHQ_* reads keep working until images are rebuilt. Remove later.
-for _k, _v in list(os.environ.items()):
-    if _k.startswith('OPENCLAW_'):
-        os.environ.setdefault('CAFRESOHQ_' + _k[len('OPENCLAW_'):], _v)
 import pathlib
 import re
 import re as _re  # module-scope alias: three handler sites use `_re.…` and

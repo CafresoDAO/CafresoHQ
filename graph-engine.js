@@ -336,6 +336,17 @@ class GraphEngine {
       if (e.original && e.original.preventDefault) e.original.preventDefault();
       if (e.original && e.original.stopPropagation) e.original.stopPropagation();
     });
+    // Mobile Touch Polish
+    r.getMouseCaptor().on('touchmovebody', (e) => {
+      if (!isDragging || !draggedNode) return;
+      const pos = r.viewportToGraph(e);
+      this.graph.setNodeAttribute(draggedNode, 'x', pos.x);
+      this.graph.setNodeAttribute(draggedNode, 'y', pos.y);
+      e.preventSigmaDefault();
+      if (e.original && e.original.preventDefault) e.original.preventDefault();
+      if (e.original && e.original.stopPropagation) e.original.stopPropagation();
+    });
+
     
     const handleUp = () => {
       if (isDragging || draggedNode) {
@@ -347,6 +358,7 @@ class GraphEngine {
     
     r.getMouseCaptor().on('mouseup', handleUp);
     r.getMouseCaptor().on('dragleave', handleUp);
+    r.getMouseCaptor().on('touchend', handleUp);
   }
 
   on(ev, cb) { (this._listeners[ev] = this._listeners[ev] || []).push(cb); return this; }
