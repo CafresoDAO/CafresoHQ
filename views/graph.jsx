@@ -675,129 +675,18 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
    tags, and folder path. Returns top-K candidate ghost edges between
    currently-unlinked node pairs. Cheap enough for vaults up to ~5k notes;
    beyond that we sample. */
-function graphAdjacency(state) {
-  if (!state) return new Map();
-  if (state._adjEdgesRef === state.edges && state._adjacency) return state._adjacency;
-  const adj = new Map();
-  for (const n of (state.nodes || [])) adj.set(n.id, []);
-  for (const e of (state.edges || [])) {
-    const s = e.source && e.source.id ? e.source.id : e.source;
-    const t = e.target && e.target.id ? e.target.id : e.target;
-    if (adj.has(s) && adj.has(t)) { adj.get(s).push(t); adj.get(t).push(s); }
-  }
-  state._adjEdgesRef = state.edges;
-  state._adjacency = adj;
-  return adj;
-}
 
-function computeGhostEdges(state, opts = {}) {
-  const TOPK       = opts.topK || 40;
-  const MIN_SCORE  = opts.minScore || 0.18;
-  const stop = new Set(['the','and','of','to','a','for','in','on','is','at','it','this','that','with','as','an','by','be','or','from','my','i']);
 
-  const tokenize = (s) => (s || '').toLowerCase()
-    .replace(/\.md$/, '')
-    .replace(/[^\w\s-]/g, ' ')
-    .split(/\s+/)
-    .filter(t => t.length > 2 && !stop.has(t));
 
-  const docs = state.nodes.map(n => {
-    const titleToks = tokenize(n.title || n.id.split('/').pop());
-    const folderToks = tokenize((n.id || '').split('/').slice(0, -1).join(' '));
-    const tagToks    = (n.tags || []).map(t => t.replace(/^#/, '').toLowerCase());
-    // Tags weighted 3x, folder 2x.
-    const all = [...titleToks, ...folderToks, ...folderToks, ...tagToks, ...tagToks, ...tagToks];
-    const tf = new Map();
-    for (const t of all) tf.set(t, (tf.get(t) || 0) + 1);
-    return { id: n.id, tf };
-  });
-
-  // IDF
-  const df = new Map();
-  for (const d of docs) for (const t of d.tf.keys()) df.set(t, (df.get(t) || 0) + 1);
-  const N = docs.length;
-  const idf = new Map();
-  for (const [t, c] of df) idf.set(t, Math.log(1 + N / (1 + c)));
-
-  // Build TF-IDF vectors as Maps; norm them.
-  const vecs = docs.map(d => {
-    const v = new Map();
-    let normSq = 0;
-    for (const [t, c] of d.tf) {
-      const w = c * (idf.get(t) || 0);
-      if (w > 0) { v.set(t, w); normSq += w * w; }
-    }
-    return { id: d.id, v, norm: Math.sqrt(normSq) || 1 };
-  });
-
-  // Existing-edge set so we skip pairs already linked.
-  const linked = new Set();
-  for (const e of state.edges) {
-    const s = e.source.id || e.source, t = e.target.id || e.target;
-    linked.add(s < t ? s + '\0' + t : t + '\0' + s);
-  }
-
-  // Pairwise — bail out early if vault is huge (sample 1500 nodes).
-  const sample = vecs.length > 1500
-    ? vecs.slice().sort(() => Math.random() - 0.5).slice(0, 1500)
-    : vecs;
-
-  const candidates = [];
-  for (let i = 0; i < sample.length; i++) {
-    const a = sample[i];
-    for (let j = i + 1; j < sample.length; j++) {
-      const b = sample[j];
-      const key = a.id < b.id ? a.id + '\0' + b.id : b.id + '\0' + a.id;
-      if (linked.has(key)) continue;
-      // dot product over the smaller map for speed
-      const [s1, s2] = a.v.size <= b.v.size ? [a.v, b.v] : [b.v, a.v];
-      let dot = 0;
-      for (const [t, w] of s1) {
-        const w2 = s2.get(t);
-        if (w2) dot += w * w2;
-      }
-      const score = dot / (a.norm * b.norm);
-      if (score >= MIN_SCORE) candidates.push({ a: a.id, b: b.id, score });
-    }
-  }
-  candidates.sort((x, y) => y.score - x.score);
-  return candidates.slice(0, TOPK);
-}
 
 /* Cluster palette — 12 distinct hues spaced for maximum visual separation. */
-const CLUSTER_HUES = [10, 35, 55, 95, 130, 175, 200, 230, 270, 300, 325, 350];
-function clusterColor(idx, isDark) {
-  const hue = CLUSTER_HUES[idx % CLUSTER_HUES.length];
-  return `hsl(${hue}, ${isDark ? 60 : 50}%, ${isDark ? 65 : 58}%)`;
-}
+
 
 /* BFS from rootId out to maxDepth (inclusive). Returns the set of node ids
    reachable through the graph's edges in either direction. Used by Local mode. */
-function bfsLocal(state, rootId, maxDepth) {
-  if (!rootId || !state.byId[rootId]) return null;
-  const adj = graphAdjacency(state);
-  const visited = new Set([rootId]);
-  let frontier = [rootId];
-  for (let d = 0; d < maxDepth; d++) {
-    const next = [];
-    for (const id of frontier) {
-      for (const nb of (adj.get(id) || [])) {
-        if (!visited.has(nb)) { visited.add(nb); next.push(nb); }
-      }
-    }
-    if (next.length === 0) break;
-    frontier = next;
-  }
-  return visited;
-}
 
-function getNeighbors(state, nodeId) {
-  if (!nodeId) return null;
-  const neighbors = new Set([nodeId]);
-  const adj = graphAdjacency(state);
-  for (const nb of (adj.get(nodeId) || [])) neighbors.add(nb);
-  return neighbors;
-}
+
+
 
 /* ---- Obsidian-style colour map for tagged notes -------------------------
    These are *fallbacks*. Each tag also reads a CSS variable
@@ -962,57 +851,18 @@ function nodeMatchesFilter(n, filter) {
   return raw.split(/\s+OR\s+/i).some(part => part.split(/\s+AND\s+|\s+/i).every(evalTerm));
 }
 
-function nodeIsVisible(n, state) {
-  if (state.hiddenIds && state.hiddenIds.has(n.id)) return false;
-  if (state.filter && !nodeMatchesFilter(n, state.filter)) return false;
-  if (state.localVisible && !state.localVisible.has(n.id)) return false;
-  // Time scrubber: hide notes newer than the scrub timestamp.
-  if (state.timeScrub && n.mtime && n.mtime > state.timeScrub) return false;
-  return true;
-}
+
 
 /* Compute centroid + member count for each cluster, used for label placement. */
-function clusterCentroids(state) {
-  if (!state.clusters) return [];
-  const acc = {}; // idx → {sx,sy,n,members[]}
-  for (const node of state.nodes) {
-    if (state.hiddenIds && state.hiddenIds.has(node.id)) continue;
-    const idx = state.clusters.comp[node.id];
-    if (idx == null) continue;
-    if (!acc[idx]) acc[idx] = { sx: 0, sy: 0, n: 0, members: [] };
-    acc[idx].sx += node.x; acc[idx].sy += node.y; acc[idx].n += 1;
-    acc[idx].members.push(node);
-  }
-  return Object.entries(acc)
-    .filter(([, v]) => v.n >= 3) // skip tiny clusters
-    .map(([idx, v]) => ({ idx: Number(idx), x: v.sx / v.n, y: v.sy / v.n, n: v.n, members: v.members }));
-}
 
-function nodeRadius(n) {
-  return 3.5 + Math.sqrt(n.inlinks || 0) * 2.2;
-}
+
+
 
 /* Project a 3D world point into 2D screen space (relative to the canvas's
    transform). Returns {sx, sy, scale, depth}. The canvas is already
    translated by pan & scaled by zoom, so the returned (sx,sy) are in
    pre-pan/zoom world coords — render3D applies pan/zoom outside. */
-function project3D(x, y, z, rotX, rotY) {
-  const cy = Math.cos(rotY), sy = Math.sin(rotY);
-  // Yaw around the y-axis: (x, z) → (x', z')
-  const x1 = x * cy - z * sy;
-  const z1 = x * sy + z * cy;
-  // Pitch around the x-axis: (y, z') → (y', z'')
-  const cx = Math.cos(rotX), sx = Math.sin(rotX);
-  const y2 = y * cx - z1 * sx;
-  const z2 = y * sx + z1 * cx;
-  // Perspective: a focal length of 800 gives a soft 3D feel — points near
-  // the camera grow, points behind shrink. Values < -700 are clamped to
-  // avoid the projection blowing up.
-  const FOC = 800;
-  const eyeZ = z2 + 600; // push the cloud away from the camera
-  const persp = FOC / Math.max(60, eyeZ);
-  return { sx: x1 * persp, sy: y2 * persp, scale: persp, depth: z2 };
-}
+
 
 /* Edge-type rendering palette. Keys must match the `type` field that
    serve.py's _classify_edge produces. Each entry: { color, dash, widthMul }.
@@ -1029,788 +879,64 @@ function project3D(x, y, z, rotX, rotY) {
    The default case (`links_to` and unknown types) falls through to the
    theme's edgeColor so nothing regresses visually. */
 const EDGE_TYPE_STYLE = {
-  links_to:      { color: null,                      dash: null,    widthMul: 1.0 },
-  cites:         { color: 'rgba(207, 154, 71, 0.95)',dash: null,    widthMul: 1.4 },
-  related_to:    { color: null,                      dash: [3, 4],  widthMul: 0.95, alphaMul: 0.85 },
-  child_of:      { color: 'rgba(102, 145, 209, 0.95)',dash: null,   widthMul: 1.5 },
-  parent_of:     { color: 'rgba(102, 145, 209, 0.95)',dash: null,   widthMul: 1.5 },
-  implements:    { color: 'rgba(110, 178, 168, 0.95)',dash: null,   widthMul: 1.4 },
-  implemented_by:{ color: 'rgba(110, 178, 168, 0.95)',dash: null,   widthMul: 1.4 },
-  supports:      { color: 'rgba(120, 178, 95, 0.95)',dash: null,    widthMul: 1.4 },
-  contradicts:   { color: 'rgba(217, 87, 87, 0.95)', dash: [6, 4],  widthMul: 1.6 },
-  derived_from:  { color: 'rgba(170, 122, 196, 0.95)',dash: null,   widthMul: 1.3 },
-  supersedes:    { color: 'rgba(232, 145, 80, 0.95)',dash: [8, 4],  widthMul: 1.5 },
-  superseded_by: { color: 'rgba(232, 145, 80, 0.6)', dash: [4, 6],  widthMul: 1.0 },
-  blocks:        { color: 'rgba(217, 87, 87, 0.95)', dash: null,    widthMul: 1.5 },
-  blocked_by:    { color: 'rgba(217, 87, 87, 0.7)',  dash: [3, 3],  widthMul: 1.2 },
-  depends_on:    { color: 'rgba(155, 124, 199, 0.9)',dash: [5, 4],  widthMul: 1.2 },
-  has_risk:      { color: 'rgba(217, 87, 87, 0.85)', dash: [1.5, 2.5], widthMul: 1.2 },
-  decided:       { color: 'rgba(220, 178, 89, 0.95)',dash: null,    widthMul: 1.6 },
-  has_task:      { color: 'rgba(110, 178, 200, 0.9)',dash: [4, 4],  widthMul: 1.1 },
-  has_proposal:  { color: 'rgba(155, 178, 195, 0.9)',dash: [4, 4],  widthMul: 1.1 },
-  created_by:    { color: 'rgba(125, 181, 181, 0.9)',dash: null,    widthMul: 1.2 },
-  edited_by:     { color: 'rgba(125, 181, 181, 0.7)',dash: [2, 4],  widthMul: 1.0 },
-  assigned_to:   { color: 'rgba(125, 181, 181, 0.95)',dash: null,   widthMul: 1.4 },
-  reviewed_by:   { color: 'rgba(125, 181, 181, 0.85)',dash: [3, 3], widthMul: 1.1 },
+  links_to: { color: null },
+  cites: { color: 'rgba(207, 154, 71, 0.95)' },
+  related_to: { color: null },
+  child_of: { color: 'rgba(102, 145, 209, 0.95)' },
+  parent_of: { color: 'rgba(102, 145, 209, 0.95)' },
+  implements: { color: 'rgba(110, 178, 168, 0.95)' },
+  implemented_by: { color: 'rgba(110, 178, 168, 0.95)' },
+  supports: { color: 'rgba(120, 178, 95, 0.95)' },
+  contradicts: { color: 'rgba(217, 87, 87, 0.95)' },
+  derived_from: { color: 'rgba(170, 122, 196, 0.95)' },
+  supersedes: { color: 'rgba(232, 145, 80, 0.95)' },
+  superseded_by: { color: 'rgba(232, 145, 80, 0.6)' },
+  blocks: { color: 'rgba(217, 87, 87, 0.95)' },
+  blocked_by: { color: 'rgba(217, 87, 87, 0.7)' },
+  depends_on: { color: 'rgba(155, 124, 199, 0.9)' },
+  has_risk: { color: 'rgba(217, 87, 87, 0.85)' },
+  decided: { color: 'rgba(220, 178, 89, 0.95)' },
+  has_task: { color: 'rgba(110, 178, 200, 0.9)' },
+  has_proposal: { color: 'rgba(155, 178, 195, 0.9)' },
+  created_by: { color: 'rgba(125, 181, 181, 0.9)' },
+  edited_by: { color: 'rgba(125, 181, 181, 0.7)' },
+  assigned_to: { color: 'rgba(125, 181, 181, 0.95)' },
+  reviewed_by: { color: 'rgba(125, 181, 181, 0.85)' },
   /* Obsidian ![[embeds]] — the note SHOWS this artifact (kg_builder
      types them at 0.95). Warm attachment tint, no dash, heavier than a
      plain link: the artifact is part of the note, not a mention. */
-  embeds:        { color: 'rgba(196, 149, 106, 0.95)', dash: null,  widthMul: 1.3 },
-  notes:         { color: null,                      dash: null,    widthMul: 0.85, alphaMul: 0.7 },
-  mentions:      { color: null,                      dash: [2, 5],  widthMul: 0.85, alphaMul: 0.65 },
-  exemplifies:   { color: 'rgba(120, 178, 95, 0.85)',dash: [4, 3],  widthMul: 1.1 },
-  questions:     { color: 'rgba(220, 178, 89, 0.9)', dash: [3, 6],  widthMul: 1.1 },
+  embeds: { color: 'rgba(196, 149, 106, 0.95)' },
+  notes: { color: null },
+  mentions: { color: null },
+  exemplifies: { color: 'rgba(120, 178, 95, 0.85)' },
+  questions: { color: 'rgba(220, 178, 89, 0.9)' },
   // HQ-state edges (task/mission/receipt → vault notes & agents)
-  references:    { color: null,                      dash: [2, 3],  widthMul: 0.95, alphaMul: 0.85 },
-  produces:      { color: 'rgba(86, 168, 124, 0.95)',dash: null,    widthMul: 1.5 },
-  modified:      { color: 'rgba(168, 124, 86, 0.85)',dash: [3, 3],  widthMul: 1.1 },
-  targets:       { color: 'rgba(110, 178, 200, 0.9)',dash: [5, 4],  widthMul: 1.2 },
-  runs_as:       { color: 'rgba(125, 181, 181, 1.0)',dash: null,    widthMul: 1.6 },
+  references: { color: null },
+  produces: { color: 'rgba(86, 168, 124, 0.95)' },
+  modified: { color: 'rgba(168, 124, 86, 0.85)' },
+  targets: { color: 'rgba(110, 178, 200, 0.9)' },
+  runs_as: { color: 'rgba(125, 181, 181, 1.0)' },
   // Message-thread edges (agent ↔ thread)
-  sent_to:       { color: 'rgba(155, 124, 199, 0.95)',dash: null,   widthMul: 1.4 },
-  received:      { color: 'rgba(155, 124, 199, 0.7)',dash: [4, 3],  widthMul: 1.2 },
+  sent_to: { color: 'rgba(155, 124, 199, 0.95)' },
+  received: { color: 'rgba(155, 124, 199, 0.7)' },
   // Org-chart: assistant → senior. Solid teal, slightly heavier so the
   // hierarchy stands out among the noisier message/thread edges.
-  reports_to:    { color: 'rgba(86, 138, 178, 1.0)',  dash: null,   widthMul: 1.7 },
+  reports_to: { color: 'rgba(86, 138, 178, 1.0)' },
 };
 
 /* Group edges by render style and stroke each group in one batched path.
    Falls back to a single batched pass with `defaultColor` when colored-edges
    is disabled (or when state.colorEdgesByType is false). `getXY` returns
    [x,y] for a node id — lets the same helper work for 2D and 3D. */
-function _drawEdgesByType(ctx, edges, getXY, opts) {
-  const {
-    defaultColor, baseAlpha, baseLineWidth,
-    enabled, hidden, focusId, byId, focusedSkip,
-  } = opts;
-  // Bucket edges by style key. Default bucket = no special styling.
-  const buckets = new Map();
-  const fallback = { type: '__default__', style: { color: null, dash: null, widthMul: 1.0 }};
-  for (const e of edges) {
-    const aId = e.source.id || e.source;
-    const bId = e.target.id || e.target;
-    const a = byId[aId]; const b = byId[bId];
-    if (!a || !b) continue;
-    if (hidden && (hidden.has(aId) || hidden.has(bId))) continue;
-    if (focusedSkip && focusId && (aId === focusId || bId === focusId)) continue;
-    let key = '__default__';
-    if (enabled) {
-      const t = e.type;
-      if (t && EDGE_TYPE_STYLE[t]) key = t;
-    }
-    let bucket = buckets.get(key);
-    if (!bucket) {
-      const style = key === '__default__' ? fallback.style : EDGE_TYPE_STYLE[key];
-      bucket = { style, segs: [] };
-      buckets.set(key, bucket);
-    }
-    bucket.segs.push([a, b, e.confidence == null ? 1 : e.confidence]);
-  }
-  // Render each bucket. Heaviest/most-styled last so they sit on top.
-  const order = ['__default__','notes','mentions','related_to','links_to'];
-  const ordered = [];
-  for (const k of order) if (buckets.has(k)) ordered.push(k);
-  for (const k of buckets.keys()) if (!ordered.includes(k)) ordered.push(k);
-  for (const k of ordered) {
-    const { style, segs } = buckets.get(k);
-    if (!segs.length) continue;
-    ctx.strokeStyle = style.color || defaultColor;
-    ctx.lineWidth = baseLineWidth * (style.widthMul || 1);
-    const alpha = baseAlpha * (style.alphaMul == null ? 1 : style.alphaMul);
-    ctx.globalAlpha = alpha;
-    if (style.dash) ctx.setLineDash(style.dash.map(v => v * baseLineWidth));
-    else ctx.setLineDash([]);
-    ctx.beginPath();
-    for (const [a, b] of segs) {
-      const A = getXY(a); const B = getXY(b);
-      ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]);
-    }
-    ctx.stroke();
-  }
-  ctx.setLineDash([]);
-  ctx.globalAlpha = 1;
-}
+
 
 /* 3D-mode render. Sibling to render(); same overlays apply but nodes/edges
    are drawn with perspective and back-to-front depth sorting. */
-function render3D(canvas, state, hover, selected) {
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  const { width, height } = canvas.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    ctx.scale(dpr, dpr);
-  }
-
-  const style = getComputedStyle(canvas);
-  const isDark = document.body.classList.contains('night');
-  const edgeColor = isDark
-    ? (style.getPropertyValue('--ink-3').trim() || '#a898be')
-    : (style.getPropertyValue('--rule').trim() || '#cdbfa5');
-  const labelColor = (style.getPropertyValue('--ink').trim() || '#3b2e2a');
-  const labelRgb = hexToRgb(labelColor) || { r: 59, g: 46, b: 42 };
-  const baseEdgeAlpha = isDark ? 0.55 : 0.40;
-  const dimEdgeAlpha  = isDark ? 0.20 : 0.15;
-
-  const { nodes, edges, pan, zoom } = state;
-  const rotX = state.rot3D ? state.rot3D.rotX : 0;
-  const rotY = state.rot3D ? state.rot3D.rotY : 0;
-  const focusId  = selected || hover;
-  const neighbors = getNeighbors(state, focusId);
-  const focused = !!focusId;
-  const filter = state.filter || '';
-  const hidden = state.hiddenIds || new Set();
-
-  ctx.clearRect(0, 0, width, height);
-  ctx.save();
-  ctx.translate(pan.x, pan.y);
-  ctx.scale(zoom, zoom);
-
-  // Project every visible node once and cache on the node so getNodeAt can read.
-  const visList = [];
-  for (const n of nodes) {
-    if (hidden.has(n.id)) continue;
-    if (state.timeScrub && n.mtime && n.mtime > state.timeScrub) continue;
-    const p = project3D(n.x, n.y, n.z || 0, rotX, rotY);
-    n._sx = p.sx; n._sy = p.sy; n._scale = p.scale; n._depth = p.depth;
-    visList.push(n);
-  }
-  // Sort back-to-front so far edges/nodes render under near ones.
-  visList.sort((a, b) => b._depth - a._depth);
-  // Also build a lookup for edge endpoints.
-  const projById = {};
-  for (const n of visList) projById[n.id] = n;
-
-  // ---- Edges (base + highlighted pass) ---------------------------------
-  // 3D variant uses projected screen coords (_sx, _sy) instead of raw x,y;
-  // hidden + focused-skip semantics are identical to the 2D path.
-  const get3D = (n) => [n._sx, n._sy];
-  _drawEdgesByType(ctx, edges, get3D, {
-    defaultColor: edgeColor,
-    baseAlpha: focused ? dimEdgeAlpha : baseEdgeAlpha,
-    baseLineWidth: 1 / zoom,
-    enabled: !!(state.settings && state.settings.colorEdgesByType),
-    hidden,
-    focusId,
-    byId: projById,
-    focusedSkip: focused,
-  });
-  ctx.lineWidth = 1 / zoom;
-  ctx.globalAlpha = 1;
-  if (focused) {
-    ctx.strokeStyle = 'rgba(232, 169, 169, 0.9)';
-    ctx.lineWidth = 1.6 / zoom;
-    ctx.globalAlpha = 1;
-    ctx.beginPath();
-    for (const e of edges) {
-      const a = projById[e.source.id || e.source];
-      const b = projById[e.target.id || e.target];
-      if (!a || !b) continue;
-      if (!(a.id === focusId || b.id === focusId)) continue;
-      ctx.moveTo(a._sx, a._sy);
-      ctx.lineTo(b._sx, b._sy);
-    }
-    ctx.stroke();
-  }
-
-  // Ghost edges in 3D too.
-  if (state.ghostEdges && state.ghostEdges.length) {
-    ctx.save();
-    ctx.setLineDash([4 / zoom, 4 / zoom]);
-    ctx.lineWidth = 0.9 / zoom;
-    for (const ge of state.ghostEdges) {
-      const a = projById[ge.a]; const b = projById[ge.b];
-      if (!a || !b) continue;
-      ctx.globalAlpha = Math.min(0.5, ge.score * 0.9);
-      ctx.strokeStyle = isDark ? 'rgba(201, 184, 224, 1)' : 'rgba(125, 181, 181, 1)';
-      ctx.beginPath();
-      ctx.moveTo(a._sx, a._sy);
-      ctx.lineTo(b._sx, b._sy);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  // Shortest-path emphasis edges.
-  if (state.shortestPath && state.shortestPath.edges) {
-    ctx.strokeStyle = 'rgba(240, 198, 116, 0.95)';
-    ctx.lineWidth = 2.4 / zoom;
-    ctx.globalAlpha = 1;
-    ctx.beginPath();
-    for (const e of edges) {
-      const a = projById[e.source.id || e.source];
-      const b = projById[e.target.id || e.target];
-      if (!a || !b) continue;
-      const key = a.id < b.id ? a.id + '\0' + b.id : b.id + '\0' + a.id;
-      if (state.shortestPath.edges.has(key)) {
-        ctx.moveTo(a._sx, a._sy);
-        ctx.lineTo(b._sx, b._sy);
-      }
-    }
-    ctx.stroke();
-  }
-
-  // ---- Nodes (depth-sorted back to front) -----------------------------
-  for (const n of visList) {
-    const inlinks = n.inlinks || 0;
-    const r0 = nodeRadius(n);
-    const r = r0 * n._scale; // perspective scaling
-    const isFocus    = selected === n.id || hover === n.id;
-    const isNeighbor = neighbors && neighbors.has(n.id);
-    const visible    = nodeIsVisible(n, state);
-    const inCompare  = state.compare ? (state.compare.a.has(n.id) || state.compare.b.has(n.id)) : true;
-    const dim        = (focused && !isNeighbor) || !visible || (state.compare && !inCompare);
-
-    // Glow halo for focus + neighbours.
-    if (isFocus || (focused && isNeighbor)) {
-      const g = ctx.createRadialGradient(n._sx, n._sy, 0, n._sx, n._sy, r * 4);
-      const col = isFocus ? '232, 169, 169' : '201, 184, 224';
-      g.addColorStop(0, `rgba(${col}, ${isFocus ? 0.55 : 0.35})`);
-      g.addColorStop(1, `rgba(${col}, 0)`);
-      ctx.fillStyle = g;
-      ctx.globalAlpha = 1;
-      ctx.beginPath();
-      ctx.arc(n._sx, n._sy, r * 4, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // Color resolution (mirrors 2D path).
-    const modeFill = colorForNode(n, state, isDark, style);
-    let compareFill = null;
-    if (state.compare) {
-      const inA = state.compare.a.has(n.id), inB = state.compare.b.has(n.id);
-      if (inA && inB) compareFill = '#f0c674';
-      else if (inA)   compareFill = '#7db5b5';
-      else if (inB)   compareFill = '#e8a9a9';
-    }
-    let fill;
-    if (selected === n.id)              fill = '#e8a9a9';
-    else if (state.activePath === n.id) fill = '#f0c674';
-    else if (hover === n.id)            fill = '#c9b8e0';
-    else if (compareFill)               fill = compareFill;
-    else if (modeFill)                  fill = modeFill;
-    else if (inlinks >= 6)              fill = '#7db5b5';
-    else if (inlinks >= 1)              fill = '#bfa9d9';
-    else                                fill = '#d8c9a8';
-
-    ctx.globalAlpha = dim ? 0.18 : 1;
-    ctx.beginPath();
-    ctx.arc(n._sx, n._sy, r, 0, Math.PI * 2);
-    ctx.fillStyle = fill;
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(59, 46, 42, 0.45)';
-    ctx.lineWidth = 1 / zoom;
-    ctx.stroke();
-
-    // Multi-select ring.
-    if (state.selectedSet && state.selectedSet.has(n.id)) {
-      ctx.strokeStyle = 'rgba(125, 181, 181, 0.95)';
-      ctx.lineWidth = 2 / zoom;
-      ctx.beginPath();
-      ctx.arc(n._sx, n._sy, r + 5 / zoom, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    // Agent activity halo.
-    if (state.agentActivity && state.agentActivity.has(n.id)) {
-      const act = state.agentActivity.get(n.id);
-      const phase = ((Date.now() - (act.until - 5000)) % 1500) / 1500;
-      const ringR = r + (4 + phase * 10) / zoom;
-      ctx.save();
-      ctx.globalAlpha = 0.55 * (1 - phase);
-      ctx.strokeStyle = act.color || '#7db5b5';
-      ctx.lineWidth = 2 / zoom;
-      ctx.beginPath();
-      ctx.arc(n._sx, n._sy, ringR, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    }
-    // Orphan ring.
-    if (state.highlightOrphans) {
-      const isOrphan  = (n.inlinks  || 0) === 0;
-      const isDeadEnd = (n.outlinks || 0) === 0;
-      if (isOrphan || isDeadEnd) {
-        ctx.save();
-        ctx.setLineDash([3 / zoom, 3 / zoom]);
-        ctx.strokeStyle = isOrphan && isDeadEnd
-          ? 'rgba(220, 90, 90, 0.85)'
-          : isOrphan ? 'rgba(220, 130, 90, 0.75)' : 'rgba(220, 180, 80, 0.65)';
-        ctx.lineWidth = 1.4 / zoom;
-        ctx.beginPath();
-        ctx.arc(n._sx, n._sy, r + 4 / zoom, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
-      }
-    }
-  }
-
-  // Pulses (interpolate along projected positions).
-  if (state.pulses.size > 0) {
-    const now = Date.now();
-    ctx.fillStyle = 'rgba(232, 169, 169, 0.95)';
-    ctx.globalAlpha = 1;
-    for (const [key, p] of state.pulses.entries()) {
-      const elapsed = (now - p.start) / 1000;
-      if (elapsed > 1.2) { state.pulses.delete(key); continue; }
-      const a = projById[p.edge.source.id || p.edge.source];
-      const b = projById[p.edge.target.id || p.edge.target];
-      if (!a || !b) continue;
-      const t = elapsed / 1.2;
-      const x = a._sx + (b._sx - a._sx) * t;
-      const y = a._sy + (b._sy - a._sy) * t;
-      ctx.beginPath();
-      ctx.arc(x, y, 2.6 / zoom, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  // Labels (hover + selected always; others honour showAllLabels / zoom).
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  const drawLabel = (n, alpha) => {
-    const r = nodeRadius(n) * n._scale;
-    const fontPx = (11 * n._scale) / zoom;
-    ctx.font = `${Math.max(8, fontPx)}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = `rgba(${labelRgb.r}, ${labelRgb.g}, ${labelRgb.b}, 0.92)`;
-    ctx.fillText(n.title || n.id, n._sx, n._sy + r + (4 / zoom));
-  };
-  if (state.showAllLabels) {
-    for (const n of visList) drawLabel(n, 0.85);
-  } else if (zoom > 1.4) {
-    const a = Math.min(1, (zoom - 1.4) / 0.5);
-    for (const n of visList) {
-      if (focused && !neighbors.has(n.id)) continue;
-      drawLabel(n, a);
-    }
-  } else if (focused && neighbors) {
-    for (const id of neighbors) {
-      const n = projById[id];
-      if (n) drawLabel(n, n.id === selected || n.id === hover ? 1 : 0.7);
-    }
-  }
-  if (hover && projById[hover]) drawLabel(projById[hover], 1);
-
-  ctx.restore();
-
-  // ---- Screen-space overlays (lasso, link drag) -----------------------
-  if (state.lassoRect) {
-    const r = state.lassoRect;
-    const x = Math.min(r.x0, r.x1), y = Math.min(r.y0, r.y1);
-    const w = Math.abs(r.x1 - r.x0), h = Math.abs(r.y1 - r.y0);
-    ctx.save();
-    ctx.fillStyle = 'rgba(125, 181, 181, 0.12)';
-    ctx.strokeStyle = 'rgba(125, 181, 181, 0.85)';
-    ctx.lineWidth = 1.2;
-    ctx.setLineDash([4, 4]);
-    ctx.fillRect(x, y, w, h);
-    ctx.strokeRect(x, y, w, h);
-    ctx.restore();
-  }
-  if (state.linkDrag) {
-    const ld = state.linkDrag;
-    const fromNode = state.byId[ld.fromId];
-    if (fromNode && fromNode._sx != null) {
-      const sx = state.pan.x + fromNode._sx * state.zoom;
-      const sy = state.pan.y + fromNode._sy * state.zoom;
-      ctx.save();
-      ctx.strokeStyle = 'rgba(232, 169, 169, 0.9)';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([6, 4]);
-      ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.lineTo(ld.endX, ld.endY);
-      ctx.stroke();
-      ctx.restore();
-    }
-  }
-
-  // 3D camera indicator (small axes gizmo bottom-left).
-  ctx.save();
-  ctx.translate(36, height - 36);
-  const drawAxis = (vec3, color, label) => {
-    const p = project3D(vec3[0], vec3[1], vec3[2], rotX, rotY);
-    ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    ctx.lineWidth = 1.6;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(p.sx, p.sy);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(p.sx, p.sy, 2.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.font = '700 9px sans-serif';
-    ctx.fillText(label, p.sx + 4, p.sy + 3);
-  };
-  drawAxis([22, 0, 0], '#e84d4d', 'X');
-  drawAxis([0, 22, 0], '#5a9a5a', 'Y');
-  drawAxis([0, 0, 22], '#5a8acf', 'Z');
-  ctx.restore();
-}
-
-function render(canvas, state, hover, selected) {
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  const { width, height } = canvas.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
-    canvas.width  = width  * dpr;
-    canvas.height = height * dpr;
-    ctx.scale(dpr, dpr);
-  }
-
-  // Theme-aware colours from CSS variables.
-  // In night mode --rule is too dim against the dark paper, so use --ink-3
-  // (which is tuned brighter) and bump alpha for connections.
-  const style = getComputedStyle(canvas);
-  const isDark = document.body.classList.contains('night');
-  const edgeColor = isDark
-    ? (style.getPropertyValue('--ink-3').trim() || '#a898be')
-    : (style.getPropertyValue('--rule').trim() || '#cdbfa5');
-  const labelColor = (style.getPropertyValue('--ink').trim() || '#3b2e2a');
-  const labelRgb = hexToRgb(labelColor) || { r: 59, g: 46, b: 42 };
-  const baseEdgeAlpha = isDark ? 0.7 : 0.45;
-  const dimEdgeAlpha  = isDark ? 0.30 : 0.18;
-
-  const { nodes, edges, pan, zoom } = state;
-  const focusId  = selected || hover;
-  const neighbors = getNeighbors(state, focusId);
-  const filter = state.filter || '';
-  const focused = !!focusId;
-
-  ctx.clearRect(0, 0, width, height);
-  ctx.save();
-  ctx.translate(pan.x, pan.y);
-  ctx.scale(zoom, zoom);
-
-  // -------- Edges -------------------------------------------------------
-  // Two passes: dim edges first, highlighted edges on top.
-  // Pass 1 = bulk base edges, grouped by edge.type when colorEdgesByType is on
-  // (off by default for backwards-compat — toggled in settings panel).
-  const hidden = state.hiddenIds || new Set();
-  const get2D = (n) => [n.x, n.y];
-  _drawEdgesByType(ctx, edges, get2D, {
-    defaultColor: edgeColor,
-    baseAlpha: focused ? dimEdgeAlpha : baseEdgeAlpha,
-    baseLineWidth: 1 / zoom,
-    enabled: !!(state.settings && state.settings.colorEdgesByType),
-    hidden,
-    focusId,
-    byId: state.byId,
-    focusedSkip: focused, // skip focused edges here, redrawn in pass 2
-  });
-  ctx.lineWidth = 1 / zoom;
-  ctx.globalAlpha = 1;
-
-  // Pass 2 — highlighted edges (connected to focus)
-  if (focused) {
-    ctx.strokeStyle = 'rgba(232, 169, 169, 0.85)';
-    ctx.lineWidth = 1.6 / zoom;
-    ctx.globalAlpha = 1;
-    ctx.beginPath();
-    for (const e of edges) {
-      const a = state.byId[e.source.id || e.source];
-      const b = state.byId[e.target.id || e.target];
-      if (!a || !b) continue;
-      if (hidden.has(a.id) || hidden.has(b.id)) continue;
-      if (!(a.id === focusId || b.id === focusId)) continue;
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-    }
-    ctx.stroke();
-    ctx.lineWidth = 1 / zoom;
-  }
-
-  // Ghost edges — dashed lines for high-similarity unlinked pairs.
-  if (state.ghostEdges && state.ghostEdges.length) {
-    ctx.save();
-    ctx.setLineDash([4 / zoom, 4 / zoom]);
-    ctx.lineWidth = 0.9 / zoom;
-    for (const ge of state.ghostEdges) {
-      const a = state.byId[ge.a]; const b = state.byId[ge.b];
-      if (!a || !b) continue;
-      if (state.hiddenIds && (state.hiddenIds.has(a.id) || state.hiddenIds.has(b.id))) continue;
-      // Strength → opacity; cap at 0.5 so they always feel "ambient."
-      ctx.globalAlpha = Math.min(0.5, ge.score * 0.9);
-      ctx.strokeStyle = isDark ? 'rgba(201, 184, 224, 1)' : 'rgba(125, 181, 181, 1)';
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  // Pass 3 — shortest-path edges (thick, rose-gold) — only consecutive pairs.
-  if (state.shortestPath && state.shortestPath.edges && state.shortestPath.edges.size > 0) {
-    ctx.strokeStyle = 'rgba(240, 198, 116, 0.95)';
-    ctx.lineWidth = 2.4 / zoom;
-    ctx.globalAlpha = 1;
-    ctx.beginPath();
-    for (const e of edges) {
-      const a = state.byId[e.source.id || e.source];
-      const b = state.byId[e.target.id || e.target];
-      if (!a || !b) continue;
-      const key = a.id < b.id ? a.id + '\0' + b.id : b.id + '\0' + a.id;
-      if (state.shortestPath.edges.has(key)) {
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-      }
-    }
-    ctx.stroke();
-    ctx.lineWidth = 1 / zoom;
-  }
-
-  // -------- Pulses (animated dots travelling along edges) ---------------
-  if (state.pulses.size > 0) {
-    const now = Date.now();
-    ctx.fillStyle = 'rgba(232, 169, 169, 0.95)';
-    ctx.globalAlpha = 1;
-    for (const [key, p] of state.pulses.entries()) {
-      const elapsed = (now - p.start) / 1000;
-      if (elapsed > 1.2) { state.pulses.delete(key); continue; }
-      const a = state.byId[p.edge.source.id || p.edge.source];
-      const b = state.byId[p.edge.target.id || p.edge.target];
-      if (!a || !b) continue;
-      const t = elapsed / 1.2;
-      const x = a.x + (b.x - a.x) * t;
-      const y = a.y + (b.y - a.y) * t;
-      ctx.beginPath();
-      ctx.arc(x, y, 2.6 / zoom, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  // -------- Nodes (with soft glow for selected + neighbours) ------------
-  for (const n of nodes) {
-    if (state.hiddenIds && state.hiddenIds.has(n.id)) continue; // truly hidden
-    const inlinks = n.inlinks || 0;
-    const r = nodeRadius(n);
-    const isFocus    = selected === n.id || hover === n.id;
-    const isNeighbor = neighbors && neighbors.has(n.id);
-    const visible    = nodeIsVisible(n, state);
-    const inCompare  = state.compare ? (state.compare.a.has(n.id) || state.compare.b.has(n.id)) : true;
-    const dim        = (focused && !isNeighbor) || !visible || (state.compare && !inCompare);
-
-    // Soft glow underlay for the focused node and its neighbours.
-    if (isFocus || (focused && isNeighbor)) {
-      const g = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, r * 4);
-      const col = isFocus ? '232, 169, 169' : '201, 184, 224';
-      g.addColorStop(0, `rgba(${col}, ${isFocus ? 0.55 : 0.35})`);
-      g.addColorStop(1, `rgba(${col}, 0)`);
-      ctx.fillStyle = g;
-      ctx.globalAlpha = 1;
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, r * 4, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // Color resolution (selected/active/hover always win, then color-by-mode,
-    // then inlink-based fallback shade).
-    const modeFill = colorForNode(n, state, isDark, style);
-    let fill;
-    // Compare-mode wins over coloring schemes — left side teal, right side rose,
-    // shared nodes gold, all others dim.
-    let compareFill = null;
-    let compareDim  = false;
-    if (state.compare) {
-      const inA = state.compare.a.has(n.id);
-      const inB = state.compare.b.has(n.id);
-      if (inA && inB)         compareFill = '#f0c674';
-      else if (inA)           compareFill = '#7db5b5';
-      else if (inB)           compareFill = '#e8a9a9';
-      else                    compareDim  = true;
-    }
-    if (selected === n.id)              fill = '#e8a9a9';
-    else if (state.activePath === n.id) fill = '#f0c674';
-    else if (hover === n.id)            fill = '#c9b8e0';
-    else if (compareFill)               fill = compareFill;
-    else if (modeFill)                  fill = modeFill;
-    else if (inlinks >= 6)              fill = '#7db5b5';
-    else if (inlinks >= 1)              fill = '#bfa9d9';
-    else                                fill = '#d8c9a8';
-
-    ctx.globalAlpha = dim ? 0.18 : 1;
-    ctx.beginPath();
-    ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-    ctx.fillStyle = fill;
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(59, 46, 42, 0.45)';
-    ctx.lineWidth = 1 / zoom;
-    ctx.stroke();
-
-    // Orphan / dead-end ring (notes with no incoming or no outgoing links).
-    if (state.highlightOrphans) {
-      const isOrphan  = (n.inlinks  || 0) === 0;
-      const isDeadEnd = (n.outlinks || 0) === 0;
-      if (isOrphan || isDeadEnd) {
-        ctx.save();
-        ctx.setLineDash([3 / zoom, 3 / zoom]);
-        ctx.strokeStyle = isOrphan && isDeadEnd
-          ? 'rgba(220, 90, 90, 0.85)'
-          : isOrphan ? 'rgba(220, 130, 90, 0.75)' : 'rgba(220, 180, 80, 0.65)';
-        ctx.lineWidth = 1.4 / zoom;
-        ctx.beginPath();
-        ctx.arc(n.x, n.y, r + 4 / zoom, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
-      }
-    }
-
-    // Multi-select ring (lasso pick).
-    if (state.selectedSet && state.selectedSet.has(n.id)) {
-      ctx.save();
-      ctx.strokeStyle = 'rgba(125, 181, 181, 0.95)';
-      ctx.lineWidth = 2 / zoom;
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, r + 5 / zoom, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    // Live agent activity halo — pulse a ring at the agent's color when the
-    // agent is currently reading/writing this note.
-    if (state.agentActivity && state.agentActivity.has(n.id)) {
-      const act = state.agentActivity.get(n.id);
-      const phase = ((Date.now() - (act.until - 5000)) % 1500) / 1500;
-      const ringR = r + (4 + phase * 10) / zoom;
-      ctx.save();
-      ctx.globalAlpha = 0.55 * (1 - phase);
-      ctx.strokeStyle = act.color || '#7db5b5';
-      ctx.lineWidth = 2 / zoom;
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, ringR, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    // Shortest-path glow.
-    if (state.shortestPath && state.shortestPath.nodes && state.shortestPath.nodes.has(n.id)) {
-      ctx.save();
-      const grd = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, r * 4);
-      grd.addColorStop(0, 'rgba(240, 198, 116, 0.7)');
-      grd.addColorStop(1, 'rgba(240, 198, 116, 0)');
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = grd;
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, r * 4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
-  }
-
-  // -------- Labels ------------------------------------------------------
-  // Always draw the hovered label. Otherwise draw zoomed-in labels or all-on.
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-
-  const drawLabel = (n, alpha) => {
-    const r = nodeRadius(n);
-    const fontPx = 11 / zoom;
-    ctx.font = `${fontPx}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = `rgba(${labelRgb.r}, ${labelRgb.g}, ${labelRgb.b}, 0.92)`;
-    ctx.fillText(n.title || n.id, n.x, n.y + r + (4 / zoom));
-  };
-
-  if (state.showAllLabels) {
-    for (const n of nodes) {
-      if (!nodeIsVisible(n, state)) continue;
-      drawLabel(n, 0.85);
-    }
-  } else if (zoom > 1.4) {
-    const a = Math.min(1, (zoom - 1.4) / 0.5);
-    for (const n of nodes) {
-      if (!nodeIsVisible(n, state)) continue;
-      if (focused && !neighbors.has(n.id)) continue;
-      drawLabel(n, a);
-    }
-  } else if (focused && neighbors) {
-    // Show labels for the focused node + neighbours
-    for (const id of neighbors) {
-      const n = state.byId[id];
-      if (n) drawLabel(n, n.id === selected || n.id === hover ? 1 : 0.7);
-    }
-  }
-
-  // Hover label is always rendered prominently.
-  if (hover && state.byId[hover]) {
-    drawLabel(state.byId[hover], 1);
-  }
-
-  // -------- Cluster labels (overlay text at cluster centroids) ----------
-  if (state.clusterColoring && state.clusters && state.clusterLabels) {
-    const centroids = clusterCentroids(state);
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    for (const c of centroids) {
-      const label = state.clusterLabels[c.idx];
-      if (!label) continue;
-      const fontPx = Math.max(14, Math.min(28, 10 + Math.sqrt(c.n) * 2)) / zoom;
-      ctx.font = `700 ${fontPx}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
-      // Pillow background
-      const metrics = ctx.measureText(label);
-      const w = metrics.width + 16 / zoom;
-      const h = fontPx + 8 / zoom;
-      ctx.globalAlpha = 0.85;
-      ctx.fillStyle = `rgba(${labelRgb.r}, ${labelRgb.g}, ${labelRgb.b}, 0.10)`;
-      ctx.beginPath();
-      const rad = 4 / zoom;
-      ctx.roundRect ? ctx.roundRect(c.x - w/2, c.y - h/2, w, h, rad) : ctx.rect(c.x - w/2, c.y - h/2, w, h);
-      ctx.fill();
-      ctx.globalAlpha = 0.92;
-      ctx.fillStyle = `rgba(${labelRgb.r}, ${labelRgb.g}, ${labelRgb.b}, 0.92)`;
-      ctx.fillText(label, c.x, c.y);
-    }
-  }
-
-  ctx.restore();
-
-  // -------- Screen-space overlays: lasso rect + link-drag rubber band ---
-  // (Drawn after restore so they're in unscaled screen coords.)
-  if (state.lassoRect) {
-    const r = state.lassoRect;
-    const x = Math.min(r.x0, r.x1), y = Math.min(r.y0, r.y1);
-    const w = Math.abs(r.x1 - r.x0), h = Math.abs(r.y1 - r.y0);
-    ctx.save();
-    ctx.fillStyle = 'rgba(125, 181, 181, 0.12)';
-    ctx.strokeStyle = 'rgba(125, 181, 181, 0.85)';
-    ctx.lineWidth = 1.2;
-    ctx.setLineDash([4, 4]);
-    ctx.fillRect(x, y, w, h);
-    ctx.strokeRect(x, y, w, h);
-    ctx.restore();
-  }
-  if (state.linkDrag) {
-    const ld = state.linkDrag;
-    const fromNode = state.byId[ld.fromId];
-    if (fromNode) {
-      const sx = state.pan.x + fromNode.x * state.zoom;
-      const sy = state.pan.y + fromNode.y * state.zoom;
-      ctx.save();
-      ctx.strokeStyle = 'rgba(232, 169, 169, 0.9)';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([6, 4]);
-      ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.lineTo(ld.endX, ld.endY);
-      ctx.stroke();
-      ctx.fillStyle = 'rgba(232, 169, 169, 1)';
-      ctx.beginPath();
-      ctx.arc(ld.endX, ld.endY, 4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
-  }
-}
 
 
-/* ================================================================
-   Missing components — reconstructed after external file corruption
-   ================================================================ */
 
-/* ---------------- Custom Markdown renderer (no marked.js) ---------------- */
+
+
+
 
 export { GraphView };

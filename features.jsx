@@ -1869,6 +1869,6 @@ function ApprovalTray({ pending, onApprove, onReject }) {
   );
 }
 
-const CafresoHQV2 = { TaskBoard, MeetingRoom, MeetingPicker, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, StandupModal, SEED_TASKS, SEED_MEMORY };
+const CafresoHQV2 = { TaskBoard, MeetingRoom, MeetingPicker, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, SEED_TASKS, SEED_MEMORY };
 
 export { CafresoHQV2 };
