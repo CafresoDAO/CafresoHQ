@@ -490,12 +490,12 @@ function OnboardingKeyStep() {
           : 'Free · unique to you · you can change it anytime in Settings.')}
       </div>
       <div style={{ marginTop: 'var(--sp-2)', fontSize: 'var(--text-9)', color: 'var(--ink-3)' }}>
-        Want stronger output? Plug in your own Claude, GPT or paid key —{' '}
+        Want stronger output or have an existing key? Plug in Gemini, Claude, GPT, or local models —{' '}
         <button
           type="button"
           onClick={() => window.dispatchEvent(new CustomEvent('cafresohq:openSettings', { detail: { tab: 'keys' } }))}
           style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', cursor: 'pointer', ...linkStyle }}
-        >bring your own brain →</button>
+        >configure in Settings →</button>
       </div>
     </div>
   );
@@ -532,7 +532,7 @@ function GettingStarted({ hasKey, hired, chatted, assigned, built, sawWork, onAd
        OnboardingKeyStep's footer for why naming a half-existing
        destination is the §5 problem rather than the fix for it. The button
        below exists for every reader. */
-    { k: 'key',   done: !!hasKey,   n: 1, label: 'Your AI brain',            hint: 'Nothing here can think yet. A free local brain or your own key both work — start here.', act: onAddKey, cta: 'Brain settings' },
+    { k: 'key',   done: !!hasKey,   n: 1, label: 'Your AI brain',            hint: 'Connect an AI brain (Gemini, Claude, OpenAI, or free OpenRouter) or run locally to power your crew.', act: onAddKey, cta: 'Brain settings' },
     { k: 'hire',  done: !!hired,    n: 2, label: 'Hire your first specialist', hint: 'Click an empty desk (or press H) — or seed a swarm.', act: onHire,  cta: 'Hire' },
     { k: 'chat',  done: !!chatted,  n: 3, label: 'Chat with your team',      hint: 'Say hi to your CEO — ask for anything.',            act: onChat,  cta: 'Open chat' },
     { k: 'task',  done: !!assigned, n: 4, label: 'Give them a task',          hint: 'Add a task, then drop it on a desk to delegate.',    act: onTasks, cta: 'Open tasks' },
