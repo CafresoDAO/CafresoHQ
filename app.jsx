@@ -25,9 +25,9 @@ const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useRef: u
 const { Rail, OfficeView, Ticker, ChatPanel, AgentCards, Ico, InspectPanel, CEOPanel, TokenHUD, TopbarMenu, ShortcutHud, Toast, NAV_ITEMS, Btn, ToastProvider, CommandPaletteProvider, useCommands, NotificationBell, NotificationCenter, OnboardingTour, OnboardingKeyStep, GettingStarted, VocabCtx, getVocab, PaletteFab } = CafresoHQUI;
 const { HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal, FurnishModal,
         StarterTasksModal, DeliverySheet } = CafresoHQModals;
-const { TaskBoard, MeetingRoom, MeetingPicker, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, SEED_TASKS, SEED_MEMORY } = CafresoHQV2;
+const { TaskBoard, MeetingRoom, MeetingPicker, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, StandupModal, SEED_TASKS, SEED_MEMORY } = CafresoHQV2;
 const { MissionsModal, useMissionRunner } = CafresoHQMissions;
-const { TasksView, MemoryPage, TeamView, VaultView, GraphView, ProjectsView, WorkspaceView, TerminalView, MarketView, VIEW_LABELS, CanistersView} = CafresoHQViews;
+const { TasksView, MemoryPage, TeamView, CalendarView, VaultView, GraphView, ProjectsView, WorkspaceView, TerminalView, MarketView, VIEW_LABELS, CanistersView } = CafresoHQViews;
 
 /* How much of a brief a message record keeps. Module scope so the check
    that the trim reports itself can lift the cap instead of restating the
@@ -7440,6 +7440,8 @@ ${d.text}` : d.text,
         return <WorkspaceView projects={projects} setProjects={setProjects} agents={agents} onSwitchView={goTo} />;
       case 'terminal':
         return <TerminalView />;
+      case 'canisters':
+        return <CanistersView active={activeView} />;
       case 'market':
         return <MarketView agents={agents} />;
       default:
@@ -7454,7 +7456,7 @@ ${d.text}` : d.text,
   const WIN_DEFAULT_DIMS = {
     tasks: { w: 600, h: 500 }, memory: { w: 560, h: 540 }, team: { w: 640, h: 520 },
     calendar: { w: 660, h: 540 }, vault: { w: 720, h: 560 }, projects: { w: 760, h: 580 },
-    terminal: { w: 680, h: 440 }, visual: { w: 680, h: 500 }, market: { w: 760, h: 600 },
+    terminal: { w: 680, h: 440 }, canisters: { w: 680, h: 540 }, visual: { w: 680, h: 500 }, market: { w: 760, h: 600 },
   };
   const openOrRaise = useCallbackA((view) => {
     if (!view || view === 'chat') return;

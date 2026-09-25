@@ -40,6 +40,7 @@ function Ico({ kind, size=16 }) {
   /* The hiring hall: a hall with a roof and two doors — the room you walk
      into to hire from the network (views/market.jsx). */
   if (kind === 'market') return (<svg {...common}><polygon points="2,7 8,2 14,7" fill={K}/><rect x="3" y="7" width="10" height="7" fill="none" stroke={K} strokeWidth="2"/><rect x="5" y="9" width="2" height="5" fill={K}/><rect x="9" y="9" width="2" height="5" fill={K}/></svg>);
+  if (kind === 'canisters') return (<svg {...common}><rect x="3" y="2" width="10" height="3" fill="none" stroke={K} strokeWidth="1.5"/><rect x="3" y="6" width="10" height="3" fill="none" stroke={K} strokeWidth="1.5"/><rect x="3" y="10" width="10" height="3" fill="none" stroke={K} strokeWidth="1.5"/><rect x="5" y="3" width="2" height="1" fill={K}/><rect x="5" y="7" width="2" height="1" fill={K}/><rect x="5" y="11" width="2" height="1" fill={K}/></svg>);
   return null;
 }
 

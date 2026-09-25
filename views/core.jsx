@@ -135,6 +135,7 @@ const VIEW_LABELS = {
   team:      'STAFF ROSTER',
   projects:  'WORKSPACE',
   terminal:  'TERMINAL',
+  canisters: 'CANISTERS',
 };
 
 /* ---------------- Tasks (full board with filter + search) ---------------- */
@@ -1006,7 +1007,157 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
    a mission that isn't running contributes nothing, the same way an
    un-created task does. Night-shift schedules carry a `nextRunAt` too and
    are filed the same way, via `nightShiftPending` below (see #170). */
+function CalendarView({ tasks, agents, missions = [], nightShiftBoard = [], nightShiftRuns = [], nightShiftPending = [], onOpenTask = null }) {
+  const groups = useMV(() => {
+    const out = new Map();
+    const push = (ts, entry) => {
+      const key = officeDate(new Date(ts));
+      if (!out.has(key)) out.set(key, []);
+      out.get(key).push(entry);
+    };
+    for (const t of tasks) {
+      push(t.createdAt || Date.now(), { kind: 'task', at: t.createdAt || Date.now(), task: t });
+    }
+    const nightRunning = (nightShiftBoard || []).map(n => ({
+      id: n.id, agentId: n.agentId, topic: n.topic, status: 'running',
+      startedAt: n.startedAt, durationMs: n.durationMs, intervalMs: n.intervalMs,
+    }));
+    const nightFinished = (nightShiftRuns || []).map(r => ({
+      id: r.id, agentId: r.agentId, topic: r.topic,
+      status: (r.errors > 0) ? 'error' : 'done',
+      startedAt: r.startedAt,
+      durationMs: Math.max(0, (r.finishedAt || 0) - (r.startedAt || 0)),
+      endedAt: r.finishedAt, notesWritten: r.writes || [],
+    }));
+    for (const m of [...missions, ...nightRunning, ...nightFinished]) {
+      if (!m || !m.startedAt || !m.durationMs) continue;
+      if (m.status === 'running') {
+        push(m.startedAt + m.durationMs,
+             { kind: 'mission', at: m.startedAt + m.durationMs, mission: m, done: false });
+      } else {
+        const at = m.endedAt || (m.startedAt + m.durationMs);
+        push(at, { kind: 'mission', at, mission: m, done: true });
+      }
+    }
 
+    for (const s of (nightShiftPending || [])) {
+      if (!s || !s.nextRunAt) continue;
+      push(s.nextRunAt, { kind: 'mission-pending', at: s.nextRunAt, sched: s });
+    }
+    return [...out.entries()]
+      .map(([day, items]) => [day, items.sort((a, b) => b.at - a.at)])
+      .sort((a,b) => b[0].localeCompare(a[0]));
+  }, [tasks, missions, nightShiftBoard, nightShiftRuns, nightShiftPending]);
+
+  const dayLabel = (k) => {
+    const t = new Date(officeDate() + 'T12:00:00');   // local, matching the keys
+    const d = new Date(k + 'T12:00:00');
+    const days = Math.round((d - t) / 86400000);
+    if (days === 0) return { text: 'Today', ahead: false };
+    if (days === 1) return { text: 'Tomorrow', ahead: true };
+    if (days === -1) return { text: 'Yesterday', ahead: false };
+    return {
+      text: d.toLocaleDateString(undefined, {
+        weekday: 'short', month: 'short', day: 'numeric',
+        ...(d.getFullYear() === t.getFullYear() ? {} : { year: 'numeric' }),
+      }),
+      ahead: days > 0,
+    };
+  };
+
+  return (
+    <div className="view-calendar">
+      <div className="section-title">
+        🗓 CALENDAR
+        <span className="tag">your business by day · tasks when raised · missions when they wrap</span>
+      </div>
+      {groups.length === 0 && (
+        <div className="empty-state onboard">
+          <div className="empty-title">🗓 Nothing on the calendar yet</div>
+          <div className="empty-sub">
+            Your business by day. Add a task on the <strong>board</strong> (or drop one on
+            a coworker's desk in the office) and it lands here — so does a research
+            mission, on the day it's due to wrap up.
+          </div>
+        </div>
+      )}
+      {groups.map(([day, items]) => {
+        const label = dayLabel(day);
+        return (
+        <div key={day} className="cal-day">
+          <div className={'cal-day-head' + (label.ahead ? ' ahead' : '')}>
+            {label.text}
+            {label.ahead && <span className="cal-ahead">HASN'T HAPPENED YET</span>}
+            <span className="cal-count">{items.length}</span>
+          </div>
+          <div className="cal-day-body">
+            {items.map(entry => {
+              const time = new Date(entry.at).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+              if (entry.kind === 'mission-pending') {
+                const s = entry.sched;
+                const a = agents.find(x => x.id === s.agentId);
+                return (
+                  <div key={'pending-' + s.id} className="cal-item cal-mission">
+                    <div className="cal-time">{time}</div>
+                    <div className="cal-title">🌙 {s.topic} — starts</div>
+                    <div className="cal-meta">
+                      {a ? <><Sprite data={a.color} scale={1}/> {a.name}</> : <span className="muted">{s.agentName || s.agentId}</span>}
+                      <span className="pri">{s.recurrence === 'daily' ? 'repeats nightly' : 'one-time'}</span>
+                      <span className="status-pill">SCHEDULED</span>
+                    </div>
+                  </div>
+                );
+              }
+              if (entry.kind === 'mission') {
+                const m = entry.mission;
+                const a = agents.find(x => x.id === m.agentId);
+                const notes = (m.notesWritten || []).length;
+                const OUT = { done:   ['finished',  'DONE',    'ok'],
+                              paused: ['stopped',   'STOPPED', 'warn'],
+                              error:  ['ended early', 'FAILED', 'bad'] };
+                const [verb, pill, tone] = OUT[m.status] || ['ended', String(m.status || '').toUpperCase(), 'warn'];
+                return (
+                  <div key={m.id} className={'cal-item cal-mission' + (entry.done ? ' is-done' : '')}>
+                    <div className="cal-time">{time}</div>
+                    <div className="cal-title">🔬 {m.topic} — {entry.done ? verb : 'wraps up'}</div>
+                    <div className="cal-meta">
+                      {a ? <><Sprite data={a.color} scale={1}/> {a.name}</> : <span className="muted">{m.agentId}</span>}
+                      {entry.done
+                        ? <span className="pri">{notes} note{notes === 1 ? '' : 's'} filed</span>
+                        : <span className="pri">every {Math.max(1, Math.round((m.intervalMs || 0) / 60000))}m</span>}
+                      <span className={'status-pill ' + (entry.done ? tone : 'busy')}>
+                        {entry.done ? pill : 'RUNNING'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              }
+              const t = entry.task;
+              const a = agents.find(x => x.id === t.assignedTo);
+              return (
+                <div key={t.id} className={`cal-item status-${t.status}`}
+                  role={onOpenTask ? 'button' : undefined}
+                  tabIndex={onOpenTask ? 0 : undefined}
+                  style={onOpenTask ? { cursor: 'pointer' } : undefined}
+                  onClick={onOpenTask ? () => onOpenTask(t.id) : undefined}
+                  onKeyDown={onOpenTask ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenTask(t.id); } } : undefined}>
+                  <div className="cal-time">{time}</div>
+                  <div className="cal-title">{t.title}</div>
+                  <div className="cal-meta">
+                    {a ? <><Sprite data={a.color} scale={1}/> {a.name}</> : <span className="muted">unassigned</span>}
+                    <span className={`pri pri-${t.priority||'med'}`}>{(t.priority||'med').toUpperCase()}</span>
+                    <span className={`status-pill ${t.status}`}>{t.status.toUpperCase()}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        );
+      })}
+    </div>
+  );
+}
 
 /* ---------------- Obsidian-style folder tree ---------------- */
 /* Build a nested tree from a flat list of {path, title} entries. Folders
@@ -1169,4 +1320,4 @@ function FolderTree({ files, openPath, onOpen, expanded, setExpanded, onMove = n
 
 /* ---------------- Obsidian Vault — unified Vault + Graph tab ---------------- */
 
-export { FolderTree, MemoryPage, TasksView, TeamView, VIEW_LABELS, hexToRgb, useStoredV };
+export { CalendarView, FolderTree, MemoryPage, TasksView, TeamView, VIEW_LABELS, hexToRgb, useStoredV };

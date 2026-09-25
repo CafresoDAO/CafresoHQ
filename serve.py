@@ -5110,6 +5110,84 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     _terminal_kill   = pty_server._terminal_kill
     _terminal_stream = pty_server._terminal_stream
 
+    def _export_artifacts(self):
+        """Export generated workspace artifacts and the vault as a ZIP."""
+        import io
+        import zipfile
+        import pathlib
+        
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+            # Add Vault
+            if _vault_root:
+                vr = pathlib.Path(_vault_root).resolve()
+                if vr.is_dir():
+                    for f in vr.rglob('*'):
+                        if f.is_file() and not any(part.startswith('.') for part in f.relative_to(vr).parts):
+                            zf.write(f, arcname=f'vault/{f.relative_to(vr)}')
+                            
+            # Add Projects (workspace path)
+            pr = pathlib.Path(_workspace_path('')).resolve()
+            if pr.is_dir():
+                for f in pr.rglob('*'):
+                    if f.is_file() and not any(part.startswith('.') for part in f.relative_to(pr).parts):
+                        zf.write(f, arcname=f'projects/{f.relative_to(pr)}')
+
+        buf.seek(0)
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/zip')
+        self.send_header('Content-Disposition', 'attachment; filename="cafreso_workspace_export.zip"')
+        self.send_header('Content-Length', str(len(buf.getvalue())))
+        self.end_headers()
+        self.wfile.write(buf.getvalue())
+
+    def _canister_status(self):
+        """Ping cycle balance and status using dfx."""
+        import subprocess
+        import json
+        import pathlib
+        
+        # Look for canister_ids.json in workspace
+        pr = pathlib.Path(_workspace_path('')).resolve()
+        cid_file = pr / 'canister_ids.json'
+        
+        canisters = []
+        if cid_file.is_file():
+            try:
+                data = json.loads(cid_file.read_text())
+                for name, network_map in data.items():
+                    for network, cid in network_map.items():
+                        # We only query the active network, but let's query whatever we have
+                        # Active ping logic via dfx
+                        balance = "Unknown"
+                        status = "Unknown"
+                        
+                        try:
+                            # Note: --network ic is standard for mainnet, but we'll use what's in the json
+                            res = subprocess.run(['dfx', 'canister', 'status', name, '--network', network], capture_output=True, text=True, timeout=5)
+                            if res.returncode == 0:
+                                out = res.stdout
+                                if 'Balance: ' in out:
+                                    balance = out.split('Balance: ')[1].split('\n')[0].strip()
+                                if 'Status: ' in out:
+                                    status = out.split('Status: ')[1].split('\n')[0].strip()
+                            else:
+                                status = "Offline / Error"
+                        except Exception:
+                            status = "Ping failed"
+
+                        canisters.append({
+                            'id': cid,
+                            'name': name,
+                            'network': network,
+                            'balance': balance,
+                            'status': status
+                        })
+            except Exception as e:
+                return self._send_json(500, {'error': str(e)})
+        
+        return self._send_json(200, {'canisters': canisters})
+
     def _app_origins(self):
         """Browser origins permitted to open the terminal WebSocket and fetch the
         PTY nonce: the production gateway, localhost dev, plus any canister
@@ -7468,86 +7546,6 @@ def _ensure_local_tls(state_dir, lan_ip='', allow_selfsigned=True):
     sys.stderr.write('[tls] no cert tool available (mkcert/openssl/cryptography) '
                      '— staying on HTTP\n')
     return None, None, False
-
-
-
-    def _export_artifacts(self):
-        """Export generated workspace artifacts and the vault as a ZIP."""
-        import io
-        import zipfile
-        import pathlib
-        
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
-            # Add Vault
-            if _vault_root:
-                vr = pathlib.Path(_vault_root).resolve()
-                if vr.is_dir():
-                    for f in vr.rglob('*'):
-                        if f.is_file() and not any(part.startswith('.') for part in f.relative_to(vr).parts):
-                            zf.write(f, arcname=f'vault/{f.relative_to(vr)}')
-                            
-            # Add Projects (workspace path)
-            pr = pathlib.Path(_workspace_path('')).resolve()
-            if pr.is_dir():
-                for f in pr.rglob('*'):
-                    if f.is_file() and not any(part.startswith('.') for part in f.relative_to(pr).parts):
-                        zf.write(f, arcname=f'projects/{f.relative_to(pr)}')
-
-        buf.seek(0)
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/zip')
-        self.send_header('Content-Disposition', 'attachment; filename="cafreso_workspace_export.zip"')
-        self.send_header('Content-Length', str(len(buf.getvalue())))
-        self.end_headers()
-        self.wfile.write(buf.getvalue())
-
-    def _canister_status(self):
-        """Ping cycle balance and status using dfx."""
-        import subprocess
-        import json
-        import pathlib
-        
-        # Look for canister_ids.json in workspace
-        pr = pathlib.Path(_workspace_path('')).resolve()
-        cid_file = pr / 'canister_ids.json'
-        
-        canisters = []
-        if cid_file.is_file():
-            try:
-                data = json.loads(cid_file.read_text())
-                for name, network_map in data.items():
-                    for network, cid in network_map.items():
-                        # We only query the active network, but let's query whatever we have
-                        # Active ping logic via dfx
-                        balance = "Unknown"
-                        status = "Unknown"
-                        
-                        try:
-                            # Note: --network ic is standard for mainnet, but we'll use what's in the json
-                            res = subprocess.run(['dfx', 'canister', 'status', name, '--network', network], capture_output=True, text=True, timeout=5)
-                            if res.returncode == 0:
-                                out = res.stdout
-                                if 'Balance: ' in out:
-                                    balance = out.split('Balance: ')[1].split('\n')[0].strip()
-                                if 'Status: ' in out:
-                                    status = out.split('Status: ')[1].split('\n')[0].strip()
-                            else:
-                                status = "Offline / Error"
-                        except Exception:
-                            status = "Ping failed"
-
-                        canisters.append({
-                            'id': cid,
-                            'name': name,
-                            'network': network,
-                            'balance': balance,
-                            'status': status
-                        })
-            except Exception as e:
-                return self._send_json(500, {'error': str(e)})
-        
-        return self._send_json(200, {'canisters': canisters})
 
 
 if __name__ == '__main__':
