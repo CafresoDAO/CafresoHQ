@@ -75,6 +75,23 @@ function WorkspaceView({ projects, setProjects, agents = [], onSwitchView }) {
   const snag = (what, e) => toast('error', `${what} — ${officeCause((e && e.message) || String(e))}`);
   const C = CafresoHQClient;
 
+  const [cloningDemo, setCloningDemo] = useSV(false);
+  const cloneDemo = async () => {
+    setCloningDemo(true);
+    try {
+      const r = await CafresoHQClient.cloneRepo({
+        url: 'https://github.com/CafresoDAO/CafresoHQ.git',
+        name: 'CafresoHQ-Demo',
+        depth: 1,
+      });
+      commitProject({ name: 'CafresoHQ App', path: r.path, source: 'github:https://github.com/CafresoDAO/CafresoHQ.git' });
+    } catch (e) {
+      toast('error', `Failed to clone demo: ${e.message}`);
+    }
+    setCloningDemo(false);
+  };
+
+
   const [mode, setMode] = useSV(() => LS('mode', 'workspace'));
   /* Same never-silently-drop-edits contract as openPath: flipping to Classic
      unmounts the editor, so confirm first if the open file has unsaved changes. */
@@ -881,9 +898,14 @@ function WorkspaceView({ projects, setProjects, agents = [], onSwitchView }) {
             No projects yet. A project is a folder your coworkers can build
             in — docs, pages, code — and you can watch them work in it.
           </div>
-          <button className="px-btn primary" onClick={() => setShowAdd(true)}>
-            Create your first project
-          </button>
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 12 }}>
+            <button className="px-btn primary" onClick={() => setShowAdd(true)}>
+              Create your first project
+            </button>
+            <button className="px-btn" onClick={cloneDemo} disabled={cloningDemo}>
+              {cloningDemo ? 'Cloning...' : 'Explore CafresoHQ Demo'}
+            </button>
+          </div>
         </div>
       ) : _isMobile ? (
         <>
@@ -1024,6 +1046,23 @@ function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
 
   const [showAdd, setShowAdd] = useSV(false);
   const [addPrefill, setAddPrefill] = useSV('');
+
+  
+  const [cloningDemo, setCloningDemo] = useSV(false);
+  const cloneDemo = async () => {
+    setCloningDemo(true);
+    try {
+      const r = await CafresoHQClient.cloneRepo({
+        url: 'https://github.com/CafresoDAO/CafresoHQ.git',
+        name: 'CafresoHQ-Demo',
+        depth: 1,
+      });
+      commitProject({ name: 'CafresoHQ App', path: r.path, source: 'github:https://github.com/CafresoDAO/CafresoHQ.git' });
+    } catch (e) {
+      if (window.cafresohqToast) window.cafresohqToast.error(`Failed to clone demo: ${e.message}`);
+    }
+    setCloningDemo(false);
+  };
 
   const _isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
   const [mobileStep, setMobileStep] = useSV(_isMobile ? 'list' : null);
@@ -1464,9 +1503,10 @@ function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
                 }}
               >+ ADD</button>
             </div>
-            {projects.length === 0 && (
+                        {projects.length === 0 && (
               <div style={{padding:24,textAlign:'center',opacity:0.6}}>
-                No projects yet. Tap + ADD to create one.
+                No projects yet. Tap + ADD to create one.<br/>
+                <button style={{marginTop: 12, padding: '6px 12px', fontSize: 'var(--text-9)', cursor: 'pointer'}} onClick={cloneDemo} disabled={cloningDemo}>{cloningDemo ? 'Cloning...' : 'Explore CafresoHQ Demo'}</button>
               </div>
             )}
             {projects.map(p => (
@@ -1679,10 +1719,11 @@ function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
             >+ ADD</button>
           </div>
           <div style={{overflowY: 'auto', flex: 1, padding: '4px 0'}}>
-            {projects.length === 0 && (
+                        {projects.length === 0 && (
               <div className="proj-empty-msg">
                 No projects yet.<br/>
-                <span style={{fontSize:'var(--text-9)',opacity:0.7}}>Click + ADD or drop a folder here.</span>
+                <span style={{fontSize:'var(--text-9)',opacity:0.7}}>Click + ADD or drop a folder here.</span><br/>
+                <button style={{marginTop: 12, padding: '6px 12px', fontSize: 'var(--text-9)', cursor: 'pointer'}} onClick={cloneDemo} disabled={cloningDemo}>{cloningDemo ? 'Cloning...' : 'Explore CafresoHQ Demo'}</button>
               </div>
             )}
             {projects.map(p => (
