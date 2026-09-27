@@ -379,6 +379,25 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
   const tools = formToolIds(toolsPicked);
   const [avatar, setAvatar] = useStateM('rose');
   const [model, setModel] = useStateM('anthropic:claude-haiku-4-5-20251001');
+  const [modelManuallySet, setModelManuallySet] = useStateM(false);
+
+  const updateRole = (newRole) => {
+    setRole(newRole);
+    if (!modelManuallySet) {
+      const isCoder = /coder|developer|engineer/i.test(newRole);
+      if (isCoder) {
+        // Try to default to an Expert model
+        setModel('anthropic:claude-sonnet-4-6');
+      } else {
+        setModel('anthropic:claude-haiku-4-5-20251001');
+      }
+    }
+  };
+
+  const updateModel = (newModel) => {
+    setModel(newModel);
+    setModelManuallySet(true);
+  };
   const [temp, setTemp] = useStateM(0.4);
   /* elevated = the agent will be backed by an CafresoHQ session with file/shell
      access on the host computer. Off by default — a deliberate, scary opt-in. */
@@ -833,7 +852,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
                   picker itself still needs to show real ids (you're
                   choosing exactly which one), same as Settings. */}
               <label>BRAIN</label>
-              <ModelPicker value={model} onChange={setModel} />
+              <ModelPicker value={model} onChange={updateModel} />
               {/* The guided front desk only ever offers brains it FOUND on
                   this machine ("We found your Claude subscription…"). This
                   manual form offers all 27 and defaults to

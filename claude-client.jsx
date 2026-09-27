@@ -1673,6 +1673,17 @@ async function probe() {
 /* Build a grouped, prefixed list for model-picker UIs.
    Returns: [{ label, provider, options: [{ id, label }] }, ...] */
 async function localModelOptions() {
+
+  // Tier Annotations
+  const EXPERTS = ['sonnet', 'opus', 'pro', 'gpt-4o', 'llama-3.3-70b'];
+  const FAST = ['haiku', 'flash', 'gpt-4o-mini', '8b'];
+  const tagTier = (id, baseLabel) => {
+    const s = id.toLowerCase();
+    if (EXPERTS.some(t => s.includes(t))) return baseLabel + ' ⚡️ Expert';
+    if (FAST.some(t => s.includes(t))) return baseLabel + ' 🚀 Fast';
+    return baseLabel;
+  };
+
   /* ORDER IS A CLAIM. Section 3.3: "Bring what you already pay for — the
      default backend is whatever the user ALREADY HAS. We never make
      someone buy a new key to feel the product."
@@ -1699,12 +1710,12 @@ async function localModelOptions() {
       groups.push({
         label: 'Anthropic (Pro/Max via Claude Code CLI)',
         provider: 'claudecode',
-        options: CLAUDECODE_MODELS.map(m => ({ id: 'claudecode:' + m, label: m })),
+        options: CLAUDECODE_MODELS.map(m => ({ id: 'claudecode:' + m, label: tagTier(m, m) })),
       });
       groups.push({
         label: 'CafresoHQ · file & shell access (Claude Code + tools)',
         provider: 'cafresohq',
-        options: CAFRESOHQ_MODELS.map(m => ({ id: 'cafresohq:' + m, label: m })),
+        options: CAFRESOHQ_MODELS.map(m => ({ id: 'cafresohq:' + m, label: tagTier(m, m) })),
       });
     }
   } catch (_e) {}
@@ -1716,7 +1727,7 @@ async function localModelOptions() {
       groups.push({
         label: 'Codex · file & shell access (OpenAI Codex CLI + tools)',
         provider: 'codex',
-        options: CODEX_MODELS.map(m => ({ id: 'codex:' + m, label: m })),
+        options: CODEX_MODELS.map(m => ({ id: 'codex:' + m, label: tagTier(m, m) })),
       });
     }
   } catch (_e) {}
@@ -1735,7 +1746,7 @@ async function localModelOptions() {
       groups.push({
         label: 'Gemini · file & shell access (Google Gemini CLI + tools)',
         provider: 'gemini',
-        options: GEMINI_CLI_MODELS.map(m => ({ id: 'gemini:' + m, label: m })),
+        options: GEMINI_CLI_MODELS.map(m => ({ id: 'gemini:' + m, label: tagTier(m, m) })),
       });
     }
   } catch (_e) {}
@@ -1774,7 +1785,7 @@ async function localModelOptions() {
         groups.push({
           label: `${label} (server key)`,
           provider: id,
-          options: [{ id: `${id}:${model}`, label: model }],
+          options: [{ id: `${id}:${model}`, label: tagTier(model, model) }],
         });
       }
     }
@@ -1801,7 +1812,7 @@ async function localModelOptions() {
     const h = await hermesStatus();
     if (h.configured) {
       const opts = (h.models.length ? h.models : HERMES_MODELS)
-        .map(m => ({ id: 'hermes:' + m, label: m }));
+        .map(m => ({ id: 'hermes:' + m, label: tagTier(m, m) }));
       groups.push({
         label: 'Hermes Agent (Nous Research)',
         provider: 'hermes',
@@ -1843,7 +1854,7 @@ async function localModelOptions() {
       provider: 'lmstudio',
       options: lmChat.map(m => ({
         id: 'lmstudio:' + m.id,
-        label: m.id + (m.state === 'loaded' ? ' ✓' : ''),
+        label: tagTier(m.id, m.id) + (m.state === 'loaded' ? ' ✓' : ''),
       })),
     });
   }
@@ -1853,7 +1864,7 @@ async function localModelOptions() {
       provider: 'ollama',
       options: ol.map(m => ({
         id: 'ollama:' + m.name,
-        label: m.name + (m.parameter_size ? ` (${m.parameter_size})` : ''),
+        label: tagTier(m.name, m.name) + (m.parameter_size ? ` (${m.parameter_size})` : ''),
       })),
     });
   }
@@ -1861,12 +1872,12 @@ async function localModelOptions() {
   keyed.push({
     label: 'Anthropic (Claude API · credits)',
     provider: 'anthropic',
-    options: ANTHROPIC_MODELS.map(m => ({ id: 'anthropic:' + m, label: m })),
+    options: ANTHROPIC_MODELS.map(m => ({ id: 'anthropic:' + m, label: tagTier(m, m) })),
   });
   keyed.push({
     label: 'Google (Gemini API · credits)',
     provider: 'google',
-    options: GEMINI_MODELS.map(m => ({ id: 'google:' + m, label: m })),
+    options: GEMINI_MODELS.map(m => ({ id: 'google:' + m, label: tagTier(m, m) })),
   });
   return groups.concat(keyed);
 }
