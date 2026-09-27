@@ -54,13 +54,23 @@ function ModelPicker({ value, onChange, refreshKey }) {
            is exactly when a boss is least in the mood to be sold
            something. Static lists only; nothing here is detected, so the
            CLI goes first on the chance that it is there. */
+        
+        const EXPERTS = ['sonnet', 'opus', 'pro', 'gpt-4o', 'llama-3.3-70b'];
+        const FAST = ['haiku', 'flash', 'gpt-4o-mini', '8b'];
+        const tagTier = (id, baseLabel) => {
+          const s = id.toLowerCase();
+          if (EXPERTS.some(t => s.includes(t))) return baseLabel + ' ⚡️ Expert';
+          if (FAST.some(t => s.includes(t))) return baseLabel + ' 🚀 Fast';
+          return baseLabel;
+        };
         const fallback = [
           { label: 'Codex CLI', provider: 'codex',
-            options: CafresoHQClient.CODEX_MODELS.map(m => ({ id: 'codex:' + m, label: m })) },
+            options: CafresoHQClient.CODEX_MODELS.map(m => ({ id: 'codex:' + m, label: tagTier(m, m) })) },
           { label: 'Anthropic (Claude API)', provider: 'anthropic',
-            options: CafresoHQClient.ANTHROPIC_MODELS.map(m => ({ id: 'anthropic:' + m, label: m })) },
+            options: CafresoHQClient.ANTHROPIC_MODELS.map(m => ({ id: 'anthropic:' + m, label: tagTier(m, m) })) },
           { label: 'Google (Gemini API)', provider: 'google',
-            options: CafresoHQClient.GEMINI_MODELS.map(m => ({ id: 'google:' + m, label: m })) },
+            options: CafresoHQClient.GEMINI_MODELS.map(m => ({ id: 'google:' + m, label: tagTier(m, m) })) },
+
         ];
         setGroups(fallback);
         setLoading(false);
