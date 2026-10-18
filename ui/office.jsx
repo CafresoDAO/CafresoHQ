@@ -1578,7 +1578,7 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
                             </div>
                           )}
                           <Px n="desk_agent" className="px-desk" />
-                          {(screen || liveTool || a.status === 'busy') && !away && <span className={`px-glow${(screen || liveTool) ? '' : ' thinking'} ${a.isMarket ? 'market-glow' : ''}`} aria-hidden="true" />}
+                          {(screen || liveTool || a.status === 'busy') && !away && <span className={`px-glow${(screen || liveTool) ? '' : ' thinking'}${a.isMarket ? ' market-glow' : ''}`} aria-hidden="true" />}
                           {a.isMarket ? (a.jobStatus !== 'funded' ? null : (
                             /* Only a funded, unclaimed job can be taken back —
                                cancelJob refuses once a coworker has claimed it. */

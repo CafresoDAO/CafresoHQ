@@ -202,11 +202,15 @@ def source_pins():
     check('no other animation was added to the scene by this section', sec[:sec.index('#432 · the office, alive')].count('animation:') == 1 if '#432 · the office, alive' in sec else sec.count('animation:') == 1)
     # ── #432: alive ─────────────────────────────────────────────────────
     alive = css[css.index('#432 · the office, alive'):]
+    # The section ends where the next numbered section begins; later
+    # sections (the hall, Pro Mode, telemetry) carry their own animations.
+    if '#434 · sign in with' in alive:
+        alive = alive[:alive.index('#434 · sign in with')]
     check('the thinking glow is gated behind prefers-reduced-motion: no-preference',
           re.search(r"@media \(prefers-reduced-motion: no-preference\) \{[^}]*px-think[^}]*\}\s*\}", alive) and alive.count('animation:') == 2)
     jsx = (ROOT / 'ui' / 'office.jsx').read_text(encoding='utf-8')
     check('a busy coworker lights the monitor while thinking, a tool run keeps the flicker',
-          "a.status === 'busy') && !away && <span className={`px-glow${(screen || liveTool) ? '' : ' thinking'}`}" in jsx)
+          "a.status === 'busy') && !away && <span className={`px-glow${(screen || liveTool) ? '' : ' thinking'}" in jsx)
     check('the idle bubble is marked quiet from the coworker\'s status, text untouched',
           "className={`px-bubble${(a.status || 'idle') === 'idle' ? ' quiet' : ''}`}>{a.task}" in jsx)
     check('the clock is a tick a minute, not an animation loop', 'setInterval(() => { const d = new Date(); setClockHour' in jsx and '60000' in jsx)

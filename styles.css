@@ -12154,6 +12154,13 @@ body {
   --bg-card:  var(--paper-2);
 }
 
+/* The hall's two ambient glows loop forever; like every other loop in the
+   office (#431/#432), they rest when the OS asks for reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  .marketplace-illuminated,
+  .px-hall-badge { animation: none; }
+}
+
 /* ─── Pro Mode (sleek glass over the pixel office) ──────────────
    A real theme: it re-points the SAME palette tokens every other theme
    sets (--paper/--ink/--rule/--accent-*), so every surface follows —
