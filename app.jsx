@@ -8221,7 +8221,7 @@ ${d.text}` : d.text,
                     <div className="fab-item-icon">⚙️</div>
                   </button>
                   <button className="fab-item" onClick={() => { if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(30); setFabOpen(false); setHireOpen(true); }}>
-                    <span className="fab-item-label">Hire Agent</span>
+                    <span className="fab-item-label">Hire a coworker</span>
                     <div className="fab-item-icon">👥</div>
                   </button>
                   <button className="fab-item" onClick={() => { if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(30); setFabOpen(false); if (window.cafresohqPalette) window.cafresohqPalette.open(); }}>

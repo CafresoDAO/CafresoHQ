@@ -205,7 +205,11 @@ function MobileTabBar({ active, setActive, onOpenSettings, onOpenInbox, onOpenSt
      reporting it is what kept a real finding from becoming three. */
   const toolItems = [
     { icon: '📬', label: 'Inbox',    badge: inboxCount || 0,   action: onOpenInbox },
+    { icon: '📁', label: 'Memory',   badge: 0,                  action: onOpenMemory },
+    { icon: '🌅', label: 'Stand-up', badge: 0,                  action: onOpenStandup },
     { icon: '🔬', label: 'Research', badge: missionCount || 0,  action: onOpenResearch },
+    { icon: '📋', label: 'Meeting',  badge: meetingCount || 0,  action: onOpenMeeting },
+    { icon: '⚡', label: 'Workflow', badge: 0,                  action: onOpenWorkflow },
     { icon: night ? '☀' : '☾', label: night ? 'Day' : 'Night', badge: 0, action: onToggleNight },
     { icon: '⚙️', label: 'Settings', badge: 0,                  action: onOpenSettings },
   ];

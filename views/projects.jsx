@@ -86,7 +86,7 @@ function WorkspaceView({ projects, setProjects, agents = [], onSwitchView }) {
       });
       commitProject({ name: 'CafresoHQ App', path: r.path, source: 'github:https://github.com/CafresoDAO/CafresoHQ.git' });
     } catch (e) {
-      toast('error', `Failed to clone demo: ${e.message}`);
+      toast('error', "Couldn't copy the demo project — check this machine can reach github.com, then try again.");
     }
     setCloningDemo(false);
   };
@@ -1059,7 +1059,7 @@ function ProjectsView({ projects, setProjects, agents = [], onSwitchView }) {
       });
       commitProject({ name: 'CafresoHQ App', path: r.path, source: 'github:https://github.com/CafresoDAO/CafresoHQ.git' });
     } catch (e) {
-      if (window.cafresohqToast) window.cafresohqToast.error(`Failed to clone demo: ${e.message}`);
+      if (window.cafresohqToast) window.cafresohqToast.error("Couldn't copy the demo project — check this machine can reach github.com, then try again.");
     }
     setCloningDemo(false);
   };

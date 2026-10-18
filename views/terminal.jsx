@@ -202,9 +202,9 @@ function EmbeddedTerminal({ project, cli, sessionId, visible, authMethod }) {
         }
         
         let authMsg = _sub ? "OAuth Subscription" : "Local Environment";
-        if (cli === 'claude' && ak) authMsg = "Injected Anthropic Vault Key";
-        if (cli === 'gemini' && gk) authMsg = "Injected Google Vault Key";
-        if (cli === 'codex' && ok) authMsg = "Injected OpenAI Vault Key";
+        if (cli === 'claude' && ak) authMsg = "your saved Anthropic key";
+        if (cli === 'gemini' && gk) authMsg = "your saved Google key";
+        if (cli === 'codex' && ok) authMsg = "your saved OpenAI key";
         term.writeln(`\r\n\x1b[32m[Auth: ${authMsg}]\x1b[0m\r\n`);
 
         ws.send(JSON.stringify({
