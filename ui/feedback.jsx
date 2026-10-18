@@ -674,4 +674,13 @@ function useCommands(commands, deps = []) {
    kinds: 'receipt' | 'agent' | 'mission' | 'approval' | 'system'
    ───────────────────────────────────────────────────────────────────── */
 
-export { CommandPaletteProvider, ToastProvider, useCommands, useToast };
+function PaletteFab() {
+  return (
+    <button className="palette-fab" aria-label="Open command palette"
+      onClick={() => window.cafresohqPalette && window.cafresohqPalette.open()}>
+      <span style={{fontSize: 22, lineHeight: 1}}>🛠️</span>
+    </button>
+  );
+}
+
+export { CommandPaletteProvider, PaletteFab, ToastProvider, useCommands, useToast };

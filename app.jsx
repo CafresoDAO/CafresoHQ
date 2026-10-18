@@ -22,7 +22,7 @@ import { ChatWindow, MSG_STATES, WindowFrame, _chatAnchor, _railRight } from './
    ========================================================================== */
 
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useRef: useRefA, useCallback: useCallbackA } = React;
-const { Rail, OfficeView, Ticker, ChatPanel, AgentCards, Ico, InspectPanel, CEOPanel, TokenHUD, TopbarMenu, ShortcutHud, Toast, NAV_ITEMS, Btn, ToastProvider, CommandPaletteProvider, useCommands, NotificationBell, NotificationCenter, OnboardingTour, OnboardingKeyStep, GettingStarted, VocabCtx, getVocab} = CafresoHQUI;
+const { Rail, OfficeView, Ticker, ChatPanel, AgentCards, Ico, InspectPanel, CEOPanel, TokenHUD, TopbarMenu, ShortcutHud, Toast, NAV_ITEMS, Btn, ToastProvider, CommandPaletteProvider, useCommands, NotificationBell, NotificationCenter, OnboardingTour, OnboardingKeyStep, GettingStarted, VocabCtx, getVocab, PaletteFab } = CafresoHQUI;
 const { HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal, FurnishModal,
         StarterTasksModal, DeliverySheet } = CafresoHQModals;
 const { TaskBoard, MeetingRoom, MeetingPicker, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, StandupModal, SEED_TASKS, SEED_MEMORY } = CafresoHQV2;
@@ -7855,7 +7855,8 @@ ${d.text}` : d.text,
           <span className="maf-label">APPROVAL{approvals.length > 1 ? 'S' : ''}</span>
         </button>
       )}
-            <div className="main">
+      <PaletteFab />
+      <div className="main">
         <div className="topbar">
           <cafreso-ecobar current="hq"></cafreso-ecobar>
           <div className="crumbs">
