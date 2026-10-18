@@ -749,10 +749,6 @@ async function streamOpenAICompat({ base, label, system, messages, model, temper
       try { if (window.setTelemetry) window.setTelemetry(JSON.parse(data).message); } catch (_e) {}
       return;
     }
-    if (event === "hermes.tool.progress") {
-      try { if (window.setTelemetry) window.setTelemetry(JSON.parse(data).message); } catch (_e) {}
-      return;
-    }
     if (!data || data === '[DONE]') return;
     try {
       const j = JSON.parse(data);
@@ -1245,10 +1241,6 @@ async function streamClaudeCode({ system, messages, model, temperature, maxToken
       try { if (window.setTelemetry) window.setTelemetry(JSON.parse(data).message); } catch (_e) {}
       return;
     }
-    if (event === "hermes.tool.progress") {
-      try { if (window.setTelemetry) window.setTelemetry(JSON.parse(data).message); } catch (_e) {}
-      return;
-    }
     if (!data || data === '[DONE]') return;
     try { readCliDelta(JSON.parse(data), { onToken, onUsage }, state); } catch (_e) {}
   });
@@ -1288,10 +1280,6 @@ async function streamCafresoHQ({ system, messages, model, temperature, maxTokens
   }
   const state = { driverError: null };
   await parseSSE(res, (event, data) => {
-    if (event === "hermes.tool.progress") {
-      try { if (window.setTelemetry) window.setTelemetry(JSON.parse(data).message); } catch (_e) {}
-      return;
-    }
     if (event === "hermes.tool.progress") {
       try { if (window.setTelemetry) window.setTelemetry(JSON.parse(data).message); } catch (_e) {}
       return;
@@ -1340,10 +1328,6 @@ async function streamCodex({ system, messages, model, temperature, maxTokens, ag
       try { if (window.setTelemetry) window.setTelemetry(JSON.parse(data).message); } catch (_e) {}
       return;
     }
-    if (event === "hermes.tool.progress") {
-      try { if (window.setTelemetry) window.setTelemetry(JSON.parse(data).message); } catch (_e) {}
-      return;
-    }
     if (!data || data === '[DONE]') return;
     try { readCliDelta(JSON.parse(data), { onToken, onUsage }, state); } catch (_e) {}
   });
@@ -1383,10 +1367,6 @@ async function streamAgentContract(driver, label, { system, messages, model, max
     throw new Error(`${label} ${res.status}: ${t.slice(0, 400)}`);
   }
   await parseSSE(res, (event, data) => {
-    if (event === "hermes.tool.progress") {
-      try { if (window.setTelemetry) window.setTelemetry(JSON.parse(data).message); } catch (_e) {}
-      return;
-    }
     if (event === "hermes.tool.progress") {
       try { if (window.setTelemetry) window.setTelemetry(JSON.parse(data).message); } catch (_e) {}
       return;
@@ -2300,10 +2280,6 @@ async function terminalStream({ messages, cli, cwd, model, projectName, sessionI
     throw new Error(`Terminal ${res.status}: ${t.slice(0, 400)}`);
   }
   await parseSSE(res, (event, data) => {
-    if (event === "hermes.tool.progress") {
-      try { if (window.setTelemetry) window.setTelemetry(JSON.parse(data).message); } catch (_e) {}
-      return;
-    }
     if (event === "hermes.tool.progress") {
       try { if (window.setTelemetry) window.setTelemetry(JSON.parse(data).message); } catch (_e) {}
       return;
