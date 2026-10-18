@@ -1072,6 +1072,7 @@ function IcpServicesPanel({ agents }) {
    palette entries in app.jsx and THEME_VOCAB in ui.jsx. */
 const THEME_PRESETS = [
   { id: 'default',      name: '🏢 Pixel Office',   sub: 'the classic HQ' },
+  { id: 'pro',          name: '✨ Pro Mode',       sub: 'sleek enterprise glassmorphism' },
   { id: 'sepia',        name: '📜 Sepia',          sub: 'warm parchment tones' },
   { id: 'solarized',    name: '🌊 Solarized',      sub: 'cool teal & amber' },
   { id: 'dracula',      name: '🦇 Dracula',        sub: 'dark purple neon' },

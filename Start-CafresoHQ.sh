@@ -12,6 +12,13 @@ set -e
 # cd to the directory this script lives in (the repo root), regardless of caller.
 cd "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 
+# Load .env if present
+if [ -f .env ]; then
+  set -a
+  . ./.env
+  set +a
+fi
+
 # ── Prerequisite preflight ──────────────────────────────────────────────────
 # `## 405.` — the README names "Node 18+ and Python 3" and nothing checked for
 # either. This script already explained a missing `npm`; its LAST line was a
