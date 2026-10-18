@@ -402,11 +402,15 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
   const [marketJobs, setMarketJobs] = useState([]);
   useEffect(() => {
     let dead = false;
-    const mkt = CafresoHQClient.market;
-    if (!mkt) return;
+    /* The hall client lives on the shell bridge (CafresoHQChain.market — the
+       same one views/market.jsx uses); there is no CafresoHQClient.market, so
+       reading it there meant hired workers never reached the floor. */
+    const chain = CafresoHQChain;
+    if (!(chain && chain.isAvailable && chain.isAvailable() && chain.market)) return;
+    const mkt = chain.market;
     const poll = async () => {
       try {
-        const jobs = await mkt().myJobs();
+        const jobs = await mkt.myJobs();
         if (!dead && jobs) {
           const active = jobs.filter(j => j.status === 'funded' || j.status === 'claimed' || j.status === 'delivered');
           const names = {};
@@ -414,7 +418,7 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
             const listId = j.workerListing || j.listing;
             if (listId && !names[listId]) {
               try {
-                const card = await mkt().listing(listId);
+                const card = await mkt.listing(listId);
                 names[listId] = card && card.listing ? card.listing.name : 'Network Worker';
               } catch (e) {}
             }
@@ -435,6 +439,7 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
     role: 'Hired Coworker',
     isMarket: true,
     jobId: j.id,
+    jobStatus: j.status,
     token: j.token,
     price: j.price,
     color: 'marketplace',
@@ -1570,20 +1575,29 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
                           )}
                           <Px n="desk_agent" className="px-desk" />
                           {(screen || liveTool || a.status === 'busy') && !away && <span className={`px-glow${(screen || liveTool) ? '' : ' thinking'} ${a.isMarket ? 'market-glow' : ''}`} aria-hidden="true" />}
-                          {a.isMarket ? (
-                            <div className="px-market-cancel" 
-                                 title="Cancel this worker and refund escrow"
-                                 onClick={(e)=>{
+                          {a.isMarket ? (a.jobStatus !== 'funded' ? null : (
+                            /* Only a funded, unclaimed job can be taken back —
+                               cancelJob refuses once a coworker has claimed it. */
+                            <div className="px-market-cancel"
+                                 title="Take this job back — the escrow is refunded to you"
+                                 onClick={async (e)=>{
                                    e.stopPropagation();
-                                   if(window.confirm('Cancel this worker and refund escrow?')) {
-                                     const m = CafresoHQClient.market;
-                                     if (m) m().cancel(a.jobId, 'cancelled from floor');
-                                   }
+                                   const ok = await window.hqConfirm(
+                                     `Take back "${a.task}" before anyone starts it?\n\nThe escrowed ${a.price} ${a.token || ''} is refunded to your account.`,
+                                     { okLabel: 'Take it back', danger: true });
+                                   if (!ok) return;
+                                   const t = window.cafresohqToast;
+                                   try {
+                                     const r = await CafresoHQChain.market.cancel(a.jobId, 'withdrawn from the floor');
+                                     if (r && r.status === 'error') t && t.error(`The job wasn't taken back — ${r.error}`);
+                                     else if (r && r.status === 'declined') t && t.info('You declined the signature — nothing changed.');
+                                     else t && t.success('Taken back — the escrow is on its way to you.');
+                                   } catch (_e) { t && t.error("The job wasn't taken back — the hall didn't answer. Try again from the Hiring Hall."); }
                                  }}
                                  style={{ position: 'absolute', top: -10, right: -10, color: '#ff4444', fontWeight: 'bold', cursor: 'pointer', background: '#222', borderRadius: '50%', width: 16, height: 16, textAlign: 'center', lineHeight: '14px', fontSize: 12, border: '1px solid #ff4444', zIndex: 10 }}>
                               ✕
                             </div>
-                          ) : (
+                          )) : (
                             <Px n="mug" className={'px-mug clickable' + (coffeeSteam[a.id] ? ' is-fresh' : '')}
                                 title={`Send ${a.name} for coffee — stops anything running and clears their desk`}
                                 onClick={(e)=>{e.stopPropagation(); onCoffee(a);}}
