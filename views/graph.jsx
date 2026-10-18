@@ -781,6 +781,12 @@ function typeColor(type, isDark) {
   return colors[t] || colors.note;
 }
 
+const CLUSTER_HUES = [10, 35, 55, 95, 130, 175, 200, 230, 270, 300, 325, 350];
+function clusterColor(idx, isDark) {
+  const hue = CLUSTER_HUES[idx % CLUSTER_HUES.length];
+  return `hsl(${hue}, ${isDark ? 60 : 50}%, ${isDark ? 65 : 58}%)`;
+}
+
 function colorForNode(n, state, isDark, computedStyle) {
   // Cluster coloring overrides colorMode when toggled on.
   if (state.clusterColoring && state.clusters) {
