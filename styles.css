@@ -3571,7 +3571,7 @@ body.night .subord-name { color: var(--accent-teal, #00d4b5); }
   font-weight: 700;
 }
 .composer-mini--primary:hover {
-  background: hsl(45 95% 58%);
+  background: color-mix(in srgb, var(--brand-banana) 88%, black);
   border-color: var(--brand-coffee);
   color: var(--brand-coffee);
 }
@@ -12145,64 +12145,139 @@ body.night .px-bubble.quiet { opacity: 0.5; }
   backdrop-filter: blur(4px);
 }
 
-/* ─── Pro Mode (Glassmorphism) ──────────────────────────────────
-   Sleek enterprise UI, drop shadows, no pixel borders.
-   Applied via body.theme-pro */
+/* Surface tokens the newer components (hall cards, telemetry bar, mobile
+   terminal bar) read. Declared on body — not :root — so var(--paper)
+   resolves against the ACTIVE theme's --paper, which themes also set on
+   body. Pro Mode overrides --bg-panel with its glass tint. */
+body {
+  --bg-panel: var(--paper);
+  --bg-card:  var(--paper-2);
+}
+
+/* ─── Pro Mode (sleek glass over the pixel office) ──────────────
+   A real theme: it re-points the SAME palette tokens every other theme
+   sets (--paper/--ink/--rule/--accent-*), so every surface follows —
+   then softens the chrome (rail, top bar, chat monitor, sheets, cards,
+   buttons) into rounded glass. The pixel office scene is untouched.
+   Applied via body.theme-pro (+ .night). */
 body.theme-pro {
-  --bg-office: #f4f5f7;
-  --bg-desk: #ffffff;
-  --ink: #1a1a2e;
-  --bg-window: rgba(255, 255, 255, 0.85);
-  --bg-panel: rgba(255, 255, 255, 0.6);
-  --border-window: rgba(0, 0, 0, 0.1);
-  --shadow-window: 0 8px 32px rgba(0, 0, 0, 0.1);
-  --shadow-panel: 0 4px 16px rgba(0, 0, 0, 0.05);
-  --accent: #0066ff;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --bg:          #eef1f6;
+  --bg-2:        #e3e8f0;
+  --paper:       #f8fafc;
+  --paper-2:     #eef2f7;
+  --ink:         #0f172a;
+  --ink-2:       #334155;
+  --ink-3:       #64748b;
+  --rule:        #d5dce6;
+  --rule-2:      #b6c2d2;
+  --accent-sun:  #6aa8ff;   /* primary actions */
+  --accent-teal: #22b8cf;
+  --accent-lav:  #8b7cf6;
+  --accent-rose: #f0607a;
+  --accent-leaf: #2fbf71;
+  --shadow-1: 0 1px 2px  rgba(15,23,42,0.06);
+  --shadow-2: 0 4px 14px rgba(15,23,42,0.08);
+  --shadow-3: 0 10px 28px rgba(15,23,42,0.10);
+  --shadow-4: 0 18px 44px rgba(15,23,42,0.14);
+  --bg-panel:      rgba(255,255,255,0.66);
+  --glass-border:  rgba(15,23,42,0.08);
+  --glass-blur:    14px;
+  /* The canonical --brand-* family (165 direct consumers: buttons, chat
+     strip, composer) is re-pointed too, or Pro would stop at the legacy
+     tokens and leave cream/banana chrome behind. */
+  --brand-crema:      #e3e8f0;
+  --brand-paper:      #f8fafc;
+  --brand-paper-2:    #eef2f7;
+  --brand-coffee:     #0f172a;
+  --brand-coffee-2:   #334155;
+  --brand-coffee-3:   #64748b;
+  --brand-rule:       #d5dce6;
+  --brand-banana:     #6aa8ff;
+  --brand-banana-rim: #3b82f6;
+  --brand-peach:      #dbe7ff;
   -webkit-font-smoothing: antialiased;
 }
-
 body.theme-pro.night {
-  --bg-office: #0d0d12;
-  --bg-desk: #1a1a24;
-  --ink: #e0e0e0;
-  --bg-window: rgba(30, 30, 40, 0.85);
-  --bg-panel: rgba(30, 30, 40, 0.6);
-  --border-window: rgba(255, 255, 255, 0.1);
-  --shadow-window: 0 8px 32px rgba(0, 0, 0, 0.5);
-  --accent: #4d94ff;
+  --bg:          #0b0f17;
+  --bg-2:        #111725;
+  --paper:       #121a2a;
+  --paper-2:     #0e1522;
+  --ink:         #e6ebf5;
+  --ink-2:       #aab4c8;
+  --ink-3:       #7182a0;
+  --rule:        #24304a;
+  --rule-2:      #34425f;
+  --accent-sun:  #5b9cff;
+  --shadow-2: 0 4px 14px rgba(0,0,0,0.45);
+  --shadow-3: 0 10px 28px rgba(0,0,0,0.55);
+  --bg-panel:      rgba(18,26,42,0.66);
+  --glass-border:  rgba(255,255,255,0.07);
+  --brand-crema:      #0b0f17;
+  --brand-paper:      #121a2a;
+  --brand-paper-2:    #0e1522;
+  --brand-coffee:     #e6ebf5;
+  --brand-coffee-2:   #aab4c8;
+  --brand-coffee-3:   #7182a0;
+  --brand-rule:       #24304a;
+  --brand-banana:     #5b9cff;
+  --brand-banana-rim: #3b82f6;
+  --brand-peach:      #1e2a44;
 }
 
+/* The base body paints warm cream glows over --bg; Pro swaps in cool ones. */
+body.theme-pro {
+  background-image:
+    radial-gradient(circle at 18% 8%,  rgba(106,168,255,0.16), transparent 42%),
+    radial-gradient(circle at 88% 82%, rgba(139,124,246,0.12), transparent 46%);
+}
+body.theme-pro.night {
+  background-image:
+    radial-gradient(circle at 18% 8%,  rgba(91,156,255,0.14), transparent 42%),
+    radial-gradient(circle at 88% 82%, rgba(139,124,246,0.10), transparent 46%);
+}
+
+body.theme-pro .rail,
+body.theme-pro .topbar,
+body.theme-pro .monitor,
+body.theme-pro .modal,
+body.theme-pro .cb-panel,
+body.theme-pro .drawer,
 body.theme-pro .hq-window,
 body.theme-pro .hq-panel,
 body.theme-pro .market-card,
 body.theme-pro .telemetry-bar {
-  border-radius: 12px;
-  border: 1px solid var(--border-window);
-  background: var(--bg-window);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow: var(--shadow-window);
+  background: var(--bg-panel);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-3);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
 }
-
-body.theme-pro button {
-  border-radius: 6px;
-  font-family: inherit;
-  border: 1px solid var(--border-window);
-}
-
-body.theme-pro .chat-msg {
+body.theme-pro .monitor,
+body.theme-pro .modal,
+body.theme-pro .cb-panel,
+body.theme-pro .hq-window,
+body.theme-pro .hq-panel,
+body.theme-pro .market-card { border-radius: 14px; }
+/* The chat monitor's header strip and composer paint their own cream
+   gradients; in Pro they let the monitor's glass show through. */
+body.theme-pro .monitor .bezel,
+body.theme-pro .monitor .composer { background: transparent; }
+body.theme-pro .bubble { border-radius: 12px; border-width: 1px; box-shadow: var(--shadow-1); }
+body.theme-pro .px-btn {
   border-radius: 8px;
+  border-width: 1px;
+  box-shadow: var(--shadow-1);
 }
-
+body.theme-pro .px-btn:active { transform: translateY(1px); box-shadow: none; }
+body.theme-pro input,
+body.theme-pro select,
+body.theme-pro textarea { border-radius: 8px; }
 body.theme-pro .hq-dock {
   border-radius: 16px;
+  background: var(--bg-panel);
+  border: 1px solid var(--glass-border);
   backdrop-filter: blur(16px);
-  background: rgba(255, 255, 255, 0.2);
-  border: 1px solid var(--border-window);
-}
-body.theme-pro.night .hq-dock {
-  background: rgba(0, 0, 0, 0.4);
+  -webkit-backdrop-filter: blur(16px);
 }
 
 /* ─── Telemetry Bar (Glass-Box Observability) ────────────────── */
@@ -12252,13 +12327,14 @@ body.theme-pro.night .hq-dock {
 
 .market-card {
   background: var(--bg-panel);
+  border: 1px solid var(--rule);
   border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  box-shadow: var(--shadow-2);
   transition: transform 0.2s, box-shadow 0.2s;
 }
 .market-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+  box-shadow: var(--shadow-3);
 }
 
 @media (max-width: 768px) {

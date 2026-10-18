@@ -1837,7 +1837,9 @@ ${d.text}` : d.text,
   useEffectA(() => {
     /* Apply theme class — only one at a time. 'default' = no class. */
     const cl = document.body.classList;
-    cl.remove('theme-sepia', 'theme-solarized', 'theme-dracula', 'theme-highcontrast', 'theme-coffeeshop', 'theme-wallstreet');
+    // Any theme-* class, not a hand-kept list: a new theme missing from such a
+    // list stayed on <body> under the next one picked (theme-pro did).
+    [...cl].filter(c => c.startsWith('theme-')).forEach(c => cl.remove(c));
     if (theme && theme !== 'default') cl.add('theme-' + theme);
   }, [theme]);
   // Expose memory to HQ so streams can fold it into the system prompt.
