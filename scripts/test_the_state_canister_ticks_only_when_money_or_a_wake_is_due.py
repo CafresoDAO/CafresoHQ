@@ -120,11 +120,11 @@ def main():
     ]:
         check(f'{fn} re-arms the {arm[3:].replace("Timer", "").lower()} timer', f'{arm}<system>()' in body_of(src, header), fn)
     check('a worker POST (fulfill accrues pay) re-arms the payroll timer',
-          'case (?res) { if (searchPayRateE8s != 0) { armPayrollTimer<system>() }; res };' in src)
+          'if (isWorkerPath(req.url) and searchPayRateE8s != 0) { armPayrollTimer<system>() };' in src)
     up = body_of(src, r'\n  system func postupgrade\(\) \{')
     check('an upgrade re-aims both timers from state', 'armPayrollTimer<system>();' in up and 'armWakeTimer<system>();' in up)
     check('a fresh install aims both from the actor tail, as the last declarations',
-          src.rstrip().endswith('armPayrollTimer<system>();\n  armWakeTimer<system>();\n}'))
+          re.search(r'armPayrollTimer<system>\(\);\n  armWakeTimer<system>\(\);\n(  [^\n]*\n)?\}\s*$', src) is not None)
 
     if shutil.which('dfx'):
         env = dict(os.environ, DFX_VERSION=(ROOT / '.dfx-version').read_text().strip() if (ROOT / '.dfx-version').exists() else '0.24.3')

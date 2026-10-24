@@ -291,13 +291,11 @@ jobs on record. Pinned by
 Expected idle burn after the upgrade: ~1 B/day (storage), i.e. the 4.2 T
 lasts years instead of a season.
 
-The same two changes are owed to `cafresohq_state` (its `main.mo` is edited
-by hand, not by the office): arm the wake timer only while wake is enabled,
-arm the payroll scan only while a salary or a worker payout is pending (or
-scan hourly at most), and answer public GETs (`/operator/config.json`,
-`/health`, 404s) from the query `http_request` instead of upgrading every
-request to a paid update — machine clients then read via
-`…raw.icp0.io`, which skips certification, or via an agent query.
+`cafresohq_state` got the same two changes in October 2026. Each of its
+loops now aims one timer at its next due moment (PR #60). Public GETs are
+answered from the query `http_request` under a skip-certification tree
+(`SkipCert.mo`), so they stay on the plain `icp0.io` URL every client
+already uses, and a read costs the canister nothing.
 
 ## 8. What was verified, and what was not
 
