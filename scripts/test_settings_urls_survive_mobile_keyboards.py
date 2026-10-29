@@ -126,7 +126,7 @@ def main():
         ('MediaKeyRow API KEY',
          "has ? '•••• (saved — type to replace)' : meta.ph"),
         ('BrowserKeysTab API KEY', 'value={s[r.keyField] || \'\'}'),
-        ('BraveTab API KEY', 'placeholder="BSA-…"'),
+        ('BraveTab API KEY', "placeholder={keyHas ? 'BSA-… (saved)' : 'BSA-…'}"),
     ]
     tags = {}
     for label, marker in FIELDS:

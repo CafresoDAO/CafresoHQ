@@ -1150,32 +1150,29 @@ export function MediaTab() {
 export function BrowserKeysTab() {
   const [s, update] = useSettingsStore();
   const C = CafresoHQClient;
-  const [keys, setKeys] = useStateM({});
-
+  /* These two keys live in the settings store because that is what the
+     brains read (hasUsableKey, streamAnthropic, streamGemini). A key typed
+     here was briefly routed to the agent keychain instead, which nothing on
+     the chat path reads — so carry any key that landed there back over once. */
   useEffectM(() => {
-    let mounted = true;
-    Promise.all([
-      C.getAgentKey('anthropic').catch(() => ''),
-      C.getAgentKey('google').catch(() => '')
-    ]).then(([a, g]) => {
-      if (mounted) setKeys({ anthropicKey: a, googleKey: g });
+    let live = true;
+    ['anthropic', 'google'].forEach(async (id) => {
+      const field = id + 'Key';
+      if (C.getSettings()[field]) return;
+      const v = await C.getAgentKey(id).catch(() => '');
+      if (live && v) update({ [field]: v });
     });
-    return () => { mounted = false; };
-  }, [C]);
-
-  const updateKey = (field, providerId, val) => {
-    setKeys(prev => ({ ...prev, [field]: val }));
-    C.setAgentKey(providerId, val).catch(() => {});
-  };
+    return () => { live = false; };
+  }, []);
 
   const rows = [
     { id: 'anthropic', h: '🧠 ANTHROPIC (CLAUDE API)', ph: 'sk-ant-…',
-      keyField: 'anthropicKey', modelField: 'anthropicModel', providerId: 'anthropic',
+      keyField: 'anthropicKey', modelField: 'anthropicModel',
       models: C.ANTHROPIC_MODELS,
       where: 'console.anthropic.com/settings/keys',
       link: 'https://console.anthropic.com/settings/keys' },
     { id: 'google', h: '🧠 GOOGLE (GEMINI API)', ph: 'AIza…',
-      keyField: 'googleKey', modelField: 'googleModel', providerId: 'google',
+      keyField: 'googleKey', modelField: 'googleModel',
       models: C.GEMINI_MODELS,
       where: 'aistudio.google.com/apikey',
       link: 'https://aistudio.google.com/apikey' },
@@ -1187,9 +1184,9 @@ export function BrowserKeysTab() {
           <h4>{r.h}</h4>
           <div className="form-row" style={{ marginBottom: 8 }}>
             <label>API KEY</label>
-            <input type="password" placeholder={r.ph} value={keys[r.keyField] || ''}
+            <input type="password" placeholder={r.ph} value={s[r.keyField] || ''}
               {...NO_MANGLE_PROPS}
-              onChange={e => updateKey(r.keyField, r.providerId, e.target.value)} />
+              onChange={e => update({ [r.keyField]: e.target.value })} />
             {/* Where to get one, the same way SELF_HOST_PROVIDERS does it in
                 the CLOUD KEYS panel — a boss who has got this far because a
                 hire warning sent them here does not necessarily have a key

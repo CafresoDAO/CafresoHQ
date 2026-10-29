@@ -109,6 +109,8 @@ function AppGlobalCommands({
     /* Themes. */
     { id: 'thm.default',      label: 'Theme: Warm pastel (default)', section: 'Theme', icon: '🎨',
       run: () => setTheme('default'),     when: theme !== 'default' },
+    { id: 'thm.pro',          label: 'Theme: Pro Mode',              section: 'Theme', icon: '✨',
+      run: () => setTheme('pro'),         when: theme !== 'pro' },
     { id: 'thm.sepia',        label: 'Theme: Sepia',                 section: 'Theme', icon: '📜',
       run: () => setTheme('sepia'),       when: theme !== 'sepia' },
     { id: 'thm.solarized',    label: 'Theme: Solarized',             section: 'Theme', icon: '☀',

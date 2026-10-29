@@ -90,7 +90,7 @@ def main():
 
     # ── wiring: the row exists in both layouts and the chips are doors ──
     check('both layouts render the backlinks row',
-          vault.count('{backlinksRow}') == 2)
+          vault.count('{backlinksPane}') == 2)
     check('the row hides itself when there is nothing to say',
           'backlinks.length ? (' in vault)
     check('a chip is a door to its source note',

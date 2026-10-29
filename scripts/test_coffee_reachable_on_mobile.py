@@ -199,7 +199,10 @@ def main():
 
     # ── (4) nothing floats over it ─────────────────────────────────────────
     check('the Apps FAB stands down while a review is open',
-          bool(re.search(r'\{!inspect\s*&&\s*<button className="hq-mobile-fab"', app)),
+          # The Apps button became a quick-action menu (fab-container); the
+          # gate is the same either way: nothing renders while a review is open.
+          bool(re.search(r'\{!inspect\s*&&\s*(?:<button className="hq-mobile-fab"'
+                         r'|\(\s*<div className=\{`fab-container)', app)),
           'app.jsx: the FAB is z-index 321 vs the panel\'s --z-window, so '
           'ungated it covers 1221px² of LET GO — the right ~40% of a '
           'DESTRUCTIVE button silently opening the app switcher')
