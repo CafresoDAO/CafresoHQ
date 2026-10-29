@@ -430,6 +430,8 @@ async function parseSSE(res, onLine) {
     throw new Error('backend closed the stream without sending anything'
       + (ctype && !/event-stream/i.test(ctype) ? ` (got content-type: ${ctype.split(';')[0]})` : ''));
   }
+  try { if (window.setTelemetry) window.setTelemetry("idle"); } catch (_e) {}
+
 }
 
 /* Bounded wait for a stream's RESPONSE HEADERS only. The global 45s wrapper
@@ -608,6 +610,10 @@ async function streamAnthropic({ system, messages, model, temperature, maxTokens
   let streamError = '';
   let truncated = false;
   await parseSSE(res, (event, data) => {
+    if (event === "hermes.tool.progress") {
+      try { if (window.setTelemetry) window.setTelemetry(JSON.parse(data).message); } catch (_e) {}
+      return;
+    }
     try {
       const j = JSON.parse(data);
       if (!streamError) {                                   // first error names the cause
@@ -738,7 +744,11 @@ async function streamOpenAICompat({ base, label, system, messages, model, temper
   let sawContent = false, sawReasoning = false;
   let streamError = '';
   let truncated = false;
-  await parseSSE(res, (_event, data) => {
+  await parseSSE(res, (event, data) => {
+    if (event === "hermes.tool.progress") {
+      try { if (window.setTelemetry) window.setTelemetry(JSON.parse(data).message); } catch (_e) {}
+      return;
+    }
     if (!data || data === '[DONE]') return;
     try {
       const j = JSON.parse(data);
@@ -1226,7 +1236,11 @@ async function streamClaudeCode({ system, messages, model, temperature, maxToken
     throw new Error(`Claude Code ${res.status}: ${t.slice(0, 400)}`);
   }
   const state = { driverError: null };
-  await parseSSE(res, (_event, data) => {
+  await parseSSE(res, (event, data) => {
+    if (event === "hermes.tool.progress") {
+      try { if (window.setTelemetry) window.setTelemetry(JSON.parse(data).message); } catch (_e) {}
+      return;
+    }
     if (!data || data === '[DONE]') return;
     try { readCliDelta(JSON.parse(data), { onToken, onUsage }, state); } catch (_e) {}
   });
@@ -1265,7 +1279,11 @@ async function streamCafresoHQ({ system, messages, model, temperature, maxTokens
     throw new Error(`CafresoHQ ${res.status}: ${t.slice(0, 400)}`);
   }
   const state = { driverError: null };
-  await parseSSE(res, (_event, data) => {
+  await parseSSE(res, (event, data) => {
+    if (event === "hermes.tool.progress") {
+      try { if (window.setTelemetry) window.setTelemetry(JSON.parse(data).message); } catch (_e) {}
+      return;
+    }
     if (!data || data === '[DONE]') return;
     try { readCliDelta(JSON.parse(data), { onToken, onUsage }, state); } catch (_e) {}
   });
@@ -1305,7 +1323,11 @@ async function streamCodex({ system, messages, model, temperature, maxTokens, ag
     throw new Error(`Codex ${res.status}: ${t.slice(0, 400)}`);
   }
   const state = { driverError: null };
-  await parseSSE(res, (_event, data) => {
+  await parseSSE(res, (event, data) => {
+    if (event === "hermes.tool.progress") {
+      try { if (window.setTelemetry) window.setTelemetry(JSON.parse(data).message); } catch (_e) {}
+      return;
+    }
     if (!data || data === '[DONE]') return;
     try { readCliDelta(JSON.parse(data), { onToken, onUsage }, state); } catch (_e) {}
   });
@@ -1344,7 +1366,11 @@ async function streamAgentContract(driver, label, { system, messages, model, max
     const t = await res.text();
     throw new Error(`${label} ${res.status}: ${t.slice(0, 400)}`);
   }
-  await parseSSE(res, (_event, data) => {
+  await parseSSE(res, (event, data) => {
+    if (event === "hermes.tool.progress") {
+      try { if (window.setTelemetry) window.setTelemetry(JSON.parse(data).message); } catch (_e) {}
+      return;
+    }
     if (!data) return;
     try {
       const ev = JSON.parse(data);
@@ -1432,6 +1458,10 @@ async function streamGoogle({ system, messages, model, temperature, maxTokens, o
   let sawText = false;
   let finish = '';
   await parseSSE(res, (event, data) => {
+    if (event === "hermes.tool.progress") {
+      try { if (window.setTelemetry) window.setTelemetry(JSON.parse(data).message); } catch (_e) {}
+      return;
+    }
     try {
       const j = JSON.parse(data);
       /* Why the answer stopped. Gemini closes a truncated, a safety-blocked
@@ -2249,7 +2279,11 @@ async function terminalStream({ messages, cli, cwd, model, projectName, sessionI
     const t = await res.text();
     throw new Error(`Terminal ${res.status}: ${t.slice(0, 400)}`);
   }
-  await parseSSE(res, (_event, data) => {
+  await parseSSE(res, (event, data) => {
+    if (event === "hermes.tool.progress") {
+      try { if (window.setTelemetry) window.setTelemetry(JSON.parse(data).message); } catch (_e) {}
+      return;
+    }
     if (!data || data === '[DONE]') return;
     try {
       const j = JSON.parse(data);

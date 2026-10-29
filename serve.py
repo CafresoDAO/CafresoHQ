@@ -42,6 +42,22 @@ import urllib.parse
 import urllib.request
 import uuid
 
+# Load local .env if present
+_env_path = pathlib.Path(__file__).resolve().parent / '.env'
+if _env_path.is_file():
+    try:
+        with open(_env_path, 'r', encoding='utf-8') as _env_f:
+            for _line in _env_f:
+                _line = _line.strip()
+                if _line and not _line.startswith('#') and '=' in _line:
+                    _k, _v = _line.split('=', 1)
+                    _k = _k.strip()
+                    _v = _v.strip().strip('\'"')
+                    if _k and _k not in os.environ:
+                        os.environ[_k] = _v
+    except Exception:
+        pass
+
 # Agent runtimes sit behind the driver contract (docs/DRIVER_CONTRACT.md);
 # routes here speak only that surface. Backends migrate into drivers/ one at
 # a time — claude-code first, Hermes last (§5 of the contract doc).

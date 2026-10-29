@@ -4,7 +4,7 @@ import { CafresoHQV2 } from './features.jsx';
 import { HQ } from './hq-runtime.jsx';
 import { CafresoHQMissions } from './missions.jsx';
 import { CafresoHQModals } from './modals.jsx';
-import { CafresoHQUI } from './ui.jsx';
+import { CafresoHQUI, TelemetryBar } from './ui.jsx';
 import { CafresoHQViews } from './views.jsx';
 import { downgradeElevatedModel } from './app/agents.jsx';
 import { brainName, emptyOfficeNote, officeHasBrain, withRouteOut } from './app/cast.jsx';
@@ -102,6 +102,10 @@ function App() {
   // durable roster (agents.json + the hq-agents.md rendered from it) lists
   // a 30-second helper as a member of staff for as long as the office
   // stays closed. The floor keeps the raw value — only the record filters.
+  const [telemetry, setTelemetry] = useStateA(null);
+  useEffectA(() => { window.setTelemetry = setTelemetry; }, [setTelemetry]);
+
+
   const [agents, setAgents] = useFileStored(k('agents'), 'memory', 'agents', seedAgents, persistableAgents,
     { persistTransform: persistableAgents });
 
@@ -913,7 +917,12 @@ function App() {
     // later in the DOM) paints over the Settings modal and swallows clicks.
     const onOpen = (e) => { setTourOpen(false); openSettings((e && e.detail && e.detail.tab) || null); };
     window.addEventListener('cafresohq:openSettings', onOpen);
-    return () => window.removeEventListener('cafresohq:openSettings', onOpen);
+    const onOpenHire = () => { setTourOpen(false); setHireOpen(true); };
+    window.addEventListener('cafresohq:openHire', onOpenHire);
+    return () => {
+      window.removeEventListener('cafresohq:openSettings', onOpen);
+      window.removeEventListener('cafresohq:openHire', onOpenHire);
+    };
   }, [openSettings]);
 
   // Backend reachability — surfaces a clear banner instead of silently failing
@@ -1828,7 +1837,9 @@ ${d.text}` : d.text,
   useEffectA(() => {
     /* Apply theme class — only one at a time. 'default' = no class. */
     const cl = document.body.classList;
-    cl.remove('theme-sepia', 'theme-solarized', 'theme-dracula', 'theme-highcontrast', 'theme-coffeeshop', 'theme-wallstreet');
+    // Any theme-* class, not a hand-kept list: a new theme missing from such a
+    // list stayed on <body> under the next one picked (theme-pro did).
+    [...cl].filter(c => c.startsWith('theme-')).forEach(c => cl.remove(c));
     if (theme && theme !== 'default') cl.add('theme-' + theme);
   }, [theme]);
   // Expose memory to HQ so streams can fold it into the system prompt.
@@ -7555,6 +7566,7 @@ ${d.text}` : d.text,
   const mobileMode = windowsEnabled && isNarrowViewport;
   const [mobileApp, setMobileApp] = useStateA(null);
   const [switcherOpen, setSwitcherOpen] = useStateA(false);
+  const [fabOpen, setFabOpen] = useStateA(false);
   const openMobileApp = useCallbackA((view) => {
     if (!view || view === 'chat') return;
     openOrRaise(view);
@@ -7724,6 +7736,8 @@ ${d.text}` : d.text,
     <VocabCtx.Provider value={vocab}>
     <ToastProvider>
     <CommandPaletteProvider>
+      <TelemetryBar message={telemetry} isIdle={telemetry === "idle"} />
+
     <AppGlobalCommands
       activeView={activeView}
       navigate={goTo}
@@ -8199,7 +8213,36 @@ ${d.text}` : d.text,
                 thing" trade the office ledger warns about, and it is not
                 worth making to keep a launcher on screen during a focused
                 task. It comes straight back when the panel closes. */}
-            {!inspect && <button className="hq-mobile-fab" title="Apps" onClick={() => setSwitcherOpen(true)}>▦</button>}
+            {!inspect && (
+              <div className={`fab-container ${fabOpen ? 'open' : ''}`}>
+                {fabOpen && <div className="fab-backdrop" onClick={() => setFabOpen(false)} />}
+                <div className={`fab-menu ${fabOpen ? 'open' : ''}`}>
+                  <button className="fab-item" onClick={() => { if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(30); setFabOpen(false); setSettingsOpen(true); }}>
+                    <span className="fab-item-label">Settings</span>
+                    <div className="fab-item-icon">⚙️</div>
+                  </button>
+                  <button className="fab-item" onClick={() => { if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(30); setFabOpen(false); setHireOpen(true); }}>
+                    <span className="fab-item-label">Hire a coworker</span>
+                    <div className="fab-item-icon">👥</div>
+                  </button>
+                  <button className="fab-item" onClick={() => { if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(30); setFabOpen(false); if (window.cafresohqPalette) window.cafresohqPalette.open(); }}>
+                    <span className="fab-item-label">Command Palette</span>
+                    <div className="fab-item-icon">⚡️</div>
+                  </button>
+                  <button className="fab-item" onClick={() => { if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(30); setFabOpen(false); setSwitcherOpen(true); }}>
+                    <span className="fab-item-label">Apps</span>
+                    <div className="fab-item-icon">▦</div>
+                  </button>
+                </div>
+                <button className="hq-mobile-fab" style={{
+                  position: 'relative', top: 'auto', left: 'auto', right: 'auto', bottom: 'auto', zIndex: 'auto',
+                  transform: fabOpen ? 'rotate(45deg)' : 'none',
+                  transition: 'transform 0.2s cubic-bezier(0.1, 0.9, 0.2, 1)'
+                }} aria-label="Quick actions" onClick={() => { if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(20); setFabOpen(!fabOpen); }}>
+                  {fabOpen ? '➕' : '▦'}
+                </button>
+              </div>
+            )}
             {switcherOpen && (
               <div className="hq-switcher" onClick={() => setSwitcherOpen(false)}>
                 <div className="hq-switcher-inner" onClick={(e) => e.stopPropagation()}>

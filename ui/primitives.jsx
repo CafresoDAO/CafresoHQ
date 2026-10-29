@@ -12,6 +12,7 @@ const THEME_VOCAB = {
   solarized:    null,
   dracula:      null,
   highcontrast: null,
+  pro:          null,
   coffeeshop:   { agent: 'Barista', agents: 'Baristas', office: 'Coffee Shop',   corner: 'ESPRESSO BAR',  hire: 'RECRUIT', vacant: 'OPEN',   live: 'ORDERS',  hireTitle: 'Recruit a barista' },
   wallstreet:   { agent: 'Broker',  agents: 'Brokers',  office: 'Trading Floor', corner: 'CORNER SUITE',  hire: 'RECRUIT', vacant: 'OPEN',   live: 'MARKET',  hireTitle: 'Recruit a broker', marketTicker: true },
 };
