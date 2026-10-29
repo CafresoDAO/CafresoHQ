@@ -44,6 +44,8 @@ import Nat64 "mo:base/Nat64";
 import Array "mo:base/Array";
 import Timer "mo:base/Timer";
 import Sha256 "Sha256";
+import SkipCert "SkipCert";
+import CertifiedData "mo:base/CertifiedData";
 
 actor CafresoHQState {
 
@@ -969,6 +971,7 @@ actor CafresoHQState {
   // postupgrade (runs after all definitions; init does not re-run). Re-aims
   // BOTH timers from state; timers never survive an upgrade.
   system func postupgrade() {
+    CertifiedData.set(SkipCert.rootHash());
     armPayrollTimer<system>();
     armWakeTimer<system>();
     rebuildLibraryIndex();     // libNorm → libKey re-keying; see the func for why
@@ -2825,11 +2828,18 @@ actor CafresoHQState {
     ?libJsonResponse(if (operatorConfig.size() > 0) { operatorConfig } else { "{}" });
   };
 
-  // Upgrade GETs to an update call so we don't need asset certification (MVP).
-  public query func http_request(_req : HttpRequest) : async HttpResponse {
-    { status_code = 200; headers = []; body = ""; streaming_strategy = null; upgrade = ?true };
-  };
-  public func http_request_update(req : HttpRequest) : async HttpResponse {
+  // ── Public HTTP ────────────────────────────────────────────────────────────
+  // GET/HEAD are answered straight from the query: an upgraded request is a
+  // paid update message (~7.7 M cycles measured), and every public read here —
+  // sites, receipts, library JSON, search job polls, operator config — is pure.
+  // (The one write on a GET path is searchLookup's tendJobs housekeeping, which
+  // a query simply discards; worker POSTs and /search/submit still run it for
+  // real.) The gateway on <id>.icp0.io only accepts an uncertified query answer
+  // because SkipCert certifies "no certification needed" for every path, so a
+  // query answer is exactly as trustworthy as the old upgraded one was over
+  // plain HTTPS: not tamper-proof against a malicious replica. Everything
+  // else (POST etc.) still upgrades to http_request_update.
+  func route(req : HttpRequest) : HttpResponse {
     // Receipt verify pages take precedence over sites — SECURITY: a site
     // project can never shadow the /receipt/ URL shape (name reserved too).
     // Then search (find/submit/job/health) → library → worker (HMAC POSTs) →
@@ -2847,8 +2857,7 @@ actor CafresoHQState {
                   case (?res) res;
                   case null {
                     switch (workerRoute(req)) {
-                      // fulfill may push an accrual over the payout threshold.
-                      case (?res) { if (searchPayRateE8s != 0) { armPayrollTimer<system>() }; res };
+                      case (?res) res;
                       case null serveSite(req.url);
                     };
                   };
@@ -2859,6 +2868,22 @@ actor CafresoHQState {
         };
       };
     };
+  };
+  func isWorkerPath(url : Text) : Bool { Text.startsWith(Text.trimStart(url, #char '/'), #text "worker/") };
+
+  public query func http_request(req : HttpRequest) : async HttpResponse {
+    let upgrade : HttpResponse = { status_code = 200; headers = []; body = ""; streaming_strategy = null; upgrade = ?true };
+    if (req.method != "GET" and req.method != "HEAD") { return upgrade };
+    // No certificate outside a non-replicated query: fall back to the update path.
+    let cert = switch (CertifiedData.getCertificate()) { case (?c) c; case null { return upgrade } };
+    let res = route(req);
+    { res with headers = Array.append(res.headers, SkipCert.headers(cert)); upgrade = null };
+  };
+  public func http_request_update(req : HttpRequest) : async HttpResponse {
+    let res = route(req);
+    // fulfill may push an accrual over the payout threshold.
+    if (isWorkerPath(req.url) and searchPayRateE8s != 0) { armPayrollTimer<system>() };
+    res;
   };
 
   // ── Night Shift chain wake (Sprint 4 MVP-2 — ships DARK, flag off) ─────────
@@ -3125,4 +3150,5 @@ actor CafresoHQState {
   // empty install neither has anything due, so neither arms.
   armPayrollTimer<system>();
   armWakeTimer<system>();
+  CertifiedData.set(SkipCert.rootHash());   // fresh install; postupgrade does the same
 }

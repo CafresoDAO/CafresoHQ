@@ -16,9 +16,12 @@ need:
   is canister-wide.)
 - **Public serving:** `http_request` serves any namespace publicly at
   `https://<cafresohq_state>.icp0.io/<principalText>/<project>/`. The handler reads **only**
-  the site files — never the vault/doc maps (and vault data is client-encrypted anyway). For
-  the MVP it upgrades GETs to an update call (`http_request_update`) so no IC asset
-  certification is needed yet (certified query serving + streaming for >2 MiB are follow-ups).
+  the site files — never the vault/doc maps (and vault data is client-encrypted anyway).
+  GETs are answered from the query `http_request` (free to the canister). The canister
+  certifies "no certification needed" for every path (`SkipCert.mo`, response-verification
+  v2), so the plain `icp0.io` gateway accepts the answer. Pages are therefore exactly as
+  trustworthy as plain HTTPS: not tamper-proof against a malicious replica. Per-file
+  certification and streaming for >2 MiB are follow-ups.
 - **Limits:** ≤ 2 MiB per file, 200 MiB of sites per user.
 
 ## The flow
@@ -51,7 +54,7 @@ of `cafresohq_state`. Once upgraded, both the wallet/services *and* Publish are 
 frontend already pins the state canister id, so no env wiring is needed.
 
 ## Later upgrades
-- Certified query serving (drop the update-call upgrade → faster loads).
+- Real per-file certification (today's query answers are served under a skip-certification tree).
 - Streaming (`http_request_streaming_callback`) for files > 2 MiB.
 - If site traffic ever warrants isolation from private state, split sites into their own
   canister — the client (`sitesActor.js`) is the only thing that would repoint.
