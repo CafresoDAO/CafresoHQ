@@ -868,31 +868,106 @@ actor CafresoHQState {
     };
   };
 
-  // Idempotent arming: a NO-OP when already armed. The TimerId is held in a
-  // FLEXIBLE var (dies with its timer on upgrade — a stale stable flag could
-  // otherwise read armed-true while the timer is dead), so it is non-null iff a
-  // live timer exists for this actor instance. postupgrade is the mandatory
-  // re-arm point. It must NOT cancel-then-recreate: a recurringTimer first fires
-  // a full period AFTER creation, so re-arming from the user-facing putSalary
-  // path (called per save) would reset the countdown and, if hit every <period,
-  // starve scanPayroll for ALL users (cross-tenant DoS).
-  var payrollTimerId : ?Timer.TimerId = null;
+  // ── Timers: one setTimer aimed at the next due moment, never a clock ───────
+  // Every timer tick is a message the canister pays for whether or not there
+  // is work (~28.6 M cycles measured on the hall, 2026-09-17), so the old
+  // recurring payroll (300 s) + wake (120 s) scans were 1008 paid messages a
+  // day on a canister that is idle almost all of the time. Each loop now arms
+  // ONE setTimer for the earliest moment its scan could do something, runs the
+  // scan then, and re-aims from what is left. Nothing due → no timer at all.
+  //
+  // aimAt never lets two ticks of one loop land closer than its old scan
+  // period (lastTickAt + scanSecs), so payout cadence and the worst-case burn
+  // are exactly what the recurring timer gave, and the idle burn is zero.
+  // The wait is clamped to [1 s, 1 day]: no busy loop, and a daily re-check.
+  //
+  // Re-arming may cancel-and-recreate, but ONLY to move the tick EARLIER and
+  // never before the floor, so a caller spamming putSalary / putMissionSchedule
+  // cannot push the countdown back and starve the scan for other tenants (the
+  // DoS that made the recurring version arm-once-only). The ids are FLEXIBLE
+  // vars on purpose: timers die on upgrade, and postupgrade re-aims from state.
+  // A timer id whose due moment is a minute past is presumed dead (its tick
+  // trapped before it could clear the id) and is replaced on the next arm.
+  let TIMER_MIN_WAIT_NS : Int = 1_000_000_000;
+  let TIMER_MAX_WAIT_NS : Int = 86_400_000_000_000;
+  let TIMER_DEAD_SLACK_NS : Int = 60_000_000_000;
+
+  func earliest(best : ?Int, t : Int) : ?Int {
+    switch (best) { case (?b) { ?(if (t < b) { t } else { b }) }; case null { ?t } };
+  };
+  /// The moment to fire for a scan due at `due`: no sooner than one scan
+  /// period after the last tick, and within [1 s, 1 day] of now.
+  func aimAt(due : Int, lastTickAt : Int, scanSecs : Nat) : Int {
+    let floor = lastTickAt + secsToNs(scanSecs);
+    let at = if (due < floor) { floor } else { due };
+    let n = now();
+    if (at < n + TIMER_MIN_WAIT_NS) { n + TIMER_MIN_WAIT_NS }
+    else if (at > n + TIMER_MAX_WAIT_NS) { n + TIMER_MAX_WAIT_NS }
+    else { at };
+  };
+  /// True when an armed timer already fires at or before `at` (keep it).
+  func armedNoLaterThan(id : ?Timer.TimerId, armedAt : Int, at : Int) : Bool {
+    switch (id) {
+      case null { false };
+      case (?_) { armedAt <= at and armedAt + TIMER_DEAD_SLACK_NS > now() };
+    };
+  };
+
+  // ── Payroll + worker-payout timer ──
   // One tick drives BOTH money loops: user payroll and search-worker payout
-  // sweeps (defined in the search-network section below). A second recurring
-  // timer would double the idle cycle burn for no scheduling benefit.
+  // sweeps (defined in the search-network section below).
+  var payrollTimerId : ?Timer.TimerId = null;
+  var payrollTimerAt : Int = 0;
+  var payrollLastTickAt : Int = 0;
+
+  /// When scanPayroll or scanWorkerPayouts could next act, or null if never.
+  /// Mirrors their filters exactly: anything they would skip is not due.
+  func payrollNextDue() : ?Int {
+    var best : ?Int = null;
+    for ((user, smap) in pOps.entries(salaries)) {
+      if (not isPayrollPaused(user)) {
+        for ((_, s) in tOps.entries(smap)) { if (s.active) { best := earliest(best, s.nextRunAt) } };
+      };
+    };
+    for ((user, arr) in pOps.entries(payoutLog)) {
+      if (not isPayrollPaused(user)) {
+        for (po in arr.vals()) {
+          if (po.status == "pending") { best := earliest(best, po.ts + PENDING_RETRY_MIN_AGE_NS) };
+        };
+      };
+    };
+    if (workerPayConfigured()) {
+      let threshold = workerPayThreshold();
+      for ((_, w) in pOps.entries(workers)) {
+        if (w.status == "approved" and w.accruedE8s >= threshold) { best := earliest(best, now()) };
+      };
+      for (po in workerPayouts.vals()) {
+        if (po.status == "pending") { best := earliest(best, po.ts + PENDING_RETRY_MIN_AGE_NS) };
+      };
+    };
+    best;
+  };
+
   func payrollTick() : async () {
-    await scanPayroll();
-    await scanWorkerPayouts();
+    payrollTimerId := null;
+    payrollLastTickAt := now();
+    try { await scanPayroll() } catch (_e) {};
+    try { await scanWorkerPayouts() } catch (_e) {};
+    armPayrollTimer<system>();
   };
   func armPayrollTimer<system>() {
-    switch (payrollTimerId) { case (?_) { return }; case null {} };
-    payrollTimerId := ?Timer.recurringTimer<system>(#seconds PAYROLL_SCAN_SECS, payrollTick);
+    let due = switch (payrollNextDue()) { case (?d) d; case null { return } };
+    let at = aimAt(due, payrollLastTickAt, PAYROLL_SCAN_SECS);
+    if (armedNoLaterThan(payrollTimerId, payrollTimerAt, at)) { return };
+    switch (payrollTimerId) { case (?id) { Timer.cancelTimer(id) }; case null {} };
+    payrollTimerAt := at;
+    payrollTimerId := ?Timer.setTimer<system>(#nanoseconds (Int.abs(at - now())), payrollTick);
   };
   // Fresh install: armed at init by the call at the BOTTOM of this actor —
   // payrollTick reaches into the search-network payout section defined below,
   // so an eager call here would hit M0016 (use before definition). Upgrades:
-  // postupgrade (runs after all definitions; init does not re-run). Re-arms
-  // BOTH recurring timers; timers never survive an upgrade.
+  // postupgrade (runs after all definitions; init does not re-run). Re-aims
+  // BOTH timers from state; timers never survive an upgrade.
   system func postupgrade() {
     armPayrollTimer<system>();
     armWakeTimer<system>();
@@ -973,6 +1048,7 @@ actor CafresoHQState {
         if (isPayrollPaused(caller)) { return "paused" };
         patchSalary(caller, agentId, func(x) { { x with nextRunAt = now(); updatedAt = now() } });
         await processDue(caller, agentId);
+        armPayrollTimer<system>();   // a trapped transfer leaves a pending payout to retry
         switch (tOps.get(salariesOf(caller), agentId)) { case (?x) x.lastResult; case null "deleted" };
       };
     };
@@ -2637,9 +2713,16 @@ actor CafresoHQState {
     };
   };
 
+  func workerPayConfigured() : Bool {
+    searchPayLedger != null and searchTreasury != null and searchPayRateE8s != 0;
+  };
+  func workerPayThreshold() : Nat {
+    if (searchPayMinE8s > searchPayFee * 2) { searchPayMinE8s } else { searchPayFee * 2 };
+  };
+
   func scanWorkerPayouts() : async () {
-    if (searchPayLedger == null or searchTreasury == null or searchPayRateE8s == 0) { return };
-    let threshold = if (searchPayMinE8s > searchPayFee * 2) { searchPayMinE8s } else { searchPayFee * 2 };
+    if (not workerPayConfigured()) { return };
+    let threshold = workerPayThreshold();
     // New sweeps: accrual crossed the threshold.
     let due = Buffer.Buffer<(Principal, Nat)>(4);
     for ((p, w) in pOps.entries(workers)) {
@@ -2695,6 +2778,7 @@ actor CafresoHQState {
     searchPayRateE8s := ratePerJobE8s;
     searchPayMinE8s := minPayoutE8s;
     searchTreasury := ?msg.caller;
+    armPayrollTimer<system>();   // accruals may already be over the new threshold
   };
 
   public shared (msg) func search_admin_set_budget(perDay : Nat) : async () {
@@ -2763,7 +2847,8 @@ actor CafresoHQState {
                   case (?res) res;
                   case null {
                     switch (workerRoute(req)) {
-                      case (?res) res;
+                      // fulfill may push an accrual over the payout threshold.
+                      case (?res) { if (searchPayRateE8s != 0) { armPayrollTimer<system>() }; res };
                       case null serveSite(req.url);
                     };
                   };
@@ -2911,16 +2996,38 @@ actor CafresoHQState {
     };
   };
 
-  // Idempotent arming (no-op when already armed), same shape as the payroll
-  // timer; re-armed in postupgrade. Must NOT cancel-then-recreate — the
-  // user-facing putMissionSchedule path would otherwise let any caller reset
-  // the 120s countdown and starve scanWake for all users.
+  // Same aimed-timer shape as payroll (see "Timers" above): armed only while
+  // wake is configured AND a mirror is enabled, aimed at the earliest
+  // nextRunAt, never two ticks closer than WAKE_SCAN_SECS. Re-aimed in
+  // postupgrade, from putMissionSchedule and from setWakeConfig.
   var wakeTimerId : ?Timer.TimerId = null;
-  func armWakeTimer<system>() {
-    switch (wakeTimerId) { case (?_) { return }; case null {} };
-    wakeTimerId := ?Timer.recurringTimer<system>(#seconds WAKE_SCAN_SECS, scanWake);
+  var wakeTimerAt : Int = 0;
+  var wakeLastTickAt : Int = 0;
+
+  /// When scanWake could next act, or null if never (same gates as scanWake).
+  func wakeNextDue() : ?Int {
+    if (not wakeEnabled or wakeGatewayUrl == "" or wakeSecret.size() == 0) { return null };
+    var best : ?Int = null;
+    for ((_, m) in pOps.entries(missionSchedules)) {
+      for ((_, s) in tOps.entries(m)) { if (s.enabled) { best := earliest(best, s.nextRunAt) } };
+    };
+    best;
   };
-  armWakeTimer<system>();
+
+  func wakeTick() : async () {
+    wakeTimerId := null;
+    wakeLastTickAt := now();
+    try { await scanWake() } catch (_e) {};
+    armWakeTimer<system>();
+  };
+  func armWakeTimer<system>() {
+    let due = switch (wakeNextDue()) { case (?d) d; case null { return } };
+    let at = aimAt(due, wakeLastTickAt, WAKE_SCAN_SECS);
+    if (armedNoLaterThan(wakeTimerId, wakeTimerAt, at)) { return };
+    switch (wakeTimerId) { case (?id) { Timer.cancelTimer(id) }; case null {} };
+    wakeTimerAt := at;
+    wakeTimerId := ?Timer.setTimer<system>(#nanoseconds (Int.abs(at - now())), wakeTick);
+  };
 
   func validMissionId(id : Text) : Bool {
     if (id.size() == 0 or id.size() > 64) { return false };
@@ -3013,7 +3120,9 @@ actor CafresoHQState {
   // ── Diagnostics ────────────────────────────────────────────────────────────
   public query func cycle_balance() : async Nat { Cycles.balance() };
 
-  // Fresh-install timer arm — MUST be the last declaration: payrollTick
-  // transitively references the search-network payout section above.
+  // Fresh-install timer arms — MUST be the last declarations: payrollTick
+  // transitively references the search-network payout section above. On an
+  // empty install neither has anything due, so neither arms.
   armPayrollTimer<system>();
+  armWakeTimer<system>();
 }
