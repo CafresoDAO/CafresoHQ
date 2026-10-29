@@ -166,10 +166,13 @@ function Modal({ open, onClose, title, subtitle, headerActions, footer, size = '
      dismiss the modal and eat the draft. */
   const backdropPressRef = useRefM(false);
   const [entered, setEntered] = useStateM(false);
+  const touchStartRef = useRefM(null);
+  const [dragY, setDragY] = useStateM(0);
 
   /* Capture the focused element when opening so we can restore on close. */
   useEffectM(() => {
     if (open) {
+      setDragY(0);
       triggerRef.current = document.activeElement;
       // animate in next frame
       requestAnimationFrame(() => setEntered(true));
@@ -249,6 +252,39 @@ function Modal({ open, onClose, title, subtitle, headerActions, footer, size = '
 
   if (!open) return null;
 
+  const handleTouchStart = (e) => {
+    if (window.innerWidth > 768 || e.touches.length > 1) return;
+    let target = e.target;
+    let isHeader = false;
+    while (target && target !== dialogRef.current) {
+      if (target.classList && target.classList.contains('modal-head')) {
+        isHeader = true; break;
+      }
+      target = target.parentElement;
+    }
+    if (isHeader) {
+      touchStartRef.current = e.touches[0].clientY;
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (touchStartRef.current === null) return;
+    const dy = e.touches[0].clientY - touchStartRef.current;
+    if (dy > 0) {
+      setDragY(dy);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (touchStartRef.current === null) return;
+    if (dragY > 80 && dismissable && onClose) {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(40);
+      onClose();
+    }
+    setDragY(0);
+    touchStartRef.current = null;
+  };
+
   const maxW = MODAL_SIZE_MAX_WIDTH[size] || MODAL_SIZE_MAX_WIDTH.md;
   const isFull = size === 'fullscreen';
 
@@ -276,13 +312,16 @@ function Modal({ open, onClose, title, subtitle, headerActions, footer, size = '
         aria-labelledby={title ? 'oc-modal-title' : undefined}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
         style={{
           maxWidth: isFull ? '100vw' : (typeof maxW === 'number' ? maxW + 'px' : maxW),
           width:    isFull ? '100vw' : 'min(94vw, ' + (typeof maxW === 'number' ? maxW + 'px' : maxW) + ')',
           height:   isFull ? '100vh' : undefined,
           maxHeight: isFull ? '100vh' : '90vh',
-          transform: entered ? 'translateY(0) scale(1)' : 'translateY(8px) scale(0.985)',
-          transition: 'transform var(--motion-base) var(--ease-out)',
+          transform: entered ? `translateY(${dragY}px) scale(1)` : 'translateY(8px) scale(0.985)',
+          transition: dragY > 0 ? 'none' : 'transform var(--motion-base) var(--ease-out)',
           display: 'flex',
           flexDirection: 'column',
         }}

@@ -7,10 +7,10 @@ fell through to the default bucket: a note SHOWING a chart and a note
 merely linking one were the same stroke. The semantic type existed
 end-to-end and was invisible at the only place the boss looks.
 
-Now EDGE_TYPE_STYLE carries `embeds`: a warm attachment tint, solid,
-heavier than a plain link. Both renderers read this one map — the
-legacy canvas buckets by it and the sigma engine colors through
-edgeColorForType — so one entry lights both. Verified live: the
+Now EDGE_TYPE_STYLE carries `embeds`: a warm attachment tint, solid.
+The sigma engine colors through edgeColorForType (the legacy canvas, and
+with it per-type width, was removed in 0e19454), so the tint is the
+whole signal. Verified live: the
 embed-demo seed produced an embeds edge in the engine snapshot and
 the bundle carries the tint.
 
@@ -76,8 +76,6 @@ def main():
     check('the palette knows the embeds type', bool(e), out)
     check('…with its own solid tint, not the default fallthrough',
           e and e.get('color') and e.get('dash') is None, e)
-    check('…heavier than a plain link',
-          e and out['links'] and e['widthMul'] > out['links']['widthMul'], e)
     check('the engine palette answers with that tint, not the theme default',
           out['embedColor'] == (e or {}).get('color')
           and out['embedColor'] != out['unknownColor'], out)

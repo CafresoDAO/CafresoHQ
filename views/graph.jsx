@@ -781,6 +781,12 @@ function typeColor(type, isDark) {
   return colors[t] || colors.note;
 }
 
+const CLUSTER_HUES = [10, 35, 55, 95, 130, 175, 200, 230, 270, 300, 325, 350];
+function clusterColor(idx, isDark) {
+  const hue = CLUSTER_HUES[idx % CLUSTER_HUES.length];
+  return `hsl(${hue}, ${isDark ? 60 : 50}%, ${isDark ? 65 : 58}%)`;
+}
+
 function colorForNode(n, state, isDark, computedStyle) {
   // Cluster coloring overrides colorMode when toggled on.
   if (state.clusterColoring && state.clusters) {
@@ -865,9 +871,9 @@ function nodeMatchesFilter(n, filter) {
 
 
 /* Edge-type rendering palette. Keys must match the `type` field that
-   serve.py's _classify_edge produces. Each entry: { color, dash, widthMul }.
-   `widthMul` multiplies the base lineWidth (1/zoom). Dash is an array of
-   user-space (pre-zoom) lengths or null for solid.
+   serve.py's _classify_edge produces. Each entry is { color } — the WebGL
+   engine draws every edge at one EDGE_SIZE, so the per-type dash/widthMul
+   the Canvas-2D renderer used went with it; type reads as color alone.
 
    The grouping is roughly:
      - structural: child_of/parent_of (blue), supersedes (orange-dashed)

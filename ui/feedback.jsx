@@ -541,15 +541,6 @@ function CommandPaletteProvider({ children }) {
   );
 }
 
-function PaletteFab() {
-  return (
-    <button className="palette-fab" aria-label="Open command palette"
-      onClick={() => window.cafresohqPalette && window.cafresohqPalette.open()}>
-      <span style={{fontSize: 22, lineHeight: 1}}>🛠️</span>
-    </button>
-  );
-}
-
 function PaletteUI({ query, setQuery, selectedIdx, setSelectedIdx, grouped, flatVisible, onPick, onClose }) {
   const inputRef = useRef(null);
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
@@ -682,5 +673,14 @@ function useCommands(commands, deps = []) {
 
    kinds: 'receipt' | 'agent' | 'mission' | 'approval' | 'system'
    ───────────────────────────────────────────────────────────────────── */
+
+function PaletteFab() {
+  return (
+    <button className="palette-fab" aria-label="Open command palette"
+      onClick={() => window.cafresohqPalette && window.cafresohqPalette.open()}>
+      <span style={{fontSize: 22, lineHeight: 1}}>🛠️</span>
+    </button>
+  );
+}
 
 export { CommandPaletteProvider, PaletteFab, ToastProvider, useCommands, useToast };

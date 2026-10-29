@@ -39,7 +39,7 @@ function CanistersView({ active }) {
       </h2>
       
       <p style={{ marginBottom: '24px', opacity: 0.8, maxWidth: '600px', lineHeight: '1.5' }}>
-        Agents automatically deploy logic and assets to the Internet Computer. 
+        Coworkers deploy logic and assets to the Internet Computer. 
         Track their active cycles balances and status directly via the network replica below.
       </p>
 
@@ -49,7 +49,7 @@ function CanistersView({ active }) {
         <div style={{ color: 'var(--red)' }}>Error fetching canisters: {error}</div>
       ) : canisters.length === 0 ? (
         <div className="empty-title">
-          No canisters deployed yet. Agent deployments will appear here.
+          No canisters deployed yet. Your coworkers' deployments will appear here.
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>

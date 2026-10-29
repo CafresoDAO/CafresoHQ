@@ -50,21 +50,7 @@ const MODELS = [
    first-launch onboarding tour (gated on an empty roster) from ever firing.
    The CEO's scripted welcome + the HireModal candidates deck do the
    introduction instead. */
-const INITIAL_AGENTS = [
-  {
-    id: 'agent_guide_001',
-    name: 'HQ Guide',
-    role: 'Onboarding',
-    color: 'sun',
-    sprite: 'ceo',
-    tools: ['vault'],
-    model: 'cafresohq:sonnet',
-    temperature: 0.3,
-    systemPrompt: "You are the Cafreso HQ Onboarding Guide. Welcome the user, explain how to hire from the Hiring Hall, and answer any questions. Keep answers very short and encouraging.",
-    status: 'idle',
-    task: 'Waiting to start the tour'
-  }
-];
+const INITIAL_AGENTS = [];
 
 /* OpenSwarm-style specialist roster.
    Seven specialists modeled on github.com/VRSEN/openswarm. CafresoHQ (CEO) is

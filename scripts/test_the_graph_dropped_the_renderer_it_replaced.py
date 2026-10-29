@@ -14,11 +14,12 @@ requestAnimationFrame loop nobody ever mounted. Grepped across every shipped
 `simulate` was even still exported from graph.jsx and imported into
 vault.jsx, purely to feed the dead hook.
 
-One correction to the report that flagged this: it listed `graphAdjacency`
-as dead too. It is not — `getNeighbors` calls it, and `getNeighbors` is
-called from two live sites in GraphView. `graphAdjacency` stays, and this
-test pins THAT as firmly as it pins the removals, so a later sweep cannot
-take the adjacency map out on the strength of the same stale list.
+`graphAdjacency` / `getNeighbors` were first kept because `getNeighbors`
+had two call sites — but both sat inside the 2D `render()` / `render3D()`
+painters, which themselves had zero callers. 0e19454 removed those painters,
+leaving the adjacency pair dead too, so they are now pinned as gone. The
+`clusterColor` guard stays: `colorForNode` (live, via the WebGL engine's
+non-community colour path) still names it.
 
 Removal-only change: no behaviour is touched, the engine mount is untouched,
 and the docstring now says what is true.
@@ -90,12 +91,9 @@ def main():
     check('no shipped .jsx references a removed symbol', not hits, hits[:5])
 
     # ── 4. over-deletion guards: what the stale list got wrong stays ────
-    check('graphAdjacency is still defined — it was reported dead and is not',
-          re.search(r'^function graphAdjacency\(', graph, re.M))
-    check('getNeighbors still calls graphAdjacency',
-          re.search(r'function getNeighbors\([^)]*\)\s*\{[^}]*graphAdjacency\(', graph))
-    check('getNeighbors still has live callers in GraphView',
-          len(re.findall(r'\bgetNeighbors\(state, focusId\)', graph)) >= 2)
+    check('graph.jsx no longer carries graphAdjacency/getNeighbors (their only '
+          'callers were the removed 2D painters)',
+          not re.search(r'^function (graphAdjacency|getNeighbors|render3D|render)\(', graph, re.M))
     check('clusterColor is still called',
           re.search(r'\bclusterColor\(idx, isDark\)', graph))
 
