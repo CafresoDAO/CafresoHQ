@@ -769,7 +769,8 @@ function App() {
       }
       /* Beat 2: the candidates deck opens itself a moment after the CEO's
          line lands — the user's first decision is a real hire. */
-      setTimeout(() => { try { setHireOpen(true); } catch (_e) {} }, 1600);
+      setFirstRunQuiet(true);
+      setTimeout(() => { try { setHireWelcome(true); setHireOpen(true); } catch (_e) {} }, 1600);
     }, 800);
     return () => { cancelled = true; clearTimeout(t); };
   }, []);
@@ -860,6 +861,17 @@ function App() {
   /* The coworker being offered a first assignment (null = sheet closed).
      Set by onHire on a genuinely first hire — see OFFICE_AS_INTERFACE §3.4. */
   const [starterFor, setStarterFor] = useStateA(null);
+  /* The first-run hire sheet opens as the starter-crew welcome, once; any
+     later open (an empty desk, H, the palette) is the full board. */
+  const [hireWelcome, setHireWelcome] = useStateA(false);
+  /* First-run quiet: from the welcome until the first job is handed out
+     (or the boss steps out of the flow), the getting-started checklist and
+     the floating chat stay down. Both used to draw OVER the welcome sheet —
+     a new boss's first screen was three panels stacked on the office they
+     had just been promised. The chat keeps the CEO's greeting; it is one
+     click away on the rail, and it reopens on its own once quiet ends. */
+  const [firstRunQuiet, setFirstRunQuiet] = useStateA(false);   // false | true | 'watching'
+  const hiredSinceOpenRef = useRefA(false);   // did the open hire sheet hire anyone (closure-proof)
   /* First artifact to land in the cabinet gets a sheet, once ever (§3.6).
      Every later delivery is just a ticker line + the out-tray beat. */
   const [firstDeliverySeen, setFirstDeliverySeen] = useStored(ks('firstDeliverySeen'), false);
@@ -1057,6 +1069,15 @@ function App() {
     (fetched) => mergeByIdCap(activityRef.current, fetched, 200),
     { mergeOnDirty: true });
   useEffectA(() => { activityRef.current = activity; }, [activity]);
+  /* First-run 'watching' ends at the first delivery, when the checklist has
+     something new to tick — or after two minutes, so a slow or failed first
+     job never leaves the boss without it for the rest of the session. */
+  useEffectA(() => {
+    if (firstRunQuiet !== 'watching') return;
+    if (activity.some(e => e.action === 'done')) { setFirstRunQuiet(false); return; }
+    const t = setTimeout(() => setFirstRunQuiet(false), 120000);
+    return () => clearTimeout(t);
+  }, [firstRunQuiet, activity]);
   const logActivity = useCallbackA((entry) => setActivity(prev =>
     [{ id: HQ.uid('act'), ts: Date.now(), priority: 'routine', unread: true, ...entry },
      ...prev].slice(0, 200)
@@ -1267,7 +1288,10 @@ function App() {
     const chatted = (chat || []).some(m => m.from === 'user');
     const assigned = taskDelegated;
     const sawWork = activity.some(e => e.action === 'done');
-    if (hired && !chatted && !seen.chat)
+    /* `!assigned`: the first-run sheet hands a coworker their first job
+       before any chat, and "say hi and brief them" to a boss who just did
+       exactly that reads as if the office missed it. */
+    if (hired && !chatted && !assigned && !seen.chat)
       return { k: 'chat', text: 'Your first hire is at their desk — say hi and brief them.', cta: 'Open chat', act: () => goTo('chat') };
     if (chatted && !assigned && !seen.task)
       return { k: 'task', text: 'Give them something real: drop a task on their desk.', cta: 'Open tasks', act: () => goTo('tasks') };
@@ -1945,6 +1969,7 @@ ${d.text}` : d.text,
   });
 
   const onHire = (a) => {
+    hiredSinceOpenRef.current = true;
     const firstEver = agents.length === 0 && tasks.length === 0;
     setAgents(prev => [...prev, { ...a, mood: 'idle', tokens: 0, recent: 'just arrived, finding their desk' }]);
     setChat(prev => [...prev, { id: HQ.uid('m'), from: 'ceo', name: 'CafresoHQ', text: `Welcome aboard, ${a.name}! I've set up a desk.` }]);
@@ -8107,7 +8132,7 @@ ${d.text}` : d.text,
             zero visible ways back, surviving reloads. */}
         {(desktopMode || activeView !== 'chat') && !isNarrowViewport && (
           <ChatWindow
-            open={chatWinOpen}
+            open={chatWinOpen && firstRunQuiet !== true}
             setOpen={setChatWinOpen}
             geometry={chatWinGeo}
             setGeometry={setChatWinGeo}
@@ -8315,13 +8340,36 @@ ${d.text}` : d.text,
         </button>
       </nav>
 
-      <HireModal open={hireOpen} onClose={()=>setHireOpen(false)} onHire={onHire} currentAgents={agents}/>
+      <HireModal open={hireOpen} onClose={()=>{
+        setHireOpen(false); setHireWelcome(false);
+        /* Closed without hiring anyone: the boss left the guided path, so
+           the checklist (which maps the rest of it) comes back. A hire keeps
+           the quiet — the FIRST ASSIGNMENT sheet is the next beat. */
+        if (!hiredSinceOpenRef.current) setFirstRunQuiet(false);
+        hiredSinceOpenRef.current = false;
+      }} onHire={onHire} currentAgents={agents} welcome={hireWelcome}
+        onLeaveWelcome={() => setFirstRunQuiet(q => (q === true ? false : q))}/>
       <StarterTasksModal
         open={!!starterFor}
         agent={starterFor}
-        onClose={()=>setStarterFor(null)}
+        onClose={()=>{ setStarterFor(null); setFirstRunQuiet(false); }}
         onStart={(task, agent) => {
           setStarterFor(null);
+          /* The point of this beat is watching the desk light up: the chat
+             comes back (the reply lands there), the checklist waits until
+             the first delivery — see the 'watching' effect below. */
+          setFirstRunQuiet('watching');
+          /* They are already watching — "Work is in flight · Open office"
+             would cover the floor it points at. */
+          dismissCoach('watch');
+          /* On a phone the working desk starts below the fold; bring it up
+             once the floor has mounted and the room has gone active. */
+          if (typeof window !== 'undefined' && window.innerWidth <= 768) {
+            setTimeout(() => {
+              const room = document.querySelector('.px-room.status-active') || document.querySelector('.px-room:not(.ceo):not(.vacant):not(.filler)');
+              if (room) room.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 900);
+          }
           onAddTask(task);
           /* Watch the work happen (§3 step 5) — the floor is the trace
              viewer, so land there rather than on the task board. */
@@ -8404,7 +8452,7 @@ ${d.text}` : d.text,
         onClear={() => { setNotifClearedAt(Date.now()); setNotifSeenAt(Date.now()); }}
         emptyHint="Nothing pending. Approvals, your team's activity, and receipts will land here."
       />
-      {!gsDismissed && !tourOpen && (
+      {!gsDismissed && !tourOpen && !firstRunQuiet && (
         <GettingStarted
           /* The step is "Your AI brain", and a local brain doing real
              work satisfies it — see officeCanWork. */

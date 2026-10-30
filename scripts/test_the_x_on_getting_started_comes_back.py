@@ -327,6 +327,16 @@ def main():
 
         try:
             boot(ws, url)
+            # A fresh office with a brain opens the starter-crew welcome
+            # first, and holds the checklist back while it is up (app.jsx
+            # firstRunQuiet). Closing it without hiring is stepping out of
+            # the guided path, which is exactly when the checklist returns.
+            wait_for(ws, "!!document.querySelector('.gs-coach, .welcome-crew')", 30,
+                     'the Getting Started checklist or the welcome to appear')
+            evaluate(ws, "(() => { if (!document.querySelector('.welcome-crew')) return 0;"
+                         " const b = [...document.querySelectorAll('button')]"
+                         ".find(x => /CLOSE/i.test(x.textContent || ''));"
+                         " if (b) b.click(); return 1; })()")
             wait_for(ws, "!!document.querySelector('.gs-coach')", 30,
                      'the Getting Started checklist to appear on a fresh office')
             check('a brand-new office shows the Getting Started checklist', True)

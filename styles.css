@@ -6577,6 +6577,25 @@ body.night .pb-seg:not(.on) { background: #241d33; border-color: #3a3050; }
 .frontdesk-cta { color: var(--accent-sun, #d4a017); font-weight: 700; }
 body.night .post-card.frontdesk-card { background: #312842; }
 
+/* ── First-run welcome: the starter crew (modals/hire.jsx) ──────────────
+   One decision instead of the full board: two coworkers, big sprites, one
+   button. Same paper-and-ink card idiom as the posting cards. */
+.welcome-crew-lede {
+  margin: 0 0 14px; font-family: 'Inter'; font-size: 13px; line-height: 1.5; color: var(--ink-2);
+}
+.welcome-crew {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px;
+}
+.welcome-crew-card {
+  display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px;
+  background: var(--paper); border: 2px solid var(--ink); box-shadow: var(--shadow-hard);
+  padding: 16px 14px 14px;
+}
+.welcome-crew-name { margin-top: 8px; font-family: 'Press Start 2P', monospace; font-size: 12px; color: var(--ink); }
+.welcome-crew-role { font-family: 'Inter'; font-size: 11px; font-weight: 600; color: var(--ink-3); text-transform: uppercase; letter-spacing: .06em; }
+.welcome-crew-pitch { margin-top: 6px; font-family: 'Inter'; font-size: 12px; line-height: 1.45; color: var(--ink-2); }
+body.night .welcome-crew-card { background: #312842; }
+
 /* ── Starter tasks (OFFICE_AS_INTERFACE §3.4) ─────────────────────────────
    Three real outcomes offered after the first hire, and again in an empty
    task inbox. Same card idiom as the front desk so the two first-run beats
@@ -12429,4 +12448,15 @@ body.theme-pro .hq-dock {
 
 @media (min-width: 769px) {
   .fab-container { display: none; }
+}
+
+/* ── Phone office: the floor is the product ──────────────────────────────
+   The section banner describes desktop gestures (drag cards onto desks,
+   click the sofa) and the empty inbox rail says "nothing waiting" — on a
+   375px screen the two held the top third of the floor. The coworker strip
+   and the rooms carry the same affordances by touch. The rail comes back as
+   soon as it has a card to show. */
+@media (max-width: 768px) {
+  .office-wrap > .section-title { display: none; }
+  .office-task-rail.is-empty { display: none; }
 }
