@@ -198,9 +198,13 @@ function StarterCards({ onPick, who = '', compact = false, canSearch = false }) 
   }, [picked]);
 
   const active = STARTER_TASKS.find(s => s.key === picked) || null;
+  /* An empty field starts the example shown in it. A brand-new boss
+     usually has no subject in mind yet, and the example is a real,
+     finished task — two taps to see the floor light up beats a blank box. */
   const submit = () => {
-    if (!active || !subject.trim()) return;
-    onPick(active, subject.trim());
+    if (!active) return;
+    const s = subject.trim() || active.placeholder;
+    onPick(active, s);
     setPicked(null); setSubject('');
   };
 
@@ -244,8 +248,7 @@ function StarterCards({ onPick, who = '', compact = false, canSearch = false }) 
               className="px-btn primary"
               style={{ fontSize: 'var(--text-10)' }}
               onClick={submit}
-              disabled={!subject.trim()}
-            >START →</button>
+            >{subject.trim() ? 'START →' : 'TRY THE EXAMPLE →'}</button>
           </div>
         </div>
       )}

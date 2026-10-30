@@ -164,7 +164,10 @@ def main():
         """gsDismissed=false throughout (this bug is about a live checklist).
         Returns (checklist_expanded_on_screen, coach_pill_shown) after:
         collapse -> open tour -> Skip (onClose fires)."""
-        state = {'gsDismissed': False, 'tourOpen': False, 'gsCollapsed': False}
+        # firstRunQuiet: the first-run welcome's hold on the checklist
+        # (app.jsx) — over by the time anyone can replay the tour.
+        state = {'gsDismissed': False, 'tourOpen': False, 'gsCollapsed': False,
+                 'firstRunQuiet': False}
 
         def child_mounted():
             return js_bool_eval(mount_expr, state)

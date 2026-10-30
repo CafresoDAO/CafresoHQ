@@ -357,7 +357,14 @@ function CastLine({ t, showBars }) {
   );
 }
 
-function HireModal({ open, onClose, onHire, currentAgents = [] }) {
+/* The first-run starter crew, by OPENSWARM_ROSTER name, in hiring order. */
+const STARTER_CREW = ['Vera', 'Kip'];
+const STARTER_PITCH = {
+  Vera: 'Drafts the everyday — emails, plans, notes — and files them in your Library.',
+  Kip: 'Looks anything up and comes back with a short brief that says where it came from.',
+};
+
+function HireModal({ open, onClose, onHire, currentAgents = [], welcome = false, onLeaveWelcome }) {
   const [name, setName] = useStateM('');
   const [role, setRole] = useStateM(HQ.ROLES[0]);
   const [prompt, setPrompt] = useStateM('You are a helpful sub-agent. Be concise and warm.');
@@ -404,6 +411,9 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
   const [elevated, setElevated] = useStateM(false);
   const [templates, setTemplates] = useStateM(loadTemplates);
   const [showBoard, setShowBoard] = useStateM(true);
+  /* First-run welcome (see STARTER_CREW below): the full board is one click
+     away behind "See every candidate", never the first thing a new boss reads. */
+  const [showAll, setShowAll] = useStateM(false);
   /* Front-desk detection: null = probing (the deep check takes a few seconds
      — CLI version spawns + local-daemon liveness), [] = nothing found. */
   const [driverList, setDriverList] = useStateM(null);
@@ -439,7 +449,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
     setPrompt('You are a helpful coworker. Be concise and warm.');
     setTools(['web']); setAvatar('rose');
     setModel('anthropic:claude-haiku-4-5-20251001'); setTemp(0.4);
-    setElevated(false); setShowBoard(true);
+    setElevated(false); setShowBoard(true); setShowAll(false);
   }, [open]);
 
   /* The brain the shelf will actually use, from the SAME detection the
@@ -464,6 +474,17 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
     if (probing) return;
     try { HQ.noteFrontDeskBrains(readyIds); } catch (_e) {}
   }, [probing, readyIds.join(',')]);
+
+  /* The welcome is only a welcome while it is on screen. When it falls back
+     to the full board — no brain found, or "See every candidate" — the
+     office stops holding its first-run quiet (app.jsx firstRunQuiet), so
+     the board appears with the checklist exactly as it always did. Above
+     the early return because it is a hook. */
+  useEffectM(() => {
+    if (!open || !welcome || !onLeaveWelcome) return;
+    const noBrain = !probing && !candidateBrain(readyIds);
+    if (showAll || noBrain) onLeaveWelcome();
+  }, [open, welcome, probing, showAll, readyIds.join(',')]);
 
   /* <Modal> handles open=false → returns null. We still bail before running
      the heavier setup logic when closed. */
@@ -640,6 +661,73 @@ function HireModal({ open, onClose, onHire, currentAgents = [] }) {
     });
     onClose();
   };
+
+  /* ── First-run welcome: the starter crew ─────────────────────────────
+     A brand-new office used to open straight onto the full JOB POSTINGS
+     board — nine cards, capability fine print, a front desk of machine
+     detection — as the very first decision. The welcome asks for one:
+     hire the two coworkers whose first job shows up on the floor fastest
+     (Vera for everyday drafting, Kip for sourced research), on the same
+     brain the board would have given them. Kip is hired last, so the
+     FIRST ASSIGNMENT sheet that follows a first-ever hire opens for him.
+     Only shown while the office is empty AND a brain is known: with no
+     brain there is nothing honest to promise, so the board (which explains
+     what is missing) is the right screen. */
+  const crew = STARTER_CREW
+    .map(n => (HQ.OPENSWARM_ROSTER || []).find(t => t.name === n))
+    .filter(Boolean);
+  const welcomeView = welcome && showBoard && !showAll
+    && (currentAgents || []).length === 0 && crew.length === STARTER_CREW.length
+    && (probing || !!shelfBrain);
+  const hireCrew = () => {
+    if (!shelfBrain) return;
+    for (const t of crew) {
+      onHire({
+        id: HQ.uid('a'), name: t.name, role: t.role, color: t.color,
+        tools: t.tools, model: shelfBrain, temperature: t.temperature,
+        systemPrompt: t.systemPrompt, elevated: false,
+        status: 'idle', task: 'reporting for duty',
+        hiredAt: Date.now(), lastRun: 'just hired', nextRun: 'on demand',
+        recent: 'joined as your starter crew',
+      });
+    }
+    onClose();
+  };
+  if (welcomeView) {
+    return (
+      <Modal
+        open={open}
+        onClose={onClose}
+        title="WELCOME TO YOUR HQ"
+        subtitle="your starter crew is at the door"
+        size="md"
+        footer={
+          <>
+            <button className="px-btn ghost" style={{fontSize: 'var(--text-10)', marginRight: 'auto'}}
+                    onClick={() => setShowAll(true)}>See every candidate →</button>
+            <button className="px-btn primary" onClick={hireCrew} disabled={probing}>
+              {probing ? 'Getting their desks ready…' : `HIRE ${crew.map(t => t.name.toUpperCase()).join(' & ')} ✓`}
+            </button>
+          </>
+        }
+      >
+        <p className="welcome-crew-lede">
+          Two coworkers to start with. Hire them, give one a first job, and watch
+          their desk light up — you can add more of the team any time.
+        </p>
+        <div className="welcome-crew">
+          {crew.map(t => (
+            <div key={t.name} className="welcome-crew-card">
+              <Sprite data={t.color} scale={4}/>
+              <div className="welcome-crew-name">{t.name}</div>
+              <div className="welcome-crew-role">{t.role}</div>
+              <div className="welcome-crew-pitch">{STARTER_PITCH[t.name]}</div>
+            </div>
+          ))}
+        </div>
+      </Modal>
+    );
+  }
 
   const footer = !showBoard ? (
     <>

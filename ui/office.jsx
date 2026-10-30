@@ -1068,7 +1068,7 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
             is unreliable on touch so the picker is the primary affordance.
           The header `tag` already explains the gesture; this rail provides
           the actual drag source the office was designed around. */}
-      <div className="office-task-rail" aria-label="Inbox tasks">
+      <div className={'office-task-rail' + (inboxTasks.length === 0 ? ' is-empty' : '')} aria-label="Inbox tasks">
         <div className="otr-head">
           <span className="otr-title">📋 Inbox</span>
           {/* One empty-state line, and a true one.
@@ -1173,7 +1173,7 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
             {agents.map(a => (
               <div key={a.id} className="mas-item" onClick={() => onInspect && onInspect(a)} title={a.name}>
                 <div className="sprite-wrap" style={{ position: 'relative' }}>
-                  <Sprite data={a.sprite || a.name} scale={1.5}/>
+                  <Sprite data={a.sprite || a.color} scale={1.5}/>
                   <span className="mas-status" style={{
                     background: a.status === 'busy' || a.status === 'active' ? 'var(--live)' : 'var(--ink-3)',
                     position: 'absolute', bottom: 0, right: 0,

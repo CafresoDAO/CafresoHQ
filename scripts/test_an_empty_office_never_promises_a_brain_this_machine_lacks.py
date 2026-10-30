@@ -300,11 +300,13 @@ def measure(label, drivers, expect, forbid):
             "[...document.querySelectorAll('button.chip')]"
             ".some(x => /NOBODY HIRED/.test(x.textContent||''))",
             30, 'the ⚠ NOBODY HIRED alarm to appear on a first run')
-        # Beat 2: the office opens the candidate book itself, which is what
+        # Beat 2: the office opens the hire sheet itself, which is what
         # runs the probe the chip now reads. Wait for it, then let the
-        # measurement land.
-        T.wait_for(ws, "!!document.querySelector('.hire-board')", 30,
-                   'the candidate book to open by itself on a first run')
+        # measurement land. With a brain found it opens as the starter-crew
+        # welcome (modals/hire.jsx STARTER_CREW); with none, as the full
+        # board — both run the same front-desk probe.
+        T.wait_for(ws, "!!document.querySelector('.hire-board, .welcome-crew')", 30,
+                   'the hire sheet to open by itself on a first run')
         time.sleep(1.2)
         chip = T.evaluate(ws, CHIP_JS)
         check(f'[{label}] the alarm is on the screen', chip is not None)
