@@ -103,6 +103,13 @@
   var canvas = document.getElementById('cafreso-boot-canvas');
   var appReady = false, healthOk = false, done = false;
   var started = Date.now();
+  /* Embedded in the ai.cafreso.com shell: the shell is already showing the
+     lit office building over this frame and keeps it up until we say we are
+     booted (cafresohq:booted below). Painting a second splash underneath
+     would only spend a phone's CPU on something nobody sees. */
+  var embedded = false;
+  try { embedded = window.self !== window.top; } catch (_) { embedded = true; }
+  if (embedded) boot.style.visibility = 'hidden';
 
   // ── Graph animation: nodes drift + edges fade in (echo of GraphView) ──
   var ctx = canvas.getContext('2d'), nodes = [], edges = [], raf = 0;
@@ -147,7 +154,9 @@
     }
     raf = requestAnimationFrame(frame);
   }
-  try { size(); seed(); frame(); window.addEventListener('resize', function () { size(); seed(); }); } catch (_) {}
+  if (!embedded) {
+    try { size(); seed(); frame(); window.addEventListener('resize', function () { size(); seed(); }); } catch (_) {}
+  }
 
   // ── Status copy: honest provisioning ETA while a cold container wakes ──
   // Warm starts hide in <1s; cold OCI containers take ~20-40s, so show a soft
@@ -186,6 +195,9 @@
 
   function hide() {
     if (done) return; done = true;
+    // Tell the shell the office has painted, so it can lift its loader.
+    // Carries no data, so any parent origin may hear it.
+    if (embedded) { try { window.parent.postMessage({ type: 'cafresohq:booted' }, '*'); } catch (_) {} }
     try { clearInterval(statusTimer); } catch (_) {}
     boot.classList.add('is-hiding');
     setTimeout(function () { if (raf) cancelAnimationFrame(raf); boot.remove(); }, 700);
@@ -197,7 +209,7 @@
     // (?api=…), so a same-origin /health never resolves. Blocking on it trapped
     // the whole app behind the splash. The app shows its own in-app loading
     // states for data while the container wakes.
-    if (appReady && (Date.now() - started) > 700) hide();
+    if (appReady && (embedded || (Date.now() - started) > 700)) hide();
   }
   window.addEventListener('cafresohq:ready', function () {
     appReady = true; maybeHide();

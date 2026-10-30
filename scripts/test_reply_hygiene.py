@@ -1016,7 +1016,9 @@ def main():
           'probeManagedBrain' in seg and 'brain' in seg,
           'app.jsx: the follow-up must await the probe')
     check('both answers are written, not just the happy one',
-          "shared brain" in seg and "don't have a shared brain" in seg,
+          # The happy line names the shared brain; the other branch must say
+          # there isn't one (wording may change — the two-branch shape may not).
+          "shared brain" in seg and re.search(r"(no|don't have a) shared brain", seg),
           'app.jsx: a probe with one branch is an assertion with extra steps')
 
 
