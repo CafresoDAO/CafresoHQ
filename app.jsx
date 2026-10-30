@@ -751,7 +751,11 @@ function App() {
       if ((firstRunChatRef.current || []).length === 0) {
         setChat([{
           id: HQ.uid('m'), from: 'ceo', name: 'CafresoHQ',
-          text: "Welcome to your HQ — I'm CafresoHQ, your chief of staff. I've been assigned here to take care of any questions you might have, so I'll be queued up and ready for some time. Right now it's just me and a floor of empty desks: nothing here is pre-staged, so everything you see happen from here on is real. Let me check what we've got to work with.",
+          /* Short on purpose: the welcome sheet opens 1.6s later and is the
+             real next step. The old greeting ran four sentences ("queued up
+             and ready for some time… nothing here is pre-staged…") before
+             saying anything a new boss could act on. */
+          text: "Welcome to your HQ! I'm CafresoHQ, your chief of staff — ask me anything, any time. Let me see what we have to work with.",
         }]);
         (async () => {
           let brain = null;
@@ -762,8 +766,8 @@ function App() {
           setChat(prev => prev.concat([{
             id: HQ.uid('m'), from: 'ceo', name: 'CafresoHQ',
             text: brain
-              ? "Good — we're covered: I'm running on Cafreso's shared brain, so there's nothing for you to sign up for. You can bring your own later in Settings. Let's make your first hire; I'm opening the candidate book now."
-              : "We don't have a shared brain here, so whoever you hire will use one from this machine. I'm opening the candidate book now — it lists what I could find.",
+              ? "Good news: we're running on Cafreso's shared brain, so there's nothing to set up. Let's get you a team."
+              : "There's no shared brain here, so your hires will use one from this machine. Let's see who's available.",
           }]));
         })();
       }
