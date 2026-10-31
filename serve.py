@@ -3195,6 +3195,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         import json as _json
         with open(os.path.join(os.getcwd(), 'dist-ui', 'manifest.json'), encoding='utf-8') as fh:
             m = _json.load(fh)
+        terminal_cwd = '<script>window._TERMINAL_CWD=%s;</script>' % _json.dumps(_cafresohq_terminal_cwd)
+        # One source of truth when it is there: scripts/ui_manifest.py (what the
+        # asset canister build uses), which also makes xterm and the graph
+        # engine on-demand. The inline copy below is only for a frozen build
+        # shipped without scripts/.
+        try:
+            import importlib.util as _ilu
+            _spec = _ilu.spec_from_file_location(
+                'ui_manifest', os.path.join(os.getcwd(), 'scripts', 'ui_manifest.py'))
+            _um = _ilu.module_from_spec(_spec)
+            _spec.loader.exec_module(_um)
+            return terminal_cwd + '\n' + _um.render_tags(m)
+        except Exception:
+            pass
         parts = []
         for css in m.get('vendorCss', []):
             parts.append('<link rel="stylesheet" href="%s"/>' % css)
@@ -3203,8 +3217,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if m.get('analyticsWorker'):
             parts.append('<script>window.__CAFRESO_BUNDLE__=%s;</script>'
                          % _json.dumps({'analyticsWorker': m['analyticsWorker']}))
-        parts.append('<script>window._TERMINAL_CWD=%s;</script>'
-                     % _json.dumps(_cafresohq_terminal_cwd))
+        parts.append(terminal_cwd)
         if m.get('graphEngine'):
             parts.append('<script src="%s"></script>' % m['graphEngine'])
         for js in m.get('app', []):
