@@ -2,6 +2,7 @@ import { CafresoHQChain, CafresoHQClient } from '../claude-client.jsx';
 import { HQ } from '../hq-runtime.jsx';
 import { Sprite } from '../sprites.jsx';
 import { Modal, ModelPicker } from './base.jsx';
+import { isDevMode, setDevMode } from '../ui/primitives.jsx';
 /* The sign-in control the front desk uses (#434), mounted here too (#435):
    a row that says "needs a sign-in" must be where the sign-in happens. */
 import { AgentSignin, useAgentSignin } from '../ui/signin.jsx';
@@ -139,6 +140,7 @@ const SETTINGS_INDEX = [
   { tab:'agents', label:'Dismiss an agent', hint:'remove a hire from the roster', kw:'dismiss fire let go remove' },
   { tab:'appearance', label:'Theme & vocabulary', hint:'reskin the whole OS — office, coffee shop, trading floor…', kw:'theme skin vocabulary preset sepia solarized dracula high contrast coffeeshop wallstreet barista broker customize personalize' },
   { tab:'appearance', label:'Density', hint:'compact · comfortable · spacious', kw:'density compact comfortable spacious spacing size' },
+  { tab:'appearance', label:'Developer mode', hint:'show Terminal and Canisters', kw:'developer dev mode terminal canisters shell advanced' },
   { tab:'appearance', label:'Scanline overlay', hint:'soft CRT shimmer', kw:'scanlines crt overlay' },
   { tab:'appearance', label:'Sound FX', hint:'pixel blips on action', kw:'sound audio blips mute' },
   { tab:'appearance', label:'Night mode', hint:'dark pixel theme', kw:'night dark theme day light' },
@@ -1371,6 +1373,14 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
                   )}
                 </div>
               )}
+              <div className="cb-panel">
+                <h4>DEVELOPER TOOLS</h4>
+                <div className="row-knob">
+                  <div><div className="lbl">Developer mode</div><div className="sub">show Terminal and Canisters (reloads the office)</div></div>
+                  <div className={`pxswitch ${isDevMode()?'on':''}`} role="switch" aria-checked={isDevMode()}
+                       onClick={()=>{ setDevMode(!isDevMode()); window.location.reload(); }}><div className="nub"/></div>
+                </div>
+              </div>
               <div className="cb-panel">
                 <h4>AMBIENCE</h4>
                 <div className="row-knob">

@@ -271,7 +271,12 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
     setLoadError(null);
     (async () => {
       try {
-        const g = await loadData();
+        /* The engine is an on-demand bundle (scripts/ui_manifest.py): fetched
+           alongside the first data load, not on every office's first paint. */
+        const [g] = await Promise.all([
+          loadData(),
+          (!window.CafresoGraphEngine && window.cafresoLoad) ? window.cafresoLoad('graph').catch(() => {}) : null,
+        ]);
         if (cancelled || mountSeqRef.current !== seq || !containerRef.current) { setLoading(false); return; }
         const eng = mountData(g);
         setLoading(false);
