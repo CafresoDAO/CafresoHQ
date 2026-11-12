@@ -336,9 +336,8 @@ function Modal({ open, onClose, title, subtitle, headerActions, footer, size = '
               {headerActions}
               {dismissable && (
                 <button
-                  className="px-btn ghost"
+                  className="px-btn ghost modal-close"
                   onClick={() => onClose && onClose()}
-                  style={{color: '#fff8ee', borderColor: '#fff8ee'}}
                   aria-label="Close dialog"
                   title="Close (Esc)"
                 >CLOSE ✕</button>
