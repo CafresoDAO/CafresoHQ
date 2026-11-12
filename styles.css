@@ -12656,3 +12656,14 @@ body.night .modal-head, body.night .modal-foot { background: #2e2840; }
 .backdrop.is-leaving > .modal { animation: modal-leave 150ms var(--ease-out-quart) forwards; }
 @keyframes backdrop-leave { to { opacity: 0; } }
 @keyframes modal-leave { to { transform: translateY(6px) scale(0.985); } }
+
+
+/* Terminal view */
+.view-terminal { display: flex; flex-direction: column; height: 100%; background: var(--paper); }
+.view-terminal .term-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 14px 20px 10px; border-bottom: 1px solid var(--frame-line); flex-shrink: 0;
+}
+.view-terminal .term-head .section-title { margin-bottom: 0; }
+.view-terminal .term-hint { font-size: 11px; color: var(--ink-3); }
+.view-terminal .term-body { flex: 1; overflow: hidden; min-height: 0; }

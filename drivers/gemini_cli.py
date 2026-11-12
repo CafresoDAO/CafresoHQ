@@ -22,7 +22,7 @@ import subprocess
 import sys
 import threading
 
-from .base import (Driver, DriverError, TaskHandle, ev_done, ev_error,
+from .base import (Driver, DriverError, TaskHandle, ev_done, ev_error, explain_failure,
                    ev_status, ev_token, probe_cli)
 
 # Gemini's plain-text stdout carries spinner/color escapes; strip them so a
@@ -59,6 +59,13 @@ class GeminiCliDriver(Driver):
                     or shutil.which('gemini') or '')
         return shutil.which(self.binary_override or 'gemini') or shutil.which('gemini.cmd') or ''
 
+    # Set when a real run was turned away for a reason signing in again will
+    # not cure (Google refusing the account type). The sign-in files are
+    # still on disk, so detect_auth() keeps answering True; without this the
+    # front desk went on saying "We found your Google sign-in" above a
+    # coworker that could never answer. Cleared by the next run that works.
+    refused = ''
+
     @staticmethod
     def detect_auth():
         try:
@@ -80,6 +87,7 @@ class GeminiCliDriver(Driver):
                                      else ('', '', ''))
         return {'installed': bool(bin_), 'authenticated': authed,
                 'auth': mech, 'version': version, 'detail': bin_,
+                'refused': type(self).refused,
                 # A probe that RAN and failed. Absent/'' means either
                 # not probed or probed clean -- never 'broken'.
                 'probeError': problem, 'probeDetail': pdetail}
@@ -175,10 +183,14 @@ class GeminiCliDriver(Driver):
         stderr_text = (''.join(handle.private.get('stderr') or [])).strip()
         rc = proc.returncode
         if rc and rc not in (0, None):
-            yield ev_error(f'exited {rc}: ' + (stderr_text[:300] or f'exit {rc}'))
+            why = explain_failure('Gemini', stderr_text, rc)
+            if 'no longer lets this kind of account' in why:
+                type(self).refused = why
+            yield ev_error(why)
         elif not emitted:
-            hint = (stderr_text[:300]
+            hint = (explain_failure('Gemini', stderr_text)
                     or 'is the gemini CLI logged in? run it once in PTY mode to authenticate')
             yield ev_error(f'gemini returned no content — {hint}')
         else:
+            type(self).refused = ''
             yield ev_done()

@@ -1379,7 +1379,13 @@ async function streamAgentContract(driver, label, { system, messages, model, max
     try {
       const ev = JSON.parse(data);
       if (ev.event === 'token' && ev.text) onToken(ev.text);
-      else if (ev.event === 'error' && ev.message) onToken(`\n⚠ ${label}: ${ev.message}`);
+      /* A message that is already a whole sentence names the coworker
+         itself (the drivers' explain_failure ones do), so it is printed
+         as it stands; a bare fragment keeps the "<name>:" lead-in. */
+      else if (ev.event === 'error' && ev.message) {
+        const m = String(ev.message).trim();
+        onToken(/^[A-Z].*\.$/s.test(m) ? `\n⚠ ${m}` : `\n⚠ ${label}: ${m}`);
+      }
       else if (ev.event === 'usage' && onUsage) {
         onUsage({
           input: ev.inTokens || 0,

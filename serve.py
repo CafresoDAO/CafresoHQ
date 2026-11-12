@@ -107,6 +107,17 @@ def _local_route(env_names, default):
             parts.port or (443 if parts.scheme == 'https' else 80))
 
 
+def _error_line(label, message):
+    """The chat line for a driver error. A message that is already a whole
+    sentence (the drivers' explain_failure ones name the coworker themselves:
+    capital first, full stop last) is printed as it is; a bare fragment such
+    as "exited 3: …" keeps the "<name> error:" lead-in."""
+    m = str(message or '').strip()
+    if m and m[0].isupper() and m.endswith('.'):
+        return f"\n\n\u26a0 {m}"
+    return f"\n\n\u26a0 {label} error: {message}"
+
+
 ROUTES = {
     '/lmstudio/': _local_route(('CAFRESOHQ_LMSTUDIO_URL', 'LMSTUDIO_BASE_URL'),
                                'http://localhost:1234/v1'),
@@ -3817,7 +3828,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     # frame") recorded the flattening as if it were the design.
                     write_sse({'choices': [{'index': 0, 'delta': {
                         'type': 'error',
-                        'content': f"\n\n\u26a0 {err_label} error: {ev['message']}"}}]})
+                        'content': _error_line(err_label, ev['message'])}}]})
                 elif et == 'tool_call' and render_tools:
                     args = ev['args']
                     if isinstance(args, dict):

@@ -603,6 +603,9 @@ function HireModal({ open, onClose, onHire, currentAgents = [], welcome = false,
     return { ...def, driverId: d.id, found,
              probeError: det.probeError || '',
              probeDetail: det.probeDetail || '',
+             /* A real run was turned away for a reason a fresh sign-in will
+                not cure. The driver's own sentence says what to do instead. */
+             refused: det.refused || '',
              needsLogin: !def.cloud && !localDaemon && d.id !== 'hermes'
                          && !det.probeError && !det.authenticated,
              expired: det.auth === 'expired' };
@@ -610,7 +613,21 @@ function HireModal({ open, onClose, onHire, currentAgents = [], welcome = false,
     /* A sign-in that just finished at the front desk (#434) counts before the
        re-probe lands. Applied here, outside the card literal, because two
        suites lift that literal and run it under node with no React state. */
-    .map(c => (signin[c.driverId] && signin[c.driverId].authenticated) ? { ...c, needsLogin: false, signedInNow: true } : c);
+    .map(c => (signin[c.driverId] && signin[c.driverId].authenticated) ? { ...c, needsLogin: false, signedInNow: true } : c)
+    /* The office's own shared brain is not "a local model you happen to be
+       running": on a Cafreso office the LM Studio door IS the Cafreso GPU,
+       so its card says so and pins the model the office was given rather
+       than the placeholder name. Applied out here for the same reason as
+       the sign-in line above: suites lift the card literal and run it. */
+    .map(c => {
+      if (c.driverId !== 'lmstudio') return c;
+      let shared = null;
+      try { shared = CafresoHQClient.managedBrain ? CafresoHQClient.managedBrain() : null; } catch (_e) {}
+      return (shared && shared.model)
+        ? { ...c, name: 'Cafreso GPU', poweredBy: 'the Cafreso GPU', model: 'lmstudio:' + shared.model,
+            found: 'Included with your office — no keys to manage.' }
+        : c;
+    });
 
   const hireDetected = async (c) => {
     if (c.elevated && !(await window.hqConfirm(
@@ -771,7 +788,7 @@ function HireModal({ open, onClose, onHire, currentAgents = [], welcome = false,
                   AT THE FRONT DESK <span className="hint">
                     {/* "ready to join" is a promise about every card below it,
                         so it cannot stand over one that will not start. */}
-                    {deskCards.some(c => c.probeError)
+                    {deskCards.some(c => c.probeError) || deskCards.some(c => c.refused)
                       ? '— found on this machine · not all of them are ready'
                       : '— found on this machine, ready to join'}
                   </span>
@@ -785,12 +802,12 @@ function HireModal({ open, onClose, onHire, currentAgents = [], welcome = false,
                     <Sprite data={c.color} scale={2}/>
                     <div className="post-name">{c.name}</div>
                     <span className="post-tag">
-                      {c.probeError ? (c.service ? 'NOT RUNNING' : "WON'T START") : 'FOUND'}
+                      {c.refused ? "CAN'T BE USED" : c.probeError ? (c.service ? 'NOT RUNNING' : "WON'T START") : 'FOUND'}
                     </span>
                   </div>
                   <div className="post-role">{c.role}</div>
                   <div className="frontdesk-note" title={c.probeDetail || undefined}>
-                    {c.probeError
+                    {c.refused ? c.refused : c.probeError
                       ? `${c.name} is on this machine, but it ${c.probeError}. `
                         + (c.service
                             ? 'Starting it is all it needs. You can hire them now '
