@@ -2411,12 +2411,14 @@ const TOOL_REGISTRY = {
     re: /\[\s*PUBLISH_SITE\s*:\s*([^\]\n]+)\]/i,
     requires: () => icpPublishEnabled(),
     doc:
-      '- [PUBLISH_SITE: <dir or index.html path>] — ask the boss to put a built site live on the public internet.\n' +
-      '  Point it at the site\'s folder (or its index.html). The boss gets a one-click approval; once stamped,\n' +
-      '  the site publishes and a clickable <name>.url lands in the project. NOTHING is public until they stamp it.\n' +
+      '- [PUBLISH_SITE: <dir, index.html, or one file>] — ask the boss to put something you made live on the public internet.\n' +
+      '  Point it at a site\'s folder (or its index.html), or at ONE finished file: a PDF, a Word document (.docx),\n' +
+      '  a PowerPoint deck (.pptx), a spreadsheet or an image. A file gets its own share page with a download button.\n' +
+      '  One file can be 2 MB at most. The boss gets a one-click approval; once stamped, it publishes and a\n' +
+      '  clickable <name>.url lands beside it. NOTHING is public until they stamp it.\n' +
       '  When you have an HQ wallet, published pages automatically include a tip jar paying into it —\n' +
       '  append " : tip=off" to publish without one (e.g. [PUBLISH_SITE: site/dist : tip=off]).',
-    docShort: 'Ask the boss to publish a built site (one stamp; tip jar rides along unless tip=off).',
+    docShort: 'Ask the boss to publish a built site or one file — PDF, Word, PowerPoint, image (one stamp; tip jar on sites unless tip=off).',
     /* `ctx` for `meta`, same reason as WALLET_SEND below. The PUBLISH row in
        VISIT_WORDS already reads "Asked to publish" rather than "Published",
        so this tool's SUCCESS is captioned honestly — but a dispatch that
@@ -3391,7 +3393,7 @@ async function toolsForAgent(agent, { peers = [], askDepth = 0 } = {}) {
         let tip = icpWalletEnabled();
         const flag = /\s*:\s*tip\s*=\s*(on|off)\s*$/i.exec(raw);
         if (flag) { tip = flag[1].toLowerCase() === 'on' && icpWalletEnabled(); raw = raw.slice(0, flag.index).trim(); }
-        if (!raw) { meta.failed = true; return 'PUBLISH_SITE needs a folder or index.html path — nothing queued.'; }
+        if (!raw) { meta.failed = true; return 'PUBLISH_SITE needs a folder, an index.html, or one file to publish — nothing queued.'; }
         try {
           window.dispatchEvent(new CustomEvent('cafresohq:publishRequest', {
             detail: { agentId: pubAgentId, agentName: pubAgentName, path: raw, tip },

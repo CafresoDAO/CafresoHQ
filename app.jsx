@@ -6878,11 +6878,11 @@ ${d.text}` : d.text,
             const wentPublic = r.mode === 'canister';
             setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
               text: wentPublic
-                ? `🚀 Shipped — live on the Internet Computer (public):\n${r.url}\nClickable link filed at ${r.file}`
+                ? `🚀 Shipped — live on the Internet Computer (public):\n${r.url}${r.file ? `\nClickable link filed at ${r.file}` : ''}`
                 : `🔗 Preview only — not on the web. This link opens on this machine `
                   + `only; publishing for real needs the Cafreso app that holds your `
                   + `identity (open this office at hq.cafreso.com):\n${r.url}\n`
-                  + `Clickable link filed at ${r.file}` }]);
+                  + (r.file ? `Clickable link filed at ${r.file}` : '') }]);
             /* Same words as the headline above, because a boss reading the
                tray a week later is asking the same question the headline
                answered in the moment. */
