@@ -46,7 +46,7 @@ function Ico({ kind, size=16 }) {
 }
 
 /* ------------ Sidebar rail ------------ */
-const NAV_ITEMS = [
+const ALL_NAV_ITEMS = [
   ['visual', 'Office'],
   ['tasks', 'Tasks'],
   ['vault', 'Library'],
@@ -71,6 +71,20 @@ const NAV_ITEMS = [
      says HIRING HALL (VIEW_LABELS). views/market.jsx. */
   ['market', 'Network'],
 ];
+
+/* Developer mode (Settings → Appearance → Developer tools). Terminal and
+   Canisters are builder tools — a shell inside your office's container and
+   raw canister controls. They stay one switch away for the people who want
+   them, and off the rail, phone bar, number keys and command palette for
+   everyone else. Read once at load; the switch reloads the office. */
+const DEV_ONLY_VIEWS = ['terminal', 'canisters'];
+function isDevMode() {
+  try { return localStorage.getItem('cafresohq.devMode') === '1'; } catch (_) { return false; }
+}
+function setDevMode(on) {
+  try { localStorage.setItem('cafresohq.devMode', on ? '1' : '0'); } catch (_) {}
+}
+const NAV_ITEMS = isDevMode() ? ALL_NAV_ITEMS : ALL_NAV_ITEMS.filter(([k]) => !DEV_ONLY_VIEWS.includes(k));
 
 /* ─────────────────────────────────────────────────────────────────────
    <Btn>
@@ -587,4 +601,4 @@ function Tabs({
 
 const ToastCtx = React.createContext(null);
 
-export { Btn, Card, Checkbox, Field, Ico, NAV_ITEMS, SearchField, Select, Tabs, TextArea, TextField, ToastCtx, Toggle, VocabCtx, getVocab, useVocab };
+export { Btn, Card, Checkbox, DEV_ONLY_VIEWS, Field, Ico, NAV_ITEMS, SearchField, Select, Tabs, TextArea, TextField, ToastCtx, Toggle, VocabCtx, getVocab, isDevMode, setDevMode, useVocab };
