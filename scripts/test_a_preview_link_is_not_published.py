@@ -50,7 +50,7 @@ def check(name, cond, detail=''):
 def strip_comments(src):
     """JS comments only. Every check below runs on this, because the
     explanations written IN THIS COMMIT contain the exact phrases the
-    checks look for — 'Published', 'preview link', 'ai.cafreso.com'. A
+    checks look for — 'Published', 'preview link', 'hq.cafreso.com'. A
     check that reads its own commit message passes on prose alone.
     (Learned the hard way in #57: three checks matched an ASCII diagram.)"""
     src = re.sub(r'/\*[\s\S]*?\*/', '', src)
@@ -124,7 +124,7 @@ def main():
     check('the preview path says plainly that it is not public',
           re.search(r'[Nn]ot public', tail), tail[:200])
     check('...and names the door to the real thing',
-          'ai.cafreso.com' in tail,
+          'hq.cafreso.com' in tail,
           '§7: one honest sentence PLUS a way forward — a refusal with no '
           'door is half a message')
 

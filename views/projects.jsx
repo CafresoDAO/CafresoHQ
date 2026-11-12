@@ -756,7 +756,7 @@ function WorkspaceView({ projects, setProjects, agents = [], onSwitchView }) {
         kind: 'preview', url: r.url,
         text: 'Not public — this preview opens on this machine only. '
             + 'Putting it on the web needs the Cafreso app that holds your '
-            + 'identity; open this office at ai.cafreso.com to publish for real.',
+            + 'identity; open this office at hq.cafreso.com to publish for real.',
       });
     } catch (e) {
       setPubMsg({ kind: 'err', text: 'Publish failed — ' + officeCause((e && e.message) || String(e)) });

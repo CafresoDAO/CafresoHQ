@@ -16,20 +16,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: frontend domains up + bundle parity
+      - name: both sites are up
         run: |
           set -euo pipefail
+          # cafreso.com and CafresoHQ are separate builds now, so each only has to serve one.
           entries() { grep -oE '_app/immutable/entry/[a-zA-Z0-9._-]+\.js' | sort -u; }
-          A="$(curl -fsS --max-time 20 "https://cafreso.com/index.html?cb=$(date +%s)" | entries)"
-          B="$(curl -fsS --max-time 20 "https://ai.cafreso.com/index.html?cb=$(date +%s)" | entries)"
-          echo "cafreso.com:";    echo "$A"
-          echo "ai.cafreso.com:"; echo "$B"
-          [ -n "$A" ] && [ -n "$B" ] || { echo "::error::a domain served no entry bundles"; exit 1; }
-          [ "$A" = "$B" ] || { echo "::error::BUNDLE DRIFT between cafreso.com and ai.cafreso.com — run scripts/deploy_frontend.sh"; exit 1; }
+          for d in https://cafreso.com https://ai.cafreso.com; do
+            E="$(curl -fsS --max-time 20 "$d/index.html?cb=$(date +%s)" | entries)"
+            echo "$d:"; echo "$E"
+            [ -n "$E" ] || { echo "::error::$d served no entry bundles"; exit 1; }
+          done
 
       - name: fleet gateway alive
         run: |
           set -euo pipefail
-          J="$(curl -fsS --max-time 20 https://hq.cafreso.com/fleet/health)"
+          # api.cafreso.com is the gateway; hq.cafreso.com was its name until the app took it.
+          J="$(curl -fsS --max-time 20 https://api.cafreso.com/fleet/health || curl -fsS --max-time 20 https://hq.cafreso.com/fleet/health)"
           echo "$J"
           echo "$J" | grep -q '"status": *"ok"' || { echo "::error::fleet API unhealthy"; exit 1; }

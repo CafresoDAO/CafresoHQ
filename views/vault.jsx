@@ -815,7 +815,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
          server-backed office got it: a boss with a deck in a folder on their
          own disk, sent to another website to look at it. §5. */
       if (_bridge) {
-        say(`"${fileMeta.title}" is an image or media file — open it from the Library at ai.cafreso.com to view it.`, 'info');
+        say(`"${fileMeta.title}" is an image or media file — open it from the Library at hq.cafreso.com to view it.`, 'info');
         return;
       }
       if (!(await flushBeforeLeave())) return;
@@ -1026,7 +1026,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     e.preventDefault();
     setDropArmed(false);
     if (_bridge) {
-      say('Filing by drop needs the Library at ai.cafreso.com — this Library is managed by its shell.', 'info');
+      say('Filing by drop needs the Library at hq.cafreso.com — this Library is managed by its shell.', 'info');
       return;
     }
     await uploadFiles(Array.from(e.dataTransfer.files || []));
@@ -1056,7 +1056,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     if (!list.length) return;
     e.preventDefault();
     if (_bridge) {
-      say('Filing a pasted file needs the Library at ai.cafreso.com — this Library is managed by its shell.', 'info');
+      say('Filing a pasted file needs the Library at hq.cafreso.com — this Library is managed by its shell.', 'info');
       return;
     }
     const at = e.target.selectionStart ?? 0;

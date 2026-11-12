@@ -446,7 +446,7 @@ function CEOPanel({ open, onClose, onOpenSettings, onSitWithCEO, onOpenMemory, o
               <div className="desk-phone" title="Desk phone" aria-hidden="true"/>
               <div className="trash-bin" title="Trash" aria-hidden="true"/>
               <a className="arcade clickable"
-                 href="https://ai.cafreso.com/workspaces"
+                 href="https://hq.cafreso.com/workspaces"
                  target="_blank" rel="noopener noreferrer"
                  title="PAC-MAN · Boot up Cafreso Workspaces"
                  onClick={(e)=>e.stopPropagation()}>
@@ -502,7 +502,7 @@ function CEOPanel({ open, onClose, onOpenSettings, onSitWithCEO, onOpenMemory, o
             <span>Meeting</span>
           </button>
           <a className="ceo-panel-action ceo-panel-action--workspaces"
-             href="https://ai.cafreso.com/workspaces"
+             href="https://hq.cafreso.com/workspaces"
              target="_blank" rel="noopener noreferrer"
              onClick={onClose}>
             <span className="ceo-panel-icon" aria-hidden="true">🕹</span>

@@ -1040,7 +1040,7 @@ function IcpServicesPanel({ agents }) {
           <h4>💰 MONEY &amp; PAYMENTS</h4>
           <div className="muted" style={{ lineHeight: 1.6 }}>
             The module is on, but balances and sends need your Internet Identity, which
-            lives in the CafresoHQ shell. Open your HQ at <b>ai.cafreso.com</b> to manage
+            lives in the CafresoHQ shell. Open your HQ at <b>hq.cafreso.com</b> to manage
             wallets, caps, and payroll. Until then agents cannot move any funds.
           </div>
         </div>
