@@ -4,7 +4,7 @@ import { MobileTabBar, OfficeView, Rail, Tab, Ticker } from './ui/office.jsx';
 import { AgentCards, ChatPanel } from './ui/chat.jsx';
 import { Btn, Card, Checkbox, Field, Ico, NAV_ITEMS, SearchField, Select, Tabs, TextArea, TextField, Toggle, VocabCtx, getVocab } from './ui/primitives.jsx';
 import { CommandPaletteProvider, PaletteFab, ToastProvider, useCommands, useToast } from './ui/feedback.jsx';
-import { GettingStarted, NotificationBell, NotificationCenter, OnboardingKeyStep, OnboardingTour } from './ui/onboarding.jsx';
+import { gsCollapsedSeed, gsCollapsedStore, GettingStarted, NotificationBell, NotificationCenter, OnboardingKeyStep, OnboardingTour } from './ui/onboarding.jsx';
 import { CEOPanel, InspectPanel, ShortcutHud, Toast, TokenHUD, TopbarMenu } from './ui/panels.jsx';
 
 const CafresoHQUI = {
@@ -35,7 +35,7 @@ const CafresoHQUI = {
   NotificationCenter,
   OnboardingTour,
   OnboardingKeyStep,
-  GettingStarted,
+  GettingStarted, gsCollapsedSeed, gsCollapsedStore,
   VocabCtx,
   getVocab,
   PaletteFab,

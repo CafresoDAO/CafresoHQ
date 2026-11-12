@@ -512,10 +512,24 @@ function OnboardingKeyStep() {
    card by 155px, its entire height. The owner of that collision is app.jsx
    (it renders both), so it needs to know whether this card is expanded.
    Still local state — this only reports, never obeys. */
+/* The card remembers being collapsed. It used to open fully on every load,
+   so a boss who had tucked it away found it back on top of their work each
+   time — and it sits over every view's content until all six steps are done.
+   One reader for both the card and app.jsx's mirror of it, so the two can
+   never start out disagreeing. The key holds "gettingStarted" so Settings →
+   Account → New-user guide → Reset clears it with the rest. */
+const GS_COLLAPSED_KEY = 'cafresohq:gettingStartedCollapsed';
+function gsCollapsedSeed() {
+  try { return localStorage.getItem(GS_COLLAPSED_KEY) === '1'; } catch (_e) { return false; }
+}
+function gsCollapsedStore(v) {
+  try { if (v) localStorage.setItem(GS_COLLAPSED_KEY, '1'); else localStorage.removeItem(GS_COLLAPSED_KEY); } catch (_e) {}
+}
 function GettingStarted({ hasKey, hired, chatted, assigned, built, sawWork, onAddKey, onHire, onChat, onTasks, onProjects, onWatch, onDismiss, onCollapsedChange }) {
-  const [collapsed, setCollapsedState] = useState(false);
+  const [collapsed, setCollapsedState] = useState(gsCollapsedSeed);
   const setCollapsed = (v) => {
     setCollapsedState(v);
+    gsCollapsedStore(v);
     if (onCollapsedChange) onCollapsedChange(v);
   };
   const steps = [
@@ -599,7 +613,11 @@ function GettingStarted({ hasKey, hired, chatted, assigned, built, sawWork, onAd
       React.createElement('div', { style: { flex: 1, minWidth: 0 } },
         React.createElement('div', { style: { fontWeight: 600, textDecoration: s.done ? 'line-through' : 'none', color: s.done ? '#8f8676' : '#e9e2d4' } }, s.label),
         !s.done && React.createElement('div', { style: { color: '#9b938a', fontSize: 11, lineHeight: 1.35, margin: '1px 0 4px' } }, s.hint),
-        !s.done && s.act && React.createElement('button', { onClick: s.act, style: { cursor: 'pointer', border: '1px solid rgba(245,210,93,0.4)', borderRadius: 6, padding: '3px 9px', background: 'rgba(245,210,93,0.12)', color: '#F5D25D', font: '600 11px Inter, system-ui, sans-serif' } }, s.cta + ' →'),
+        !s.done && s.act && React.createElement('button', {
+          /* Follow a step and the card tucks itself into its pill. It used to
+             stay open over the very view it had just sent the boss to: "Open
+             tasks" landed on a board whose starter cards were under the card. */
+          onClick: () => { s.act(); setCollapsed(true); }, style: { cursor: 'pointer', border: '1px solid rgba(245,210,93,0.4)', borderRadius: 6, padding: '3px 9px', background: 'rgba(245,210,93,0.12)', color: '#F5D25D', font: '600 11px Inter, system-ui, sans-serif' } }, s.cta + ' →'),
       ),
     )),
     allDone && React.createElement('button', { onClick: onDismiss, style: { marginTop: 9, width: '100%', cursor: 'pointer', border: '1px solid rgba(165,196,161,0.45)', borderRadius: 7, padding: '6px', background: 'rgba(165,196,161,0.14)', color: '#A5C4A1', font: '600 12px Inter, system-ui, sans-serif' } }, 'Dismiss'),
@@ -732,4 +750,4 @@ function NotificationCenter({
 }
 
 
-export { GettingStarted, NotificationBell, NotificationCenter, OnboardingKeyStep, OnboardingTour };
+export { gsCollapsedSeed, gsCollapsedStore, GettingStarted, NotificationBell, NotificationCenter, OnboardingKeyStep, OnboardingTour };

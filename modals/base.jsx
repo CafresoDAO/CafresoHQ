@@ -186,6 +186,33 @@ function Modal({ open, onClose, title, subtitle, headerActions, footer, size = '
     }
   }, [open]);
 
+  /* Leaving. Every caller stops rendering its dialog the moment it closes,
+     so there is nothing left to animate out and dialogs used to vanish in
+     one frame. On the way out we leave a lifeless copy of the dialog on the
+     page for 150ms and fade that: no caller has to change, and the copy
+     takes no clicks or focus. Skipped for very large dialogs (copying
+     them would cost more than the effect is worth) and for anyone who asked
+     their device for less motion. */
+  const shellRef = useRefM(null);
+  React.useLayoutEffect(() => {
+    if (!open) return;
+    return () => {
+      const node = shellRef.current;
+      if (!node || !node.isConnected) return;
+      try {
+        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        if (node.getElementsByTagName('*').length > 2500) return;
+        const ghost = node.cloneNode(true);
+        ghost.removeAttribute('data-modal-shell');
+        ghost.setAttribute('aria-hidden', 'true');
+        ghost.setAttribute('inert', '');
+        ghost.classList.add('is-leaving');
+        document.body.appendChild(ghost);
+        setTimeout(() => { ghost.remove(); }, 170);
+      } catch (_e) { /* the dialog still closes; only the fade is lost */ }
+    };
+  }, [open]);
+
   /* Body scroll lock while open. */
   useEffectM(() => {
     if (!open) return;
@@ -291,6 +318,7 @@ function Modal({ open, onClose, title, subtitle, headerActions, footer, size = '
   return (
     <div
       className="backdrop"
+      ref={shellRef}
       data-modal-shell
       onMouseDown={(e) => { backdropPressRef.current = e.target === e.currentTarget; }}
       onMouseUp={(e) => {

@@ -1,4 +1,8 @@
-import React, { useState, useEffect } from 'react';
+/* The page's own React, not a second copy from npm. Importing 'react' here
+   bundled a private React whose hooks have no renderer behind them, so
+   opening this view threw "Cannot read properties of null (reading
+   'useState')" and took the whole office down with it. */
+const { useState, useEffect } = React;
 import { Btn } from '../ui/primitives.jsx';
 
 function CanistersView({ active }) {
@@ -33,53 +37,44 @@ function CanistersView({ active }) {
   if (active !== 'canisters') return null;
 
   return (
-    <div className="view-canisters scroll-y" style={{ padding: '24px' }}>
-      <h2 style={{ fontFamily: '"Press Start 2P", monospace', fontSize: '14px', marginBottom: '24px' }}>
-        ICP Canister Management
-      </h2>
-      
-      <p style={{ marginBottom: '24px', opacity: 0.8, maxWidth: '600px', lineHeight: '1.5' }}>
-        Coworkers deploy logic and assets to the Internet Computer. 
-        Track their active cycles balances and status directly via the network replica below.
-      </p>
+    <div className="view-canisters scroll-y">
+      <div className="section-title">
+        <span>Canisters</span>
+        <span className="tag">what your coworkers have deployed to the Internet Computer</span>
+      </div>
 
       {loading ? (
-        <div>Pinging ICP Network for live cycle balances...</div>
+        <div className="can-note" role="status">Checking each canister…</div>
       ) : error ? (
-        <div style={{ color: 'var(--red)' }}>Error fetching canisters: {error}</div>
+        <div className="can-note is-error" role="alert">Couldn’t check your canisters — {error}</div>
       ) : canisters.length === 0 ? (
-        <div className="empty-title">
-          No canisters deployed yet. Your coworkers' deployments will appear here.
+        <div className="empty-state">
+          <div className="empty-title">No canisters yet</div>
+          <div className="empty-sub">When a coworker deploys something, it shows up here with its status and cycles.</div>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {canisters.map((c, i) => (
-            <div key={i} style={{
-              padding: '16px', 
-              border: '2px solid var(--ink)', 
-              background: 'var(--bg-card, #fff)', 
-              boxShadow: 'var(--shadow-hard, 4px 4px 0px 0px rgba(0,0,0,1))'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                <strong style={{ fontSize: '16px' }}>{c.name}</strong>
-                <span style={{ fontSize: '12px', background: 'var(--accent)', color: '#fff', padding: '4px 8px', borderRadius: '4px' }}>
-                  {c.network.toUpperCase()}
-                </span>
+        <div className="can-list">
+          {canisters.map((c, i) => {
+            const running = String(c.status || '').includes('Running');
+            return (
+              <div key={i} className="can-card">
+                <div className="can-card-top">
+                  <strong className="can-name">{c.name}</strong>
+                  <span className="can-net">{String(c.network || '').toUpperCase()}</span>
+                </div>
+                <code className="can-id">{c.id}</code>
+                <div className="can-card-foot">
+                  <span><span className={`sn-dot ${running ? 'ok' : 'warn'} can-dot`}/>{c.status}</span>
+                  <span>Cycles <strong>{c.balance}</strong></span>
+                </div>
               </div>
-              <div style={{ fontFamily: 'monospace', opacity: 0.9, marginBottom: '8px' }}>
-                ID: {c.id}
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                <span>Status: <strong style={{ color: c.status.includes('Running') ? 'var(--live, #39ff14)' : 'inherit' }}>{c.status}</strong></span>
-                <span>Cycles Balance: <strong>{c.balance}</strong></span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
-      
-      <div style={{ marginTop: '24px' }}>
-        <Btn onClick={fetchCanisters}>Refresh Network Status</Btn>
+
+      <div className="can-actions">
+        <Btn onClick={fetchCanisters} disabled={loading}>{loading ? 'Checking…' : 'Check again'}</Btn>
       </div>
     </div>
   );

@@ -12580,3 +12580,79 @@ body.night .modal-head, body.night .modal-foot { background: #2e2840; }
     scroll-behavior: auto !important;
   }
 }
+
+
+/* ── 2026-11 facelift, part two: inside the views ──
+   Same rule as the frame: the pixel office scene keeps its look, and the
+   working views (tasks, library, canisters, network) take the soft one.
+   Scoped to .view-area so nothing on the office floor changes. */
+.view-area .section-title {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 18px; font-weight: 750; letter-spacing: 0;
+  margin-bottom: 14px; flex-wrap: wrap;
+}
+.view-area .section-title .tag { font-size: 11px; letter-spacing: 0.08em; }
+.view-area .view-search {
+  font-family: 'Inter', system-ui, sans-serif; font-size: 14px;
+  border: 1px solid var(--frame-line); border-radius: 8px; padding: 9px 12px;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.view-area .view-search:focus { outline: none; border-color: var(--accent-sun); box-shadow: 0 0 0 3px rgb(240 198 116 / 0.35); }
+.view-area .task-board,
+.view-area .vault-layout-3col {
+  border: 1px solid var(--frame-line); border-radius: 12px; overflow: hidden;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 6px 18px rgb(0 0 0 / 0.05);
+}
+.view-area .clipboard-head .title,
+.view-area .tb-col-head {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.1em;
+}
+.view-area .tb-col-head { background: var(--paper-2); color: var(--ink-2); border-bottom: 1px solid var(--frame-line); }
+.view-area .tb-empty,
+.view-area .empty-state { border: 1px dashed var(--frame-line); border-radius: 12px; }
+.view-area .tb-empty, .view-area .tb-empty-hint, .view-area .tb-empty-hint strong,
+.view-area .empty-sub {
+  font-family: 'Inter', system-ui, sans-serif; font-size: 13px; line-height: 1.5;
+}
+.view-area .empty-title { font-family: 'Inter', system-ui, sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 0; }
+.view-area .starter-card {
+  border: 1px solid var(--frame-line); border-radius: 10px; box-shadow: none;
+  transition: border-color 150ms ease, background-color 150ms ease, transform 120ms var(--ease-out-quart);
+}
+.view-area .starter-card:active { transform: scale(0.98); }
+.view-area .starter-name { font-family: 'Inter', system-ui, sans-serif; font-size: 13px; font-weight: 700; }
+.view-area .starter-outcome { font-family: 'Inter', system-ui, sans-serif; font-size: 12px; }
+@media (hover: hover) and (pointer: fine) {
+  .view-area .starter-card:hover { transform: none; box-shadow: none; border-color: var(--ink-3); background: var(--paper-2); }
+}
+
+/* Canisters */
+.view-canisters { padding: 24px; }
+.can-list { display: grid; gap: 12px; max-width: 760px; }
+.can-card {
+  padding: 16px 18px; background: var(--paper);
+  border: 1px solid var(--frame-line); border-radius: 12px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 6px 18px rgb(0 0 0 / 0.05);
+}
+.can-card-top, .can-card-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.can-name { font-size: 15px; }
+.can-net {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+  padding: 3px 8px; border-radius: 999px;
+  background: var(--paper-2); border: 1px solid var(--frame-line); color: var(--ink-2);
+}
+.can-id { display: block; margin: 8px 0 10px; font-size: 12px; color: var(--ink-2); word-break: break-all; }
+.can-card-foot { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.can-dot { position: static; display: inline-block; vertical-align: middle; margin-right: 6px; }
+.can-note { font-size: 14px; color: var(--ink-2); }
+.can-note.is-error { color: #c44; }
+.can-actions { margin-top: 20px; }
+
+
+/* A dialog leaving: the copy Modal leaves behind fades and settles back a
+   touch, quicker than it arrived. Backdrop and dialog share one timing. */
+.backdrop.is-leaving { pointer-events: none; animation: backdrop-leave 150ms var(--ease-out-quart) forwards; }
+.backdrop.is-leaving > .modal { animation: modal-leave 150ms var(--ease-out-quart) forwards; }
+@keyframes backdrop-leave { to { opacity: 0; } }
+@keyframes modal-leave { to { transform: translateY(6px) scale(0.985); } }
