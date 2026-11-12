@@ -5241,9 +5241,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         refuses a rebound request is _rebind_host_gate below, and a route that
         wants rebinding protection must call THAT. Ledger `## 320.`."""
         origins = {
-            'https://hq.cafreso.com',        # production Caddy gateway
+            'https://hq.cafreso.com',        # the CafresoHQ shell (was the gateway's name)
+            'https://api.cafreso.com',       # production Caddy gateway
             'https://hq-ui.cafreso.com',     # canister UI shell (cross-origin split)
-            'https://ai.cafreso.com',        # SvelteKit frontend
+            'https://ai.cafreso.com',        # the shell's old address
             'http://localhost:8787',         # local dev (same-origin)
             'http://127.0.0.1:8787',         # local dev (alt)
             'http://localhost:5173',         # vite dev server
@@ -7683,15 +7684,15 @@ if __name__ == '__main__':
         if _tls_on and _local_deploy:
             if _tls_trusted:
                 print('  ✅ Trusted HTTPS — this HQ can load embedded inside '
-                      'https://ai.cafreso.com')
+                      'https://hq.cafreso.com')
             else:
                 print('  ⚠  Self-signed HTTPS. For the seamless embed in '
-                      'ai.cafreso.com, install mkcert (https://github.com/FiloSottile/mkcert) '
+                      'hq.cafreso.com, install mkcert (https://github.com/FiloSottile/mkcert) '
                       'and restart — or open https://localhost:%d/hq.html once and '
                       'trust the cert.' % PORT)
         elif not _tls_on:
             print('  💡 Set CAFRESOHQ_TLS_CERT + CAFRESOHQ_TLS_KEY (or install mkcert) '
-                  'for HTTPS — enables the ai.cafreso.com embed + iOS service worker')
+                  'for HTTPS — enables the hq.cafreso.com embed + iOS service worker')
         for prefix, (h, p) in ROUTES.items():
             print(f'  proxy {prefix}* -> {h}:{p}/*')
         if _cafresohq_allowed_dirs:

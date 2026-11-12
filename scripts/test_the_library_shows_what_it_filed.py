@@ -324,8 +324,8 @@ def source_checks():
 
     # ── the view routes, and keeps the bridge's own truth ────────────────
     branch = section(ui, 'if (fileMeta?.isBinary)', 'setBusy(true)')
-    check('the ai.cafreso.com notice is gated on being in the bridge',
-          re.search(r'if\s*\(_bridge\)\s*\{[\s\S]{0,400}?ai\.cafreso\.com', branch) is not None,
+    check('the hq.cafreso.com notice is gated on being in the bridge',
+          re.search(r'if\s*\(_bridge\)\s*\{[\s\S]{0,400}?hq\.cafreso\.com', branch) is not None,
           '— on a server backend that file is on the boss\'s own disk')
     check('a server-backend file opens a panel instead',
           'binary: true' in branch, branch[:300])

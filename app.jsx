@@ -6876,7 +6876,7 @@ ${d.text}` : d.text,
                 ? `🚀 Shipped — live on the Internet Computer (public):\n${r.url}\nClickable link filed at ${r.file}`
                 : `🔗 Preview only — not on the web. This link opens on this machine `
                   + `only; publishing for real needs the Cafreso app that holds your `
-                  + `identity (open this office at ai.cafreso.com):\n${r.url}\n`
+                  + `identity (open this office at hq.cafreso.com):\n${r.url}\n`
                   + `Clickable link filed at ${r.file}` }]);
             /* Same words as the headline above, because a boss reading the
                tray a week later is asking the same question the headline
@@ -8060,8 +8060,8 @@ ${d.text}` : d.text,
                         wants a sign-in of its own. Add one in Settings → Connections,
                         then try again.</>
                     : <><b>🔑 Your session expired.</b> Reopen HQ from{' '}
-                        <a href="https://ai.cafreso.com/hq" target="_blank" rel="noopener noreferrer"
-                           style={{color:'#F5D25D', fontWeight:700, textDecoration:'underline'}}>ai.cafreso.com → Launch HQ</a>
+                        <a href="https://hq.cafreso.com/hq" target="_blank" rel="noopener noreferrer"
+                           style={{color:'#F5D25D', fontWeight:700, textDecoration:'underline'}}>hq.cafreso.com → Launch HQ</a>
                         {' '}to sign back in — your work here is saved.</>}
                 </span>
                 <button onClick={()=>{ if (runsLocally) { setSessionExpired(false); openSettings('keys'); } else { window.location.reload(); } }}
@@ -8088,8 +8088,8 @@ ${d.text}` : d.text,
                   {runsLocally
                     ? <>Start it back up on this computer, then hit Retry.</>
                     : <>Open HQ from{' '}
-                        <a href="https://ai.cafreso.com/hq" target="_blank" rel="noopener noreferrer"
-                           style={{color:'#E8A9A9', fontWeight:700, textDecoration:'underline'}}>ai.cafreso.com → Launch HQ</a>
+                        <a href="https://hq.cafreso.com/hq" target="_blank" rel="noopener noreferrer"
+                           style={{color:'#E8A9A9', fontWeight:700, textDecoration:'underline'}}>hq.cafreso.com → Launch HQ</a>
                         {' '}so it can reach your private office.</>}
                   <span style={{opacity:0.7}}> {window._API_BASE
                     ? `(looking for it at ${window._API_BASE})`

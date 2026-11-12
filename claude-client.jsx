@@ -2848,7 +2848,7 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
   const _pending = new Map();
   function _req(type, data, timeoutMs) {
     return new Promise((resolve, reject) => {
-      if (window.parent === window) { reject(new Error('ICP Services need the ai.cafreso.com shell')); return; }
+      if (window.parent === window) { reject(new Error('ICP Services need the hq.cafreso.com shell')); return; }
       // These messages request signatures over real value (ICRC transfers,
       // payroll, spend policy). A wildcard target would hand a hostile framer
       // both the request stream and the ability to forge replies.

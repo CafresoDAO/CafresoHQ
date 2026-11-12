@@ -913,7 +913,7 @@ console.log(JSON.stringify(R));
     # destination is ever fixed.
     office_full_src = (ROOT / 'ui' / 'office.jsx').read_text(encoding='utf-8')
     panels_src = (ROOT / 'ui' / 'panels.jsx').read_text(encoding='utf-8')
-    needle = 'https://ai.cafreso.com/workspaces'
+    needle = 'https://hq.cafreso.com/workspaces'
     for label, src in (
         ('office-floor arcade cabinet', office_full_src),
         ('desk-side PAC-MAN cabinet / CEO panel Workspaces action', panels_src),
@@ -971,7 +971,7 @@ console.log(JSON.stringify(R));
     # supported" in this test browser. ui/feedback.jsx's DialogHost exists
     # BECAUSE native window.confirm/window.prompt "on some hosts (iframe
     # sandboxes) are silently disabled" — its own docstring — and this app
-    # is explicitly designed to run inside the ai.cafreso.com iframe shell.
+    # is explicitly designed to run inside the hq.cafreso.com iframe shell.
     # views/projects.jsx already made the switch for its identical New
     # Folder / Rename / Delete flows; views/vault.jsx — the single most
     # important data surface in the app, per the park list's "stays

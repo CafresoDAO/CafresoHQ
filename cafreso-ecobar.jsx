@@ -31,8 +31,8 @@
   // the Banking.Brave / Minegold app (was inconsistently "Banking").
   var APPS = [
     { id: 'pages', label: 'Pages', url: 'https://cafreso.com',        icon: '📄', accent: '#E8A9A9' },
-    { id: 'ai',    label: 'AI',    url: 'https://ai.cafreso.com',     icon: '🧠', accent: '#C9B8E0' },
-    { id: 'hq',    label: 'HQ',    url: 'https://hq.cafreso.com',     icon: '🏢', accent: '#F5D25D' },
+    { id: 'ai',    label: 'AI',    url: 'https://hq.cafreso.com',     icon: '🧠', accent: '#C9B8E0' },
+    { id: 'hq',    label: 'HQ',    url: 'https://hq.cafreso.com/hq/app', icon: '🏢', accent: '#F5D25D' },
     { id: 'mine',  label: 'Mine',  url: 'https://cqyto-tiaaa-aaaau-agppa-cai.icp0.io/', icon: '⛏', accent: '#7DC9B0' },
   ];
 

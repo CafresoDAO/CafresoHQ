@@ -1437,7 +1437,7 @@ function OfficeView({ agents, officeEffort = null, backendDown = false, onHire, 
                       style={{ left: '27%', bottom: 8 }} />
                   <div className="px-label" style={{ left: '29%', bottom: 2 }}>1:1 SOFA</div>
 
-                  <a className="px-arcadelink" href="https://ai.cafreso.com/workspaces"
+                  <a className="px-arcadelink" href="https://hq.cafreso.com/workspaces"
                      target="_blank" rel="noopener noreferrer"
                      title="ARCADE · Boot up Cafreso Workspaces"
                      aria-label="Arcade — boot up Cafreso Workspaces"

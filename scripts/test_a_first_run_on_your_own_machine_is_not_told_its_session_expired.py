@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-""""🔑 Your session expired. Reopen HQ from ai.cafreso.com → Launch HQ to sign
+""""🔑 Your session expired. Reopen HQ from hq.cafreso.com → Launch HQ to sign
 back in" — app.jsx, on a tester's FIRST message, on their own machine.
 
 Measured on a brand-new install (empty CAFRESOHQ_HQ_STATE_DIR, empty
@@ -68,7 +68,7 @@ def main():
           'runsLocally' in block,
           'app.jsx: the session-expiry banner spoke one sentence to everyone. '
           "The office ten lines down already branches on runsLocally for the "
-          'same reason — a self-hoster cannot be helped by ai.cafreso.com.')
+          'same reason — a self-hoster cannot be helped by hq.cafreso.com.')
 
     # ── §7: no false claim to a local reader ───────────────────────────────
     # Split at the branch so each half is judged on its own reader.
@@ -93,8 +93,8 @@ def main():
     check('...and is told nothing expired',
           'nothing expired' in local_arm,
           'app.jsx: §7 — say what actually happened, not the managed story')
-    check('...and is not sent to ai.cafreso.com',
-          'ai.cafreso.com' not in local_arm,
+    check('...and is not sent to hq.cafreso.com',
+          'hq.cafreso.com' not in local_arm,
           'app.jsx: §3.5 — self-hosting is a first-class path; that link '
           'cannot sign in a gateway running on the reader\'s own machine')
 
@@ -112,7 +112,7 @@ def main():
 
     # ── the managed reader keeps the door that works for them ──────────────
     check('the managed reader still gets the sign-back-in link',
-          'ai.cafreso.com/hq' in managed_arm and 'session expired' in managed_arm.lower(),
+          'hq.cafreso.com/hq' in managed_arm and 'session expired' in managed_arm.lower(),
           'app.jsx: the fix must not cost the hosted boss their recovery path')
 
     print()

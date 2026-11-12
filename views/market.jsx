@@ -110,7 +110,7 @@ function MarketView({ agents = [] }) {
       <div className="view-market">{header}
         <div className="empty-state">
           <div className="empty-title">The hall is behind the Cafreso sign-in</div>
-          <div className="empty-sub">Hiring from the network moves real money, so it needs the Cafreso app that holds your identity. Open this office at ai.cafreso.com and the hall is here.{why ? ` (${why})` : ''}</div>
+          <div className="empty-sub">Hiring from the network moves real money, so it needs the Cafreso app that holds your identity. Open this office at hq.cafreso.com and the hall is here.{why ? ` (${why})` : ''}</div>
         </div>
       </div>
     );

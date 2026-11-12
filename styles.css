@@ -725,7 +725,7 @@ body.night select.oc-input {
   position: relative;
   overflow: hidden;
 }
-.oc-toast.is-leaving { animation: oc-toast-out var(--motion-base) var(--ease-in) forwards; }
+.oc-toast.is-leaving { animation: oc-toast-out 160ms var(--ease-out) forwards; }
 .oc-toast .oc-toast-icon {
   flex-shrink: 0;
   font-size: var(--text-15);
@@ -1744,7 +1744,7 @@ body.theme-coffeeshop .desk::after {
   border: 3px solid var(--accent-sun);
   border-radius: var(--radius-3);
   box-shadow: 0 0 0 9999px rgba(20, 14, 10, 0.55), 0 0 20px var(--accent-sun);
-  transition: all var(--motion-base) var(--ease-out);
+  transition: background-color var(--motion-base) var(--ease-out), border-color var(--motion-base) var(--ease-out), color var(--motion-base) var(--ease-out), transform var(--motion-base) var(--ease-out), opacity var(--motion-base) var(--ease-out);
 }
 
 .hr { height: 2px; background: var(--ink); opacity: 0.15; border: 0; }
@@ -8139,7 +8139,7 @@ body.night .bn-item.active { background: rgba(0,212,181,0.15); color: var(--acce
     border-radius: 2px;
     background: var(--ink-3);
     opacity: 0.3;
-    transition: all 0.2s ease;
+    transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
   }
   .msi-dot.bookmark { opacity: 0.5; }
   .msi-dot.active {
@@ -12407,7 +12407,7 @@ body.theme-pro .hq-dock {
   pointer-events: none;
   opacity: 0;
   transform: translateY(20px);
-  transition: all 0.2s cubic-bezier(0.1, 0.9, 0.2, 1);
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s cubic-bezier(0.1, 0.9, 0.2, 1);
 }
 .fab-menu.open {
   pointer-events: auto;
@@ -12466,4 +12466,117 @@ body.theme-pro .hq-dock {
 @media (max-width: 768px) {
   .office-wrap > .section-title { display: none; }
   .office-task-rail.is-empty { display: none; }
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   2026-11 facelift — one frame around the office
+   The pixel office is the product's face and is untouched. What changes is
+   the frame around it: the side rail, the top bar and every dialog used to
+   mix three looks (pixel type and hard black boxes, VT323 menus, and the
+   soft cards inside Settings). They now share the soft one. Colours come
+   from the theme variables, so every theme and night mode follow along.
+   ══════════════════════════════════════════════════════════════════════ */
+:root {
+  --ease-out-quart: cubic-bezier(0.165, 0.84, 0.44, 1);
+  --frame-radius: 10px;
+  --frame-line: var(--rule-2, rgba(34, 21, 12, 0.14));
+}
+
+/* ── Side rail ── */
+.rail nav a {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 14px; font-weight: 500; letter-spacing: 0;
+  border-radius: 8px;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.rail nav a.active {
+  border-color: transparent; box-shadow: none;
+  font-weight: 650;
+}
+.rail .brand { border: 1px solid var(--frame-line); box-shadow: none; border-radius: 12px; }
+.rail .door-btn {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 12px; font-weight: 650; letter-spacing: 0.06em;
+  border: 1px solid var(--frame-line); border-radius: 8px; box-shadow: none;
+  transition: background-color 150ms ease, border-color 150ms ease, transform 120ms var(--ease-out-quart);
+}
+.rail .rail-toggle { border: 1px solid var(--frame-line); box-shadow: none; }
+
+/* ── Top bar ── */
+.topbar .chip {
+  border-radius: 999px;
+  background: var(--paper-2); border: 1px solid var(--frame-line);
+  color: var(--ink-2); font-weight: 600; letter-spacing: 0.05em;
+  padding: 4px 11px;
+}
+.topbar .token-hud {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  border: 0; border-radius: 999px; padding: 5px 11px;
+}
+
+/* ── Dialogs ── */
+.backdrop { background: rgb(20 14 10 / 0.46); backdrop-filter: blur(6px); }
+.modal {
+  border: 1px solid var(--frame-line);
+  border-radius: 16px;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.08), 0 28px 70px rgb(0 0 0 / 0.30);
+  transform-origin: 50% 40%;
+  will-change: transform;
+}
+.modal-head {
+  background: var(--paper); color: var(--ink);
+  border-bottom: 1px solid var(--frame-line);
+  padding: 16px 20px;
+}
+.modal-head .title {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 18px; font-weight: 750; letter-spacing: 0;
+  text-transform: capitalize;
+}
+.modal-head .sub { color: var(--ink-3); letter-spacing: 0.1em; margin-top: 2px; }
+.modal-head .modal-close {
+  color: var(--ink-2); border-color: var(--frame-line);
+  font-size: 11px; font-weight: 650; letter-spacing: 0.06em;
+  padding: 7px 12px; border-radius: 999px;
+}
+.modal-foot {
+  border-top: 1px solid var(--frame-line);
+  background: var(--paper);
+  padding: 14px 20px;
+}
+.modal-foot .hint { font-family: 'Inter', system-ui, sans-serif; font-size: 12px; color: var(--ink-3); }
+body.night .modal-head, body.night .modal-foot { background: #2e2840; }
+
+/* ── Motion ──
+   A press is felt, not watched: buttons dip on press and come back. The
+   hover lift only exists where there is a real pointer, because a phone
+   treats a tap as a hover and left buttons stuck in the lifted state. */
+.px-btn, .rail .door-btn, .sn-item, .ws-seg button {
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease,
+              box-shadow 150ms ease, transform 120ms var(--ease-out-quart);
+}
+.px-btn:active, .rail .door-btn:active { transform: scale(0.97); }
+@media not all and (hover: hover) and (pointer: fine) {
+  .px-btn:hover, .px-btn-pixel:hover { transform: none; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+  .px-btn:active { transform: scale(0.97); }
+}
+/* Settings: the page you picked arrives, quickly and without sliding far. */
+.settings-body > * { animation: frame-arrive 180ms var(--ease-out-quart) both; }
+@keyframes frame-arrive {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Anyone who asked their device for less motion gets none of it here. One
+   rule for the whole app, since most of its 180 animations had no opt-out. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

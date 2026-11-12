@@ -1332,7 +1332,7 @@ function HqShell({ sessionId, visible }) {
     const chain = CafresoHQChain;
     // 'night' talks to the container backend, not the chain — allow it standalone.
     if (name !== 'help' && name !== 'night' && !(chain && chain.isAvailable && chain.isAvailable())) {
-      print('err', 'Not inside the shell — open the HQ at ai.cafreso.com and sign in with Internet Identity to reach the chain.');
+      print('err', 'Not inside the shell — open the HQ at hq.cafreso.com and sign in with Internet Identity to reach the chain.');
       return;
     }
     setBusy(true);
