@@ -17,32 +17,22 @@ function TerminalView() {
     path: (typeof window !== 'undefined' && window._TERMINAL_CWD) || '/root/Documents',
   }), []);
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#0a0a10' }}>
-      {/* Header */}
-      <div style={{
-        padding: '10px 16px',
-        borderBottom: '1px solid rgba(124,107,255,0.18)',
-        background: '#0f0f1a',
-        flexShrink: 0,
-        display: 'flex', alignItems: 'center', gap: 12,
-      }}>
-        <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.06em', color: '#7c6bff', fontFamily: "'JetBrains Mono', monospace" }}>
-          ☼ TERMINAL
-        </span>
-        <span style={{ fontSize: 10, color: 'rgba(212,216,232,0.45)', fontFamily: "'JetBrains Mono', monospace" }}>
-          {/* Must list every session type the "+" menu in ProjectTerminal
-              actually offers (terminal.jsx's addSession menu) — this was
-              missing hqsh (the HQ chain shell) since the day this view was
-              split out, understating what a new tab here can be. */}
-          Hermes · Claude Code · Codex · Gemini · hqsh
-        </span>
-        <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 9, color: 'rgba(212,216,232,0.3)', fontFamily: "'JetBrains Mono', monospace", letterSpacing: '0.04em' }}>
-          + to add session · × to close tab
-        </span>
+    <div className="view-terminal">
+      {/* Header — same frame as every other view. The dark band it used to
+          wear belonged to no other screen in the office. */}
+      <div className="term-head">
+        <div className="section-title">
+          <span>Terminal</span>
+          <span className="tag">
+            {/* Must list every session type the "+" menu in ProjectTerminal
+                actually offers (terminal.jsx's addSession menu). */}
+            Hermes · Claude Code · Codex · Gemini · hqsh
+          </span>
+        </div>
+        <span className="term-hint">+ adds a session · × ends one</span>
       </div>
       {/* Terminal panel fills remaining space */}
-      <div style={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
+      <div className="term-body">
         <ProjectTerminal project={HQ_PROJECT} visible={true} />
       </div>
     </div>

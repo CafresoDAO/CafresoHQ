@@ -8,9 +8,68 @@ module in this package, registering it in __init__.py, and nothing else.
 Stdlib-only on purpose: drivers ship inside the serve.py container image and
 must import with zero extra dependencies.
 """
+import re
 import subprocess
 import threading
 import uuid
+
+
+# ── What a command-line brain's failure means, in a sentence ────────────────
+# A CLI that will not run says so on stderr in its own words: a Node stack
+# trace, terminal colour codes, start-up chatter. All of that used to be cut
+# at 300 characters and printed into the chat. Measured on a real machine:
+# Codex answered with "Error: spawn …/codex ENOENT" plus three "\x1b[90m at
+# …" frames, and Gemini with "YOLO mode is enabled…" in front of the one line
+# that mattered. The failures below are the ones we can name with confidence;
+# each says what is wrong and what to do. Anything else keeps the old
+# "exited N: …" shape, minus the colour codes, stack frames and chatter.
+_ANSI_RE = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]')
+_CHATTER = ('YOLO mode is enabled', 'Approval mode overridden',
+            'Loaded cached credentials', 'Reading prompt from stdin',
+            'Data collection is disabled')
+_KNOWN_FAILURES = (
+    (re.compile(r'IneligibleTier|no longer supported for Gemini Code Assist', re.I),
+     'Google no longer lets this kind of account use the Gemini command line. '
+     'Add a Gemini key in Settings → Connections instead, or sign the command '
+     'line in with a different Google account.'),
+    (re.compile(r'\bspawn\b[^\n]*\bENOENT\b', re.I),
+     '{name} is installed but part of it is missing, so it cannot start. '
+     'Reinstall {name} on this machine, then try again.'),
+    (re.compile(r'env: node: No such file|node: (?:command )?not found', re.I),
+     '{name} needs Node.js and this office cannot find it. Install Node.js, '
+     'or start the office from a terminal where `node` works.'),
+    (re.compile(r'not logged in|login required|please (?:run|use)[^\n]{0,40}login|'
+                r'OAuth session expired|could not be refreshed|invalid_grant|'
+                r'unauthenticated|Error authenticating', re.I),
+     '{name} is not signed in on this machine. Sign in from Settings → '
+     'Connections, then try again.'),
+    (re.compile(r'usage limit|rate.?limit|RESOURCE_EXHAUSTED|quota exceeded|\b429\b', re.I),
+     '{name} has reached its usage limit for now. Try again later, or give '
+     'this to another coworker.'),
+)
+
+
+def tidy_stderr(text, limit=300):
+    """stderr with colour codes, stack frames and start-up chatter removed."""
+    out = []
+    for line in _ANSI_RE.sub('', text or '').splitlines():
+        s = line.strip()
+        if not s or s.startswith(('at ', '{', '}')) or any(c in s for c in _CHATTER):
+            continue
+        out.append(s)
+    return '\n'.join(out)[:limit].rstrip()
+
+
+def explain_failure(name, stderr_text, rc=None):
+    """One sentence for a CLI run that failed. See _KNOWN_FAILURES."""
+    raw = _ANSI_RE.sub('', stderr_text or '')
+    for rx, sentence in _KNOWN_FAILURES:
+        if rx.search(raw):
+            return sentence.format(name=name)
+    tidy = tidy_stderr(raw)
+    if rc:
+        return f'exited {rc}: ' + (tidy or f'exit {rc}')
+    return tidy
 
 
 def probe_cli(bin_, timeout=6):

@@ -14,7 +14,7 @@ import subprocess
 import sys
 import threading
 
-from .base import (Driver, DriverError, TaskHandle, ev_done, ev_error,
+from .base import (Driver, DriverError, TaskHandle, ev_done, ev_error, explain_failure,
                    ev_status, ev_token, ev_tool_call, ev_tool_result, ev_usage,
                    probe_cli)
 
@@ -330,8 +330,7 @@ class ClaudeCodeDriver(Driver):
             yield ev_error(err[:600], recoverable=bool(emitted))
         elif proc.returncode:
             stderr_text = ''.join(handle.private.get('stderr') or []).strip()
-            yield ev_error(f'exited {proc.returncode}: '
-                           + (stderr_text[:300] or f'exit {proc.returncode}'),
+            yield ev_error(explain_failure('Claude', stderr_text, proc.returncode),
                            recoverable=bool(emitted))
         else:
             yield ev_done()

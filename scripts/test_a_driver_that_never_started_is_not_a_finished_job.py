@@ -90,7 +90,12 @@ def main():
         check("it sets 'type': 'error' (not just content)",
               "'type': 'error'" in frame, frame[:150])
         check("it still carries the human-readable banner",
-              'content' in frame and 'error:' in frame, frame[:150])
+              'content' in frame and ('error:' in frame or (
+                  # The banner moved into _error_line (2026-11), which prints a
+                  # whole-sentence error as it is and keeps "<name> error:"
+                  # in front of a bare fragment.
+                  '_error_line(' in frame and 'error: {message}' in serve)),
+              frame[:150])
 
     # ---- 2. the client reads it -------------------------------------------
     print("2. readCliDelta keeps the text AND carries the failure back")

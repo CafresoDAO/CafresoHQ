@@ -2102,6 +2102,13 @@ function FileBrowserModal({ initialPath, onSelect, onClose }) {
 }
 
 /* ── Add Project modal ────────────────────────────────────────────────────── */
+/* Where a project goes when the boss names it and gives no folder: a
+   "CafresoHQ Projects" folder inside the server's own working folder. Empty
+   string when the server did not say where that is (then the form still asks). */
+const _projectsHome = () => {
+  const base = (typeof window !== 'undefined' && window._TERMINAL_CWD) ? String(window._TERMINAL_CWD).replace(/\/+$/, '') : '';
+  return base ? base + '/CafresoHQ Projects' : '';
+};
 function AddProjectModal({ prefillName, onClose, onCommit }) {
   const [tab, setTab] = useSV('local');           // 'local' | 'github'
   const [name, setName] = useSV(prefillName || '');
@@ -2136,8 +2143,19 @@ function AddProjectModal({ prefillName, onClose, onCommit }) {
        do, and the path one points at 📁 Browse, the same door the hint
        below already sends people to. */
     if (!name.trim()) return setErr('This project needs a name — it is what you and your coworkers will call it.');
-    if (!path.trim()) return setErr('Say where the project lives: type an absolute path, or use 📁 Browse to pick the folder.');
-    onCommit({ name: name.trim(), path: path.trim(), source: 'local' });
+    /* A name is enough. With no folder given the office makes one for the
+       project next to the Terminal's home (the folder the server reports as
+       its own working place), which is what a first project needs: step 5
+       of the checklist opens this form, and "absolute path" stopped people
+       who have never typed one. The commit below already says out loud
+       when it had to make the folder, and where. */
+    /* Worked out here rather than through the helpers above the modal, so
+       this handler stays liftable on its own (its test runs it under node). */
+    const base = (typeof window !== 'undefined' && window._TERMINAL_CWD) ? String(window._TERMINAL_CWD).replace(/\/+$/, '') : '';
+    if (!path.trim() && !base) return setErr('Say where the project lives: type an absolute path, or use 📁 Browse to pick the folder.');
+    const folder = name.trim().replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').replace(/^[. ]+|[. ]+$/g, '') || 'project';
+    const where = path.trim() || (base + '/CafresoHQ Projects/' + folder);
+    onCommit({ name: name.trim(), path: where, source: 'local' });
   };
 
   /* Clone & add's one-live-clone lock, keyed by the repo URL.
@@ -2245,7 +2263,7 @@ function AddProjectModal({ prefillName, onClose, onCommit }) {
             <form onSubmit={submitLocal} className="addproj-form">
               <label>Name<input value={name} onChange={e => setName(e.target.value)} placeholder="My project" autoFocus /></label>
               <label>
-                Absolute path
+                {_projectsHome() ? 'Folder (optional)' : 'Absolute path'}
                 {/* POSIX, not "C:\Users\You\...": the Browse picker two lines
                    down lists this same server's real paths and has always
                    returned them slash-style ("Users/you/…") — the manual
@@ -2257,7 +2275,7 @@ function AddProjectModal({ prefillName, onClose, onCommit }) {
                   <input
                     value={path}
                     onChange={e => setPath(e.target.value)}
-                    placeholder="/Users/you/projects/myrepo"
+                    placeholder={_projectsHome() ? 'leave blank and the office makes one' : '/Users/you/projects/myrepo'}
                     style={{ flex: 1 }}
                   />
                   <button
@@ -2305,7 +2323,10 @@ function AddProjectModal({ prefillName, onClose, onCommit }) {
                   guard. Naming the restriction without naming its
                   vocabulary is what keeps this actionable — the boss does
                   not need to know the rule, only which door answers. */}
-              <small>Not every folder works — 📁 Browse shows the ones your coworkers can open.</small>
+              <small>
+                {_projectsHome() ? `No folder yet? Leave it blank and the office makes one in ${_projectsHome()}. ` : ''}
+                Not every folder works — 📁 Browse shows the ones your coworkers can open.
+              </small>
               {err ? <div className="addproj-err">{err}</div> : null}
               <div className="addproj-actions">
                 <button type="button" className="px-btn secondary" onClick={onClose}>Cancel</button>

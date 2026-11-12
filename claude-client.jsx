@@ -1379,7 +1379,13 @@ async function streamAgentContract(driver, label, { system, messages, model, max
     try {
       const ev = JSON.parse(data);
       if (ev.event === 'token' && ev.text) onToken(ev.text);
-      else if (ev.event === 'error' && ev.message) onToken(`\n⚠ ${label}: ${ev.message}`);
+      /* A message that is already a whole sentence names the coworker
+         itself (the drivers' explain_failure ones do), so it is printed
+         as it stands; a bare fragment keeps the "<name>:" lead-in. */
+      else if (ev.event === 'error' && ev.message) {
+        const m = String(ev.message).trim();
+        onToken(/^[A-Z].*\.$/s.test(m) ? `\n⚠ ${m}` : `\n⚠ ${label}: ${m}`);
+      }
       else if (ev.event === 'usage' && onUsage) {
         onUsage({
           input: ev.inTokens || 0,
@@ -2608,6 +2614,127 @@ function _injectTipJar(files, entryBase, tip) {
   return { files: out, notes };
 }
 
+/* ── Publishing one file ─────────────────────────────────────────────────
+   What a coworker makes is usually a file, not a site: a report as a PDF, a
+   brief as a Word document, a deck. These go to the same public host as
+   sites (the state canister stores any content type), as a project holding
+   the file itself and a share page that names it, previews it when a browser
+   can, and offers the download. */
+const _PUBLISH_TYPES = {
+  pdf: 'application/pdf',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  doc: 'application/msword', ppt: 'application/vnd.ms-powerpoint', xls: 'application/vnd.ms-excel',
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
+  txt: 'text/plain; charset=utf-8', md: 'text/markdown; charset=utf-8', csv: 'text/csv; charset=utf-8',
+  json: 'application/json', zip: 'application/zip', mp4: 'video/mp4', mp3: 'audio/mpeg',
+};
+/* The canister takes one file per call and a call tops out near 2 MB. */
+const PUBLISH_FILE_MAX = 2000000;
+const _PUBLISH_KIND = { pdf: 'PDF', docx: 'Word document', doc: 'Word document', pptx: 'PowerPoint deck', ppt: 'PowerPoint deck',
+  xlsx: 'Spreadsheet', xls: 'Spreadsheet', csv: 'Spreadsheet (CSV)', png: 'Image', jpg: 'Image', jpeg: 'Image', gif: 'Image',
+  webp: 'Image', svg: 'Image', txt: 'Text file', md: 'Markdown note', json: 'Data file', zip: 'Zip archive', mp4: 'Video', mp3: 'Audio' };
+function _extOf(name) { const m = /\.([A-Za-z0-9]{1,8})$/.exec(String(name || '')); return m ? m[1].toLowerCase() : ''; }
+function _sizeWords(n) {
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + ' MB';
+  if (n >= 1000) return Math.round(n / 1000) + ' KB';
+  return n + ' bytes';
+}
+function _escHtml(t) { return String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+/* A name the public host will serve at a plain relative link: letters,
+   digits, dot, dash and underscore, extension kept. */
+function _publishName(base) {
+  const ext = _extOf(base);
+  const stem = (ext ? base.slice(0, -(ext.length + 1)) : base)
+    .replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'file';
+  return ext ? stem + '.' + ext : stem;
+}
+/* The page a shared link opens. Self-contained (no scripts, no outside
+   requests), reads in light and dark, and previews what a browser can show
+   on its own: a PDF, an image, a video. Everything else gets the download. */
+function fileSharePage({ title, fileName, size, by }) {
+  const ext = _extOf(fileName);
+  const kind = _PUBLISH_KIND[ext] || (ext ? ext.toUpperCase() + ' file' : 'File');
+  const href = encodeURI(fileName);
+  const preview = ext === 'pdf'
+    ? `<iframe class="pv" src="${href}" title="${_escHtml(title)}"></iframe>`
+    : ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)
+      ? `<img class="pv im" src="${href}" alt="${_escHtml(title)}">`
+      : ext === 'mp4' ? `<video class="pv" src="${href}" controls></video>` : '';
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${_escHtml(title)}</title>
+<style>
+:root{--bg:#fdfbf6;--ink:#22150c;--mute:#6b5a4c;--line:#e2d8c8;--card:#fff;--go:#f0c674;--goInk:#241a0e}
+@media (prefers-color-scheme:dark){:root{--bg:#17130f;--ink:#f3ece1;--mute:#b3a594;--line:#3a3128;--card:#211b15}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:860px;margin:0 auto;padding:32px 16px 48px}
+.k{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);font-weight:700}
+h1{font-size:28px;line-height:1.2;margin:6px 0 4px;text-wrap:balance;overflow-wrap:anywhere}
+.m{color:var(--mute);font-size:14px;margin:0 0 20px}
+.a{display:inline-block;background:var(--go);color:var(--goInk);font-weight:700;text-decoration:none;padding:12px 20px;border-radius:10px}
+.a:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+.pv{display:block;width:100%;margin-top:24px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+iframe.pv{height:78vh}.im{height:auto}
+footer{margin-top:28px;font-size:13px;color:var(--mute)}
+</style></head><body><main>
+<div class="k">${_escHtml(kind)}</div>
+<h1>${_escHtml(title)}</h1>
+<p class="m">${_escHtml(fileName)} · ${_sizeWords(size)}${by ? ' · made by ' + _escHtml(by) : ''}</p>
+<a class="a" href="${href}" download>Download</a>
+${preview}
+<footer>Published from CafresoHQ, on the Internet Computer.</footer>
+</main></body></html>
+`;
+}
+/* Publish ONE file (see the note above). Returns the same shape as
+   publishSite. A file over the limit is refused with the size in the
+   sentence: handing back a link to a page with nothing behind it would be
+   worse than saying no. */
+async function publishFile(path, size, opts = {}) {
+  const { dir, base } = _splitOsPath(path);
+  const fileName = _publishName(base);
+  const ext = _extOf(fileName);
+  const title = (opts.title || base.replace(/\.[A-Za-z0-9]{1,8}$/, '')).replace(/[-_]+/g, ' ').trim() || base;
+  const slug = String(opts.slug || fileName.replace(/\.[A-Za-z0-9]{1,8}$/, ''))
+    .replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'file';
+  if (size > PUBLISH_FILE_MAX) {
+    throw new Error(`${base} is ${_sizeWords(size)}, and one published file can be 2 MB at most for now`);
+  }
+  let url = null, mode = 'preview';
+  const chain = CafresoHQChain;
+  if (chain && chain.isAvailable && chain.isAvailable()) {
+    const r = await fetch(_API_BASE + '/fs/file?path=' + encodeURIComponent(path), { cache: 'no-store' });
+    if (!r.ok) { let j = {}; try { j = await r.json(); } catch (_e) {} throw new Error(j.error || `could not read ${base}`); }
+    const bytes = new Uint8Array(await r.arrayBuffer());
+    const page = fileSharePage({ title, fileName, size: bytes.length, by: opts.tipJar && opts.tipJar.agentName });
+    const res = await chain.publish(slug, [
+      { path: 'index.html', contentType: 'text/html', b64: _bytesToStdB64(new TextEncoder().encode(page)) },
+      { path: fileName, contentType: _PUBLISH_TYPES[ext] || 'application/octet-stream', b64: _bytesToStdB64(bytes) },
+    ]);
+    if (res && res.mode === 'canister' && res.url) {
+      /* Both files have to be up: a share page with no file behind it is a
+         dead download button on a public link. */
+      if ((res.skipped || []).length) throw new Error(`the public host turned the file away: ${res.skipped.join('; ')}`);
+      url = res.url; mode = 'canister';
+    }
+  }
+  if (!url) {
+    const origin = _API_BASE || (typeof location !== 'undefined' ? location.origin : '');
+    url = origin + '/fs/file?path=' + encodeURIComponent(path);
+  }
+  const fname = slug + '.url';
+  let file = '';
+  try {
+    await fsUpload(dir, [new File([`[InternetShortcut]\r\nURL=${url}\r\n`], fname, { type: 'application/x-mswinurl' })]);
+    file = (dir ? dir + '/' : '') + fname;
+  } catch (_e) { /* the link itself is in the chat; the shortcut is a convenience */ }
+  return { url, file, dir, mode, skipped: [], tipNotes: [], kind: 'file' };
+}
+
 /* Publish a built site. Prefers the public HQ host (sites live in the
    cafresohq_state canister) — served at https://<state>.icp0.io/<principal>/
    <project>/, genuinely public — by collecting the files and asking the shell
@@ -2617,6 +2744,15 @@ function _injectTipJar(files, entryBase, tip) {
    opts.tipJar = { agentId, agentName } embeds a tip widget for that agent's
    on-chain wallet (root index.html + entry file; opt out per publish). */
 async function publishSite(path, opts = {}) {
+  /* One file that is not a web page — a PDF, a Word document, a deck, an
+     image — publishes as itself with a small share page in front of it.
+     Decided by asking the office what the path is (a folder answers "that
+     is a folder"), not by guessing from the name. */
+  if (!/\.html?$/i.test(path || '')) {
+    let st = null;
+    try { st = await fsStat(path); } catch (_e) { st = null; }
+    if (st && st.ok) return publishFile(path, st.size, opts);
+  }
   const isHtml = /\.html?$/i.test(path || '');
   const { dir, base } = isHtml ? _splitOsPath(path) : { dir: String(path || ''), base: 'index.html' };
   const seg = _splitOsPath(dir).base || base.replace(/\.html?$/i, '') || 'site';
@@ -3037,7 +3173,7 @@ const CafresoHQClient = {
   hermesExportConfig, hermesImportConfig,
   agentsStatus, agentsInstall, agentDrivers, streamAgentContract,
   agentLogin, agentLoginStatus, agentLoginInput, agentLoginCancel, agentLogout,
-  cafresohqStatus, codexStatus, toolExec, cloneRepo, fsUpload, fsMkdir, fsRename, fsDelete, fsReadText, fsStat, fsCollect, publishSite, sharePage,
+  cafresohqStatus, codexStatus, toolExec, cloneRepo, fsUpload, fsMkdir, fsRename, fsDelete, fsReadText, fsStat, fsCollect, publishSite, publishFile, fileSharePage, sharePage,
   ANTHROPIC_MODELS, CLAUDECODE_MODELS, CAFRESOHQ_MODELS, CODEX_MODELS, GEMINI_MODELS, HERMES_MODELS,
 };
 

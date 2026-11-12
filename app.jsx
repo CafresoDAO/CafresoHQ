@@ -22,7 +22,7 @@ import { ChatWindow, MSG_STATES, WindowFrame, _chatAnchor, _railRight } from './
    ========================================================================== */
 
 const { useState: useStateA, useEffect: useEffectA, useMemo: useMemoA, useRef: useRefA, useCallback: useCallbackA } = React;
-const { Rail, OfficeView, Ticker, ChatPanel, AgentCards, Ico, InspectPanel, CEOPanel, TokenHUD, TopbarMenu, ShortcutHud, Toast, NAV_ITEMS, Btn, ToastProvider, CommandPaletteProvider, useCommands, NotificationBell, NotificationCenter, OnboardingTour, OnboardingKeyStep, GettingStarted, VocabCtx, getVocab, PaletteFab } = CafresoHQUI;
+const { Rail, OfficeView, Ticker, ChatPanel, AgentCards, Ico, InspectPanel, CEOPanel, TokenHUD, TopbarMenu, ShortcutHud, Toast, NAV_ITEMS, Btn, ToastProvider, CommandPaletteProvider, useCommands, NotificationBell, NotificationCenter, OnboardingTour, OnboardingKeyStep, GettingStarted, gsCollapsedSeed, gsCollapsedStore, VocabCtx, getVocab, PaletteFab } = CafresoHQUI;
 const { HireModal, SettingsModal, WorkflowModal, MeetingRoomModal, InboxModal, FurnishModal,
         StarterTasksModal, DeliverySheet } = CafresoHQModals;
 const { TaskBoard, MeetingRoom, MeetingPicker, FocusMode, ApprovalTray, ReceiptTray, ReceiptsModal, MorningReportModal, StandupModal, SEED_TASKS, SEED_MEMORY } = CafresoHQV2;
@@ -835,7 +835,12 @@ function App() {
      both render at once — precisely the collision the mobile fix a few
      lines down spent its whole comment explaining how to avoid, reached
      from a second direction it didn't cover. See the `onClose` reset. */
-  const [gsCollapsed, setGsCollapsed] = useStateA(false);
+  const [gsCollapsed, setGsCollapsed] = useStateA(gsCollapsedSeed);
+  /* The tour ends with the card back and fully open (its onClose says so
+     below). The card now remembers being collapsed, so that memory is
+     dropped while the tour is up — otherwise it would remount collapsed
+     under a mirror that onClose has just set to expanded. */
+  useEffectA(() => { if (tourOpen) gsCollapsedStore(false); }, [tourOpen]);
   const [publishedGraph, setPublishedGraph] = useStateA(() => { try { return localStorage.getItem(k('publishedGraph')) === '1'; } catch (_e) { return false; } });
   useEffectA(() => {
     const onPub = () => setPublishedGraph(true);
@@ -6873,11 +6878,11 @@ ${d.text}` : d.text,
             const wentPublic = r.mode === 'canister';
             setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
               text: wentPublic
-                ? `🚀 Shipped — live on the Internet Computer (public):\n${r.url}\nClickable link filed at ${r.file}`
+                ? `🚀 Shipped — live on the Internet Computer (public):\n${r.url}${r.file ? `\nClickable link filed at ${r.file}` : ''}`
                 : `🔗 Preview only — not on the web. This link opens on this machine `
                   + `only; publishing for real needs the Cafreso app that holds your `
                   + `identity (open this office at hq.cafreso.com):\n${r.url}\n`
-                  + `Clickable link filed at ${r.file}` }]);
+                  + (r.file ? `Clickable link filed at ${r.file}` : '') }]);
             /* Same words as the headline above, because a boss reading the
                tray a week later is asking the same question the headline
                answered in the moment. */
@@ -8947,10 +8952,16 @@ if (_ocSearch.get('popout') === 'graph') {
 /* Signal the boot overlay (hq.html) that the React app has mounted so it can
    fade out once the backend /health check also passes. requestAnimationFrame
    defers to after the first paint. */
-try {
-  requestAnimationFrame(function () {
+/* The frame callback OR a short timer, whichever comes first. A browser
+   does not run frame callbacks for a page it is not painting (a tab opened
+   in the background, an office window behind another one), so waiting on
+   the frame alone left the splash up until its 8-second safety net. */
+(function () {
+  var sent = false;
+  var ready = function () {
+    if (sent) return; sent = true;
     window.dispatchEvent(new Event('cafresohq:ready'));
-  });
-} catch (_e) {
-  window.dispatchEvent(new Event('cafresohq:ready'));
-}
+  };
+  try { requestAnimationFrame(ready); } catch (_e) {}
+  setTimeout(ready, 250);
+})();

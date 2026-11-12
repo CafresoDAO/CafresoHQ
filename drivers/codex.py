@@ -15,7 +15,7 @@ import subprocess
 import sys
 import threading
 
-from .base import (Driver, DriverError, TaskHandle, ev_done, ev_error,
+from .base import (Driver, DriverError, TaskHandle, ev_done, ev_error, explain_failure,
                    ev_status, ev_token, ev_tool_call, ev_tool_result,
                    probe_cli)
 
@@ -381,8 +381,7 @@ class CodexDriver(Driver):
         # Three endings that all used to look like a silent successful run:
         # non-zero exit, zero exit with no events, zero exit + stderr noise.
         if rc and rc not in (0, None):
-            yield ev_error(f'exited {rc}: '
-                           + (_summarize_stderr(stderr_text) or f'exit {rc}'))
+            yield ev_error(explain_failure('Codex', _summarize_stderr(stderr_text) or stderr_text, rc))
         elif not emitted:
             hint = (_summarize_stderr(stderr_text)
                     or '(no stdout, no stderr — likely the OS blocked the nested codex spawn)')

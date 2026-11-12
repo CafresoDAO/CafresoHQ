@@ -139,13 +139,20 @@ def main():
 
     # ── confirm the premise the fix depends on: the child always remounts
     #    expanded, and still reports every change it makes upward ──────────
-    coll_m = re.search(r'const \[collapsed, \w+\] = useState\((true|false)\)', onb)
-    check('GettingStarted still starts collapsed=false on every mount',
-          bool(coll_m) and coll_m.group(1) == 'false',
-          'ui/onboarding.jsx: the fix assumes a fresh mount is always '
-          'expanded — if this ever seeds from a persisted/controlled '
-          'value, onClose resetting gsCollapsed unconditionally would be '
-          'the wrong fix')
+    # The card now remembers being collapsed (2026-11), so "always expanded"
+    # became "expanded unless the boss collapsed it" — and the premise the fix
+    # needs is that the card and app.jsx's mirror seed from the SAME reader,
+    # and that the memory is dropped while the tour is up, so the remount the
+    # tour's onClose resets the mirror for really is an expanded one.
+    coll_m = re.search(r'const \[collapsed, \w+\] = useState\((\w+)\)', onb)
+    check('GettingStarted seeds its collapse from the shared reader',
+          bool(coll_m) and coll_m.group(1) == 'gsCollapsedSeed')
+    check("app.jsx's mirror seeds from the same reader",
+          'const [gsCollapsed, setGsCollapsed] = useStateA(gsCollapsedSeed);' in app)
+    check('the remembered collapse is dropped while the tour is open',
+          'useEffectA(() => { if (tourOpen) gsCollapsedStore(false); }, [tourOpen]);' in app,
+          'app.jsx: without this the card remounts collapsed after the tour '
+          'while onClose has just told the mirror it is expanded')
     setcoll_body, _ = extract_between(onb, 'const setCollapsed = (v) => {', '};')
     # Drop `//` line-comments first — the literal statement text can survive
     # untouched inside a commented-out line (measured: prefixing the real
