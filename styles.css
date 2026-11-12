@@ -1976,6 +1976,13 @@ body.night .rail .brand.brand-cf-clean:hover {
    nothing else (app.jsx renderViewBody), so it is the exact signal, and the
    ancestor carries no view class of its own. */
 .app:has(.mobile-chat-view) .gs-coach { top: 66px; bottom: auto; }
+/* On a wide window the card moves to the right edge too. Messages are read
+   from the left, and at top-left the card sat on the first words of every
+   one of them. The right edge costs only the tail of a long line. */
+@media (min-width: 900px) {
+  .app:has(.mobile-chat-view) .gs-coach,
+  .app.rail-collapsed:has(.mobile-chat-view) .gs-coach { left: auto; right: 14px; }
+}
 .rail.collapsed { padding: 16px 4px; gap: 6px; }
 .rail.collapsed .brand { padding: 6px 4px 8px; }
 .rail.collapsed nav a {

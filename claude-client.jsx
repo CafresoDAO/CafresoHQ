@@ -359,6 +359,10 @@ async function probeManagedBrain() {
   return _managedBrain;
 }
 function managedBrain() { return _managedBrain; }
+/* True when the shared brain is reached without Hermes — see stream(). */
+function sharedBrainDirect() {
+  return !!(_managedBrain && _managedBrain.model && _managedBrain.via === 'direct');
+}
 
 function hasUsableKey(s) {
   s = s || _settings;
@@ -665,8 +669,8 @@ async function streamAnthropic({ system, messages, model, temperature, maxTokens
      module-level callee is a ReferenceError — swallowed by the very
      `catch (_e) {}` above. */
   if (truncated && !streamError) {
-    if (sawText) onToken('\n⚠ cut off at the length limit — this answer is incomplete. Ask them to carry on, or raise Max tokens in Settings.');
-    else throw new Error('Anthropic hit the length limit before saying anything — raise Max tokens in Settings');
+    if (sawText) onToken('\n⚠ cut off at the length limit — this answer is incomplete. Ask them to carry on, or raise Answer length in Settings → Brain.');
+    else throw new Error('Anthropic hit the length limit before saying anything — raise Answer length in Settings → Brain');
   }
 }
 
@@ -807,8 +811,8 @@ async function streamOpenAICompat({ base, label, system, messages, model, temper
      streamAnthropic; and skipped when the monologue line above already
      explained an empty answer. Inline for #258's lift rule. */
   if (truncated && !streamError) {
-    if (sawContent) onToken('\n⚠ cut off at the length limit — this answer is incomplete. Ask them to carry on, or raise Max tokens in Settings.');
-    else if (!sawReasoning) throw new Error(`${label} hit the length limit before saying anything — raise Max tokens in Settings`);
+    if (sawContent) onToken('\n⚠ cut off at the length limit — this answer is incomplete. Ask them to carry on, or raise Answer length in Settings → Brain.');
+    else if (!sawReasoning) throw new Error(`${label} hit the length limit before saying anything — raise Answer length in Settings → Brain`);
   }
 }
 
@@ -1403,6 +1407,15 @@ async function stream(opts) {
   const { provider: pinned, model: bareModel } = parseModelId(opts.model);
   const provider = pinned || _settings.provider;
   const next = { ...opts, model: bareModel || undefined };
+  /* The shared Cafreso brain with no Hermes gateway in front of it (an
+     office inside Cafreso Linux): /health says `via: 'direct'`, so a chat
+     meant for Hermes goes straight to that model. Without this the office
+     reported a brain and then failed every message at a gateway that was
+     never installed. */
+  if (provider === 'hermes' && sharedBrainDirect()) {
+    return streamOpenAICompat({ ...next, model: _managedBrain.model,
+      base: DEFAULTS.lmstudioUrl, label: 'Cafreso GPU', local: false });
+  }
   if (provider === 'hermes')     return streamHermes(next);
   if (provider === 'anthropic')  return streamAnthropic(next);
   if (provider === 'claudecode') return streamClaudeCode(next);
@@ -1506,8 +1519,8 @@ async function streamGoogle({ system, messages, model, temperature, maxTokens, o
      be heard as a failure. Inline for #258's lift rule. #406 */
   if (finish && finish !== 'STOP') {
     if (finish === 'MAX_TOKENS') {
-      if (sawText) onToken('\n⚠ cut off at the length limit — this answer is incomplete. Ask them to carry on, or raise Max tokens in Settings.');
-      else throw new Error('Google hit the length limit before saying anything — raise Max tokens in Settings');
+      if (sawText) onToken('\n⚠ cut off at the length limit — this answer is incomplete. Ask them to carry on, or raise Answer length in Settings → Brain.');
+      else throw new Error('Google hit the length limit before saying anything — raise Answer length in Settings → Brain');
     } else if (sawText) {
       onToken(`\n⚠ Google stopped early (${finish}) — this answer is incomplete.`);
     } else {
@@ -3005,7 +3018,7 @@ function backendBase() { return _API_BASE || ''; }
 
 const CafresoHQClient = {
   getSettings, setSettings, onSettingsChange, hasUsableKey, backendHealth, backendBase,
-  probeManagedBrain, managedBrain,
+  probeManagedBrain, managedBrain, sharedBrainDirect,
   stream, listLMStudioModels, probe,
   listOllamaModels, lmStudioModelDetails, localRegistry, formatRegistry,
   localModelOptions, parseModelId,
