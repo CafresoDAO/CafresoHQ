@@ -3526,9 +3526,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         _lm_base = os.environ.get('LMSTUDIO_BASE_URL', '').strip()
         brain = None
         if _lm_base:
+            # via: how a chat reaches that model. 'hermes' when the Hermes
+            # gateway is up and routes to it; 'direct' when there is no
+            # gateway (an office inside Cafreso Linux), so the UI talks to
+            # the model itself through the /lmstudio/ proxy instead of
+            # sending every message to a gateway that is not there.
+            try:
+                _via = 'hermes' if self._hermes_gateway_running() else 'direct'
+            except Exception:
+                _via = 'direct'
             brain = {
                 'model': os.environ.get('LMSTUDIO_MODEL', '').strip() or 'local-model',
                 'provider': 'cafreso',
+                'via': _via,
             }
         return self._send_json(200, {
             'status':           'ok',

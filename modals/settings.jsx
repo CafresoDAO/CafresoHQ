@@ -65,14 +65,19 @@ import { BrowserKeysTab } from './providers.jsx';
 const { useState: useStateM, useEffect: useEffectM, useRef: useRefM,
         useCallback: useCallbackM } = React;
 const SETTINGS_TABS = [
-  { id: 'account',     ico: '⭐', label: 'ACCOUNT',     desc: 'plan · hosting · usage' },
+  /* BRAIN first: "what is my office thinking with, and does it work" is the
+     question a boss opens Settings to answer, and it used to be split
+     across three tabs (a read-only row in Account, a list in Connections,
+     a picker per coworker in Roster) with no place to test it. */
+  { id: 'brain',       ico: '🧠', label: 'BRAIN',       desc: 'what your office thinks with' },
+  { id: 'agents',      ico: '👥', label: 'ROSTER',      desc: 'each coworker’s brain and tools' },
   /* Self-hosted installs only (filtered out when health.managed) — see
      ConnectionsPanel for why this is status-and-instructions, not a form. */
-  { id: 'connections', ico: '🔌', label: 'CONNECTIONS', desc: 'brains found · cloud keys' },
-  { id: 'agents',      ico: '👥', label: 'ROSTER',      desc: 'per-agent config' },
-  { id: 'icp-services',ico: '🧩', label: 'MODULES',     desc: 'optional add-ons · money · publish' },
-  { id: 'media',       ico: '🎬', label: 'MEDIA',       desc: 'image · video generation' },
-  { id: 'appearance',  ico: '🖥', label: 'APPEARANCE',  desc: 'theme · vocab · ambience' },
+  { id: 'connections', ico: '🔌', label: 'CONNECTIONS', desc: 'more brains · keys · library' },
+  { id: 'icp-services',ico: '🧩', label: 'MODULES',     desc: 'money · publishing' },
+  { id: 'media',       ico: '🎬', label: 'MEDIA',       desc: 'images · video' },
+  { id: 'appearance',  ico: '🖥', label: 'APPEARANCE',  desc: 'theme · sound · windows' },
+  { id: 'account',     ico: '⭐', label: 'ACCOUNT',     desc: 'plan · status · backup' },
 ];
 // old/removed id → canonical id, so deep-links (openSettings('keys') from the
 // old "add a key" chip, saved last-tab values, tour buttons) never dead-end.
@@ -93,6 +98,8 @@ const SETTINGS_TAB_ALIAS = {
 /* Search index — one entry per meaningful control so "key", "model", "dark"
    etc. jump straight to the right drawer. kw = extra match terms. */
 const SETTINGS_INDEX = [
+  { tab:'brain', label:'Office brain', hint:'what your coworkers think with, and a button to test it', kw:'brain model gpu gemma cafreso shared default ai llm test check working answer slow' },
+  { tab:'brain', label:'Answer length', hint:'how long a single reply may run before it is cut off', kw:'max tokens length limit cut off truncated long short reply answer' },
   { tab:'account', label:'Plan & hosting', hint:'managed cloud or self-hosted — see which one this is', kw:'plan premium account subscription container backend health status gateway api runtime connected self-hosted' },
   { tab:'connections', label:'Brains found on this machine', hint:'which coworkers this box can already run', kw:'connections claude codex gemini ollama lmstudio cli detected found local brain install reinstall missing' },
   { tab:'connections', label:'Cloud provider keys', hint:'OpenRouter · Groq · Gemini — set as environment variables', kw:'connections key api openrouter groq gemini google env environment variable byok self-hosted' },
@@ -1194,7 +1201,7 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
       open={open}
       onClose={onClose}
       title="SETTINGS"
-      subtitle="preferences · connections · runtime"
+      subtitle="brain · team · look"
       size="xl"
       footer={
         <>
@@ -1239,6 +1246,8 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
               })}
             </div>
           )}
+
+          {!terms.length && activeTab === 'brain' && <BrainTab onGo={setTab} managed={managed} />}
 
           {!terms.length && activeTab === 'icp-services' && (
             <IcpServicesPanel agents={agents} />
@@ -1417,6 +1426,129 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
         </div>
       </div>
     </Modal>
+  );
+}
+
+/* BRAIN — one screen that answers "what is my office thinking with, and is
+   it working". The shared Cafreso brain (the GPU) is named in plain words,
+   and TEST sends one real message down the same path a coworker's reply
+   takes, so a pass here means chat works and a failure says why. */
+const ANSWER_LENGTHS = [
+  { v: 1024, name: 'Short' },
+  { v: 2048, name: 'Medium' },
+  { v: 4096, name: 'Long' },
+];
+function BrainTab({ onGo, managed }) {
+  const C = CafresoHQClient;
+  const [health, setHealth] = useStateM(null);    // null=loading · false=down · object=ok
+  const [test, setTest] = useStateM(null);        // null · 'busy' · {ok, text}
+  const [cfg, setCfg] = useStateM(() => C.getSettings());
+  useEffectM(() => {
+    let live = true;
+    (async () => {
+      try {
+        const r = await fetch((window._API_BASE || '') + '/health', { cache: 'no-store', credentials: 'include' });
+        const j = r.ok ? await r.json().catch(() => null) : null;
+        if (live) setHealth(j && typeof j === 'object' ? j : false);
+      } catch (_e) { if (live) setHealth(false); }
+    })();
+    return () => { live = false; };
+  }, []);
+  const shared = health && health.brain && health.brain.model ? health.brain : null;
+  const ready = shared ? true : C.hasUsableKey();
+  const runTest = async () => {
+    setTest('busy');
+    const t0 = performance.now();
+    let said = '';
+    try {
+      await C.stream({
+        system: 'Reply with one short sentence.',
+        messages: [{ role: 'user', content: 'Say hello.' }],
+        maxTokens: 64,
+        onToken: (t) => { said += t; },
+      });
+      const secs = ((performance.now() - t0) / 1000).toFixed(1);
+      setTest(said.trim()
+        ? { ok: true, text: `Working — answered in ${secs} s.` }
+        : { ok: false, text: 'It connected but said nothing. Try again in a moment.' });
+    } catch (e) {
+      setTest({ ok: false, text: 'No answer — ' + cleanCause((e && e.message) || String(e)) });
+    }
+  };
+  const setLength = (v) => { C.setSettings({ maxTokens: v }); setCfg(C.getSettings()); };
+  const length = ANSWER_LENGTHS.some(a => a.v === cfg.maxTokens) ? cfg.maxTokens : null;
+  const btn = { fontSize: 9, padding: '8px 10px' };
+  return (
+    <div className="control-board">
+      <div className="cb-panel">
+        <h4>OFFICE BRAIN</h4>
+        <div className="row-knob">
+          <div>
+            <div className="lbl">{shared ? 'Cafreso GPU' : 'No shared brain'}</div>
+            <div className="sub">
+              {health === null ? 'checking…'
+                : health === false ? 'your office isn’t answering — is it still running?'
+                : shared ? `${shared.model} — included, no keys to manage`
+                : managed === false ? 'add one in Connections, or give each coworker their own in Roster'
+                : 'give each coworker their own in Roster'}
+            </div>
+          </div>
+          {health !== null && (
+            <span className="tiny">
+              <span className={`sn-dot ${ready ? 'ok' : 'warn'}`}
+                style={{ position: 'static', display: 'inline-block', verticalAlign: 'middle', marginRight: 6 }}/>
+              {ready ? 'ready' : 'not set'}
+            </span>
+          )}
+        </div>
+        <div className="row-knob">
+          <div>
+            <div className="lbl">Test it</div>
+            <div className="sub">sends one short message and times the answer</div>
+          </div>
+          <button className="px-btn" style={btn} onClick={runTest} disabled={test === 'busy'}>
+            {test === 'busy' ? 'TESTING…' : 'TEST'}
+          </button>
+        </div>
+        {test && test !== 'busy' && (
+          <div className="hint" role="status" style={{ marginTop: 8, color: test.ok ? undefined : '#c44' }}>{test.text}</div>
+        )}
+      </div>
+      <div className="cb-panel">
+        <h4>ANSWERS</h4>
+        <div className="row-knob">
+          <div>
+            <div className="lbl">Answer length</div>
+            <div className="sub">how long one reply may run before it is cut off</div>
+          </div>
+          <div className="ws-seg">
+            {ANSWER_LENGTHS.map(a => (
+              <button key={a.v} className={length === a.v ? 'on' : ''} aria-pressed={length === a.v}
+                onClick={() => setLength(a.v)}>{a.name}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="cb-panel">
+        <h4>OTHER BRAINS</h4>
+        <div className="row-knob">
+          <div>
+            <div className="lbl">A different brain for one coworker</div>
+            <div className="sub">each coworker can think with their own — pick it on their card</div>
+          </div>
+          <button className="px-btn" style={btn} onClick={() => onGo('agents')}>ROSTER</button>
+        </div>
+        {managed === false && (
+          <div className="row-knob">
+            <div>
+              <div className="lbl">Add Claude, Gemini or a local model</div>
+              <div className="sub">sign-ins, keys and the models found on this machine</div>
+            </div>
+            <button className="px-btn" style={btn} onClick={() => onGo('connections')}>CONNECTIONS</button>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1695,7 +1827,7 @@ function AccountTab({ usageTokens = 0 }) {
     setHermesBusy(false);
   };
 
-  const dot = (on) => <span className={`sn-dot ${on ? 'ok' : 'err'}`} style={{position:'static', marginRight:6}}/>;
+  const dot = (on) => <span className={`sn-dot ${on ? 'ok' : 'err'}`} style={{position:'static', display:'inline-block', verticalAlign:'middle', marginRight:6}}/>;
   const uptime = health && health.uptime_seconds
     ? (health.uptime_seconds >= 3600
         ? `${Math.floor(health.uptime_seconds / 3600)}h ${Math.floor((health.uptime_seconds % 3600) / 60)}m`
@@ -1736,7 +1868,7 @@ function AccountTab({ usageTokens = 0 }) {
               <span className="tiny">{dot(!!health)}{health ? 'running' : 'unreachable'}</span>
             </div>
             <div className="row-knob">
-              <div><div className="lbl">AI brain</div><div className="sub">whatever your coworkers are configured with — see Roster</div></div>
+              <div><div className="lbl">AI brain</div><div className="sub">whatever your coworkers are configured with — see Brain</div></div>
               <span className="tiny">{health && health.brain && health.brain.model ? health.brain.model : 'no shared brain — per-coworker'}</span>
             </div>
           </>
