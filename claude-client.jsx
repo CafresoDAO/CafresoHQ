@@ -859,6 +859,25 @@ function streamHermes(opts) {
   });
 }
 
+/* Why a Hermes reply came back with no text. Hermes ends its stream as
+   "stop" even when the model call failed, so the stream itself carries no
+   reason; serve.py reads Hermes's error log and the model server's state.
+   `model` is the one the reply was asked of, so a coworker pinned to another
+   brain is never told about Hermes. '' means nothing is known and the caller
+   keeps its own line. */
+async function hermesWhySilent(model, withinSeconds) {
+  const { provider: pinned } = parseModelId(model || '');
+  if ((pinned || _settings.provider) !== 'hermes' || sharedBrainDirect()) return '';
+  try {
+    const within = Math.max(5, Math.ceil(Number(withinSeconds) || 0) + 5);
+    const r = await fetch(_API_BASE + '/hermes/why-silent?within=' + within,
+      { cache: 'no-store', credentials: 'include' });
+    if (!r.ok) return '';
+    const j = await r.json().catch(() => ({}));
+    return (j && typeof j.reason === 'string') ? j.reason.trim() : '';
+  } catch (_e) { return ''; }
+}
+
 /* Liveness/model probe for the Hermes gateway via the proxy. Mirrors the
    shape returned by claudecodeStatus()/codexStatus() so the UI can gate on
    `.configured`. */
@@ -3169,7 +3188,7 @@ const CafresoHQClient = {
   codexConfigure, codexProbe,
   hermesStatus, hermesGetCapability, hermesSetCapability, hermesGetModel, hermesSetModel,
   hermesSetOpenRouterKey, hermesSetProvider, hermesGetProvider, hermesEnsureProvider,
-  hermesLocalModels,
+  hermesLocalModels, hermesWhySilent,
   hermesExportConfig, hermesImportConfig,
   agentsStatus, agentsInstall, agentDrivers, streamAgentContract,
   agentLogin, agentLoginStatus, agentLoginInput, agentLoginCancel, agentLogout,
