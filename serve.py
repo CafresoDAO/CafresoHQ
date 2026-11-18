@@ -3034,6 +3034,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._hermes_export_config()
         if self.path == '/hermes/trial-status':
             return self._hermes_trial_status()
+        if self.path.split('?')[0] == '/hermes/why-silent':
+            return self._hermes_why_silent()
         if self.path.startswith('/hermes/'):
             return self._hermes_proxy('GET')
         if self.path.startswith('/vault/'):
@@ -6976,6 +6978,28 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return self._send_json(200, {'ok': True, 'provider': provider, 'model': model,
                                      'restarted': d['restarted'],
                                      'note': 'gateway reloading; allow ~10s'})
+
+    def _hermes_why_silent(self):
+        """GET /hermes/why-silent?within=<seconds> → {reason}. The office asks
+        this when a Hermes reply came back with no text at all. Hermes closes
+        its stream as "stop" even when the model call failed, so the cause is
+        only in its errors.log (and the model server's own state). `within` is
+        how long the reply took, so a failure older than this request is not
+        blamed for it. reason is '' when nothing is known."""
+        import night_runner as _nr
+        q = urllib.parse.parse_qs(self.path.split('?', 1)[1] if '?' in self.path else '')
+        try:
+            within = float((q.get('within') or ['120'])[0])
+        except ValueError:
+            within = 120.0
+        within = min(900.0, max(5.0, within))
+        home = _drivers.hermes.home()
+        cfg = _nr.read_model_config(home)
+        provider = cfg['raw_provider'] or ''
+        spec = _drivers.hermes.PROVIDERS.get(provider) or {}
+        base_url = cfg['base_url'] if spec.get('local') else ''
+        reason = _drivers.hermes.silence_reason(home, within, base_url=base_url)
+        return self._send_json(200, {'reason': reason})
 
     def _hermes_trial_status(self):
         """GET /hermes/trial-status → whether this HQ is on the shared trial

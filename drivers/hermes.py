@@ -70,6 +70,143 @@ def config_path():
 def capability_file():
     return os.path.join(home(), 'capability_mode')
 
+
+# ── why a reply came back empty ──────────────────────────────────────────────
+# Hermes's chat-completions stream drops the agent's error on the floor: when
+# the model call fails it still closes the stream with finish_reason "stop"
+# and no text, so the office could only guess "offline or busy". Seen live
+# 2026-11-18: the shared Gemma had been reloaded with an 8,192-token context,
+# every CEO turn (13–45K tokens) was refused with exceed_context_size_error,
+# and the boss saw the same guess for hours. The error IS written to
+# HERMES_HOME/logs/errors.log; this reads it back, plus the model server's own
+# state, and says what happened in one sentence.
+#
+# Only `agent.conversation_loop` lines count: the auxiliary client logs
+# "payment / credit error" for OpenRouter/Nous fallbacks on every compression
+# attempt, and those are not why the main reply failed.
+_LOG_LINE = re.compile(
+    r'^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d),\d+ (?:ERROR|WARNING) .*?agent\.conversation_loop: (.*)$')
+
+SILENCE_CONTEXT = ("The brain's model is loaded with room for only {ctx} tokens, "
+                   "and this conversation needs about {need}. Reload the model "
+                   "with a larger context length (131,072 is safe) and ask again.")
+SILENCE_CONTEXT_SMALL = ("The brain's model is loaded with room for only {ctx} tokens, "
+                         "which is too little for this office. Reload the model with "
+                         "a larger context length (131,072 is safe) and ask again.")
+SILENCE_NO_MODEL = ("The brain is running but has no model loaded. Load one in "
+                    "LM Studio and ask again.")
+SILENCE_TIMEOUT = ("The brain took too long to answer and gave up. It may be busy "
+                   "or still loading its model, so ask again in a minute.")
+SILENCE_UNREACHABLE = ("This office could not reach its brain. Check that the "
+                       "machine running it is on, then ask again.")
+SILENCE_KEY = ("The brain refused this office's key. Enter it again in "
+               "Settings → Connections, and ask again.")
+SILENCE_CREDIT = ("The brain's provider account is out of credit. Top it up, or "
+                  "pick another brain in Settings → Connections.")
+
+# Below this the office cannot fit its own system prompt (Hermes alone sends
+# about 14K tokens before the boss has said a word).
+MIN_USEFUL_CONTEXT = 16384
+
+
+def _fmt(n):
+    return f'{int(n):,}'
+
+
+def classify_brain_error(text):
+    """One conversation-loop log message → a sentence for the boss, or ''."""
+    t = text or ''
+    m = re.search(r'request \((\d+) tokens\) exceeds the available context size \((\d+) tokens\)', t)
+    if m:
+        return SILENCE_CONTEXT.format(ctx=_fmt(m.group(2)), need=_fmt(m.group(1)))
+    if 'exceed_context_size' in t or 'exceeds the available context size' in t:
+        m = re.search(r'context size \((\d+) tokens\)', t)
+        return SILENCE_CONTEXT_SMALL.format(ctx=_fmt(m.group(1)) if m else 'a few thousand')
+    if 'No models loaded' in t:
+        return SILENCE_NO_MODEL
+    if re.search(r'invalid_api_key|AuthenticationError|HTTP 401|Error code: 401|Unauthorized', t):
+        return SILENCE_KEY
+    if re.search(r'HTTP 402|Error code: 402|insufficient[_ ]credits|Insufficient credits', t):
+        return SILENCE_CREDIT
+    if re.search(r'APITimeoutError|Request timed out', t):
+        return SILENCE_TIMEOUT
+    if re.search(r'APIConnectionError|Connection error|Connection refused|Name or service not known', t):
+        return SILENCE_UNREACHABLE
+    return ''
+
+
+def recent_brain_error(hermes_home, within_s, now=None, tail_bytes=65536):
+    """The newest classifiable conversation-loop failure logged in the last
+    `within_s` seconds, as a sentence, or ''. Never raises."""
+    import datetime as _dt
+    path = os.path.join(hermes_home, 'logs', 'errors.log')
+    try:
+        with open(path, 'rb') as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - tail_bytes))
+            lines = f.read().decode('utf-8', 'replace').splitlines()
+    except OSError:
+        return ''
+    now = now or _dt.datetime.now()
+    oldest = now - _dt.timedelta(seconds=max(1, within_s))
+    for line in reversed(lines):
+        m = _LOG_LINE.match(line)
+        if not m:
+            continue
+        try:
+            when = _dt.datetime.strptime(m.group(1), '%Y-%m-%d %H:%M:%S')
+        except ValueError:
+            continue
+        if when > now + _dt.timedelta(seconds=5):
+            continue   # written after the moment asked about
+        if when < oldest:
+            break
+        why = classify_brain_error(m.group(2))
+        if why:
+            return why
+    return ''
+
+
+def model_server_state(base_url, opener=None, timeout=3):
+    """Ask an LM Studio-style server what it has loaded → a sentence or ''.
+    Only LM Studio answers /api/v0/models; anything else returns '' rather
+    than a guess. An address that does not answer at all IS a finding."""
+    import json as _json
+    import urllib.error
+    import urllib.request
+    root = re.sub(r'/v1/?$', '', (base_url or '').rstrip('/'))
+    if not root.startswith(('http://', 'https://')):
+        return ''
+    opener = opener or urllib.request.urlopen
+    try:
+        with opener(root + '/api/v0/models', timeout=timeout) as r:
+            data = _json.loads(r.read().decode('utf-8', 'replace') or '{}')
+    except urllib.error.HTTPError:
+        return ''
+    except (urllib.error.URLError, OSError, socket.timeout):
+        return SILENCE_UNREACHABLE
+    except ValueError:
+        return ''
+    models = [m for m in (data.get('data') or []) if isinstance(m, dict)
+              and m.get('type', 'llm') != 'embeddings']
+    loaded = [m for m in models if m.get('state') == 'loaded']
+    if models and not loaded:
+        return SILENCE_NO_MODEL
+    ctxs = [m.get('loaded_context_length') for m in loaded
+            if isinstance(m.get('loaded_context_length'), int)]
+    if ctxs and max(ctxs) < MIN_USEFUL_CONTEXT:
+        return SILENCE_CONTEXT_SMALL.format(ctx=_fmt(max(ctxs)))
+    return ''
+
+
+def silence_reason(hermes_home, within_s, base_url='', opener=None, now=None):
+    """Why did Hermes just answer with nothing? Its own log first (it saw the
+    actual refusal), then the model server's state. '' when neither knows —
+    the caller keeps its generic line rather than inventing a cause."""
+    return (recent_brain_error(hermes_home, within_s, now=now)
+            or (model_server_state(base_url, opener=opener) if base_url else ''))
+
 def _atomic_write(path, text):
     """Write `text` to `path` without a reader ever observing a truncated or
     half-written file. write_model/write_capability/write_provider/

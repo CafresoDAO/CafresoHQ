@@ -4448,6 +4448,7 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
 
   for (let hop = 0; hop < MAX_TOOL_HOPS; hop++) {
     let buf = '';
+    const hopStarted = Date.now();
     await CafresoHQClient.stream({
       system: sys,
       messages,
@@ -4489,7 +4490,14 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
              only occurrence of the word "capability" anywhere on the
              Connections screen was this note bleeding through from the
              chat behind it. */
-          emit('_(nothing came back from me that time — the brain running this office may be offline or busy. Ask me again in a moment, or check Settings → Connections.)_');
+          /* The generic line is a guess. When the brain left a reason
+             (Hermes's log, or the model server saying what it has loaded),
+             say that instead: on 2026-11-18 the guess stood for hours over
+             a model reloaded with an 8,192-token context. */
+          const why = await CafresoHQClient.hermesWhySilent(resolveModel(model), (Date.now() - hopStarted) / 1000);
+          emit(why
+            ? `_(nothing came back from me that time. ${why})_`
+            : '_(nothing came back from me that time — the brain running this office may be offline or busy. Ask me again in a moment, or check Settings → Connections.)_');
         }
       } else if (reachedFor.size) {
         /* The reply is not empty, so the boss has prose — and the marker
@@ -4732,6 +4740,7 @@ FILE-DELIVERY RULE: There is no Library wired up this session, so there is nowhe
   const KNOWN_MARKERS = Object.keys(TOOL_REGISTRY).map(k => TOOL_REGISTRY[k].name);
   for (let hop = 0; hop < maxToolHops; hop++) {
     let buf = '';
+    const hopStarted = Date.now();
     const streamResult = await CafresoHQClient.stream({
       system: sys,
       messages,
@@ -4814,7 +4823,10 @@ FILE-DELIVERY RULE: There is no Library wired up this session, so there is nowhe
         } else if (orphans.length) {
           emit(`_(${agent.name} talked themselves through it but never answered. Ask them again, or hand the job to a coworker on a stronger brain.)_`);
         } else {
-          emit('_(nothing came back from them this time — your office may be offline, or their brain may be busy. Ask them again in a moment.)_');
+          const why = await CafresoHQClient.hermesWhySilent(resolveModel(agent.model), (Date.now() - hopStarted) / 1000);
+          emit(why
+            ? `_(nothing came back from ${agent.name} this time. ${why})_`
+            : '_(nothing came back from them this time — your office may be offline, or their brain may be busy. Ask them again in a moment.)_');
         }
       } else if (reachedFor.size) {
         /* The reply is not empty — and until this branch existed, that was
