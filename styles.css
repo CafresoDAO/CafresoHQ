@@ -12673,3 +12673,51 @@ body.night .modal-head, body.night .modal-foot { background: #2e2840; }
 .pub-section .empty-state { max-width: 760px; padding: 18px 20px; }
 .pub-link { display: block; margin: 8px 0 10px; font-size: 13px; color: var(--ink-2); word-break: break-all; text-underline-offset: 2px; }
 .pub-link:hover { color: var(--ink); }
+
+
+/* ─── Chat reads like a chat, not a poster ─────────────────────────────
+   Measured 2026-11-18 in the floating chat window at its default size
+   (about 420 × 480): 16px text at 1.5 line height, 10 × 14 bubble padding,
+   a 78px name column beside every bubble and a 12px-padded header left room
+   for about one CEO reply on screen. The boss read it as "too zoomed in".
+
+   Text drops to 14px (13px for names), bubbles and gaps tighten, and when
+   the chat panel itself is narrow the name moves above its bubble, as it
+   already did on phones, so the text gets the full width. The composer
+   only shrinks with a fine pointer: on touch it stays 16px, below which
+   iOS zooms the page when the box is focused. */
+.monitor { container-type: inline-size; container-name: chat; }
+.screen { font-size: 14px; line-height: 1.45; padding: 10px 12px; }
+.msg { margin: 0 0 8px 0; gap: 8px; }
+.msg .who { flex-basis: 64px; padding-top: 7px; font-size: 9.5px; }
+.msg .bubble {
+  font-size: 14px;
+  line-height: 1.45;
+  padding: 7px 11px;
+  border-radius: 12px;
+  max-width: 92%;
+}
+.msg-body { gap: 4px; }
+.monitor .bezel { padding: 8px 12px; font-size: 14px; }
+.monitor .bezel .avatar-mini { width: 24px; height: 24px; font-size: 14px; border-radius: 7px; }
+.composer { padding: 6px 10px 8px; gap: 5px; }
+@media (pointer: fine) {
+  .composer textarea { min-height: 38px; padding: 8px 10px; font-size: 14px; }
+}
+@container chat (max-width: 560px) {
+  .msg, .msg.user { flex-direction: column; gap: 2px; align-items: stretch; }
+  .msg .who {
+    flex: 0 0 auto;
+    padding: 0 2px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    justify-content: flex-start;
+    text-align: left;
+  }
+  .msg.user .who { justify-content: flex-end; }
+  .msg .bubble { max-width: 100%; }
+  .msg.user .bubble { margin-left: 12%; }
+  .msg.ceo .bubble, .msg.agent .bubble { margin-right: 6%; }
+}
