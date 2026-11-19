@@ -7892,7 +7892,6 @@ ${d.text}` : d.text,
       <PaletteFab />
       <div className="main">
         <div className="topbar">
-          <cafreso-ecobar current="hq"></cafreso-ecobar>
           <div className="crumbs">
             <span><Ico kind={activeView}/></span>
             <span>HQ</span>
