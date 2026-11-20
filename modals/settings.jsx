@@ -99,6 +99,7 @@ const SETTINGS_TAB_ALIAS = {
    etc. jump straight to the right drawer. kw = extra match terms. */
 const SETTINGS_INDEX = [
   { tab:'brain', label:'Office brain', hint:'what your coworkers think with, and a button to test it', kw:'brain model gpu gemma cafreso shared default ai llm test check working answer slow' },
+  { tab:'brain', label:'Front desk brain', hint:'who runs the front desk — let Claude run the office', kw:'front desk ceo chief of staff claude run office brain model pin' },
   { tab:'brain', label:'Answer length', hint:'how long a single reply may run before it is cut off', kw:'max tokens length limit cut off truncated long short reply answer' },
   { tab:'account', label:'Plan & hosting', hint:'managed cloud or self-hosted — see which one this is', kw:'plan premium account subscription container backend health status gateway api runtime connected self-hosted' },
   { tab:'connections', label:'Brains found on this machine', hint:'which coworkers this box can already run', kw:'connections claude codex gemini ollama lmstudio cli detected found local brain install reinstall missing' },
@@ -1476,6 +1477,11 @@ function BrainTab({ onGo, managed }) {
     }
   };
   const setLength = (v) => { C.setSettings({ maxTokens: v }); setCfg(C.getSettings()); };
+  /* Front desk brain (`ceoModel`): who runs the chief of staff. 'inherit'
+     keeps the office brain above; pinning Claude is how Claude runs the
+     office. Lived first in providers.jsx, which nothing mounts. */
+  const setCeo = (v) => { C.setSettings({ ceoModel: v || 'inherit' }); setCfg(C.getSettings()); };
+  const ceo = cfg.ceoModel && cfg.ceoModel !== 'inherit' ? cfg.ceoModel : null;
   const length = ANSWER_LENGTHS.some(a => a.v === cfg.maxTokens) ? cfg.maxTokens : null;
   const btn = { fontSize: 9, padding: '8px 10px' };
   return (
@@ -1512,6 +1518,30 @@ function BrainTab({ onGo, managed }) {
         </div>
         {test && test !== 'busy' && (
           <div className="hint" role="status" style={{ marginTop: 8, color: test.ok ? undefined : '#c44' }}>{test.text}</div>
+        )}
+      </div>
+      <div className="cb-panel">
+        <h4>FRONT DESK BRAIN</h4>
+        <div className="row-knob">
+          <div>
+            <div className="lbl">Who runs the front desk</div>
+            <div className="sub">
+              {ceo ? `the front desk runs on ${ceo} and says it is Claude, an AI, when that's a Claude brain`
+                   : 'the front desk uses the office brain above'}
+            </div>
+          </div>
+          {ceo
+            ? <button className="px-btn" style={btn} onClick={() => setCeo('inherit')}>RESET</button>
+            : <button className="px-btn" style={btn} onClick={() => setCeo('anthropic:claude-opus-5-5')}>LET CLAUDE RUN IT</button>}
+        </div>
+        {ceo && (
+          <div className="row-knob">
+            <div>
+              <div className="lbl">Pinned brain</div>
+              <div className="sub">anthropic: uses your key · claudecode: uses your Claude subscription on this machine</div>
+            </div>
+            <ModelPicker value={ceo} onChange={setCeo} />
+          </div>
         )}
       </div>
       <div className="cb-panel">

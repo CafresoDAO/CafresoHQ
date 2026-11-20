@@ -389,44 +389,6 @@ function ApiTab() {
         </div>
       </div>
 
-      {/* Front desk brain — who runs the chief of staff (ceoStream). 'inherit'
-          keeps the office default; pinning Claude here is how Claude runs
-          the office. */}
-      <div className="cb-panel">
-        <h4>FRONT DESK BRAIN</h4>
-        <div className="row-knob">
-          <div>
-            <div className="lbl">Who runs the front desk</div>
-            <div className="sub">
-              {(!s.ceoModel || s.ceoModel === 'inherit')
-                ? 'The front desk uses the office default brain.'
-                : `The front desk runs on: ${s.ceoModel}`}
-            </div>
-          </div>
-          {(!s.ceoModel || s.ceoModel === 'inherit') ? (
-            <button className="px-btn secondary"
-                    onClick={() => update({ ceoModel: 'anthropic:claude-opus-5-5' })}>
-              LET CLAUDE RUN IT
-            </button>
-          ) : (
-            <button className="px-btn secondary"
-                    onClick={() => update({ ceoModel: 'inherit' })}>
-              RESET TO DEFAULT
-            </button>
-          )}
-        </div>
-        {s.ceoModel && s.ceoModel !== 'inherit' && (
-          <div className="row-knob">
-            <div>
-              <div className="lbl">Pinned brain</div>
-              <div className="sub">Claude via your Anthropic key, or claudecode: for your subscription</div>
-            </div>
-            <ModelPicker value={s.ceoModel}
-                         onChange={(id) => update({ ceoModel: id || 'inherit' })} />
-          </div>
-        )}
-      </div>
-
       {/* Sub-agent panel — controls the model used by transient sub-agents
           spawned via [SPAWN_SUBAGENT]. Default 'inherit' uses the spawner's
           model. Pinning a small/cheap model here is useful when sub-agents
