@@ -160,7 +160,7 @@ def client_checks():
 
     def drive(fn, call, answer, note=None):
         js = (STUBS
-              + 'const openNoteRef = { current: %s };\n'
+              + 'const _bridge = null;\nconst openNoteRef = { current: %s };\n'
               % (json.dumps(note) if note else 'null')
               + f'window.hqPrompt = async () => {json.dumps(answer)};\n'
               + helpers + '\n' + msg.group(0)

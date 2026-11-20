@@ -2015,6 +2015,20 @@ function barrenPage(j, url) {
     + `like this to a plain fetch.${dontQuote}`;
 }
 
+/* Research lands in Research/ so members find it in one place in the Library
+   and in ~/Storage/Library/Research. A note filed at the top level that reads
+   like research (a Sources/References section, or several links, or "research"
+   in its name) is moved there; anything already in a folder is left alone. */
+function researchHome(path, body) {
+  const p = String(path || '').replace(/^\/+/, '');
+  if (!p || p.includes('/')) return p;
+  const text = String(body || '');
+  const links = (text.match(/https?:\/\//g) || []).length;
+  const looksLikeResearch = /research|brief|findings|study/i.test(p)
+    || /^#{1,6}\s*(sources|references|citations|bibliography)\b/im.test(text)
+    || links >= 3;
+  return looksLikeResearch ? `Research/${p}` : p;
+}
 const TOOL_REGISTRY = {
   search: {
     name: 'SEARCH',
@@ -2078,11 +2092,11 @@ const TOOL_REGISTRY = {
     name: 'VAULT_NEW',
     re: /\[\s*VAULT_NEW\s*:\s*([^\]\n]+)\]\s*\n([\s\S]*?)\n?\[\s*\/\s*VAULT_NEW\s*\]/i,
     requires: isVaultReady,
-    doc: '- [VAULT_NEW: <path>]\n<content>\n[/VAULT_NEW] — create a new note (overwrites if exists). Use for new findings, summaries, drafts.',
+    doc: '- [VAULT_NEW: <path>]\n<content>\n[/VAULT_NEW] — create a new note (overwrites if exists). Use for new findings, summaries, drafts. Put research under Research/<topic>.md.',
     docShort: 'Create or overwrite a Library file at the given path with provided content.',
     /* #415 — see VAULT_APPEND above; `r.path` is the server's corrected name. */
     run: async (path, _ctx, body) => {
-      const r = await CafresoHQClient.vaultWrite(path.trim(), body || '', 'write');
+      const r = await CafresoHQClient.vaultWrite(researchHome(path.trim(), body || ''), body || '', 'write');
       if (_ctx && _ctx.meta && r && r.path) _ctx.meta.filedAs = r.path;
       return `Wrote ${(body||'').length} chars → ${r.path}`;
     },

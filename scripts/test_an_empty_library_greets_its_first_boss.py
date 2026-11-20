@@ -71,7 +71,7 @@ def main():
     check('both layouts swap the TREE for the greeting, nothing else',
           vault.count('{emptyTreeState || <FolderTree') == 2)
     check('the kind chips hide when there is nothing to filter',
-          vault.count('{files.length > 0 && kindChips}') == 2)
+          (vault.count('{showTools && toolsPanel}') == 2 and '{files.length > 0 && kindChips}' in vault))
     check('the loading moment still belongs to the !status screen',
           'if (!status) {' in vault
           and vault.index('if (!status) {') > i)

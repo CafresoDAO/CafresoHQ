@@ -406,6 +406,7 @@ const isVaultReady = () => true;
 /* Same for the emission's transcript-echo helper: it composes the text the
    model sees next, which is a different surface from the visit's `arg`. */
 const toolEchoHead = (name, arg) => `[${name}: ${arg}]`;
+''' + lift_fn(hq, 'researchHome') + '''
 const vault_new = ''' + vnew + ''';
 const vault_append = ''' + vapp + ''';
 ''' + art_pure + '''

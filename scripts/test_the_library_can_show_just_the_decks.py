@@ -67,8 +67,8 @@ def main():
     check('both mounts carry the chip row',
           # hidden when the Library is empty — the greeting owns that
           # moment (test_an_empty_library_greets_its_first_boss)
-          vault.count('{files.length > 0 && kindChips}') == 2,
-          vault.count('{files.length > 0 && kindChips}'))
+          (vault.count('{showTools && toolsPanel}') == 2 and '{files.length > 0 && kindChips}' in vault),
+          vault.count('{showTools && toolsPanel}'))
     check('search hits are NOT kind-filtered',
           'hits.filter(kindPred)' not in vault and 'hits.filter(kind' not in vault,
           '— a search is already a filter; stacking a half-visible second '

@@ -389,6 +389,9 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
      drops out with its contents — an empty shelf under a filter is
      noise, not orientation. */
   const [kindFilter, setKindFilter] = useSV('all');
+  // Filters and upload live behind ⋯ so the sidebar reads like Obsidian's: name, search, tree.
+  const [showTools, setShowTools] = useSV(false);
+  const editByClickRef = useRV(false);
   const VAULT_KINDS = [
     ['all',   'ALL',   () => true],
     ['notes', 'NOTES', (f) => !f.isBinary],
@@ -420,6 +423,15 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
      a snag. `status` is null while the pane loads and 'bridge' inside the
      encrypted shell; both read false here, which is right. See the note
      above `openInObsidian` for why this gate is the whole ticket. */
+  const toolsPanel = (
+    <div style={{padding:'0 6px'}}>
+      {!_bridge && (
+        <button className="px-btn ghost" style={{fontSize:9}} onClick={() => fileInputRef.current && fileInputRef.current.click()}
+          title="Upload files into the Library">📤 Upload files</button>
+      )}
+      {files.length > 0 && kindChips}
+    </div>
+  );
   const _obsidianOn = !!status && status.backend === 'rest';
   // Map display path → blob id (only populated in bridge mode)
   const _pathToId = useRV({});
@@ -743,6 +755,15 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     }
     catch (e) { snag('Search failed', e); setHits(null); }
   };
+  // Search as you type, like Obsidian's file filter: no SEARCH button.
+  const searchRef = React.useRef(search);
+  searchRef.current = search;
+  React.useEffect(() => {
+    if (!q.trim()) { setHits(null); return; }
+    if (q.trim().length < 2) return;
+    const t = setTimeout(() => { searchRef.current(); }, 300);
+    return () => clearTimeout(t);
+  }, [q]);
 
   /* One hit row for both layouts: title, an honest match count (the score
      IS a count — the old ×100 "percent" showed 300.0), and the server's
@@ -1147,7 +1168,10 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       _acUpdate(e.target);
     },
     onClick: (e) => _acUpdate(e.target),
-    onBlur: () => setAc(null),
+    // Leaving the editor closes the link picker. If editing began with a click on
+    // the page, it goes back to the read view, as in Obsidian; a boss who unchecked
+    // Preview on purpose stays in the editor.
+    onBlur: () => { setAc(null); if (editByClickRef.current) { editByClickRef.current = false; setPreview(true); } },
   };
   /* "What links HERE" — the one question a research library answers
      constantly, and it was answerable only by squinting at the graph
@@ -1340,7 +1364,11 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
 
   const onPreviewClick = async (e) => {
     if (togglePreviewTask(e)) return;
-    await openWikilink(e);
+    if (e.target && e.target.closest && e.target.closest('a,[data-wikilink],input,button')) { await openWikilink(e); return; }
+    // Anywhere else on the page: start editing, the way Obsidian flips to source.
+    if (window.getSelection && String(window.getSelection())) return;
+    editByClickRef.current = true;
+    setPreview(false);
   };
 
   const renameNote = async () => {
@@ -1360,7 +1388,15 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     if (hidden) { say(_hiddenMsg(hidden), 'error'); return; }
     if (n.dirty) await saveNoteRef.current({ quiet: true });
     try {
-      const res = await CafresoHQClient.vaultRename(n.path, to.trim());
+      let res = null;
+      if (_bridge) {
+        // The shell has no rename: write the new name, then remove the old one.
+        const meta = await _bridge.create(to.trim(), n.content || '');
+        if (n.id) await _bridge.remove(n.id);
+        setOpenNote(o => (o && o.path === n.path) ? { ...o, id: meta && meta.id } : o);
+      } else {
+        res = await CafresoHQClient.vaultRename(n.path, to.trim());
+      }
       /* `n` was read before the prompt and the rename — two awaits — and
          this retarget used to fire on WHATEVER is open now. Swap the buffer
          inside that gap (the graph popout is a separate window and the modal
@@ -1414,7 +1450,8 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
     } catch (_e) {}
     if (!(await window.hqConfirm(confirmMsg, { danger: true }))) return;
     try {
-      await CafresoHQClient.vaultDelete(n.path);
+      if (_bridge) await _bridge.remove(n.id || n.path);
+      else await CafresoHQClient.vaultDelete(n.path);
       /* Same gap, same buffer, pointed the other way: `n` was read before the
          confirm and the DELETE, and the close used to be unconditional. A
          buffer that changed hands during the dialog was blanked — with its
@@ -1741,16 +1778,12 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
               <div className="vault-toolbar">
                 <span style={{fontWeight:600,fontSize:11,flex:1}}>{status ? status.name : 'Library'}</span>
                 <button className="px-btn ghost" onClick={newNote} title="New note">{'➕'}</button>
-                {!_bridge && (
-                  <button className="px-btn ghost" onClick={() => fileInputRef.current && fileInputRef.current.click()}
-                    title="Upload files into the Library">📤</button>
-                )}
                 <button className="px-btn ghost" onClick={refresh} title="Refresh">{'↻'}</button>
+                <button className="px-btn ghost" onClick={() => setShowTools(v => !v)} aria-expanded={showTools} title="More: filter by kind, upload">⋯</button>
                 <input ref={fileInputRef} type="file" multiple style={{display:'none'}} onChange={onUpload}/>
               </div>
               <div style={{padding:'4px 6px',display:'flex',flexDirection:'column',gap:3}}>
                 <input style={{width:'100%',boxSizing:'border-box'}} value={q} aria-label="Search the Library" onChange={e=>setQ(e.target.value)} placeholder="Search the Library…" onKeyDown={e=>e.key==='Enter'&&search()} />
-                <button className="px-btn secondary" style={{fontSize:9}} onClick={search}>{'🔎'} SEARCH</button>
               </div>
               {searchState === 'found' ? (
                 <div style={{overflowY:'auto',flex:1}}>
@@ -1767,7 +1800,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
                 </div>
               ) : (
                 <>
-                  {files.length > 0 && kindChips}
+                  {showTools && toolsPanel}
                   {emptyTreeState || <FolderTree files={kindFiles} openPath={openNote?.path} onOpen={(p) => mobileOpenByPath(p)} expanded={expanded} setExpanded={setExpanded} onMove={_bridge ? null : moveByDrag} />}
                 </>
               )}
@@ -1792,19 +1825,18 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
                     <input type="checkbox" checked={preview} onChange={e=>setPreview(e.target.checked)} /> Preview
                   </label>
                 )}
-                {!_bridge && <button className="px-btn ghost" onClick={renameNote} title="Rename / move">✎</button>}
-                {!_bridge && <button className="px-btn ghost" onClick={deleteNote} title="Delete file">🗑</button>}
+                {!(_bridge && openNote.binary) && <button className="px-btn ghost" onClick={renameNote} title="Rename / move">✎</button>}
+                {<button className="px-btn ghost" onClick={deleteNote} title="Delete file">🗑</button>}
                 {_obsidianOn && <button className="px-btn ghost" onClick={openInObsidian}
                   title="Open in Obsidian">⧉</button>}
                 {!openNote.binary && (
-                  <button className={`px-btn ${saveState.startsWith('error') ? 'danger' : 'primary'}`}
+                  <button className={`px-btn ${saveState.startsWith('error') ? 'danger' : 'ghost'}`}
                     onClick={() => saveNote()} disabled={!openNote.dirty || busy} title={saveState}>
-                    {saveState.startsWith('error') ? '⚠ Retry save' : busy ? 'Saving…' : openNote.dirty ? 'Save' : 'Saved'}
+                    {saveState.startsWith('error') ? '⚠ Retry save' : busy || openNote.dirty ? 'Saving…' : '✓ Saved'}
                   </button>
                 )}
                 <button className="px-btn ghost" onClick={async () => { if (await closeNote()) setVaultTab('tree'); }} title="Close" style={{fontSize:11}}>{'✕'}</button>
               </div>
-              {backlinksPane}
               {openNote.binary ? (
                 <FiledFilePanel path={openNote.path} size={openNote.size} />
               ) : preview ? (
@@ -1812,8 +1844,9 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
                   ? <HtmlFramePreview html={openNote.content} />
                   : <div className="vault-preview" onClick={onPreviewClick} dangerouslySetInnerHTML={{ __html: renderMarkdown(openNote.content, { wikilinks: true, resolveEmbed: (tg) => _wikiResolvePath(files, tg) }) }} />
               ) : (
-                <textarea className="vault-edit" value={openNote.content} onPaste={onEditorPaste} {...editorExtraProps} onChange={e=>{ setOpenNote({ ...openNote, content: e.target.value, dirty: true }); _acUpdate(e.target); }} />
+                <textarea className="vault-edit" autoFocus onFocus={e => { const l = e.target.value.length; e.target.setSelectionRange(l, l); }} value={openNote.content} onPaste={onEditorPaste} {...editorExtraProps} onChange={e=>{ setOpenNote({ ...openNote, content: e.target.value, dirty: true }); _acUpdate(e.target); }} />
               )}
+              {backlinksPane}
             </div>
           )}
         </div>
@@ -1830,16 +1863,12 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
         <div className="vault-toolbar">
           <span style={{fontWeight:600,fontSize:11,flex:1}}>{status.name}</span>
           <button className="px-btn ghost" onClick={newNote} title="New note">➕</button>
-          {!_bridge && (
-            <button className="px-btn ghost" onClick={() => fileInputRef.current && fileInputRef.current.click()}
-              title="Upload files into the Library">📤</button>
-          )}
           <button className="px-btn ghost" onClick={refresh} title="Refresh">↻</button>
+          <button className="px-btn ghost" onClick={() => setShowTools(v => !v)} aria-expanded={showTools} title="More: filter by kind, upload">⋯</button>
           <input ref={fileInputRef} type="file" multiple style={{display:'none'}} onChange={onUpload}/>
         </div>
         <div style={{padding:'4px 6px',display:'flex',flexDirection:'column',gap:3}}>
           <input style={{width:'100%',boxSizing:'border-box'}} value={q} aria-label="Search the Library" onChange={e=>setQ(e.target.value)} placeholder="Search the Library…" onKeyDown={e=>e.key==='Enter'&&search()} />
-          <button className="px-btn secondary" style={{fontSize:9}} onClick={search}>🔎 SEARCH</button>
         </div>
         {searchState === 'found' ? (
           <div style={{overflowY:'auto',flex:1}}>
@@ -1856,7 +1885,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
           </div>
         ) : (
           <>
-            {files.length > 0 && kindChips}
+            {showTools && toolsPanel}
             {emptyTreeState || <FolderTree files={kindFiles} openPath={openNote?.path} onOpen={openByPath} expanded={expanded} setExpanded={setExpanded} onMove={_bridge ? null : moveByDrag} />}
           </>
         )}
@@ -1871,14 +1900,14 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
                 <input type="checkbox" checked={preview} onChange={e=>setPreview(e.target.checked)} /> Preview
               </label>
             )}
-            {!_bridge && <button className="px-btn ghost" onClick={renameNote} title="Rename / move">✎</button>}
-            {!_bridge && <button className="px-btn ghost" onClick={deleteNote} title="Delete file">🗑</button>}
+            {!(_bridge && openNote.binary) && <button className="px-btn ghost" onClick={renameNote} title="Rename / move">✎</button>}
+            {<button className="px-btn ghost" onClick={deleteNote} title="Delete file">🗑</button>}
             {_obsidianOn && <button className="px-btn ghost" onClick={openInObsidian}
               title="Open in Obsidian">⧉</button>}
             {!openNote.binary && (
-              <button className={`px-btn ${saveState.startsWith('error') ? 'danger' : 'primary'}`}
+              <button className={`px-btn ${saveState.startsWith('error') ? 'danger' : 'ghost'}`}
                 onClick={() => saveNote()} disabled={!openNote.dirty || busy} title={saveState}>
-                {saveState.startsWith('error') ? '⚠ Retry save' : busy ? 'Saving…' : openNote.dirty ? 'Save' : 'Saved'}
+                {saveState.startsWith('error') ? '⚠ Retry save' : busy || openNote.dirty ? 'Saving…' : '✓ Saved'}
               </button>
             )}
             {!showGraph && (
@@ -1891,7 +1920,6 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
               style={{fontSize:11}}
             >✕</button>
           </div>
-          {backlinksPane}
           {openNote.binary ? (
             <FiledFilePanel path={openNote.path} size={openNote.size} />
           ) : preview ? (
@@ -1899,8 +1927,9 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
               ? <HtmlFramePreview html={openNote.content} />
               : <div className="vault-preview" onClick={onPreviewClick} dangerouslySetInnerHTML={{ __html: renderMarkdown(openNote.content, { wikilinks: true, resolveEmbed: (tg) => _wikiResolvePath(files, tg) }) }} />
           ) : (
-            <textarea className="vault-edit" value={openNote.content} onPaste={onEditorPaste} {...editorExtraProps} onChange={e=>{ setOpenNote({ ...openNote, content: e.target.value, dirty: true }); _acUpdate(e.target); }} />
+            <textarea className="vault-edit" autoFocus onFocus={e => { const l = e.target.value.length; e.target.setSelectionRange(l, l); }} value={openNote.content} onPaste={onEditorPaste} {...editorExtraProps} onChange={e=>{ setOpenNote({ ...openNote, content: e.target.value, dirty: true }); _acUpdate(e.target); }} />
           )}
+          {backlinksPane}
         </div>
       )}
 
