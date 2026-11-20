@@ -562,6 +562,32 @@ actor CafresoHQState {
     };
   };
 
+  /// Meter a send the boss has ALREADY signed (approval-only sends, 2026-11-20).
+  /// Never refuses on the cap: the signature was the authorization, so this
+  /// only keeps the window and lifetime totals honest for the P&L display.
+  /// `token` is the registry key the send used; totals are keyed by it.
+  /// Called by the shell after the ledger confirms the transfer.
+  public shared (msg) func recordApprovedSpend(agentId : Text, token : Text, amount : Nat) : async () {
+    let caller = msg.caller;
+    if (Principal.isAnonymous(caller)) { throw Error.reject("sign in") };
+    let ws = walletsOf(caller);
+    switch (tOps.get(ws, agentId)) {
+      case null {};
+      case (?w) {
+        if (token == w.token) {
+          let nowSecs = now() / 1_000_000_000;
+          let startSecs = w.windowResetAt / 1_000_000_000;
+          let rolled = w.windowSecs == 0 or nowSecs >= startSecs + w.windowSecs;
+          let spent0 = if (rolled) { 0 } else { w.windowSpent };
+          let reset0 = if (rolled) { now() } else { w.windowResetAt };
+          let updated : AgentWallet = { w with windowSpent = spent0 + amount; windowResetAt = reset0; updatedAt = now() };
+          agentWallets := pOps.put(agentWallets, caller, tOps.put(ws, agentId, updated));
+        };
+      };
+    };
+    bumpSpendTotal(caller, agentId, token, amount);
+  };
+
   // ── Lifetime spend metering (advisory P&L display; caps stay the gate) ─────
   type TokenTotals = OrderedMap.Map<Text, Nat>;      // token symbol → base units
   type AgentTotals = OrderedMap.Map<Text, TokenTotals>; // agentId → totals

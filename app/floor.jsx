@@ -100,8 +100,8 @@ const VISIT_WORDS = [
        🗒 Checked ICP 0.05 aaaaa-bbbbb-ccccc-ddddd-cai : tip for the review
 
      on the desk bubble, in the activity feed and in the delivery note. Its
-     own doc says it "settles automatically" under the agent's spend cap —
-     no stamp, no card, nothing else on screen — so "Checked" is the only
+     own doc used to say it "settles automatically" under the agent's spend cap —
+     no stamp, no card, nothing else on screen (since 2026-11-20 every send waits for approval, but the caption rule below still stands) — so "Checked" is the only
      account the boss ever gets of a transfer that already happened, and
      the feed is the surface that outlives the chat.
 
