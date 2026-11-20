@@ -6880,7 +6880,7 @@ ${d.text}` : d.text,
               text: wentPublic
                 ? `🚀 Shipped — live on the Internet Computer (public):\n${r.url}${r.file ? `\nClickable link filed at ${r.file}` : ''}`
                 : `🔗 Preview only — not on the web. This link opens on this machine `
-                  + `only. ${r.reason ? `Why it didn't go live: ${r.reason}. ` : ''}`
+                  + 'only. ' + (r.reason ? "Why it didn't go live: " + r.reason + '. ' : '')
                   + `Publishing for real needs the Cafreso app that holds your `
                   + `identity (open this office at hq.cafreso.com):\n${r.url}\n`
                   + (r.file ? `Clickable link filed at ${r.file}` : '') }]);
