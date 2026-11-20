@@ -2741,6 +2741,12 @@ async function publishFile(path, size, opts = {}) {
       url = res.url; mode = 'canister';
     }
   }
+  if (!url && _API_BASE) {
+    /* A hosted office has no "preview on this machine": the link it used to
+       hand back was an hq.cafreso.com path that opens nothing. Say why it
+       did not go live instead. */
+    throw new Error((typeof reason === 'string' && reason) || 'the publish did not go through');
+  }
   if (!url) {
     const origin = _API_BASE || (typeof location !== 'undefined' ? location.origin : '');
     url = origin + '/fs/file?path=' + encodeURIComponent(path);
@@ -2768,11 +2774,18 @@ async function publishSite(path, opts = {}) {
      Library, published through the shell. That is the one path that has
      always worked from the hosted office, so a coworker's PUBLISH_SITE uses
      it whenever the page is a Library note. */
+  /* Any single page, wherever it was saved: the Library first, then the
+     office's own files. Publishing the one page is what works from the
+     hosted office; collecting a whole folder (an empty folder means the
+     office's entire working root) is what used to fail and fall back. */
   if (/\.html?$/i.test(path || '')) {
-    let inLibrary = false;
-    try { await vaultRead(path); inLibrary = true; } catch (_e) { inLibrary = false; }
-    if (inLibrary) {
-      const r = await sharePage(path, opts);
+    let html = null;
+    try { html = await vaultRead(path); } catch (_e) { html = null; }
+    if (html == null) {
+      try { html = (await fsReadText(path)).content; } catch (_e) { html = null; }
+    }
+    if (html != null) {
+      const r = await _publishOnePage(html, _splitOsPath(path).base, opts);
       return { url: r.url, file: null, dir: '', mode: 'canister', skipped: [], tipNotes: r.tipNotes || [] };
     }
   }
@@ -2814,6 +2827,12 @@ async function publishSite(path, opts = {}) {
   } else {
     reason = 'this office is not open inside the Cafreso app that holds your identity';
   }
+  if (!url && _API_BASE) {
+    /* A hosted office has no "preview on this machine": the link it used to
+       hand back was an hq.cafreso.com path that opens nothing. Say why it
+       did not go live instead. */
+    throw new Error((typeof reason === 'string' && reason) || 'the publish did not go through');
+  }
   if (!url) {
     const origin = _API_BASE || (typeof location !== 'undefined' ? location.origin : '');
     url = origin + '/fs/site/' + _b64urlUtf8(dir) + '/' + encodeURIComponent(base);
@@ -2837,12 +2856,17 @@ async function sharePage(vaultPath, opts = {}) {
   if (!/\.html?$/i.test(vaultPath || '')) {
     throw new Error('only page deliverables (.html) can go live');
   }
+  const html = await vaultRead(vaultPath);
+  return _publishOnePage(html, _splitOsPath(vaultPath).base, opts);
+}
+
+/* Publishes one HTML page as a site of its own, through the shell that holds
+   the boss's identity. No preview fallback: it is live or it throws. */
+async function _publishOnePage(html, base, opts = {}) {
   const chain = CafresoHQChain;
   if (!(chain && chain.isAvailable && chain.isAvailable())) {
-    throw new Error('public hosting needs the Cafreso shell that holds your identity');
+    throw new Error('public hosting needs the Cafreso app that holds your identity — open this office from obsidian.computer or hq.cafreso.com');
   }
-  const html = await vaultRead(vaultPath);
-  const base = _splitOsPath(vaultPath).base;
   const slug = base.replace(/\.html?$/i, '')
     .replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'page';
   let files = [{
