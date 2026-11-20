@@ -163,8 +163,10 @@ def main():
 
     # ── 6. the two publish surfaces agree ───────────────────────────────
     share = block(c_code, 'async function sharePage', 'function ')
+    one = block(c_code, 'async function _publishOnePage', 'function ')
     check('sharePage still refuses the fallback outright',
-          'public hosting needs' in share and '/fs/site/' not in share,
+          '_publishOnePage(' in share and 'public hosting needs' in one
+          and '/fs/site/' not in share and '/fs/site/' not in one,
           'the precedent this ticket brings publishSite into line with')
 
     print()
