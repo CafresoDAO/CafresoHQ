@@ -189,9 +189,11 @@ def main():
           'views/vault.jsx openByPath: reopening an empty note lands on the '
           'same wall the bug filed it behind')
     check('neither ever turns Preview back ON',
-          not re.search(r'setPreview\(true\)', code),
+          all('editByClickRef.current' in code[max(0, m.start() - 120):m.start()]
+              for m in re.finditer(r'setPreview\(true\)', code)),
           'views/vault.jsx: forcing preview on would overrule a boss who '
-          'deliberately unchecked it')
+          'deliberately unchecked it (the only way back is leaving an edit '
+          'that began with a click on the read view)')
 
     print('4. why an empty preview is a wall and not just a blank')
     # The branch is exclusive: preview renders INSTEAD of the textarea.

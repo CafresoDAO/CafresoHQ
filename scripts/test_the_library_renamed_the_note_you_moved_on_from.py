@@ -142,7 +142,7 @@ check('LOAD-BEARING NEGATIVE: nothing awaitable between the re-read and the '
       'an await there re-opens the very window this closes')
 
 check('the rename itself is unchanged — the boss still gets what they asked for',
-      'const res = await CafresoHQClient.vaultRename(n.path, to.trim());' in rename)
+      'res = await CafresoHQClient.vaultRename(n.path, to.trim());' in rename)
 
 check('the dirty flush before the rename still reads the pre-prompt note',
       'if (n.dirty) await saveNoteRef.current({ quiet: true });' in rename,

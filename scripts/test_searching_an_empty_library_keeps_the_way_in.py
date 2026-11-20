@@ -101,7 +101,7 @@ def main():
     check('the idle arm still swaps the TREE for the greeting, nothing else',
           bare.count('{emptyTreeState || <FolderTree') == 2)
     check('the kind chips still hide when there is nothing to filter',
-          bare.count('{files.length > 0 && kindChips}') == 2)
+          bare.count('{showTools && toolsPanel}') == 2 and '{files.length > 0 && kindChips}' in bare)
 
     # Clearing empties the box too, and both ✕ doors go through one place.
     check('clearing the search clears the query as well as the hits',
