@@ -97,7 +97,7 @@ def main():
           'got %r — a stale grant let a search through after the boss '
           'revoked it' % (search_result,))
     check('…named correctly: the Roster',
-          'Roster' in search_result, search_result)
+          'Agents' in search_result, search_result)
 
     print('=== VAULT_READ after the same revoke ===')
     read_result = nr.run_tool(ctx, 'VAULT_READ', 'Research/night/x.md', '')
@@ -106,7 +106,7 @@ def main():
           'got %r — a stale grant let a read through after the boss '
           'revoked it' % (read_result,))
     check('…named correctly: the Roster',
-          'Roster' in read_result, read_result)
+          'Agents' in read_result, read_result)
 
     print('=== no collateral: a coworker who is NOT revoked still reaches '
           'the wire on both doors ===')

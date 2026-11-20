@@ -24,9 +24,9 @@ Underneath the jargon sat a §5 problem too. Two hints named the tool the
 coworker reached for by its runtime name:
 
     model attempted WEB_SEARCH, VAULT_NEW but those aren't wired up —
-    check Settings → Roster
+    check Settings → Agents
 
-Settings → Roster has no box called WEB_SEARCH. It has one called **Web
+Settings → Agents has no box called WEB_SEARCH. It has one called **Web
 Search**. Sending the boss to a checkbox under a name that is not printed
 on it is the same wrong door as pointing them at a page that doesn't hire.
 
@@ -246,7 +246,7 @@ console.log(JSON.stringify(R));
     # One sentence covers every door on the card, so its verb has to be true
     # of a switch as well as a checkbox. "Tick it" was neither wrong nor
     # harmless: it told the boss to look for a checkbox.
-    hints = re.findall(r'reached for[^\n]{0,220}?Settings → Roster', src)
+    hints = re.findall(r'reached for[^\n]{0,220}?Settings → Agents', src)
     check('...and the hint asks for an action a switch can take',
           hints and not any('tick it' in h or 'tick them' in h for h in hints),
           repr([h for h in hints if 'tick' in h])
@@ -332,7 +332,7 @@ console.log(JSON.stringify(R));
     # ── 5. and the dial itself, since the hint pointed at it ────────────
     # This check exists because writing the one above got it wrong. The
     # first draft asserted no temperature control existed at all; there is
-    # one, in Settings → Roster, and it was labelled Temperature — so the
+    # one, in Settings → Agents, and it was labelled Temperature — so the
     # commit that called the word jargon would have shipped alongside a
     # screen printing it. The table's own prescription is "creativity", and
     # the coworker-card audit already settled "Brain" for the selector

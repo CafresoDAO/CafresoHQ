@@ -236,7 +236,7 @@ const CAN_DO_INSTEAD = {
    can turn on — 'run code once you elevate them' would point at a control
    that does not exist." That was wrong when it was written. The control
    does exist and always has: a 🛡 File & shell access switch on the
-   coworker's own card in Settings → Roster (modals/settings.jsx), behind
+   coworker's own card in Settings → Agents (modals/settings.jsx), behind
    a danger-styled confirm, which sets exactly this flag. Declining to
    name it did not protect anyone — it left the one capability with a real
    door as the only one the card refused to give a route to, which is the
@@ -252,7 +252,7 @@ const CAN_DO_UNLOCK = {
   /* Named for the panel as it is printed — Settings → Connections →
      LIBRARY — because unlike the other four this door is nowhere near the
      coworker, and the tooltip these chips already carry sends the boss to
-     Settings → Roster, where there is nothing to fix. */
+     Settings → Agents, where there is nothing to fix. */
   vault:  'read your Library once you connect one in Settings → Connections',
 };
 
@@ -353,7 +353,7 @@ function grantedTools(tools, ctx) {
    inspect panel's row, missed when that one was renamed" is the comment on
    the card today. Same words from one place, so the next rewording is one
    edit and cannot land on only half of them. */
-const CAN_USE_TIP = 'What this coworker is allowed to reach — their permissions, not a record of what they have done. Change these in Settings → Roster.';
+const CAN_USE_TIP = 'What this coworker is allowed to reach — their permissions, not a record of what they have done. Change these in Settings → Agents.';
 /* Appended only when something is actually dimmed, because a legend for a
    thing that is not on screen is just more words to read. */
 const CAN_USE_OFF_TIP = '\n\nDimmed and marked "off" means the capability is real but a switch it needs is not on — hover one to see which switch.';

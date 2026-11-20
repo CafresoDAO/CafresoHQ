@@ -4,7 +4,7 @@
 Some claims have two doors: the checkbox on the coworker's card, and a
 connection on another screen. `toolsForAgent` needs both, so a ticked box
 and a missing tool means the OTHER door is the shut one — and the hint that
-sends the boss to Settings → Roster in that case costs them a trip, a
+sends the boss to Settings → Agents in that case costs them a trip, a
 pointless toggle, and their trust in the hint. 'img' was fixed for this.
 'vault' was not, although the office already knew the answer: CEO_DOORS
 sends the chief of staff to Settings → Connections for the same family.
@@ -24,7 +24,7 @@ OBSIDIAN REST with Obsidian closed. Two halves of one system prompt:
 He obeyed the first half. What the boss read:
 
     _(Kip reached for Vault Notes, which they don't have — turn it on from
-      their card in Settings → Roster, or @-mention a coworker who already
+      their card in Settings → Agents, or @-mention a coworker who already
       has it.)_
 
 The box was on. Settings → Connections → MARKDOWN VAULT was the shut door
@@ -121,7 +121,7 @@ def main():
         # did not, and a static check that needs a sibling to be sound is
         # not doing its job.
         others = [d for c, (d, _p, _h) in SECOND_DOORS.items()
-                  if c != claim] + ['Settings → Roster']
+                  if c != claim] + ['Settings → Agents']
         standalone = [t for t in templates
                       if screen in t and 'already on' in t
                       and not any(o in t for o in others)]
@@ -201,26 +201,26 @@ console.log(JSON.stringify(R));
 
         check('a ticked box sends the boss to Connections',
               'Settings → Connections' in R['ticked']
-              and 'Settings → Roster' not in R['ticked'], R['ticked'])
+              and 'Settings → Agents' not in R['ticked'], R['ticked'])
         check("...and does not say they don't have it",
               "which they don't have" not in R['ticked'], R['ticked'])
         check('...and names the box as the checkbox prints it',
               'Vault Notes box is already on' in R['ticked'], R['ticked'])
         check('the exports ride the same claim, so the same door',
               'Settings → Connections' in R['exported']
-              and 'Settings → Roster' not in R['exported'], R['exported'])
+              and 'Settings → Agents' not in R['exported'], R['exported'])
         check('an UNticked box still points at the Roster',
-              'Settings → Roster' in R['unticked']
+              'Settings → Agents' in R['unticked']
               and 'Vault Notes' in R['unticked'], R['unticked'])
         # Both doors in one sentence, because both are shut: the shell has
         # no box to tick and the vault has no connection.
         check('a reply that hits both kinds names both screens',
-              'Settings → Roster' in R['both']
+              'Settings → Agents' in R['both']
               and 'Settings → Connections' in R['both'], R['both'])
         check('two open boxes and two shut connections is one sentence',
               'Settings → Media' in R['twoOpen']
               and 'Settings → Connections' in R['twoOpen']
-              and 'Settings → Roster' not in R['twoOpen'], R['twoOpen'])
+              and 'Settings → Agents' not in R['twoOpen'], R['twoOpen'])
         check('markers with no door stay silent',
               R['silentLbl'] == '' and R['silentHit'] is False,
               [R['silentLbl'], R['silentHit'],

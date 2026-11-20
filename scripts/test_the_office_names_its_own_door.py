@@ -9,7 +9,7 @@ Asked "what's the price of cycles today?" with a reply reaching for a tool
 it does not hold, the office said about ITSELF:
 
     _(they reached for Web Search, which they don't have — turn it on from
-      their card in Settings → Roster and ask again.)_
+      their card in Settings → Agents and ask again.)_
 
 "They" casts the speaker as a third party, so the boss reads it as a
 coworker having failed. And there is no card: the Roster renders
@@ -278,7 +278,7 @@ def main():
             js += brace_lift(code, fn) + '\n'
         js += r'''
 const R = {
-  // The reproduced reach. Pre-fix: "they … their card in Settings → Roster".
+  // The reproduced reach. Pre-fix: "they … their card in Settings → Agents".
   search:  ceoReachedForNote(['SEARCH']),
   vault:   ceoReachedForNote(['VAULT_NEW']),
   // Two switchable families behind ONE screen — named once, not twice.

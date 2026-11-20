@@ -1022,7 +1022,7 @@ function NightShiftSection({ agents }) {
               honesty about the brain deserved the same treatment. */}
           {/* Gated with the picker it explains: "writes under this name"
               describes a choice, and there is no choice to describe. */}
-          {!noCrewNote(agents) && <span className="hint">writes under this name — all night shifts share one brain (each coworker's own model in Settings → Roster doesn't apply here)</span>}
+          {!noCrewNote(agents) && <span className="hint">writes under this name — all night shifts share one brain (each coworker's own model in Settings → Agents doesn't apply here)</span>}
         </div>
         <div className="form-row">
           <label>LIBRARY FOLDER</label>
@@ -1412,7 +1412,7 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
                   appears only when the selected coworker actually lacks
                   something, and names WHICH.
 
-                  Second, "turn them on in Settings → Roster" is a treasure
+                  Second, "turn them on in Settings → Agents" is a treasure
                   map, not a way forward — and the boss most likely to read
                   it is the §3 zero-config one, who has never opened
                   Settings and whose front-desk hire arrives with ['web'].
@@ -1547,7 +1547,7 @@ function MissionsModal({ open, onClose, agents, missions, onStart, onStop, onRes
                 by morning; this spent the night and delivered none.
 
                 The §7 route out already sits under the AGENT row — "turn them
-                on in Settings → Roster" — so a blocked START now has a reason
+                on in Settings → Agents" — so a blocked START now has a reason
                 and somewhere to go. */}
             <button className="px-btn primary" onClick={submit}
               disabled={mode === 'project-study'

@@ -116,7 +116,7 @@ def main():
           'the whole point is this must be caught BEFORE the wire',
           status != 503, result)
     check('…named correctly: the Roster, not Connections',
-          'Roster' in result, result)
+          'Agents' in result, result)
 
     print('=== run_mission\'s own opening door reads live too ===')
     # A fresh ctx, as a fresh dispatch would build — this is the same
@@ -132,7 +132,7 @@ def main():
     run = nr.run_mission(ctx2, sched)
     check('a mission whose grant vanished before the first call still '
           'turns away at the door', run.get('iterations', 0) == 0)
-    check('…naming the Roster', 'Roster' in str(run.get('lastError', '')),
+    check('…naming Settings → Agents', 'Agents' in str(run.get('lastError', '')),
           run.get('lastError'))
 
     print('=== no collateral: a coworker who is NOT revoked still reaches '

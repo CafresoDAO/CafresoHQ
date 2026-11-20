@@ -88,6 +88,9 @@ AGENT_OK = (
     'CLI agent',           # a category of tool, not a colleague
     'Agents/<your name>',  # the private-notes folder path
     'Agents/',
+    'Settings → Agents',  # the name of the Settings tab where each coworker is set up
+    'in <b>Agents</b>',   # the same tab, named in Settings itself
+    'their own in Agents',
 )
 
 AGENT_RE = re.compile(r'\bagents?\b', re.I)

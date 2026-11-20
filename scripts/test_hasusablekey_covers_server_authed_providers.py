@@ -27,7 +27,7 @@ key already lives server-side, authenticated before the hire card was
 ever shown.
 
 Concrete failure: hire a Groq or Gemini-API coworker (or repoint an
-existing one to it in Settings → Roster) on an office whose default
+existing one to it in Settings → Agents) on an office whose default
 Hermes provider has no managed brain and no Hermes-internal OpenRouter
 key. That coworker is fully functional, but `hasUsableKey` said no,
 which broke `officeHasBrain()` (the "⚠ ADD AI KEY" alarm stays lit for

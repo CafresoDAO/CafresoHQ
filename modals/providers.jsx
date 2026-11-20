@@ -1032,7 +1032,7 @@ export function MediaTab() {
         <div className="sub" style={{ lineHeight: 1.6, marginBottom: 8 }}>
           Two things have to be on before a coworker can make images: an image
           provider here, and their <strong>Image Gen</strong> box, on their own
-          card in Settings → Roster. Leaving this off keeps image making out of
+          card in Settings → Agents. Leaving this off keeps image making out of
           the whole office's reach.
         </div>
         <div className="form-row" style={{ marginBottom: 8 }}>

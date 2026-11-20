@@ -34,7 +34,7 @@ Two boundaries this pins, both of which are the honest part:
 
   OVERTURNED 2026-08-14. That paragraph was wrong on its facts, and this
   test kept it in force for three ticks. There is a switch: every
-  coworker's card in Settings → Roster carries a 🛡 File & shell access
+  coworker's card in Settings → Agents carries a 🛡 File & shell access
   pxswitch, behind a danger-styled confirm, that sets exactly this flag —
   and REQUEST_ELEVATION lets a coworker ask for it mid-job, with the boss
   deciding in the approvals tray. Elevation is not fixed at hire and never
@@ -103,7 +103,7 @@ def main():
     # This slot used to hold the inverse check — "nothing gated on elevation
     # is offered as a switch" — on the stated grounds that "elevation is
     # fixed by which template you hire". That was never true. Every
-    # coworker's card in Settings → Roster carries a 🛡 File & shell access
+    # coworker's card in Settings → Agents carries a 🛡 File & shell access
     # pxswitch that calls `update({ elevated: … })` behind a danger confirm
     # (modals/settings.jsx), and REQUEST_ELEVATION exists so a coworker can
     # ask for it mid-job. So the one capability with a real, per-agent,
@@ -131,7 +131,7 @@ def main():
         # The odd one out, and the reason it needs saying: every other door
         # here is on or beside the coworker's own card, and this one is not
         # anywhere near it. The chips carry a tooltip reading "Change these
-        # in Settings → Roster", which for 'vault' is the wrong door — so
+        # in Settings → Agents", which for 'vault' is the wrong door — so
         # the line names its own, spelled as the panel heading prints it.
         # Was 'markdown vault' until the room was renamed; the heading in
         # Settings → Connections now prints LIBRARY, and the card's own
@@ -287,7 +287,7 @@ def main():
         # A coworker with nothing but an off switch still gets a route.
         'only_img': (['img'], {'canMakeImages': False}),
         # Elevation IS a switch — one per coworker, on their own card in
-        # Settings → Roster — so it gets a future tense like the rest.
+        # Settings → Agents — so it gets a future tense like the rest.
         'not_elevated': (['code'], {'elevated': False}),
         # …and stays silent when the caller could not read the flag at all,
         # same mirror rule as pixel_unknown. A boss who granted computer
@@ -338,7 +338,7 @@ def main():
           'errand for the boss ahead of the thing the coworker can do now')
     check('...and the vault route names Connections, not Roster',
           'Settings → Connections' in r['vault_off']
-          and 'vault in Settings → Roster' not in r['vault_off'],
+          and 'vault in Settings → Agents' not in r['vault_off'],
           f"{r['vault_off']} — the chips' own tooltip already sends the boss "
           'to Roster, where there is no vault control at all')
     check('a coworker with only an off switch still gets a route out',

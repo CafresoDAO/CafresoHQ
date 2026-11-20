@@ -70,7 +70,7 @@ const SETTINGS_TABS = [
      across three tabs (a read-only row in Account, a list in Connections,
      a picker per coworker in Roster) with no place to test it. */
   { id: 'brain',       ico: '🧠', label: 'BRAIN',       desc: 'what your office thinks with' },
-  { id: 'agents',      ico: '👥', label: 'ROSTER',      desc: 'each coworker’s brain and tools' },
+  { id: 'agents',      ico: '👥', label: 'AGENTS',      desc: 'each coworker’s brain and tools' },
   /* Self-hosted installs only (filtered out when health.managed) — see
      ConnectionsPanel for why this is status-and-instructions, not a form. */
   { id: 'connections', ico: '🔌', label: 'CONNECTIONS', desc: 'more brains · keys · library' },
@@ -1056,7 +1056,7 @@ function IcpServicesPanel({ agents }) {
           {pausedAll && <div className="tiny" style={{ color: '#a9710f' }}>⏸ Everything is paused — no agent can spend until you resume.</div>}
           <PayrollBudgetPanel />
           {walletAgents.length === 0
-            ? <div className="muted" style={{ marginTop: 6 }}>Grant an agent the <b>ICP Wallet</b> tool in <b>Roster</b> to give it a wallet.</div>
+            ? <div className="muted" style={{ marginTop: 6 }}>Grant an agent the <b>ICP Wallet</b> tool in <b>Agents</b> to give it a wallet.</div>
             : walletAgents.map(a => <AgentWalletCard key={a.id} agent={a} />)}
         </div>
       )}
@@ -1258,7 +1258,7 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
           {!terms.length && activeTab === 'agents' && (
             <div className="control-board">
               <div className="cb-panel">
-                <h4>ROSTER</h4>
+                <h4>AGENTS</h4>
                 <div className="stack">
                   {agents.length === 0 && <div className="muted">No coworkers hired.</div>}
                   {agents.map(a => (
@@ -1489,8 +1489,8 @@ function BrainTab({ onGo, managed }) {
               {health === null ? 'checking…'
                 : health === false ? 'your office isn’t answering — is it still running?'
                 : shared ? `${shared.model} — included, no keys to manage`
-                : managed === false ? 'add one in Connections, or give each coworker their own in Roster'
-                : 'give each coworker their own in Roster'}
+                : managed === false ? 'add one in Connections, or give each coworker their own in Agents'
+                : 'give each coworker their own in Agents'}
             </div>
           </div>
           {health !== null && (
@@ -1536,7 +1536,7 @@ function BrainTab({ onGo, managed }) {
             <div className="lbl">A different brain for one coworker</div>
             <div className="sub">each coworker can think with their own — pick it on their card</div>
           </div>
-          <button className="px-btn" style={btn} onClick={() => onGo('agents')}>ROSTER</button>
+          <button className="px-btn" style={btn} onClick={() => onGo('agents')}>AGENTS</button>
         </div>
         {managed === false && (
           <div className="row-knob">

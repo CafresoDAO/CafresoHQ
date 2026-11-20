@@ -641,7 +641,7 @@ function WorkspaceView({ projects, setProjects, agents = [], onSwitchView }) {
             ? `${agents[0].name} doesn't have file or shell access yet`
             : 'none of your coworkers have file or shell access yet')
           + ' — so nothing they do will land in this folder. '
-          + 'Settings → Roster turns it on, one coworker at a time.';
+          + 'Settings → Agents turns it on, one coworker at a time.';
       }
       return "Nobody is on this project yet — add a coworker above to open this project's room. "
         + `${nameList(ready)} ${ready.length === 1 ? 'has' : 'have'} file & shell access, `
@@ -650,7 +650,7 @@ function WorkspaceView({ projects, setProjects, agents = [], onSwitchView }) {
     if (!handed.length) {
       return `${nameList(crew)} ${crew.length === 1 ? 'is' : 'are'} on this project, but `
         + `${crew.length === 1 ? "doesn't" : "don't"} have file or shell access yet — so nothing `
-        + 'they do will land in this folder. Settings → Roster turns it on, one coworker at a time.';
+        + 'they do will land in this folder. Settings → Agents turns it on, one coworker at a time.';
     }
     return `${nameList(handed)} share${handed.length === 1 ? 's' : ''} this folder & shell. `
       + 'Their writes, runs, and exports appear here as they work — click any line to jump to it.';

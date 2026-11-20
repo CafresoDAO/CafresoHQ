@@ -11,7 +11,7 @@ The Coworkers pane read:
 One click on the only chip in the row, and the same slot read:
 
     Local Brain is on this project, but doesn't have file or shell access
-    yet — so nothing they do will land in this folder. Settings → Roster
+    yet — so nothing they do will land in this folder. Settings → Agents
     turns it on, one coworker at a time.
 
 The office knew before the click. `agents` is in scope, `elevated` is on every
@@ -155,7 +155,7 @@ def main():
             check(f'[{label}] nobody on this roster can, and the empty state '
                   'says so before the click',
                   'file or shell access' in before
-                  and 'Settings' in before and 'Roster' in before,
+                  and 'Settings' in before and 'Agents' in before,
                   f'{before!r} — every chip in the row above will produce the '
                   'denial, and the office can see that while it renders them')
 

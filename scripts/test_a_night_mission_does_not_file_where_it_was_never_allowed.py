@@ -110,7 +110,7 @@ def main():
           'vault_write_status None means LANDED — a refusal read as None '
           'would put a note in the morning report that the Library never saw')
     check('the refusal says who it is about and what to tick',
-          'Library' in refused and 'Roster' in refused, refused)
+          'Library' in refused and 'Agents' in refused, refused)
     check('the same refusal covers VAULT_APPEND',
           nr.vault_write_status(nr.run_tool(
               FakeCtx(['web']), 'VAULT_APPEND', 'a.md', 'x'))
@@ -130,7 +130,7 @@ def main():
           nr.vault_refused_sentence(nr.NIGHT_VAULT_FORBIDDEN)
           != nr.vault_refused_sentence(400))
     check('…it names the Roster',
-          'Roster' in nr.vault_refused_sentence(nr.NIGHT_VAULT_FORBIDDEN))
+          'Agents' in nr.vault_refused_sentence(nr.NIGHT_VAULT_FORBIDDEN))
     check('the wiring sentence is untouched',
           nr.vault_refused_sentence(502) == 'vault is not reachable — check Connections'
           and nr.vault_refused_sentence(503) == nr.vault_refused_sentence(502))
