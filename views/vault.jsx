@@ -526,7 +526,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       try {
         const bridgeFiles = await _bridge.list();
         setFiles(_adaptBridgeFiles(bridgeFiles));
-        setStatus({ configured: true, exists: true, name: '🔐 Encrypted Library', backend: 'bridge' });
+        setStatus({ configured: true, exists: true, name: 'Library', backend: 'bridge' });
         refreshGraph();
         await _refreshHits();
       } catch (e) {
@@ -626,7 +626,7 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       if (e.origin !== window.__hqShellOrigin) return;
       if (e.data?.type === 'vault:files:update') {
         setFiles(_adaptBridgeFiles(e.data.files || []));
-        if (!status) setStatus({ configured: true, exists: true, name: '🔐 Encrypted Library', backend: 'bridge' });
+        if (!status) setStatus({ configured: true, exists: true, name: 'Library', backend: 'bridge' });
       }
     };
     window.addEventListener('message', handler);
