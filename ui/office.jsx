@@ -57,8 +57,8 @@ function Rail({ onOpenSettings, onShowCEO, active, setActive, collapsed = false,
         title={onShowCEO ? 'Open CEO panel' : 'Cafreso HQ'}
       >
         <div className="brand-cf-wrap">
-          <img src="assets/cf-mark-coffee.png" alt="Cafreso" className="rail-cf-logo cf-mark--light" />
-          <img src="assets/cf-mark-white.png" alt="Cafreso" className="rail-cf-logo cf-mark--dark" />
+          <img src="assets/cf-hq-mark-dark-ink.png" alt="Cafreso HQ" className="rail-cf-logo cf-mark--light" />
+          <img src="assets/cf-hq-mark-white.png" alt="Cafreso HQ" className="rail-cf-logo cf-mark--dark" />
         </div>
       </div>
       <nav>
