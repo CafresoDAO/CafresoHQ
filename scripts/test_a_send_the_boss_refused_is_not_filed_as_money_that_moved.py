@@ -166,10 +166,10 @@ def main():
     check('the registry still ships a WALLET_SEND',
           "name: 'WALLET_SEND'" in rt,
           'if this tool is gone the rest of this test is about nothing')
-    check('...and it still settles under the cap without a second surface',
-          'settles automatically' in rt,
-          'if every send now waits for a stamp, the floor caption is no '
-          'longer the only record of one — it is still the first')
+    check('...and every send waits for the boss to approve it first',
+          'Every send waits for the boss to approve it first' in rt,
+          'approval-only sends (2026-11-20): the caption still must not '
+          'claim money moved when it did not')
     check('the runtime still reads meta.failed off a tool that did not raise',
           'failed: !!meta.failed' in rt_code,
           'the whole mechanism this fix hangs on')

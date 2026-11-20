@@ -2408,10 +2408,10 @@ const TOOL_REGISTRY = {
     requires: () => icpWalletEnabled(),
     doc:
       '- [WALLET_SEND: <token> <amount> <to-principal> : <memo>] — send from your HQ wallet.\n' +
-      '  Within your spend cap it settles automatically; over the cap the boss is asked to approve first.\n' +
+      '  Every send waits for the boss to approve it first, however small; nothing moves until they sign.\n' +
       '  Tokens: ICP, ckUSDT, ckUNI, sGLDT, $nanas. Memo is optional.\n' +
       '  Example: [WALLET_SEND: ICP 0.05 aaaaa-bbbbb-ccccc-ddddd-cai : tip for the design review]',
-    docShort: 'Send tokens from your HQ wallet (auto under your cap; over-cap asks the boss).',
+    docShort: 'Send tokens from your HQ wallet (every send waits for the boss to approve it).',
     run: async () => '(WALLET_SEND is bound at agent-build time — see toolsForAgent)',
   },
   /* PUBLISH_SITE — Ship-to-chain (DRIVER_CONTRACT §7). Making something
@@ -4371,8 +4371,19 @@ function journalSummary(agent) {
   return lines.join('\n');
 }
 
+/* When the front desk runs on Claude it says so: a named AI, never passed
+   off as a person, and the money rule spelled out where it acts. */
+function ceoIdentityLine() {
+  const pinned = String(((CafresoHQClient.getSettings && CafresoHQClient.getSettings()) || {}).ceoModel || '');
+  if (!/^(anthropic|claudecode|cafresohq):/.test(pinned)) return '';
+  return 'You are Claude, an AI made by Anthropic, running the CafresoHQ front desk as chief of staff. ' +
+    'If anyone asks, say plainly that you are an AI. You coordinate the coworkers and keep the boss informed; ' +
+    'you never move money, deploy or vote on your own — every send, deploy and vote waits for the boss to approve it.';
+}
+
 function buildCeoSystem(agents, extra) {
-  const parts = [CEO_SYSTEM, rosterSummary(agents)];
+  const who = ceoIdentityLine();
+  const parts = [...(who ? [who] : []), CEO_SYSTEM, rosterSummary(agents)];
   const mem = memorySummary(HQ && HQ._memory);
   if (mem) parts.push(mem);
   if (extra) parts.push(extra);
@@ -4417,6 +4428,12 @@ async function registrySnippet() {
    the conversation instead. Named here because the call site cannot see
    it: a discarded argument raises no error and logs nothing. */
 async function ceoStream(prompt, onToken, { chat, agents, system, model, temperature, signal, onUsage, onTool, onHint, maxTokens } = {}) {
+  /* Settings → Brain → Front desk brain. An explicit `model` from the caller
+     still wins; otherwise a pinned front-desk brain replaces the default. */
+  if (!model) {
+    const pinned = (CafresoHQClient.getSettings() || {}).ceoModel;
+    if (pinned && pinned !== 'inherit') model = pinned;
+  }
   const messages = chat
     ? chatToMessages(chat, { omitLastCeo: true })
     : [{ role: 'user', content: prompt }];

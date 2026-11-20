@@ -78,10 +78,10 @@ runtime = RUNTIME.read_text(encoding='utf-8')
 check("the registry still has a WALLET_SEND",
       re.search(r"name: 'WALLET_SEND'", runtime) is not None,
       'if this tool is gone the rest of this test is about nothing')
-check("...and it still settles on its own under the spend cap",
-      re.search(r'settles automatically', runtime) is not None,
-      'if every send now waits for a stamp, the floor caption is no longer '
-      'the only record of it — but it is still the first one')
+check("...and every send waits for the boss's approval first",
+      re.search(r'Every send waits for the boss to approve it first', runtime) is not None,
+      'approval-only sends (2026-11-20); the floor caption is still the '
+      'first record of one')
 
 ARG = 'ICP 0.05 aaaaa-bbbbb-ccccc-ddddd-cai : tip for the design review'
 out = run_js(r'''

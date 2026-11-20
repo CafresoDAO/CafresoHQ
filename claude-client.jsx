@@ -53,6 +53,15 @@ import { headTimeoutMs, SLOW_HEAD_MS } from './app/patience.jsx';
     : window.location.pathname.replace(/\/[^/]*$/, '');
 })();
 const _API_BASE = window._API_BASE;   // exposed for views.jsx / app.jsx
+/* A same-origin proxy path ('/lmstudio/v1', '/ollama/v1') only resolves when
+   the page IS serve.py. Hosted (hq.cafreso.com, the UI canister) the page's
+   origin is not the API's, so a bare '/lmstudio/v1' 404s at the canister.
+   Prefix the API base onto relative paths only; a full URL the boss typed
+   (http://10.0.0.100:1234/v1) is left exactly as written. */
+function _proxied(url) {
+  const u = String(url || '');
+  return (u.startsWith('/') && !u.startsWith('//')) ? (_API_BASE || '') + u : u;
+}
 
 // ── Shell origin (postMessage target for VaultBridge / CafresoHQChain) ───────
 // The HQ app runs iframed inside the SvelteKit shell, which holds the Internet
@@ -182,6 +191,10 @@ let VaultBridge, CafresoHQChain;
 const LS_KEY = 'cafresohq_client_v1';
 
 const ANTHROPIC_MODELS = [
+  'claude-opus-5-5',
+  'claude-sonnet-5-5',
+  'claude-haiku-5-5',
+  'claude-fable-5-2',
   'claude-opus-4-7',
   'claude-sonnet-4-6',
   'claude-haiku-4-5-20251001',
@@ -198,6 +211,9 @@ const GEMINI_MODELS = [
 /* Claude Code (Pro/Max subscription) — invoked via subprocess on the proxy.
    Models match what the `claude` CLI accepts via --model. */
 const CLAUDECODE_MODELS = [
+  'claude-opus-5-5',
+  'claude-sonnet-5-5',
+  'claude-haiku-5-5',
   'claude-sonnet-4-5',
   'claude-opus-4-5',
   'claude-haiku-4-5',
@@ -278,6 +294,12 @@ const DEFAULTS = {
      A spawning agent can override per-spawn with [SPAWN_SUBAGENT: role | model:<id>]
      syntax — that always wins over this setting. */
   subagentModel: 'inherit',
+  /* Who runs the front desk (the chief of staff, `ceoStream`).
+     - 'inherit' (default): the office's default brain, as before.
+     - any provider-prefixed id ('anthropic:claude-opus-5-5',
+       'claudecode:opus'): the chief of staff runs on that brain, whatever
+       the default is. This is how Claude runs the office. */
+  ceoModel: 'inherit',
 };
 
 function loadSettings() {
@@ -819,7 +841,7 @@ async function streamOpenAICompat({ base, label, system, messages, model, temper
 function streamLMStudio(opts) {
   return streamOpenAICompat({
     ...opts,
-    base: _settings.lmstudioUrl,
+    base: _proxied(_settings.lmstudioUrl),
     label: 'LM Studio',
     defaultModel: _settings.lmstudioModel,
     local: true,          // weights load off this machine's disk
@@ -829,7 +851,7 @@ function streamLMStudio(opts) {
 function streamOllama(opts) {
   return streamOpenAICompat({
     ...opts,
-    base: _settings.ollamaUrl,
+    base: _proxied(_settings.ollamaUrl),
     label: 'Ollama',
     defaultModel: _settings.ollamaModel,
     /* The default `ollamaUrl` is '/ollama/v1' — serve.py's same-origin
@@ -1439,7 +1461,7 @@ async function stream(opts) {
      never installed. */
   if (provider === 'hermes' && sharedBrainDirect()) {
     return streamOpenAICompat({ ...next, model: _managedBrain.model,
-      base: DEFAULTS.lmstudioUrl, label: 'Cafreso GPU', local: false });
+      base: _proxied(DEFAULTS.lmstudioUrl), label: 'Cafreso GPU', local: false });
   }
   if (provider === 'hermes')     return streamHermes(next);
   if (provider === 'anthropic')  return streamAnthropic(next);
@@ -1557,7 +1579,7 @@ async function streamGoogle({ system, messages, model, temperature, maxTokens, o
 
 async function listLMStudioModels() {
   const s = _settings;
-  const base = (s.lmstudioUrl || '').replace(/\/+$/, '');
+  const base = _proxied(s.lmstudioUrl).replace(/\/+$/, '');
   if (!base) return [];
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 3000);
@@ -1577,7 +1599,7 @@ async function listOllamaModels() {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 3000);
   try {
-    const r = await fetch(OLLAMA_BASE + '/api/tags', { signal: ctrl.signal });
+    const r = await fetch(_proxied(OLLAMA_BASE) + '/api/tags', { signal: ctrl.signal });
     clearTimeout(timer);
     if (!r.ok) return [];
     const j = await r.json();
@@ -1592,7 +1614,7 @@ async function listOllamaModels() {
 
 async function lmStudioModelDetails() {
   const s = _settings;
-  const base = (s.lmstudioUrl || '').replace(/\/+$/, '');
+  const base = _proxied(s.lmstudioUrl).replace(/\/+$/, '');
   if (!base) return [];
   // /v1/models is OpenAI-compatible; LM Studio's richer /api/v0/models lives at the root.
   // Derive the root from the configured base by stripping a trailing /v1.
@@ -2723,7 +2745,7 @@ async function publishFile(path, size, opts = {}) {
   if (size > PUBLISH_FILE_MAX) {
     throw new Error(`${base} is ${_sizeWords(size)}, and one published file can be 2 MB at most for now`);
   }
-  let url = null, mode = 'preview';
+  let url = null, mode = 'preview', reason = '';
   const chain = CafresoHQChain;
   if (chain && chain.isAvailable && chain.isAvailable()) {
     const r = await fetch(_API_BASE + '/fs/file?path=' + encodeURIComponent(path), { cache: 'no-store' });
@@ -2740,6 +2762,8 @@ async function publishFile(path, size, opts = {}) {
       if ((res.skipped || []).length) throw new Error(`the public host turned the file away: ${res.skipped.join('; ')}`);
       url = res.url; mode = 'canister';
     }
+  } else {
+    reason = 'this office is not open inside the Cafreso app that holds your identity';
   }
   if (!url && _API_BASE) {
     /* A hosted office has no "preview on this machine": the link it used to

@@ -187,8 +187,12 @@ function hireNeedsNote(name, currentAgents, model) {
    flag that actually grants BASH — so the card's claim and the coworker's
    real capability agree. */
 const FRONT_DESK = {
+  /* 'wallet' (2026-11-20): Claude holds its own HQ wallet — an agent
+     subaccount of the boss's principal. Every send it asks for waits for
+     the boss's signature (approval-only sends); the tool only appears once
+     the Wallet service is installed and a policy exists for this agent. */
   'claude-code': { id: 'a_cli_claude', name: 'Claude', role: 'Coding Agent', color: 'leaf',
-                   model: 'claudecode:sonnet', tools: ['files', 'code', 'web'], elevated: true,
+                   model: 'claudecode:sonnet', tools: ['files', 'code', 'web', 'wallet'], elevated: true,
                    poweredBy: 'Claude', found: 'We found your Claude subscription on this machine.' },
   'codex':       { id: 'a_cli_codex', name: 'Codex', role: 'Coding Agent', color: 'mint',
                    model: 'codex:gpt-4.1', tools: ['files', 'code'], elevated: true,
