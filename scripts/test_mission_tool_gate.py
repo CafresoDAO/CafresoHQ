@@ -179,7 +179,7 @@ console.log(JSON.stringify(R));
           'sentence under it')
     check('the missing tools can be granted from the modal',
           re.search(r'onUpdateAgent\(selectedAgent\.id,\s*\n?\s*\{\s*tools:', text) is not None,
-          'missions.jsx: "turn them on in Settings → Roster" is a treasure map, '
+          'missions.jsx: "turn them on in Settings → Agents" is a treasure map, '
           'not a way forward')
     check('...and the grant is wired from app.jsx',
           re.search(r'<MissionsModal[\s\S]{0,600}?onUpdateAgent=\{onUpdateAgent\}', APP.read_text(encoding='utf-8')) is not None,

@@ -1123,7 +1123,7 @@ function unsentElevation(text, raised) {
   const t = String(text || '');
   if (!/\[\s*REQUEST_ELEVATION\s*:/i.test(t)) return null;
   if (/\[\s*\/\s*REQUEST_ELEVATION\s*\]/i.test(t)) return null;   // well-formed
-  return '_(that request for file and shell access never reached you — they started writing it out and stopped partway. Nothing is waiting in your approvals; ask them to try again, or grant it yourself in Settings → Roster.)_';
+  return '_(that request for file and shell access never reached you — they started writing it out and stopped partway. Nothing is waiting in your approvals; ask them to try again, or grant it yourself in Settings → Agents.)_';
 }
 
 /* The rest of the "request that leaves someone waiting" class.
@@ -2632,10 +2632,10 @@ const TOOL_REGISTRY = {
    and that hint used to print the runtime's own name for it:
 
      _(model attempted WEB_SEARCH, VAULT_NEW but those aren't wired up —
-       check Settings → Roster)_
+       check Settings → Agents)_
 
    Two §6 breaks in one line ("model", and the tool call by its raw name),
-   and a §5 one underneath them: Settings → Roster does not have a box
+   and a §5 one underneath them: Settings → Agents does not have a box
    called WEB_SEARCH. It has one called **Web Search**. Sending the boss to
    a checkbox under a name that is not printed on it is the same wrong door
    as pointing them at a page that doesn't hire.
@@ -2763,7 +2763,7 @@ function claimLabels(names, agent) {
    unreliable.
 
    The box being ALREADY TICKED is the case the shipped sentence got
-   wrong. "Turn it on from their card in Settings → Roster" sends the boss
+   wrong. "Turn it on from their card in Settings → Agents" sends the boss
    to a control that is on, they turn it off and on again, nothing
    changes, and the actual shut door — a screen away — is never mentioned.
 
@@ -2795,7 +2795,7 @@ function claimHitsMediaDoor(names, agent) {
    boss read:
 
      _(Kip reached for Vault Notes, which they don't have — turn it on
-       from their card in Settings → Roster, or @-mention a coworker who
+       from their card in Settings → Agents, or @-mention a coworker who
        already has it.)_
 
    The box was on. The trip is wasted, the toggle changes nothing, and the
@@ -2889,14 +2889,14 @@ function reachedForNote(missing, agent) {
      not this ticket, and the two suites that lift these functions pin it. */
   const vaultBox = toolClaimLabel('VAULT_NEW');
   return want
-    ? `_(${agent.name} reached for ${want}, which they don't have — turn it on from their card in Settings → Roster${media ? ', and pick an image provider in Settings → Media' : ''}${vault ? ', and connect a Library in Settings → Connections' : ''}, or @-mention a coworker who already has it.)_`
+    ? `_(${agent.name} reached for ${want}, which they don't have — turn it on from their card in Settings → Agents${media ? ', and pick an image provider in Settings → Media' : ''}${vault ? ', and connect a Library in Settings → Connections' : ''}, or @-mention a coworker who already has it.)_`
     : media && vault
     ? `_(${agent.name} reached for image work and for the Library. Both boxes are already on — what's missing is an image provider, which you pick in Settings → Media, and a Library connection, which you set up in Settings → Connections.)_`
     : media
     ? `_(${agent.name} reached for image work. Their Image Gen box is already on — what's missing is an image provider, which you pick in Settings → Media.)_`
     : vault
     ? `_(${agent.name} reached for the Library. Their ${vaultBox} box is already on — what's missing is the Library connection, which you set up in Settings → Connections.)_`
-    : `_(${agent.name} reached for something they haven't been given — check what they're allowed to do in Settings → Roster, or @-mention a coworker who can.)_`;
+    : `_(${agent.name} reached for something they haven't been given — check what they're allowed to do in Settings → Agents, or @-mention a coworker who can.)_`;
 }
 
 /* ── The same sentence, for the one speaker who has no card ──────────────
@@ -2907,7 +2907,7 @@ function reachedForNote(missing, agent) {
    9236), asking the chief of staff "what's the price of cycles today?":
 
      CafresoHQ  _(they reached for Web Search, which they don't have —
-                 turn it on from their card in Settings → Roster and ask
+                 turn it on from their card in Settings → Agents and ask
                  again.)_
 
    Two wrong things in one sentence the office says about itself. "They"
@@ -4812,7 +4812,7 @@ FILE-DELIVERY RULE: There is no Library wired up this session, so there is nowhe
 
            I first wrote here that none of those dials exist. Half wrong,
            and worth keeping the correction: there IS no max_tokens field,
-           but there IS a slider in Settings → Roster — which the table
+           but there IS a slider in Settings → Agents — which the table
            says should never have been called Temperature, and which is
            renamed Creativity in the same commit as this. So the reason
            these sentences go is not that the dial is missing. It is that

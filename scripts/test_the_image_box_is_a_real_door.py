@@ -22,7 +22,7 @@ reading one of them. `app/cast.jsx` already modelled it correctly —
 the runtime disagreed, and the runtime was the one that decided.
 
 Second half: with the box now load-bearing, "turn it on from their card in
-Settings → Roster" becomes the WRONG door for a coworker whose box is already
+Settings → Agents" becomes the WRONG door for a coworker whose box is already
 on and whose provider is missing. The hint names the shut door, not the
 nearest one.
 
@@ -263,7 +263,7 @@ console.log(JSON.stringify(R));
     # has to exist is the sentence for the case the ticket is about, not
     # the phrase.
     standalone = [n for n in media_notes
-                  if 'Settings → Roster' not in n and 'already on' in n]
+                  if 'Settings → Agents' not in n and 'already on' in n]
     check('...including a standalone one for a box that is already on',
           standalone,
           media_notes + ['— an already-ticked box is not the shut door, so '

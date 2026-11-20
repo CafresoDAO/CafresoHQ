@@ -603,7 +603,7 @@ function ChatWindow({ open, setOpen, geometry, setGeometry, messageCount, chatPa
       >
         <span style={{fontSize: 12, fontWeight: 700, letterSpacing: 1, color: 'var(--ink)'}}>💬 CHAT</span>
         {tabBtn('chat',   'Chat',   messageCount > 0 ? messageCount : null)}
-        {tabBtn('roster', 'Roster', (agents || []).length)}
+        {tabBtn('roster', 'Agents', (agents || []).length)}
         <span style={{flex: 1, alignSelf: 'stretch'}} />
         {!isTouch && <span style={{fontSize: 9, opacity: 0.55, letterSpacing: 1, pointerEvents: 'none'}}>drag · esc to close</span>}
         <button

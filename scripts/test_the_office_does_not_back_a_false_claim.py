@@ -27,7 +27,7 @@ office said nothing, so the only account of the run the boss had was the
 coworker's, and it was false.
 
 The note for exactly this already existed — "reached for X, which they
-don't have — turn it on from their card in Settings → Roster" — and it
+don't have — turn it on from their card in Settings → Agents" — and it
 was sitting behind `if (!cleaned.trim())`, the empty-reply guard. So the
 office could tell the boss about a reach that came with NO words, and
 could not tell them about a reach that came wrapped in a claim of
@@ -50,7 +50,7 @@ note here would be a second sentence about one event, and the generic
 Verified live after the fix, same drive:
 
     _(Vera reached for File & shell access, which they don't have — turn
-      it on from their card in Settings → Roster, or @-mention a coworker
+      it on from their card in Settings → Agents, or @-mention a coworker
       who already has it.)_
 
 and, on a marker for a tool she DOES hold ([VAULT_NEW: …]), no note at
@@ -194,7 +194,7 @@ def main():
           [templates, '— one honest sentence PLUS a way forward; the honest '
            'half alone is what §7 exists to rule out'])
     check('...and the shut-door one points at the Roster',
-          templates and 'Settings → Roster' in templates[0],
+          templates and 'Settings → Agents' in templates[0],
           [templates[:1], '— this is the sentence a boss reads after being '
            'told a file was written that was not'])
 

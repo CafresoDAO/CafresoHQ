@@ -284,7 +284,7 @@ def main():
     # as if it were the first.
     coworker_note = rt[rt.index('function reachedForNote('):]
     coworker_note = coworker_note[:coworker_note.index('\n}\n') + 3]
-    reached = re.findall(r'reached for[^\n]{0,220}?Settings → Roster', coworker_note)
+    reached = re.findall(r'reached for[^\n]{0,220}?Settings → Agents', coworker_note)
     check('the unwired-tools hint points at where tools are ticked',
           len(reached) == 2,
           f'{len(reached)} of the coworker hint branches name Roster — which '

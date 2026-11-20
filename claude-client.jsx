@@ -1826,7 +1826,7 @@ async function localModelOptions() {
      front desk's auto-assigned card (modals/hire.jsx FRONT_DESK) — the
      model string is baked into that card and never touches this picker.
      So the boss could hire a new OpenRouter coworker but could not
-     REPOINT an existing one to it via Settings → Roster: the dropdown
+     REPOINT an existing one to it via Settings → Agents: the dropdown
      never offered it, silently, the same "absence with no explanation"
      class of gap the CONNECTIONS panel (modals/settings.jsx) exists to
      close on the OTHER side of this exact promise — telling someone to

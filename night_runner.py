@@ -263,7 +263,7 @@ def vault_not_granted_sentence(agent_tools):
                 'not file for someone it cannot look up. Re-pick the '
                 'coworker on this mission in Night Shift.')
     return ('this coworker was not granted your Library — tick "read your '
-            'Library" for them in Settings → Roster, or give the mission to '
+            'Library" for them in Settings → Agents, or give the mission to '
             'someone who has it.')
 
 
@@ -287,7 +287,7 @@ def vault_refused_sentence(status):
     # only the status reaches here — so it names the Roster, which is where
     # the grant lives either way.
     if status == NIGHT_VAULT_FORBIDDEN:
-        return 'this coworker is not allowed your Library — check Settings → Roster'
+        return 'this coworker is not allowed your Library — check Settings → Agents'
     return 'vault refused the write — check the note path'
 
 

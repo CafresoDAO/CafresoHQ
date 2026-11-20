@@ -279,7 +279,7 @@ const openPath = (p) => rec.opened.push(p);
           f'{one!r} — this is the first-run case: the free local hire the '
           'front desk offers comes with elevated:false')
     check('...and the boss is told where to change it',
-          'Settings' in one and 'Roster' in one, one)
+          'Settings' in one and 'Agents' in one, one)
     check('...in the singular',
           "is on this project" in one and "doesn't" in one, one)
 

@@ -11,7 +11,7 @@ other facts before it hands anything over.
 Measured 2026-08-16 by hiring Dax off the candidate shelf: shelf card said
 "Can work with your files and read your notes", coworker card said FILES
 VAULT DB. `db` is wired to nothing anywhere, `files` needs an elevation the
-hire flow had just switched off, and Settings → Roster — the door that same
+hire flow had just switched off, and Settings → Agents — the door that same
 tooltip names — shows neither.
 
 Guards, in order:
@@ -251,7 +251,7 @@ console.log(JSON.stringify(R));
         check('...and the dimmed chip names the door it needs',
               'Settings → Connections' in out['vaultOffUnlock'],
               out['vaultOffUnlock'] + ' — the row tooltip sends the boss to '
-              'Settings → Roster, which has no vault control on it')
+              'Settings → Agents, which has no vault control on it')
         check('...while a vault nobody has asked about is left off the card',
               out['vaultUnknownGranted'] == ['web'] and out['vaultUnknownLocked'] == [],
               f"{out['vaultUnknownGranted']} / {out['vaultUnknownLocked']} — "
