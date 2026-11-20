@@ -2763,6 +2763,19 @@ async function publishFile(path, size, opts = {}) {
    opts.tipJar = { agentId, agentName } embeds a tip widget for that agent's
    on-chain wallet (root index.html + entry file; opt out per publish). */
 async function publishSite(path, opts = {}) {
+  /* A web page saved in the Library (Sites/<name>.html) goes live the same
+     way the task board's own "go live" button does it: read from the
+     Library, published through the shell. That is the one path that has
+     always worked from the hosted office, so a coworker's PUBLISH_SITE uses
+     it whenever the page is a Library note. */
+  if (/\.html?$/i.test(path || '')) {
+    let inLibrary = false;
+    try { await vaultRead(path); inLibrary = true; } catch (_e) { inLibrary = false; }
+    if (inLibrary) {
+      const r = await sharePage(path, opts);
+      return { url: r.url, file: null, dir: '', mode: 'canister', skipped: [], tipNotes: r.tipNotes || [] };
+    }
+  }
   /* One file that is not a web page — a PDF, a Word document, a deck, an
      image — publishes as itself with a small share page in front of it.
      Decided by asking the office what the path is (a folder answers "that
@@ -2777,7 +2790,7 @@ async function publishSite(path, opts = {}) {
   const seg = _splitOsPath(dir).base || base.replace(/\.html?$/i, '') || 'site';
   const slug = String(opts.slug || seg).replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'site';
 
-  let url = null, mode = 'preview', skipped = [], tipNotes = [];
+  let url = null, mode = 'preview', skipped = [], tipNotes = [], reason = '';
   const chain = CafresoHQChain;
   if (chain && chain.isAvailable && chain.isAvailable()) {
     try {
@@ -2797,7 +2810,9 @@ async function publishSite(path, opts = {}) {
         url = res.url; mode = 'canister';
         skipped = (collected.skipped || []).concat(res.skipped || []);
       }
-    } catch (_e) { /* fall through to the preview link */ }
+    } catch (e) { reason = (e && e.message) || String(e); /* fall through to the preview link */ }
+  } else {
+    reason = 'this office is not open inside the Cafreso app that holds your identity';
   }
   if (!url) {
     const origin = _API_BASE || (typeof location !== 'undefined' ? location.origin : '');
@@ -2808,7 +2823,7 @@ async function publishSite(path, opts = {}) {
   const body = `[InternetShortcut]\r\nURL=${url}\r\n`;   // clickable on Windows; plain link elsewhere
   const file = new File([body], fname, { type: 'application/x-mswinurl' });
   await fsUpload(dir, [file]);
-  return { url, file: (dir ? dir + '/' : '') + fname, dir, mode, skipped, tipNotes };
+  return { url, file: (dir ? dir + '/' : '') + fname, dir, mode, skipped, tipNotes, reason };
 }
 
 /* Share a PAGE deliverable already filed in the cabinet (a .html vault note)

@@ -2431,7 +2431,10 @@ const TOOL_REGISTRY = {
       '  One file can be 2 MB at most. The boss gets a one-click approval; once stamped, it publishes and a\n' +
       '  clickable <name>.url lands beside it. NOTHING is public until they stamp it.\n' +
       '  When you have an HQ wallet, published pages automatically include a tip jar paying into it —\n' +
-      '  append " : tip=off" to publish without one (e.g. [PUBLISH_SITE: site/dist : tip=off]).',
+      '  append " : tip=off" to publish without one (e.g. [PUBLISH_SITE: site/dist : tip=off]).\n' +
+      '  For a one-page website: first save the full HTML in the Library with [VAULT_NEW: Sites/<name>.html],\n' +
+      '  then ask with [PUBLISH_SITE: Sites/<name>.html]. Never call a link "live" until the boss has stamped it\n' +
+      '  and the office has reported it shipped.',
     docShort: 'Ask the boss to publish a built site or one file — PDF, Word, PowerPoint, image (one stamp; tip jar on sites unless tip=off).',
     /* `ctx` for `meta`, same reason as WALLET_SEND below. The PUBLISH row in
        VISIT_WORDS already reads "Asked to publish" rather than "Published",
@@ -4428,6 +4431,11 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
     ceoTools.push(TOOL_REGISTRY.vault_search, TOOL_REGISTRY.vault_read,
                   TOOL_REGISTRY.vault_append, TOOL_REGISTRY.vault_new);
   }
+  /* The front desk can put a page live too. Before this the CEO in Direct
+     chat had no publish tool at all, so "make a site and post it" got a
+     preview link described as live, and only the task board's starter
+     button ever reached the real path. */
+  if (TOOL_REGISTRY.publish_site.requires()) ceoTools.push(TOOL_REGISTRY.publish_site);
   if ((agents || []).length) {
     ceoTools.push(TOOL_REGISTRY.dm_to, TOOL_REGISTRY.handoff_to);
     /* ASK_COWORKER for the front desk too (#430): "ask Kai what the date
