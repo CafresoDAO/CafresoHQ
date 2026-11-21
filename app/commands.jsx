@@ -3,6 +3,7 @@ import { whoCan, whoCanLine } from './agents.jsx';
 import { grantedTools } from './cast.jsx';
 import { HQ } from '../hq-runtime.jsx';
 import { CafresoHQUI } from '../ui.jsx';
+import { DEV_ONLY_VIEWS, isDevMode } from '../ui/primitives.jsx';
 const { useCommands } = CafresoHQUI;
 function AppGlobalCommands({
   /* `navigate`, not setActiveView. Every one of these eight entries used
@@ -32,7 +33,7 @@ function AppGlobalCommands({
   // when they aren't provided.
   onOpenInbox, onRetryFailed, messages = [],
 }) {
-  const cmds = [
+  const allCmds = [
     /* Switch view — one entry per nav item. */
     { id: 'nav.office',     label: 'Switch view: Office',    section: 'Navigation', icon: '🏢', run: () => navigate('visual') },
     { id: 'nav.tasks',      label: 'Switch view: Tasks',     section: 'Navigation', icon: '📋', run: () => navigate('tasks') },
@@ -267,6 +268,10 @@ function AppGlobalCommands({
       run: () => window.dispatchEvent(new CustomEvent('cafresohq:showGettingStarted'))
     },
   ];
+  /* Developer tools stay out of the palette too unless Developer mode is on
+     (ui/primitives.jsx DEV_ONLY_VIEWS) — same rule as the rail. */
+  const cmds = isDevMode() ? allCmds
+    : allCmds.filter(c => !DEV_ONLY_VIEWS.some(v => c.id === 'nav.' + v || c.id === 'win.open.' + v));
 
   useCommands(cmds, [
     activeView, night, railCollapsed, chatWinOpen, chatWindowMounted, anyBusy, density, theme,

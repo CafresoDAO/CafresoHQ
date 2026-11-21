@@ -13,7 +13,6 @@ name: build-and-push-image
 on:
   push:
     branches:
-      - merge/pages-cafresoai
       - master
   workflow_dispatch: {}
 
@@ -57,7 +56,6 @@ jobs:
           images: ${{ env.IMAGE }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/merge/pages-cafresoai' }}
             type=sha,prefix=sha-
             type=raw,value=ci-{{date 'YYYYMMDD'}}
 
