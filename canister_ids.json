@@ -2,6 +2,9 @@
   "cafresohq_keys": {
     "ic": "vhw7q-lqaaa-aaaab-agthq-cai"
   },
+  "cafresohq_mandates": {
+    "ic": "357yb-uyaaa-aaaap-an6xq-cai"
+  },
   "cafresohq_market": {
     "ic": "rliqj-gqaaa-aaaal-qxjuq-cai"
   },
@@ -10,5 +13,8 @@
   },
   "cafresohq_ui": {
     "ic": "vhoil-eyaaa-aaaal-qxc7q-cai"
+  },
+  "cf_factory": {
+    "ic": "zacwj-hqaaa-aaaap-an6ya-cai"
   }
 }
