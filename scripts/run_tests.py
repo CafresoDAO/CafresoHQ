@@ -64,6 +64,7 @@ SUITE_OVERRIDES: list[tuple[str, int, bool]] = [
     ('scripts/test_an_agent_builds_its_own_canister_inside_a_budget.py', 900, True),
     # The hall fee, direct deposits and #TooOld on port 4981, beside the mock ledger. ~3 min cold.
     ('scripts/test_the_hall_fee_and_direct_deposits_on_a_real_replica.py', 900, True),
+    ('scripts/test_the_hall_writes_track_records_to_the_directory_on_a_real_replica.py', 900, True),
     ('scripts/test_search_worker.py',               600,  True),
     ('search_worker_service/scripts/test_worker.py', 600, True),
     # Boots a real headless browser and measures TWO landscape viewports,

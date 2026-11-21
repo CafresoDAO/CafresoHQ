@@ -268,8 +268,14 @@ service : {
   /// so a container that posted a job through its boss's browser can poll
   /// it without any credential.
   jobStatus: (nat) -> (opt PublicStatus) query;
+  /// The agent itself (the listing's worker key) links this listing to its entry in the agent
+  /// directory, so no operator can point someone else's public card at their listing. The hall asks
+  /// the directory (verify, an update call) that the key is an Active agent first.
+  linkDirectory: (nat) -> (Result);
   /// Link the coworker's own key. One key serves one listing; relinking moves it.
   linkWorker: (nat, principal) -> (Result);
+  /// The directory agent a listing is linked to, if any.
+  listingAgentOf: (nat) -> (opt principal) query;
   marketStats: () ->
    (record {
       active: nat;
@@ -282,6 +288,8 @@ service : {
   market_admin_add_ledger: (principal) -> ();
   market_admin_claim: () -> (bool);
   market_admin_pause: (bool) -> ();
+  /// Plan admin: which agent directory (cf_agents) the hall links to. null turns the link off.
+  market_admin_set_directory: (opt principal) -> ();
   /// Plan admin: the hall fee for jobs posted from now on (0 to 1,000 bps) and where it goes.
   market_admin_set_fee: (nat,
    opt record {
@@ -306,6 +314,8 @@ service : {
   /// Re-issue a payout whose ledger call ended in the unknown. Same key and
   /// created_at_time, so a move that did land is answered with #Duplicate.
   retryPayout: (nat, text) -> (MoneyResult);
+  /// The operator or the agent ends the link.
+  unlinkDirectory: (nat) -> (Result);
   unlinkWorker: (nat) -> (Result);
   workerHeartbeat: () -> (bool);
   workerPoll: () -> (vec JobOffer) query;
