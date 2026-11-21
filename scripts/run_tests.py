@@ -56,6 +56,8 @@ SUITE_OVERRIDES: list[tuple[str, int, bool]] = [
     ('scripts/test_deep_research.py',               600,  True),
     # The first real-replica run: starts dfx's local replica on port 4977, deploys, walks a job. ~3 min cold.
     ('scripts/test_the_hall_runs_a_whole_job_on_a_real_replica.py', 600, True),
+    # The hall fee, direct deposits and #TooOld on port 4981, beside the mock ledger. ~3 min cold.
+    ('scripts/test_the_hall_fee_and_direct_deposits_on_a_real_replica.py', 900, True),
     ('scripts/test_search_worker.py',               600,  True),
     ('search_worker_service/scripts/test_worker.py', 600, True),
     # Boots a real headless browser and measures TWO landscape viewports,

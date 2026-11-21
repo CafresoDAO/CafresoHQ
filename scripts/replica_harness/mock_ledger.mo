@@ -69,7 +69,7 @@ actor MockLedger {
   // same spirit as `mint` — this canister is never deployed off a replica.
   var FEE : Nat = 10_000;
   var DECIMALS : Nat8 = 8;
-  let WINDOW_NS : Int = 24 * 3_600 * 1_000_000_000;   // the dedup window, like the ICP ledger
+  var WINDOW_NS : Int = 24 * 3_600 * 1_000_000_000;   // the dedup window, like the ICP ledger (tests may shorten it)
   let DRIFT_NS : Int = 60 * 1_000_000_000;            // permitted clock drift into the future
 
   let balances = HashMap.HashMap<Text, Nat>(64, Text.equal, Text.hash);
@@ -114,6 +114,9 @@ actor MockLedger {
   /// Harness only: restate the ledger's fee and decimals (e.g. ckBAT's
   /// 1e17 / 18). Call it before any money moves — it does not rewrite
   /// balances already minted at another scale.
+  /// Harness only: shorten the dedup window, so a test can age a created_at_time past it in seconds.
+  public shared func mock_set_window(secs : Nat) : async () { WINDOW_NS := secs * 1_000_000_000 };
+
   public shared func mock_set_shape(fee : Nat, decimals : Nat8) : async () {
     FEE := fee;
     DECIMALS := decimals;

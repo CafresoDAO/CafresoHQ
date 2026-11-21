@@ -145,8 +145,9 @@ def main():
     # ── caller keying ─────────────────────────────────────────────────────
     sigs = re.findall(r'public (?:shared|query)[^\n]*?func (\w+)\(([^)]*)\)', src)
     with_principal = sorted(n for n, args in sigs if re.search(r':\s*Principal\b', args))
-    check('only linkWorker and market_admin_add_ledger take a principal argument',
-          with_principal == ['linkWorker', 'market_admin_add_ledger'], with_principal)
+    # market_admin_set_fee names the treasury account (plan admin only, behind adminGate).
+    check('only linkWorker and the two plan-admin setters take a principal argument',
+          with_principal == ['linkWorker', 'market_admin_add_ledger', 'market_admin_set_fee'], with_principal)
     for name in ('postJob', 'fundJob', 'cancelJob', 'acceptDelivery', 'rejectDelivery', 'retryPayout',
                  'putListing', 'linkWorker', 'unlinkWorker'):
         b = body_of(src, f'func {name}(')
