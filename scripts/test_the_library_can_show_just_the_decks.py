@@ -61,7 +61,10 @@ def main():
     check('the active chip announces itself',
           'aria-pressed={kindFilter === id}' in vault)
     check('both tree mounts read the filtered list',
-          vault.count('<FolderTree files={kindFiles}') == 2
+          # phone: FolderTree; desktop: LibraryFolders + the LibraryFiles middle pane
+          vault.count('<FolderTree files={kindFiles}') == 1
+          and '<LibraryFolders files={kindFiles}' in vault
+          and '<LibraryFiles files={kindFiles}' in vault
           and '<FolderTree files={files}' not in vault,
           vault.count('<FolderTree files={kindFiles}'))
     check('both mounts carry the chip row',
