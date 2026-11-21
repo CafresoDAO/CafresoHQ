@@ -6547,6 +6547,58 @@ ${d.text}` : d.text,
     return () => window.removeEventListener('cafresohq:peerAsk', onAsk);
   }, []);
 
+  /* The on-chain approval inbox (docs/AGENT_ECONOMY_ON_ICP.md §4.3). Agents
+     — and headless offices like Claude's — post requests to cafresohq_state;
+     the pending ones join the same ApprovalTray as every other ask. Stamping
+     one records the boss's answer on-chain (decideRequest) and executes
+     nothing: a send or deploy it describes is still signed separately. The
+     summary and payload are written by an agent, so they are shown through
+     the same consent helpers as a tool call (bidi-escaped title, verbatim
+     payload). Only when framed by a shell that holds an identity. */
+  useEffectA(() => {
+    let stopped = false;
+    let timer = null;
+    const poll = async () => {
+      if (stopped) return;
+      try {
+        if (CafresoHQChain.isAvailable()) {
+          const reqs = await CafresoHQChain.inbox.list('pending');
+          if (!stopped) {
+            const mergeInbox = (prev) => {
+              const live = new Set(reqs.map(r => String(r.id)));
+              const have = new Set(prev.filter(p => p.inboxId).map(p => p.inboxId));
+              const kept = prev.filter(p => !p.inboxId || live.has(p.inboxId));
+              const fresh = reqs.filter(r => !have.has(String(r.id))).map(r => {
+                let parsed = null;
+                try { parsed = r.payload ? JSON.parse(r.payload) : null; } catch (_e) { parsed = null; }
+                const owner = agentsRef.current.find(a => a.id === r.agentId);
+                return {
+                  id: HQ.uid('inb'),
+                  inboxId: String(r.id),
+                  agentId: owner ? owner.id : undefined,
+                  title: approvalTitle(String(r.kind || 'request'), r.summary, null),
+                  by: owner ? owner.name : String(r.agentId || 'a coworker'),
+                  kind: 'inbox · ' + String(r.kind || 'request'),
+                  elevated: r.kind === 'send' || r.kind === 'deploy' || r.kind === 'upgrade',
+                  external: true,
+                  detail: formatToolInput(parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+                    ? parsed : (r.payload ? { payload: r.payload } : {})),
+                };
+              });
+              if (!fresh.length && kept.length === prev.length) return prev;
+              if (fresh.length) say(`${fresh[0].by} is asking: ${fresh[0].title.slice(0, 30)}…`, 'STAMP');
+              return [...kept, ...fresh];
+            };
+            setApprovals(mergeInbox);
+          }
+        }
+      } catch (_e) { /* an older shell without chain:inbox:*, or offline */ }
+      if (!stopped) timer = setTimeout(poll, 30000);
+    };
+    poll();
+    return () => { stopped = true; clearTimeout(timer); };
+  }, []);
+
   /* External approvals: the local `claude` CLI's PreToolUse hook posts
      tool-use requests to /approvals/external; we poll the pending list and
      surface them in the same ApprovalTray. Decisions are forwarded to
@@ -6839,6 +6891,26 @@ ${d.text}` : d.text,
   /* Elevated approval handlers actually dispatch a follow-up to the agent
      so it can resume (or stand down) cleanly. Non-elevated approvals stay
      advisory — agent already finished its turn, no need to re-summon it. */
+  /* Record a stamp on an inbox request on-chain. The answer is the boss's;
+     nothing it describes is executed here. If the canister refuses (decided
+     elsewhere, expired), the receipt says so rather than claiming the stamp. */
+  const decideInbox = (ap, approve, rcId) => {
+    (async () => {
+      let recorded = false;
+      try { recorded = await CafresoHQChain.inbox.decide(Number(ap.inboxId), approve, ''); } catch (_e) { recorded = false; }
+      settleReceipt(rcId, recorded ? (approve ? 'approved' : 'declined') : 'unrecorded',
+        recorded
+          ? (approve
+              ? 'Your approval is recorded on-chain. Nothing was executed: anything it needs signed is still signed separately.'
+              : 'Your decline is recorded on-chain. The coworker who asked sees it the next time it checks.')
+          : 'The inbox did not record this (it was already decided, expired, or the shell could not reach it).');
+      if (!recorded) {
+        setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
+          text: `⚠ The inbox didn't record your answer to "${ap.title}" — it may have been decided elsewhere or expired.` }]);
+      }
+    })();
+  };
+
   const onApprove = (id) => {
     /* Claim the id SYNCHRONOUSLY, before anything else — see approvedIdsRef
        above. A second call for an id already claimed (this render's stale
@@ -6851,6 +6923,7 @@ ${d.text}` : d.text,
     setApprovals(prev => prev.filter(p => p.id !== id));
     clearApprovalNotice(id);
     const rcId = recordReceipt(ap, 'approved');
+    if (ap && ap.inboxId) decideInbox(ap, true, rcId);
     if (ap) {
       /* Office voice — the boss clicked Approve, they didn't type this.
          See the dropMsg note in onTaskDropOnAgent for the three readers
@@ -7142,6 +7215,7 @@ ${d.text}` : d.text,
     setApprovals(prev => prev.filter(p => p.id !== id));
     clearApprovalNotice(id);
     const rcId = recordReceipt(ap, 'rejected');
+    if (ap && ap.inboxId) decideInbox(ap, false, rcId);
     if (ap) {
       /* Office voice — same reasoning as the APPROVED line above. */
       setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ', text: `✕ REJECTED — ${ap.title}` }]);
