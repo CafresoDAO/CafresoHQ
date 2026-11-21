@@ -12816,3 +12816,6 @@ body.night .obs-graph-settings { color: #ddd; background: rgba(32,32,32,0.97); b
 body.night .obs-gs-row select, body.night .obs-gs-actions button { border-color: rgba(255,255,255,0.14); }
 body.night .obs-gs-row select option { background: #262626; }
 body.night .vault-graph-pane { background: #1e1e1e; }
+@media (prefers-reduced-motion: reduce) {
+  .obs-graph-btn, .obs-graph-search { transition: none; }
+}

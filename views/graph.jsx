@@ -45,6 +45,15 @@ const filterMatcher = (text) => (text ? (n) => nodeMatchesFilter(n, text) : '');
 
 const GRAPH_PREFS_KEY = 'cafresohq:graph:prefs';
 
+/* The last layout per source ('links' / 'concepts'), kept for this page load so a
+   rebuild — every saved note fires one — or a trip away from the Library and back
+   doesn't replay the layout. In memory only: positions are cheap to recompute. */
+const KEPT_LAYOUT = {};
+function rememberLayout(eng) {
+  if (!eng || !eng.__source || typeof eng.positions !== 'function') return;
+  try { KEPT_LAYOUT[eng.__source] = { positions: eng.positions(), camera: eng.cameraState() }; } catch (_) {}
+}
+
 function loadGraphPrefs() {
   try {
     const raw = localStorage.getItem(GRAPH_PREFS_KEY);
@@ -243,11 +252,17 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
   // (Re)mount the engine on fresh data, re-applying controls a remount drops.
   const mountData = (g) => {
     if (!containerRef.current || !window.CafresoGraphEngine) return null;
+    // A rebuild keeps the map where it was: every note that was on it goes back
+    // to its spot and only newcomers settle in (graph-engine.js _placeFrom).
+    rememberLayout(engineRef.current);
+    const kept = KEPT_LAYOUT[sourceRef.current] || null;
     try { engineRef.current && engineRef.current.destroy(); } catch (_) {}
     const eng = window.CafresoGraphEngine.mount(containerRef.current, buildData(g), {
+      positions: kept && kept.positions, camera: kept && kept.camera,
       dark: readDark(), colorMode: colorModeRef.current, colorFor, now: Date.now(),
       edgeMode: edgesHoverRef.current ? 'hover' : 'always',
     });
+    eng.__source = sourceRef.current;
     engineRef.current = eng;
     wireEngine(eng);
     if (filterRef.current) eng.setFilter(filterMatcher(filterRef.current));
@@ -355,6 +370,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
 
   // Destroy the engine on unmount.
   React.useEffect(() => () => {
+    rememberLayout(engineRef.current);
     try { engineRef.current && engineRef.current.destroy(); } catch (_) {}
     if (window.CafresoHQGraph) { try { delete window.CafresoHQGraph; } catch (_) {} }
   }, []);
