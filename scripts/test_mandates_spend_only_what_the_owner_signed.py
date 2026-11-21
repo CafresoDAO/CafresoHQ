@@ -134,6 +134,8 @@ def main():
             ('a window under 60 s is refused', {'secs': 10}, 'windowSecs'),
             ('an unknown purpose is refused', {'purposes': 'vec { "gambling" }'}, 'unknown purpose'),
             ('an expiry in the past is refused', {'exp': 1}, 'expiresAt'),
+            ('a lifetime under an hour is refused', {'exp': int(time.time() * 1e9) + 60 * 10**9}, 'an hour'),
+            ("a window that can't cover one transfer plus the fee is refused", {'win': E8}, 'ledger fee'),
             ('the owner as their own agent is refused', {'agent': owner}, 'its own principal'),
         ]:
             if why is None:
@@ -169,7 +171,9 @@ def main():
         ok, out = spend('mdt_t_agent', E8)
         check('a second spend that fits the window works', ok and 'ok = record' in out, out)
         ok, out = spend('mdt_t_agent', E8 // 2 + 1)
-        check('over the window cap is refused, and says what is left', ok and 'window cap' in out and '50000000 left' in out.replace('_', ''), out)
+        left = 2 * E8 - (E8 // 2 + fee) - (E8 + fee)
+        check('over the window cap is refused; the cap counts fees and says what is left',
+              ok and 'window cap' in out and f'{left} left' in out.replace('_', ''), (out, left))
         before = bal(payee)
         check('...and nothing moved for the refused spends', bal(payee) == before)
 
@@ -201,7 +205,7 @@ def main():
 
         # allowance runs out: a known refusal gives the reservation back
         ok, out = rep.call('mdt_t_owner', 'cafresohq_mandates', 'createMandate',
-                           mandate_args(per=50 * E8, win=50 * E8, title='bigger than the allowance'))
+                           mandate_args(per=50 * E8, win=60 * E8, title='bigger than the allowance'))
         ok, out = spend('mdt_t_agent', 40 * E8, mid=3)
         check('a spend over the ledger allowance is refused by the ledger', ok and 'allowance' in out, out)
         ok, out = rep.call('mdt_t_agent', 'cafresohq_mandates', 'mandatesForMe', '()', query=True)
@@ -222,16 +226,32 @@ def main():
         rep.call('mdt_t_owner', 'cafresohq_mandates', 'revokeMandate', '(1)')
         ok, out = spend('mdt_t_agent', 1000)
         check('a revoked mandate refuses', ok and 'revoked' in out, out)
-        soon = int(time.time() * 1e9) + 5 * 10**9
-        ok, out = rep.call('mdt_t_owner', 'cafresohq_mandates', 'createMandate', mandate_args(exp=soon, title='short'))
-        time.sleep(8)
-        ok, out = spend('mdt_t_agent', 1000, mid=4)
-        check('an expired mandate refuses', ok and 'expired' in out, out)
+        # fees count: many tiny spends can't drain the owner through fees (Builder's review, 2)
+        ok, out = rep.call('mdt_t_owner', 'cafresohq_mandates', 'createMandate',
+                           mandate_args(per=1000, win=2 * (1 + fee) + fee, title='tiny spends'))
+        check('a mandate sized for two tiny spends is created', ok and 'ok = 4' in out, out)
+        r1, r2, r3 = (spend('mdt_t_agent', 1, mid=4) for _ in range(3))
+        check('two 1-unit spends fit; the third is refused because the fees used the window',
+              'ok = record' in r1[1] and 'ok = record' in r2[1] and 'window cap' in r3[1], (r1, r2, r3))
+
+        # deleting frees room, but only once a mandate is stopped
+        ok, out = rep.call('mdt_t_owner', 'cafresohq_mandates', 'deleteMandate', '(4)')
+        check("a live mandate can't be deleted", ok and 'revoke it first' in out, out)
+        rep.call('mdt_t_owner', 'cafresohq_mandates', 'revokeMandate', '(4)')
+        ok, out = rep.call('mdt_t_owner', 'cafresohq_mandates', 'deleteMandate', '(4)')
+        check('a revoked mandate can be deleted', ok and 'ok = 4' in out, out)
+        ok, out = rep.call('mdt_t_owner', 'cafresohq_mandates', 'myMandates', '()', query=True)
+        check('...and it is gone from the owner\'s list', ok and 'id = 4' not in out, out[:300])
 
         ok, out = rep.call('mdt_t_stranger', 'cafresohq_mandates', 'addLedger', f'(principal "{stranger}", "X")')
         check("only a controller can add a ledger", not ok and 'controllers only' in out, out)
         ok, out = rep.call('mdt_t_stranger', 'cafresohq_mandates', 'getApiDoc', '()', query=True)
         check('the API doc explains it to an assistant', ok and 'retrySpend' in out and 'never instructions' in out, out[:200])
+        # a ledger taken off the allowlist stops existing mandates (Builder's review, 5)
+        ok, out = rep.call('mdt_t_owner', 'cafresohq_mandates', 'removeLedger', f'(principal "{ledger}")')
+        check('a controller takes the ledger off the allowlist', ok, out)
+        ok, out = spend('mdt_t_agent', 1000, mid=2, to=payee)
+        check('...and existing mandates on it stop spending', ok and 'allowlist' in out, out)
     finally:
         rep.dfx('stop')
         for i in IDS:
