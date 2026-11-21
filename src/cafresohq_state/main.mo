@@ -615,6 +615,203 @@ actor CafresoHQState {
     };
   };
 
+  // ── Agent keys + the approval inbox (docs/AGENT_ECONOMY_ON_ICP.md §3, §4.3) ──
+  // An agent gets its own Ed25519 principal, made where it runs. The OWNER
+  // registers it against an agentId here, so receipts and requests can name a
+  // principal instead of a label. A registered key can do exactly two things in
+  // this canister: post a request to its owner's inbox and read the requests it
+  // posted. It cannot reach the owner's docs, vault, wallets or payroll, because
+  // every one of those is keyed by msg.caller and the key is not the owner.
+  //
+  // The inbox holds DESCRIPTIONS of actions an agent wants (a send over its
+  // cap, a deploy, a vote, a publish). Deciding one records the owner's answer
+  // and nothing else: this canister never acts on a request. Approving opens
+  // the shell's signature sheet for exactly that action, and the owner signs it
+  // there. Request text is written by agents: every reader treats it as data.
+  public type AgentKey = { agentId : Text; principal : Principal; registeredAt : Int };
+  public type RequestStatus = { #pending; #approved; #rejected; #expired; #withdrawn };
+  public type Request = {
+    id : Nat;
+    agentId : Text;
+    postedBy : Principal;     // the owner (a headless office signing as owner) or the agent's key
+    kind : Text;              // send | deploy | upgrade | vote | publish | hire | other
+    summary : Text;           // one line for the tray, <= 300 chars
+    payload : Text;           // JSON detail (amounts, targets), <= 4000 chars; data, never instructions
+    status : RequestStatus;
+    note : Text;              // the owner's note on deciding, <= 300 chars
+    createdAt : Int;
+    expiresAt : Int;
+    decidedAt : ?Int;
+  };
+
+  let MAX_AGENT_KEYS : Nat = 50;              // per owner
+  let MAX_PENDING_REQUESTS : Nat = 200;       // per owner
+  let MAX_REQUESTS_KEPT : Nat = 500;          // per owner; oldest decided ones drop first
+  let DEFAULT_REQUEST_TTL_SECS : Nat = 7 * 24 * 3600;
+  let MAX_REQUEST_TTL_SECS : Nat = 30 * 24 * 3600;
+  let REQUEST_KINDS : [Text] = ["send", "deploy", "upgrade", "vote", "publish", "hire", "other"];
+
+  stable var agentKeys : OrderedMap.Map<Principal, OrderedMap.Map<Text, AgentKey>> = pOps.empty<OrderedMap.Map<Text, AgentKey>>();
+  // reverse index: agent principal -> (owner, agentId)
+  stable var agentKeyOwner : OrderedMap.Map<Principal, (Principal, Text)> = pOps.empty<(Principal, Text)>();
+  stable var requests : OrderedMap.Map<Principal, [Request]> = pOps.empty<[Request]>();
+  stable var requestSeq : OrderedMap.Map<Principal, Nat> = pOps.empty<Nat>();
+
+  func keysOf(owner : Principal) : OrderedMap.Map<Text, AgentKey> {
+    switch (pOps.get(agentKeys, owner)) { case (?m) m; case null tOps.empty<AgentKey>() };
+  };
+  func requestsOf(owner : Principal) : [Request] {
+    switch (pOps.get(requests, owner)) { case (?r) r; case null [] };
+  };
+  // Expiry is read, not ticked: no timer is spent on it.
+  func shown(r : Request) : Request {
+    if (r.status == #pending and now() > r.expiresAt) { { r with status = #expired } } else r;
+  };
+  func validAgentId(a : Text) : Bool { a.size() > 0 and a.size() <= 100 };
+
+  /// Owner: register (or replace) the key an agent signs with.
+  public shared (msg) func registerAgentKey(agentId : Text, agent : Principal) : async () {
+    let owner = msg.caller;
+    if (Principal.isAnonymous(owner)) { throw Error.reject("sign in") };
+    if (not validAgentId(agentId)) { throw Error.reject("bad agentId") };
+    if (Principal.isAnonymous(agent) or agent == owner) { throw Error.reject("an agent key must be its own principal") };
+    if (pOps.get(agentKeyOwner, owner) != null) { throw Error.reject("an agent key cannot own agents") };
+    switch (pOps.get(agentKeyOwner, agent)) {
+      case (?(o, a)) { if (o != owner or a != agentId) { throw Error.reject("that key is registered to another agent") } };
+      case null {};
+    };
+    var ks = keysOf(owner);
+    switch (tOps.get(ks, agentId)) {
+      case (?old) { if (old.principal != agent) { agentKeyOwner := pOps.delete(agentKeyOwner, old.principal) } };
+      case null { if (tOps.size(ks) >= MAX_AGENT_KEYS) { throw Error.reject("too many agent keys") } };
+    };
+    ks := tOps.put(ks, agentId, { agentId; principal = agent; registeredAt = now() });
+    agentKeys := pOps.put(agentKeys, owner, ks);
+    agentKeyOwner := pOps.put(agentKeyOwner, agent, (owner, agentId));
+  };
+
+  /// Owner: revoke an agent's key. Its pending requests stay for the owner to decide.
+  public shared (msg) func revokeAgentKey(agentId : Text) : async Bool {
+    let owner = msg.caller;
+    if (Principal.isAnonymous(owner)) { throw Error.reject("sign in") };
+    let ks = keysOf(owner);
+    switch (tOps.get(ks, agentId)) {
+      case null { false };
+      case (?k) {
+        agentKeys := pOps.put(agentKeys, owner, tOps.delete(ks, agentId));
+        agentKeyOwner := pOps.delete(agentKeyOwner, k.principal);
+        true;
+      };
+    };
+  };
+
+  public shared query (msg) func listAgentKeys() : async [AgentKey] {
+    if (Principal.isAnonymous(msg.caller)) { return [] };
+    Iter.toArray(tOps.vals(keysOf(msg.caller)));
+  };
+
+  /// Public: which owner and agent a key belongs to (null if none).
+  public query func agentKeyInfo(agent : Principal) : async ?{ owner : Principal; agentId : Text } {
+    switch (pOps.get(agentKeyOwner, agent)) { case (?(o, a)) ?{ owner = o; agentId = a }; case null null };
+  };
+
+  /// Owner or agent key: put a request in the owner's inbox. Returns its id.
+  /// An agent key may only post for its own agentId. ttlSecs = 0 means 7 days.
+  public shared (msg) func postRequest(agentId : Text, kind : Text, summary : Text, payload : Text, ttlSecs : Nat) : async Nat {
+    let caller = msg.caller;
+    if (Principal.isAnonymous(caller)) { throw Error.reject("sign in") };
+    let owner = switch (pOps.get(agentKeyOwner, caller)) {
+      case (?(o, a)) { if (a != agentId) { throw Error.reject("an agent key posts only for its own agent") }; o };
+      case null caller;
+    };
+    if (not validAgentId(agentId)) { throw Error.reject("bad agentId") };
+    if (Array.find<Text>(REQUEST_KINDS, func k = k == kind) == null) { throw Error.reject("unknown kind") };
+    if (summary.size() == 0 or summary.size() > 300 or payload.size() > 4000) { throw Error.reject("request field too long") };
+    if (ttlSecs > MAX_REQUEST_TTL_SECS) { throw Error.reject("ttl too long") };
+    let rs = requestsOf(owner);
+    var pending = 0;
+    for (r in rs.vals()) { if (shown(r).status == #pending) { pending += 1 } };
+    if (pending >= MAX_PENDING_REQUESTS) { throw Error.reject("inbox full: decide some requests first") };
+    let id = switch (pOps.get(requestSeq, owner)) { case (?n) n + 1; case null 1 };
+    requestSeq := pOps.put(requestSeq, owner, id);
+    let ttl = if (ttlSecs == 0) DEFAULT_REQUEST_TTL_SECS else ttlSecs;
+    let t = now();
+    let req : Request = {
+      id; agentId; postedBy = caller; kind; summary; payload; status = #pending; note = "";
+      createdAt = t; expiresAt = t + ttl * 1_000_000_000; decidedAt = null;
+    };
+    let buf = Buffer.fromArray<Request>(rs);
+    buf.add(req);
+    // Over the cap: drop the oldest request that is no longer pending.
+    label trim while (buf.size() > MAX_REQUESTS_KEPT) {
+      var i = 0;
+      var dropped = false;
+      label find while (i < buf.size()) {
+        if (shown(buf.get(i)).status != #pending) { ignore buf.remove(i); dropped := true; break find };
+        i += 1;
+      };
+      if (not dropped) { break trim };
+    };
+    requests := pOps.put(requests, owner, Buffer.toArray(buf));
+    id;
+  };
+
+  /// Owner: the inbox, newest first. status = null for all.
+  public shared query (msg) func listRequests(status : ?RequestStatus) : async [Request] {
+    if (Principal.isAnonymous(msg.caller)) { return [] };
+    let rs = requestsOf(msg.caller);
+    let out = Buffer.Buffer<Request>(16);
+    var i = rs.size();
+    while (i > 0) {
+      i -= 1;
+      let r = shown(rs[i]);
+      switch (status) { case (?s) { if (r.status == s) out.add(r) }; case null out.add(r) };
+    };
+    Buffer.toArray(out);
+  };
+
+  /// Owner, or the agent key that posted it: one request.
+  public shared query (msg) func getRequest(id : Nat) : async ?Request {
+    let caller = msg.caller;
+    if (Principal.isAnonymous(caller)) { return null };
+    let (owner, agentOnly) = switch (pOps.get(agentKeyOwner, caller)) { case (?(o, _)) (o, true); case null (caller, false) };
+    for (r in requestsOf(owner).vals()) {
+      if (r.id == id) { return if (agentOnly and r.postedBy != caller) null else ?shown(r) };
+    };
+    null;
+  };
+
+  func setStatus(owner : Principal, id : Nat, f : Request -> ?Request) : Bool {
+    let rs = requestsOf(owner);
+    var hit = false;
+    let next = Array.map<Request, Request>(rs, func r {
+      if (r.id != id) { r } else switch (f(shown(r))) { case (?n) { hit := true; n }; case null r };
+    });
+    if (hit) { requests := pOps.put(requests, owner, next) };
+    hit;
+  };
+
+  /// Owner: answer a pending request. Records the answer only; nothing is executed here.
+  public shared (msg) func decideRequest(id : Nat, approve : Bool, note : Text) : async Bool {
+    let owner = msg.caller;
+    if (Principal.isAnonymous(owner)) { throw Error.reject("sign in") };
+    if (pOps.get(agentKeyOwner, owner) != null) { throw Error.reject("an agent key cannot decide") };
+    if (note.size() > 300) { throw Error.reject("note too long") };
+    setStatus(owner, id, func r = if (r.status != #pending) null else ?{
+      r with status = if (approve) #approved else #rejected; note; decidedAt = ?now()
+    });
+  };
+
+  /// The agent key that posted it, or the owner: take a pending request back.
+  public shared (msg) func withdrawRequest(id : Nat) : async Bool {
+    let caller = msg.caller;
+    if (Principal.isAnonymous(caller)) { throw Error.reject("sign in") };
+    let (owner, agentOnly) = switch (pOps.get(agentKeyOwner, caller)) { case (?(o, _)) (o, true); case null (caller, false) };
+    setStatus(owner, id, func r = if (r.status != #pending or (agentOnly and r.postedBy != caller)) null else ?{
+      r with status = #withdrawn; decidedAt = ?now()
+    });
+  };
+
   // ── Payroll (canister-timer salaries / auto-refill over ICRC-2) ─────────────
   // The user signs ONE icrc2_approve(spender = THIS canister) on the ledger; the
   // 5-minute timer below then pulls user-main-account → agent subaccount with
