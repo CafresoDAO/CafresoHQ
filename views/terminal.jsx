@@ -54,8 +54,19 @@ function EmbeddedTerminal({ project, cli, sessionId, visible, authMethod }) {
     } catch (_e) { doFlash('paste blocked — use Ctrl+V or grant clipboard access'); }
   };
 
+  /* xterm is an on-demand bundle (scripts/ui_manifest.py LAZY_VENDOR): most
+     bosses never open a terminal, so it is fetched the first time one is. */
+  const [xtermReady, setXtermReady] = React.useState(() => !!window.Terminal);
   React.useEffect(() => {
-    if (!containerRef.current || !project?.path) return;
+    if (xtermReady || !window.cafresoLoad) return;
+    let alive = true;
+    window.cafresoLoad('xterm').then(() => { if (alive) setXtermReady(true); },
+      () => { if (alive && containerRef.current) containerRef.current.textContent = 'The terminal could not load — check your connection and reopen it.'; });
+    return () => { alive = false; };
+  }, [xtermReady]);
+
+  React.useEffect(() => {
+    if (!containerRef.current || !project?.path || !xtermReady) return;
     const TermClass = window.Terminal;
     const FitClass  = window.FitAddon?.FitAddon ?? window.FitAddon;
     if (!TermClass || !FitClass) {
@@ -307,7 +318,7 @@ function EmbeddedTerminal({ project, cli, sessionId, visible, authMethod }) {
       try { term.dispose(); } catch (_) {}
       termRef.current = wsRef.current = fitRef.current = null;
     };
-  }, [project?.id, project?.path, cli]);
+  }, [project?.id, project?.path, cli, xtermReady]);
 
   React.useEffect(() => {
     if (visible && fitRef.current) {
