@@ -288,6 +288,9 @@ service : {
          owner: principal;
          subaccount: opt blob;
        }) -> ();
+  /// Plan admin: return surplus left in a CLOSED job's escrow (a third-party or double deposit) to
+  /// the boss. Only when nothing is owed from it any more; its own payout row, exactly once.
+  market_admin_sweep: (nat) -> (MoneyResult);
   myJobs: () -> (vec Job) query;
   myListings: () -> (vec Listing) query;
   /// Jobs on the caller's listings (as operator).
@@ -298,6 +301,8 @@ service : {
   putListing: (PutListingReq) -> (Result);
   rejectDelivery: (nat, text) -> (Result);
   resolveDispute: (nat, Ruling, text) -> (MoneyResult);
+  /// Send a hall cut that didn't go out (the worker was already paid). Boss, operator or plan admin.
+  retryCut: (nat) -> (MoneyResult);
   /// Re-issue a payout whose ledger call ended in the unknown. Same key and
   /// created_at_time, so a move that did land is answered with #Duplicate.
   retryPayout: (nat, text) -> (MoneyResult);

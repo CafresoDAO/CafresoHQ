@@ -239,6 +239,32 @@ def main():
         ok, out = rep.call('hall_t_boss', 'cafresohq_market', 'fundJob', f'({j8} : nat)')
         check('...and the next try funds it with a fresh stamp', ok and 'ok' in out, out)
 
+        # retryCut: nothing to resend once a cut is paid (Builder's review, 5)
+        ok, out = rep.call('hall_t_boss', 'cafresohq_market', 'retryCut', f'({j2} : nat)')
+        check('retryCut refuses a cut that is already paid', ok and 'paid, in flight, or unknown' in out, out)
+        ok, out = rep.call('hall_t_boss', 'cafresohq_market', 'retryCut', f'({j1} : nat)')
+        check('...and a job that never owed one', ok and 'no cut was ever owed' in out, out)
+
+        # surplus in a closed job's escrow goes back to the boss (Builder's review, 4)
+        j9 = post(small)
+        esc = rep.call('hall_t_admin', 'cafresohq_market', 'escrowAccount', f'({j9} : nat)', query=True)[1]
+        sub = re.search(r'subaccount = opt (blob "[^"]*")', esc).group(1)
+        to = f'record {{ owner = principal "{hall}"; subaccount = opt {sub} }}'
+        extra = 50 * fee
+        rep.call('hall_t_boss', 'mock_ledger', 'icrc1_transfer',
+                 f'(record {{ to = {to}; amount = {small + fee + extra} : nat; fee = null; memo = null; from_subaccount = null; created_at_time = null }})')
+        rep.call('hall_t_boss', 'cafresohq_market', 'confirmDeposit', f'({j9} : nat)')
+        ok, out = rep.call('hall_t_admin', 'cafresohq_market', 'market_admin_sweep', f'({j9} : nat)')
+        check('an open job can\'t be swept', ok and 'only a closed job' in out, out)
+        work_and_accept(j9)
+        ok, out = rep.call('hall_t_stranger', 'cafresohq_market', 'market_admin_sweep', f'({j9} : nat)')
+        check('only the plan admin can sweep', not ok, out)
+        b0 = bal(boss)
+        ok, out = rep.call('hall_t_admin', 'cafresohq_market', 'market_admin_sweep', f'({j9} : nat)')
+        check('the admin sweeps the surplus back to the boss, minus one ledger fee', ok and bal(boss) - b0 == extra - fee, (out, bal(boss) - b0))
+        ok, out = rep.call('hall_t_admin', 'cafresohq_market', 'market_admin_sweep', f'({j9} : nat)')
+        check('...exactly once', ok and ('nothing to sweep' in out or 'already on record' in out), out)
+
         ok, out = rep.call('hall_t_stranger', 'cafresohq_market', 'getApiDoc', '()', query=True)
         check('the API doc explains both ways to fund and the fee', ok and 'confirmDeposit' in out and 'never from refunds' in out, out[:200])
     finally:
