@@ -56,6 +56,10 @@ SUITE_OVERRIDES: list[tuple[str, int, bool]] = [
     ('scripts/test_deep_research.py',               600,  True),
     # The first real-replica run: starts dfx's local replica on port 4977, deploys, walks a job. ~3 min cold.
     ('scripts/test_the_hall_runs_a_whole_job_on_a_real_replica.py', 600, True),
+    # Deploys cafresohq_state to a local replica on port 4978 and walks the inbox and agent keys. ~3 min cold.
+    ('scripts/test_the_inbox_and_agent_keys_on_a_real_replica.py', 900, True),
+    # Mandates next to the mock ICRC-2 ledger on port 4979; waits out a 60 s window. ~4 min cold.
+    ('scripts/test_mandates_spend_only_what_the_owner_signed.py', 900, True),
     # cf_factory on port 4980: create, install, upgrade with a snapshot, roll back. ~3 min cold.
     ('scripts/test_an_agent_builds_its_own_canister_inside_a_budget.py', 900, True),
     ('scripts/test_search_worker.py',               600,  True),

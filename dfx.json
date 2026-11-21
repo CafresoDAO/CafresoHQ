@@ -35,6 +35,11 @@
         "output": "declarations/cafresohq_market"
       }
     },
+    "cafresohq_mandates": {
+      "//": "Mandates (docs/AGENT_ECONOMY_ON_ICP.md \u00a74.2): an owner's pre-approved, capped agent spending over ICRC-2. Not deployed; init arg lists the allowed ledgers.",
+      "type": "motoko",
+      "main": "src/cafresohq_mandates/main.mo"
+    },
     "cf_factory": {
       "//": "The canister factory (docs/AGENT_ECONOMY_ON_ICP.md \u00a76.1): agents create, upgrade (snapshot first) and roll back their own canisters inside an owner's cycles budget. Not deployed.",
       "type": "motoko",
