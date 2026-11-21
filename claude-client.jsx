@@ -1449,6 +1449,25 @@ function parseModelId(id) {
   return { provider: null, model: id };
 }
 
+/* The model that will actually answer. A coworker pinned to a brain that needs a browser key
+   (Claude via the Anthropic API, Gemini via the Google API) fails outright when no key is
+   connected — "No Anthropic API key", the run is lost, and the boss has to re-route by hand.
+   When the shared Cafreso GPU is available, the run goes there instead, and `note` says so
+   out loud (callers show it out of band). With a key connected, or no shared brain, nothing
+   changes. Callers must use the returned model for EVERYTHING, including the tool-call
+   format, because the shared brain is not the pinned one. */
+function effectiveModel(id) {
+  const { provider: pinned } = parseModelId(id);
+  const provider = pinned || _settings.provider;
+  const keyField = { anthropic: 'anthropicKey', google: 'googleKey' }[provider];
+  if (!keyField || _settings[keyField] || !(_managedBrain && _managedBrain.model)) return { model: id, note: '' };
+  const wanted = provider === 'anthropic' ? 'Claude (Anthropic API)' : 'Gemini (Google API)';
+  return {
+    model: 'hermes:' + (_settings.hermesModel || 'hermes-agent'),
+    note: `_(${wanted} isn't connected in this office, so this ran on the shared Cafreso GPU (${_managedBrain.model}) instead. Add a key in Settings → Connections to use ${wanted}.)_`,
+  };
+}
+
 async function stream(opts) {
   if (!opts.onToken) throw new Error('stream() requires onToken');
   const { provider: pinned, model: bareModel } = parseModelId(opts.model);
@@ -3239,7 +3258,7 @@ const CafresoHQClient = {
   probeManagedBrain, managedBrain, sharedBrainDirect,
   stream, listLMStudioModels, probe,
   listOllamaModels, lmStudioModelDetails, localRegistry, formatRegistry,
-  localModelOptions, parseModelId,
+  localModelOptions, parseModelId, effectiveModel,
   braveSearch, braveProbe,
   vaultStatus, vaultConfigure, vaultList, vaultRead, vaultWrite, vaultDelete, vaultRename, vaultSearch, vaultProbe,
   vaultDiscover, vaultGraph, vaultOpenInObsidian,

@@ -4434,6 +4434,10 @@ async function ceoStream(prompt, onToken, { chat, agents, system, model, tempera
     const pinned = (CafresoHQClient.getSettings() || {}).ceoModel;
     if (pinned && pinned !== 'inherit') model = pinned;
   }
+  {
+    const eff = CafresoHQClient.effectiveModel ? CafresoHQClient.effectiveModel(model) : { model, note: '' };
+    if (eff.note) { model = eff.model; if (onHint) onHint(eff.note); }
+  }
   const messages = chat
     ? chatToMessages(chat, { omitLastCeo: true })
     : [{ role: 'user', content: prompt }];
@@ -4758,6 +4762,13 @@ FILE-DELIVERY RULE: There is no Library wired up this session, so there is nowhe
         `Save the first note with [MEMORY_WRITE: <path>]…[/MEMORY_WRITE]. Suggested layout: decisions/<topic>.md, references/<thing>.md, preferences.md, work/<slug>.md. Persists across sessions. These are your OWN notes, not the boss's Projects — a file the boss asked you to build belongs in the project folder via [FILE_WRITE], not here.`;
     }
   } catch (_e) { /* vault not configured — skip the memory note */ }
+  /* Run on the brain that will really answer (see effectiveModel): a pinned brain with no key
+     falls back to the shared Cafreso GPU and says so, instead of failing the run. Done before
+     the tool format below is chosen, so it follows the real model. */
+  {
+    const eff = CafresoHQClient.effectiveModel ? CafresoHQClient.effectiveModel(agent.model) : { model: agent.model, note: '' };
+    if (eff.note) { agent = { ...agent, model: eff.model }; if (onHint) onHint(eff.note); }
+  }
   const useJson = agent.toolFormat === 'json' || (agent.toolFormat !== 'bracket' && supportsJsonToolFormat(agent.model));
   const toolSnippet = enabledTools.length ? (useJson ? toolsPromptSnippetJson(enabledTools) : toolsPromptSnippet(enabledTools)) : '';
   /* `orderedNote` sits AFTER `toolsNote` on purpose: it is a correction to
