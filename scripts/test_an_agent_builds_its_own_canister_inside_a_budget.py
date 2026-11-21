@@ -100,7 +100,7 @@ def main():
                                stdin=subprocess.DEVNULL, stdout=fh, stderr=subprocess.STDOUT, timeout=300)
         check('the replica starts', r.returncode == 0)
         r = rep.dfx('deploy', 'cf_factory', '--argument',
-                    f'(record {{ minCreateCycles = {T // 2} : nat; minUpgradeCycles = {T // 10} : nat }})',
+                    f'(record {{ minCreateCycles = {T // 2} : nat; minUpgradeCycles = {T // 10} : nat; reserveCycles = {T // 2} : nat; opFeeCycles = 1_000_000_000 : nat }})',
                     identity='fct_t_owner', timeout=600)
         check('cf_factory deploys', r.returncode == 0, r.stderr[-300:])
         if FAILS:
@@ -124,7 +124,7 @@ def main():
         ok, out = rep.call('fct_t_agent', 'cf_factory', 'createProject', f'(principal "{owner_acct}", "hello", {T} : nat)')
         check('the agent creates a canister with 1 T from the budget', ok and 'canisterId' in out, out)
         cid = (re.search(r'canisterId = principal "([^"]+)"', out) or [None, None])[1]
-        info = rep.dfx('canister', 'info', cid).stdout if cid else ''
+        info = rep.dfx('canister', 'info', cid, identity='fct_t_stranger', timeout=60).stdout if cid else ''
         check('...controlled by the owner and the factory, and nobody else',
               owner_acct in info and factory in info and agent not in info, info)
 
@@ -155,6 +155,9 @@ def main():
         check('...and a snapshot was taken first', ok and 'snapshotId = opt blob' in out, out[:400])
         direct('inc', update=True)
         check('v2 keeps working (3)', '3 : nat' in direct('get')[1], direct('get'))
+        ok, out = install('fct_t_agent', 'v2', 'upgrade')
+        check("a second upgrade waits until the last one is confirmed (the snapshot keeps the good version)",
+              ok and "isn't confirmed" in out, out)
 
         ok, out = rep.call('fct_t_agent', 'cf_factory', 'rollback', '(1 : nat)')
         check('the agent rolls back', ok and 'ok' in out, out)
@@ -178,6 +181,18 @@ def main():
         check("a paused budget stops the agent's upgrades", ok and 'paused' in out, out)
         ok, out = rep.call('fct_t_agent', 'cf_factory', 'topUp', f'(1 : nat, 1_000_000 : nat)')
         check('...and its top-ups', ok and 'paused' in out, out)
+        ok, out = rep.call('fct_t_agent', 'cf_factory', 'rollback', '(1 : nat)')
+        check('...and its rollbacks', ok and 'paused' in out, out)
+        ok, out = rep.call('fct_t_owner', 'cf_factory', 'rollback', '(1 : nat)', extra=('--wallet', wallet))
+        check('the owner can still roll back while the agent is paused', ok and 'ok' in out, out)
+        ok, out = rep.call('fct_t_owner', 'cf_factory', 'setBudget',
+                           f'(principal "{agent}", 1 : nat, 2 : nat, {far} : int)', extra=('--wallet', wallet))
+        ok, out = rep.call('fct_t_agent', 'cf_factory', 'createProject', f'(principal "{owner_acct}", "after", {T} : nat)')
+        check('a cap lowered below what is used refuses cleanly (no trap)', ok and 'over the budget: 0 cycles left' in out, out)
+        ok, out = rep.call('fct_t_stranger', 'cf_factory', 'factoryStatus', '()', query=True)
+        nums = {k: int(v.replace('_', '')) for k, v in re.findall(r'(\w+) = ([\d_]+) : nat', out)}
+        check('the factory holds at least what it owes owners plus its reserve, and kept its fees',
+              nums.get('cycles', 0) >= nums.get('owed', 1) + nums.get('reserve', 0) and nums.get('feesTaken', 0) > 0, nums)
         ok, out = rep.call('fct_t_stranger', 'cf_factory', 'unlockProject', '(1 : nat)')
         check("only the owner can clear a project's lock", ok and 'owner only' in out, out)
         ok, out = rep.call('fct_t_agent', 'cf_factory', 'getApiDoc', '()', query=True)
