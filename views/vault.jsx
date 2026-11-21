@@ -352,6 +352,127 @@ function FiledFilePanel({ path, size }) {
   );
 }
 
+/* ── The desktop Library's three panes, Obsidian-style ──────────────────────
+   Left: the folders only. Middle: what is in the chosen folder (or the open
+   note). Right: the graph. The folder list is derived from the file paths,
+   so a folder exists while it holds something, exactly as in the tree. */
+const _MOVE_T = 'application/x-library-path';   // same payload type FolderTree's drag uses
+const _dirOf = (p) => { const i = String(p || '').lastIndexOf('/'); return i < 0 ? '' : p.slice(0, i); };
+const _msOf = (mt) => (!mt ? 0 : mt > 1e12 ? mt : mt * 1000);
+function _whenLabel(mt) {
+  const ms = _msOf(mt);
+  if (!ms) return '';
+  const d = (Date.now() - ms) / 86400000;
+  if (d < 1 / 24) return 'just now';
+  if (d < 1) return Math.max(1, Math.round(d * 24)) + 'h ago';
+  if (d < 7) return Math.round(d) + 'd ago';
+  return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: d > 300 ? 'numeric' : undefined });
+}
+function _folderIndex(files) {
+  const dirs = new Map([['', { path: '', name: 'All notes', count: 0, kids: new Set() }]]);
+  for (const f of files) {
+    const parts = String(f.path || '').split('/').filter(Boolean);
+    dirs.get('').count++;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const p = parts.slice(0, i + 1).join('/');
+      if (!dirs.has(p)) dirs.set(p, { path: p, name: parts[i], count: 0, kids: new Set() });
+      dirs.get(p).count++;
+      dirs.get(i === 0 ? '' : parts.slice(0, i).join('/')).kids.add(p);
+    }
+  }
+  return dirs;
+}
+
+function LibraryFolders({ files, folder, onPick, expanded, setExpanded, onMove }) {
+  const dirs = useMV(() => _folderIndex(files), [files]);
+  const [over, setOver] = useSV(null);
+  const toggle = (p) => setExpanded(prev => { const n = new Set(prev); n.has(p) ? n.delete(p) : n.add(p); return n; });
+  const drop = (p) => onMove ? {
+    onDragOver: (e) => { if (![...(e.dataTransfer.types || [])].includes(_MOVE_T)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (over !== p) setOver(p); },
+    onDragLeave: () => { if (over === p) setOver(null); },
+    onDrop: (e) => { const src = e.dataTransfer.getData(_MOVE_T); setOver(null); if (!src || _dirOf(src) === p || (p + '/').startsWith(src + '/')) return; e.preventDefault(); onMove(src, p); },
+  } : {};
+  const row = (p, depth) => {
+    const d = dirs.get(p);
+    if (!d) return null;
+    const kids = [...d.kids].sort((a, b) => dirs.get(a).name.localeCompare(dirs.get(b).name));
+    const open = p === '' || expanded.has(p);
+    const pick = () => { onPick(p); if (p && kids.length && !expanded.has(p)) toggle(p); };
+    return (
+      <div key={p || '__root__'} role="none">
+        <div className={'lib-folder' + (folder === p ? ' active' : '') + (over === p ? ' drop' : '')}
+          role="treeitem" aria-selected={folder === p} aria-expanded={kids.length ? open : undefined} tabIndex={0}
+          style={{ paddingLeft: 10 + depth * 14 }} {...drop(p)}
+          onClick={pick} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } }}>
+          {p !== '' && (
+            <span className="lib-chev" aria-hidden="true"
+              onClick={(e) => { e.stopPropagation(); if (kids.length) toggle(p); }}>{kids.length ? (open ? '▾' : '▸') : ''}</span>
+          )}
+          <span className="lib-folder-name">{d.name}</span>
+          <span className="lib-count">{d.count}</span>
+        </div>
+        {open && kids.map(k => row(k, p === '' ? 0 : depth + 1))}
+      </div>
+    );
+  };
+  return <div className="lib-folders" role="tree" aria-label="Library folders">{row('', 0)}</div>;
+}
+
+function LibraryFiles({ files, folder, openPath, onOpen, onPickFolder, draggable }) {
+  const dirs = useMV(() => _folderIndex(files), [files]);
+  const d = dirs.get(folder) || dirs.get('');
+  const here = folder === ''
+    ? files
+    : files.filter(f => _dirOf(f.path) === folder);
+  const list = [...here].sort((a, b) => _msOf(b.mtime) - _msOf(a.mtime));
+  const subs = folder === '' ? [] : [...(d ? d.kids : [])].sort();
+  const crumbs = folder ? folder.split('/') : [];
+  return (
+    <div className="lib-files">
+      <div className="lib-files-head">
+        <div className="lib-crumbs">
+          <span className="lib-crumb" role="button" tabIndex={0} onClick={() => onPickFolder('')} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPickFolder(''); } }}>Library</span>
+          {crumbs.map((c, i) => (
+            <React.Fragment key={i}>
+              <span className="lib-crumb-sep">/</span>
+              <span className="lib-crumb" role="button" tabIndex={0} onClick={() => onPickFolder(crumbs.slice(0, i + 1).join('/'))} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPickFolder(crumbs.slice(0, i + 1).join('/')); } }}>{c}</span>
+            </React.Fragment>
+          ))}
+        </div>
+        <span className="lib-files-count">{list.length} {list.length === 1 ? 'file' : 'files'}{folder === '' ? ', newest first' : ''}</span>
+      </div>
+      <div className="lib-files-list">
+        {subs.map(s => (
+          <div key={s} className="lib-file lib-subfolder" role="button" tabIndex={0}
+            onClick={() => onPickFolder(s)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPickFolder(s); } }}>
+            <span className="lib-file-icon" aria-hidden="true">▸</span>
+            <span className="lib-file-title">{s.split('/').pop()}</span>
+            <span className="lib-file-meta">{(dirs.get(s) || {}).count || 0} inside</span>
+          </div>
+        ))}
+        {list.map(f => {
+          const name = f.path.split('/').pop();
+          const ext = (name.match(/\.([A-Za-z0-9]+)$/) || [])[1] || '';
+          const title = f.title || name.replace(/\.md$/i, '');
+          return (
+            <div key={f.path} className={'lib-file' + (openPath === f.path ? ' active' : '')} role="button" tabIndex={0}
+              draggable={!!draggable}
+              onDragStart={draggable ? (e) => { e.dataTransfer.setData(_MOVE_T, f.path); e.dataTransfer.effectAllowed = 'move'; } : undefined}
+              onClick={() => onOpen(f.path)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(f.path); } }}>
+              <span className="lib-file-title">{title}</span>
+              {ext && !/^md$/i.test(ext) && <span className="tree-tag">{ext.toUpperCase()}</span>}
+              {_isFreshMs(f.mtime) && <span className="lib-fresh" title="Updated in the last day" aria-label="Updated in the last day">●</span>}
+              <span className="lib-file-meta">{folder === '' && _dirOf(f.path) ? _dirOf(f.path) + ' · ' : ''}{_whenLabel(f.mtime)}</span>
+            </div>
+          );
+        })}
+        {!list.length && !subs.length && <div className="lib-files-empty">Nothing in this folder yet.</div>}
+      </div>
+    </div>
+  );
+}
+const _isFreshMs = (mt) => { const ms = _msOf(mt); return !!ms && Date.now() - ms < 86400000; };
+
 function VaultView({ agents = null, onOpenSettings } = {}) {
   const [status, setStatus] = useSV(null);
   const [files, setFiles] = useSV([]);
@@ -364,6 +485,16 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
   const [expanded, setExpanded] = useSV(new Set());
   const [preview, setPreview] = useSV(true);
   const [graphMinimized, setGraphMinimized] = useSV(false);
+  /* The desktop's middle pane lists this folder ('' = every note, newest first). */
+  const [libFolder, setLibFolder] = useSV('');
+  /* Opening a note from the graph or a search shows its folder, so the
+     middle pane's back button leads somewhere that holds it. */
+  const notePath = openNote?.path;
+  React.useEffect(() => {
+    if (!notePath) return;
+    const d = _dirOf(notePath);
+    if (libFolder && d !== libFolder && !d.startsWith(libFolder + '/')) setLibFolder(d);
+  }, [notePath]);
   const _isMobileV = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
   /* Opens on FILES, not the graph. It used to default to 'graph' on any
      viewport under 768px, which is the phone AND a narrow window.
@@ -1697,12 +1828,16 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
   const hasNote = !!openNote;
   const showGraph = !graphMinimized;
 
-  // Grid columns: tree pane is fixed-ish, edit + graph share remaining space.
-  let gridCols;
-  if (hasNote && showGraph)        gridCols = '240px 1fr 1fr';
-  else if (hasNote && !showGraph)  gridCols = '240px 1fr';
-  else if (!hasNote && showGraph)  gridCols = '240px 1fr';
-  else                              gridCols = '240px 1fr';
+  /* Three panes, always, the way Obsidian lays out a vault: folders, then the
+     folder's files (or the open note), then the graph. Minimizing the graph
+     gives its width to the middle pane. */
+  const gridCols = showGraph
+    ? '232px minmax(340px, 1fr) minmax(320px, 1.1fr)'
+    : '232px 1fr';
+  const pickFolder = async (p) => {
+    if (openNote && !(await closeNote())) return;
+    setLibFolder(p);
+  };
 
   /* ---- Mobile: single-pane tab switcher ---- */
   if (_isMobileV) {
@@ -1886,14 +2021,27 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
         ) : (
           <>
             {showTools && toolsPanel}
-            {emptyTreeState || <FolderTree files={kindFiles} openPath={openNote?.path} onOpen={openByPath} expanded={expanded} setExpanded={setExpanded} onMove={_bridge ? null : moveByDrag} />}
+            {emptyTreeState || <LibraryFolders files={kindFiles} folder={libFolder} onPick={pickFolder} expanded={expanded} setExpanded={setExpanded} onMove={_bridge ? null : moveByDrag} />}
           </>
         )}
       </div>
 
+      {!hasNote && (
+        <div className={`vault-edit-pane lib-middle${!showGraph ? ' fullspan' : ''}`}>
+          <LibraryFiles files={kindFiles} folder={libFolder} openPath={null} onOpen={openByPath}
+            onPickFolder={pickFolder} draggable={!_bridge} />
+          {!showGraph && (
+            <button className="px-btn ghost lib-show-graph" onClick={() => setGraphMinimized(false)} title="Show graph">Show graph</button>
+          )}
+        </div>
+      )}
+
       {hasNote && (
         <div className={`vault-edit-pane${!showGraph ? ' fullspan' : ''}`}>
           <div className="vault-edit-head">
+            <button className="px-btn ghost lib-back" onClick={closeNote} title="Back to the folder (Esc)">
+              ‹ {libFolder ? libFolder.split('/').pop() : 'Library'}
+            </button>
             <div style={{fontSize:10,opacity:0.7,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}}>{openNote.path}</div>
             {!openNote.binary && (
               <label style={{fontSize:9,display:'flex',alignItems:'center',gap:4,whiteSpace:'nowrap'}}>
@@ -1934,19 +2082,11 @@ function VaultView({ agents = null, onOpenSettings } = {}) {
       )}
 
       {showGraph && (
-        <div className={`vault-graph-pane${!hasNote ? ' fullspan' : ''}`}>
+        <div className="vault-graph-pane">
           <GraphView embedded agents={agents} activePath={openNote?.path} onOpenNote={p => openGraphNode(p, openByPath)} onMinimize={() => setGraphMinimized(true)} />
         </div>
       )}
 
-      {graphMinimized && !hasNote && (
-        <div className="vault-graph-pane fullspan" role="button" tabIndex={0}
-          style={{display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}
-          onClick={() => setGraphMinimized(false)}
-          onKeyDown={e=>{ if (e.key==='Enter'||e.key===' ') { e.preventDefault(); setGraphMinimized(false); } }}>
-          <span style={{fontSize:11,opacity:0.5}}>🧠 LIBRARY GRAPH (click to show)</span>
-        </div>
-      )}
     </div>
   );
 }

@@ -50,43 +50,31 @@ def main():
         return 1
     src = GRAPH.read_text(encoding='utf-8')
 
-    toolbar_m = re.search(
-        # `ref: toolbarRef,` sits before style: since the panel-top fix —
-        # the toolbar's bottom edge is measured so the panel can start
-        # below it at any wrap count.
-        r"// Top toolbar\.[\s\S]*?React\.createElement\('div', \{ (?:ref: toolbarRef, )?style: \{([^}]*flexWrap: 'wrap'[^}]*)\}",
-        src)
-    check('the top toolbar block is found', bool(toolbar_m))
-
-    panel_m = re.search(
-        r"panelOpen && React\.createElement\('div', \{ style: \{([^}]*width: 246[^}]*)\}",
-        src)
-    check('the analytics panel block is found', bool(panel_m))
-
-    if toolbar_m and panel_m:
-        toolbar_style = toolbar_m.group(1)
-        panel_style = panel_m.group(1)
-
-        tz = re.search(r'zIndex:\s*(\d+)', toolbar_style)
-        pz = re.search(r'zIndex:\s*(\d+)', panel_style)
-        check('the toolbar declares an explicit zIndex',
-              bool(tz), 'no zIndex on the wrapping toolbar — it can be painted '
-              'under any later sibling by default stacking order')
-        check('the analytics panel declares an explicit zIndex',
-              bool(pz), 'no zIndex on the panel — relying on DOM-order '
-              'stacking is what let it cover the toolbar in the first place')
-        if tz and pz:
-            check("the toolbar's zIndex is higher than the panel's",
-                  int(tz.group(1)) > int(pz.group(1)),
-                  f"toolbar zIndex={tz.group(1)} <= panel zIndex={pz.group(1)} — "
-                  "wrapped toolbar controls would still lose to the panel")
-
-    # The toggle button itself must still be inside the toolbar (not moved
-    # or renamed away from what the fix relies on).
-    check("the analytics toggle button is inside the toolbar's wrapping row",
-          bool(re.search(r"setPanelOpen\(\(v\) => !v\)", src)),
+    # Since 2026-11-21 the always-open analysis card is gone; what the toggle
+    # opens is the Obsidian-style settings panel (.obs-graph-settings), and the
+    # toolbar is .obs-graph-bar, a single non-wrapping row. The invariant is
+    # the same: the panel must never sit on top of the button that closes it.
+    css = (ROOT / 'styles.css').read_text(encoding='utf-8')
+    bar = re.search(r'\.obs-graph-bar \{([^}]*)\}', css)
+    panel = re.search(r'\.obs-graph-settings \{([^}]*)\}', css)
+    btn = re.search(r'\.obs-graph-btn \{([^}]*)\}', css)
+    check('the toolbar rule is found', bool(bar))
+    check('the settings panel rule is found', bool(panel))
+    check('the toolbar button rule is found', bool(btn))
+    if bar and panel and btn:
+        num = lambda rx, txt: int(re.search(rx, txt).group(1)) if re.search(rx, txt) else None
+        bar_top, btn_h = num(r'top:\s*(\d+)px', bar.group(1)), num(r'height:\s*(\d+)px', btn.group(1))
+        panel_top = num(r'top:\s*(\d+)px', panel.group(1))
+        check('the toolbar does not wrap onto the panel', 'flex-wrap: wrap' not in bar.group(1))
+        check('the panel starts below the toolbar row, so it cannot cover the toggle',
+              None not in (bar_top, btn_h, panel_top) and panel_top >= bar_top + btn_h,
+              f'bar top {bar_top} + button {btn_h} vs panel top {panel_top}')
+    check('the old analysis card is gone', 'width: 246' not in src)
+    check('the settings toggle is inside the toolbar row',
+          bool(re.search(r"obs-graph-btn' \+ \(panelOpen[\s\S]{0,200}setPanelOpen\(\(v\) => !v\)", src)),
           'the toggle handler moved or was renamed — re-check the fix still '
           'targets the right element')
+    check('settings start closed', "useSV(persisted.drawerOpen === true)" in src)
 
     print()
     if FAILS:

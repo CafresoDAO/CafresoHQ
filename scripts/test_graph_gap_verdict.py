@@ -177,12 +177,16 @@ def main():
           f"got {got['bridge0']['topInfluential']} — if this ever becomes non-zero "
           'the heading check below stops testing anything')
     view = VIEW.read_text(encoding='utf-8')
-    check('the "Most influential" heading is conditional on having any',
-          re.search(r'topInfluential\s*\|\|\s*\[\]\)\.length\s*>\s*0', view) is not None,
+    # The analysis card that carried these headings left the graph on
+    # 2026-11-21 (Anthony: "remove the pop-up of details in the graph view").
+    # Either the card is gone, or any heading it has is still conditional.
+    gone = 'Most influential' not in view and 'Main topics' not in view
+    check('the "Most influential" heading is conditional on having any (or gone with the card)',
+          gone or re.search(r'topInfluential\s*\|\|\s*\[\]\)\.length\s*>\s*0', view) is not None,
           'views/graph.jsx: a bold heading over blank space reads as a surface '
           'that failed to load, not one with nothing true to say yet')
-    check('the "Main topics" heading is conditional too',
-          re.search(r'clusters\s*\|\|\s*\[\]\)\.length\s*>\s*0', view) is not None,
+    check('the "Main topics" heading is conditional too (or gone with the card)',
+          gone or re.search(r'clusters\s*\|\|\s*\[\]\)\.length\s*>\s*0', view) is not None,
           'views/graph.jsx: same heading-over-nothing on an empty vault')
 
     # ── An empty vault must still answer every question the panel asks ──

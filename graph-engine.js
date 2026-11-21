@@ -25,10 +25,58 @@ const COMMUNITY_COLORS = [
   '#E8A9A9', '#7DB5B5', '#C9B8E0', '#F0C674', '#A5C4A1', '#E0A47C',
   '#8FB7E0', '#D9A0C8', '#B7C97D', '#9C8FE0', '#E0C58F', '#7DC9B0',
 ];
-const DIM = '#2a2733';
-const DIM_LIGHT = '#d8d0c4';
-const EDGE_SIZE = 0.9;        // default neuron-link thickness (calm but visible)
-const EDGE_SIZE_FOCUS = 1.8;  // a focused node's own links
+const EDGE_SIZE = 0.6;        // Obsidian-thin links
+const EDGE_SIZE_FOCUS = 1.4;  // a focused node's own links
+
+/* Obsidian's graph look, one palette per theme: grey nodes on a flat ground,
+   hairline links, and one accent (the purple) for whatever has your attention.
+   Colours are solid, mixed against the ground: sigma's WebGL blending treats a
+   translucent colour as premultiplied, so rgba(255,255,255,0.13) drew as solid
+   white on the dark ground. */
+const THEMES = {
+  dark: {
+    bg: '#1e1e1e', node: '#9a9a9a', attachment: '#b9a46c', office: '#6f8aa3',
+    dim: '#353535', edge: '#3d3d3d', edgeDim: '#262626',
+    accent: '#a88bfa', label: '#dcdcdc', labelDim: '#8a8a8a',
+  },
+  light: {
+    bg: '#ffffff', node: '#8c8c8c', attachment: '#b08a35', office: '#5b7c99',
+    dim: '#e4e4e4', edge: '#d6d6d6', edgeDim: '#f3f3f3',
+    accent: '#7f6df2', label: '#222222', labelDim: '#9a9a9a',
+  },
+};
+const OFFICE_TYPES = new Set(['task', 'agent', 'decision', 'message-thread', 'mission', 'receipt', 'proposal', 'risk', 'memory']);
+
+/* Labels and hover in Obsidian's manner: plain text under the dot, no boxes.
+   (Sigma's default hover paints a white card behind the label.) */
+function drawLabel(context, data, settings) {
+  if (!data.label) return;
+  const size = settings.labelSize;
+  context.font = `${settings.labelWeight} ${size}px ${settings.labelFont}`;
+  context.fillStyle = data.labelColor || settings.labelColor.color;
+  context.textAlign = 'center';
+  context.textBaseline = 'top';
+  context.fillText(data.label, data.x, data.y + data.size + 3);
+  context.textAlign = 'left';
+  context.textBaseline = 'alphabetic';
+}
+function drawHover(context, data, settings) {
+  const size = settings.labelSize;
+  context.beginPath();
+  context.arc(data.x, data.y, data.size + 2.5, 0, Math.PI * 2);
+  context.strokeStyle = data.ringColor || '#a88bfa';
+  context.lineWidth = 1.5;
+  context.stroke();
+  if (!data.label) return;
+  // Same place and weight as drawLabel, so the label layer's copy sits exactly under it.
+  context.font = `${settings.labelWeight} ${size}px ${settings.labelFont}`;
+  context.fillStyle = data.labelColor || settings.labelColor.color;
+  context.textAlign = 'center';
+  context.textBaseline = 'top';
+  context.fillText(data.label, data.x, data.y + data.size + 3);
+  context.textAlign = 'left';
+  context.textBaseline = 'alphabetic';
+}
 
 function communityColor(c) {
   if (c == null) return '#9b93a8';
@@ -55,7 +103,8 @@ class GraphEngine {
     this.container = container;
     this.opts = opts;
     this.dark = opts.dark !== false;
-    this.colorMode = opts.colorMode || 'community';
+    this.colorMode = opts.colorMode || 'plain';
+    this.t = THEMES[this.dark ? 'dark' : 'light'];
     this.colorFor = opts.colorFor || null;       // (id, node) => hex  (tags/folder/type modes)
     this.edgeMode = opts.edgeMode || 'always';   // 'always' (calm/faint) | 'hover' (hidden until hover)
     this._holdMs = opts.holdMs != null ? opts.holdMs : 700;  // hold the seed circle, then bloom
@@ -70,20 +119,26 @@ class GraphEngine {
     this._listeners = {};
     this._raw = data;
 
+    try { container.style.background = this.t.bg; } catch (_) {}
     this.graph = new DirectedGraph({ allowSelfLoops: false });
     this._build(data);
+    this._sizeByLinks();
     seedPositions(this.graph);
 
     this.renderer = new Sigma(this.graph, container, {
       allowInvalidContainer: true,                 // tolerate transient 0-height; resize() repaints
       renderLabels: true,
-      labelDensity: 0.7,
-      labelGridCellSize: 70,
-      labelRenderedSizeThreshold: 6,
-      labelColor: { color: this.dark ? '#e9e2d4' : '#2b2620' },
-      labelFont: 'Inter, system-ui, sans-serif',
-      defaultNodeColor: '#9b93a8',
-      defaultEdgeColor: this.dark ? 'rgba(176,158,214,0.22)' : 'rgba(120,108,90,0.24)',
+      labelDensity: 0.55,
+      labelGridCellSize: 90,
+      labelRenderedSizeThreshold: 7,       // labels fade in as you zoom, like Obsidian
+      labelSize: 11,
+      labelWeight: '400',
+      labelColor: { color: this.t.label },
+      labelFont: 'Inter, system-ui, -apple-system, sans-serif',
+      defaultDrawNodeLabel: drawLabel,
+      defaultDrawNodeHover: drawHover,
+      defaultNodeColor: this.t.node,
+      defaultEdgeColor: this.t.edge,
       minCameraRatio: 0.05,
       maxCameraRatio: 14,
       zIndex: true,
@@ -132,6 +187,15 @@ class GraphEngine {
         });
       }
     }
+  }
+
+  /* Obsidian sizes a dot by how many links it has, so hubs read at a glance. */
+  _sizeByLinks() {
+    let max = 1;
+    this.graph.forEachNode((id) => { max = Math.max(max, this.graph.degree(id)); });
+    this.graph.forEachNode((id) => {
+      this.graph.setNodeAttribute(id, 'size', 2.6 + Math.sqrt(this.graph.degree(id) / max) * 7.5);
+    });
   }
 
   // ── Layout (ForceAtlas2 in a worker) ──────────────────────────────────
@@ -195,14 +259,9 @@ class GraphEngine {
     const a = this.analytics;
     if (!a) return;
     const attrs = a.nodeAttrs || {};
-    // Size by betweenness (sqrt for area perception); min floor so leaves stay visible.
-    let maxBc = 0;
-    for (const id in attrs) maxBc = Math.max(maxBc, attrs[id].betweenness || 0);
     this.graph.forEachNode((id) => {
       const na = attrs[id];
       const bc = na ? na.betweenness : 0;
-      const size = 3 + (maxBc > 0 ? Math.sqrt(bc / maxBc) * 13 : 0);
-      this.graph.setNodeAttribute(id, 'size', size);
       this.graph.setNodeAttribute(id, '_community', na ? na.community : 0);
       this.graph.setNodeAttribute(id, '_bc', bc);
     });
@@ -218,6 +277,11 @@ class GraphEngine {
   }
 
   _baseColor(id, d) {
+    if (this.colorMode === 'plain') {
+      if (d._type === 'artifact' || (d._node && d._node.isBinary)) return this.t.attachment;
+      if (OFFICE_TYPES.has(d._type)) return this.t.office;
+      return this.t.node;
+    }
     if (this.colorMode !== 'community' && this.colorFor) {
       const c = this.colorFor(id, d._node);
       if (c) return c;
@@ -226,7 +290,7 @@ class GraphEngine {
   }
 
   // Default neuron-link color — visible synapse web, still calmer than the nodes.
-  _edgeBase() { return this.dark ? 'rgba(176,158,214,0.22)' : 'rgba(120,108,90,0.24)'; }
+  _edgeBase() { return this.t.edge; }
 
   // ── Reducers (hover/selection/filter/local — no graph mutation) ───────
   _visible(id, d) {
@@ -267,15 +331,19 @@ class GraphEngine {
     const res = { ...data };
     if (!this._visible(id, data)) { res.hidden = true; return res; }
     const focus = this._focusId();
+    res.ringColor = this.t.accent;
+    // The note you have open keeps the accent, as Obsidian marks the active file.
+    if (id === this.active) { res.color = this.t.accent; res.forceLabel = true; res.zIndex = 2; }
     if (focus) {
       const nbrs = this._nbrCache || (this._nbrCache = this._neighborhood(focus));
       if (nbrs && !nbrs.has(id)) {
-        res.color = this.dark ? DIM : DIM_LIGHT;
+        res.color = this.t.dim;
         res.label = '';
         res.zIndex = 0;
       } else {
         res.zIndex = 1;
-        if (id === focus) { res.highlighted = true; res.forceLabel = true; }
+        res.forceLabel = true;             // the hovered note and its neighbours are named
+        if (id === focus) { res.highlighted = true; res.color = this.t.accent; res.zIndex = 2; }
       }
     }
     return res;
@@ -291,9 +359,9 @@ class GraphEngine {
     if (focus) {
       // Reveal only the focused node's edges — in their typed color, brighter + bolder.
       if (s === focus || t === focus) {
-        res.color = data._typeColor || (this.dark ? 'rgba(232,169,169,0.7)' : 'rgba(180,90,90,0.6)');
+        res.color = this.colorEdgesTyped && data._typeColor && data._typeColor !== this.t.edge ? data._typeColor : this.t.accent;
         res.size = EDGE_SIZE_FOCUS; res.zIndex = 1;
-      } else { res.hidden = true; }
+      } else { res.color = this.t.edgeDim; res.zIndex = 0; }
     } else if (this.edgeMode === 'hover') {
       res.hidden = true;                 // declutter: edges stay hidden until a node is hovered
     } else {
@@ -401,7 +469,17 @@ class GraphEngine {
     this._refreshReducers();
   }
 
-  setActivePath(path) { if (path) this.focusNode(path); }
+  setActivePath(path) {
+    // Marks and centres the open note without dimming the rest: only hover dims.
+    this.active = path || null;
+    if (path && this.graph.hasNode(path)) {
+      try {
+        const disp = this.renderer.getNodeDisplayData(path);
+        if (disp) this.renderer.getCamera().animate({ x: disp.x, y: disp.y }, { duration: 420 });
+      } catch (_) {}
+    }
+    this._refreshReducers();
+  }
   getAnalytics() { return this.analytics; }
   getGraph() { return this.graph; }
 
@@ -443,7 +521,14 @@ class GraphEngine {
   }
 
   resize() { try { this.renderer.refresh(); this.renderer.getCamera().setState(this.renderer.getCamera().getState()); } catch (_) {} }
-  setDark(dark) { this.dark = dark; this._recolor(); }
+  setDark(dark) {
+    this.dark = dark; this.t = THEMES[dark ? 'dark' : 'light'];
+    try { this.container.style.background = this.t.bg; } catch (_) {}
+    try { this.renderer.setSetting('labelColor', { color: this.t.label }); } catch (_) {}
+    this._recolor();
+  }
+  zoom(by) { try { const c = this.renderer.getCamera(); by > 0 ? c.animatedZoom({ duration: 200 }) : c.animatedUnzoom({ duration: 200 }); } catch (_) {} }
+  fit() { try { this.renderer.getCamera().animatedReset({ duration: 300 }); } catch (_) {} }
 
   destroy() {
     clearTimeout(this._fa2Timer);

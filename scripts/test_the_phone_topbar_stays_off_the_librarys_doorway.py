@@ -66,22 +66,18 @@ def main():
     check('the drawer still carries the night toggle',
           "night ? 'Day' : 'Night'" in office)
 
-    # ── 2. the analytics panel starts below the toolbar's REAL bottom ───
-    check("the panel's top is measured state, not a constant",
-          "top: panelTop, right: 10" in graph,
-          "— a hardcoded `top: 50` assumes a one-line toolbar; phones wrap "
-          'it to three')
+    # ── 2. the graph's controls stay one row on a phone ─────────────────
+    # The old analysis card measured the wrapping toolbar's bottom edge so it
+    # could start below it. Since 2026-11-21 the card is gone and the toolbar
+    # (.obs-graph-bar) is one row that cannot wrap: the search box gives way
+    # (max-width 50%) so five 28px buttons still fit a 375px phone, and the
+    # settings panel starts below that row (test_graph_analytics_toggle_clickable).
+    css = (ROOT / 'styles.css').read_text(encoding='utf-8')
+    bar = re.search(r'\.obs-graph-bar \{([^}]*)\}', css)
+    search = re.search(r'\.obs-graph-search \{([^}]*)\}', css)
+    check('the graph toolbar is one row', bool(bar) and 'flex-wrap: wrap' not in bar.group(1))
+    check('its search box gives way on a narrow screen', bool(search) and 'max-width: 50%' in search.group(1))
     check('no hardcoded top: 50 panel remains', 'top: 50,' not in graph)
-    check('the toolbar carries the ref being measured',
-          'ref: toolbarRef' in graph)
-    check('a ResizeObserver tracks the toolbar through wraps and resizes',
-          'new ResizeObserver(measure)' in graph
-          and 'ro.observe(el)' in graph and 'ro.disconnect()' in graph)
-    check('the measurement is bottom-edge + margin',
-          'el.offsetTop + el.offsetHeight + 6' in graph)
-    check('the default matches the one-line toolbar (desktop unchanged '
-          'before first measure)',
-          'setPanelTop] = useSV(50)' in graph)
 
     print()
     if FAILS:
