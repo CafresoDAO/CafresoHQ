@@ -173,9 +173,16 @@ def main():
     check('a claim is only for a funded job addressed to (or open to) this listing',
           'j.status != #funded' in body_of(src, 'func claimJob(') and 'covers(l.tags, j.tags)' in body_of(src, 'func claimJob('))
     code = strip_comments(src)
+    # The hall casts exactly two kinds of actor: an allowlisted ledger, and the agent directory
+    # (cf_agents) the plan admin set — never the vault.
     check('the vault is unreachable: nothing here imports or addresses cafresohq_state',
           'cafresohq_state' not in code and 'ydacz' not in code and 'vhw7q' not in code
-          and re.findall(r'actor\s*\(', code) == ['actor ('] and 'actor (Principal.toText(p)) : Ledger' in code)
+          and len(re.findall(r'actor\s*\(', code)) == 2
+          and 'actor (Principal.toText(p)) : Ledger' in code
+          and 'actor (Principal.toText(d)) : Directory' in code)
+    check('the directory is only the one the plan admin set',
+          'switch (directory) { case (?d) ?(actor (Principal.toText(d)) : Directory)' in code
+          and 'adminGate(msg.caller)' in body_of(src, 'func market_admin_set_directory('))
 
     # ── schema evolution ──────────────────────────────────────────────────
     check('Job fields are pinned (remove only; never add — use a side table)',
