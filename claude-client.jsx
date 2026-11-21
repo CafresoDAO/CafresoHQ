@@ -3197,6 +3197,23 @@ async function cloneRepo({ url, name, depth = 1 } = {}) {
       /* journal/* docs only (shell-enforced) — used for Gazette digests. */
       put(name, body) { return _req('chain:docs:put', { name, body }); },
     },
+    /* The approval inbox (docs/AGENT_ECONOMY_ON_ICP.md §4.3): requests an
+       agent posted for the boss (a send over its cap, a deploy, a vote…).
+       decide() records the boss's answer on-chain and executes NOTHING —
+       a signature, if the action needs one, still happens in the shell.
+       Older shells don't know these ops: callers catch and stay quiet. */
+    inbox: {
+      list(status) { return _req('chain:inbox:list', { status: status || null }).then(r => r.requests || []); },
+      get(id) { return _req('chain:inbox:get', { id }).then(r => r.request || null); },
+      decide(id, approve, note) { return _req('chain:inbox:decide', { id, approve: !!approve, note: note || '' }).then(r => !!r.ok); },
+      post(req) { return _req('chain:inbox:post', req).then(r => r.id); },
+    },
+    /* Agent keys (§3): the principal each agent signs with, registered by the boss. */
+    agentKeys: {
+      list() { return _req('chain:agentkeys:list', {}).then(r => r.keys || []); },
+      register(agentId, principal) { return _req('chain:agentkeys:register', { agentId, principal }); },
+      revoke(agentId) { return _req('chain:agentkeys:revoke', { agentId }).then(r => !!r.ok); },
+    },
     /* Work receipts — hash-anchored proof of agent work with a public verify
        URL. put() is best-effort from callers: never let it block a tool. */
     receipt: {
