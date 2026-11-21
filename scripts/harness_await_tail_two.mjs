@@ -271,6 +271,13 @@ function buildGraphRoom(w, opts = {}) {
        object — and the canvas is what this harness is about, so buildData is
        stubbed to hand the engine the graph it was given. */
     buildData: (g) => ({ nodes: g.nodes, edges: g.edges, _kind: g._kind }),
+    /* Module-level in graph.jsx since the Obsidian facelift (2026-11-21): a
+       rebuild hands the last layout to the next mount, and the day/night read
+       is live. Neither changes WHICH map lands, which is what this harness is
+       about, so they are inert here. */
+    KEPT_LAYOUT: {},
+    rememberLayout: () => {},
+    readDark: () => false,
   };
 
   const names = Object.keys(scope);
