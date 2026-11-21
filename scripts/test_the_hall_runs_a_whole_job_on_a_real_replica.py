@@ -148,9 +148,18 @@ class Replica:
         self.started_here = False
         self.log = Path(tempfile.gettempdir()) / f'cafresohq-replica-{os.getpid()}.log'
 
+    # Every deploy/call names its identity: other sessions on this machine switch dfx's default
+    # (one was a password-protected identity, which made `dfx deploy` wait on a prompt forever).
+    IDENTITY = 'cafresohq_hall_harness'
+
     def dfx(self, *args, timeout=240):
-        return subprocess.run(['dfx', *args], cwd=HARNESS, env=self.env, stdin=subprocess.DEVNULL,
+        extra = ['--identity', self.IDENTITY] if args and args[0] in ('deploy', 'canister') else []
+        return subprocess.run(['dfx', *args, *extra], cwd=HARNESS, env=self.env, stdin=subprocess.DEVNULL,
                               capture_output=True, text=True, timeout=timeout)
+
+    def ensure_identity(self):
+        subprocess.run(['dfx', 'identity', 'new', self.IDENTITY, '--storage-mode', 'plaintext'], cwd=HARNESS,
+                       env=self.env, stdin=subprocess.DEVNULL, capture_output=True, timeout=60)
 
     def start(self):
         if os.environ.get('CAFRESOHQ_REPLICA_REUSE') == '1' and replica_up():
@@ -174,6 +183,7 @@ class Replica:
             ids = self.ids()
             if all(ids):
                 return ids
+        self.ensure_identity()
         r = self.dfx('deploy')
         check('dfx deploy installs the hall and the mock ledger', r.returncode == 0 and 'Deployed canisters' in r.stdout + r.stderr,
               (r.stdout + r.stderr)[-800:])

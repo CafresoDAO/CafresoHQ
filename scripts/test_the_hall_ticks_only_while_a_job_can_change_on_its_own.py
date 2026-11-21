@@ -81,7 +81,9 @@ def main():
         b = body_of(src, header)
         check(f'{fn} re-arms the timer', 'rearmTend<system>()' in b, fn)
     fund = body_of(src, r'\n  public shared \(msg\) func fundJob\(')
-    check('fundJob re-arms on BOTH of its funded branches', fund.count('rearmTend<system>()') == 2, fund.count('rearmTend<system>()'))
+    # Three funded branches since the #TooOld hardening: #Ok, #Duplicate, and a #TooOld retry
+    # that finds the deposit already in escrow (docs/HALL_FEE_AND_OPEN_HIRING.md §3).
+    check('fundJob re-arms on EVERY one of its funded branches', fund.count('rearmTend<system>()') == 3, fund.count('rearmTend<system>()'))
     check('the public snag path re-arms after releaseClaim',
           re.search(r'releaseClaim\(j, reason\);\n    rearmTend<system>\(\);', src) is not None)
     check('the tick re-aims after it runs',

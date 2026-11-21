@@ -230,16 +230,38 @@ service : {
   browseListings: (nat, nat) -> (vec ListingCard) query;
   cancelJob: (nat, text) -> (MoneyResult);
   claimJob: (nat) -> (Result);
+  /// Rule on a disputed job. `#split(n)` pays the worker n% and refunds the rest.
+  /// Fund a posted job from a deposit someone already sent to its escrow subaccount (a mandate's
+  /// `spend(purpose = "hall-job")`, for example), instead of fundJob's transfer_from. Boss only.
+  /// Refused while a fundJob attempt is on record, so the two can never both take money.
+  confirmDeposit: (nat) -> (MoneyResult);
   cycle_balance: () -> (nat) query;
   deliverJob: (nat, text, text, text) -> (Result);
+  /// The escrow account a direct deposit for this job must go to.
+  escrowAccount: (nat) ->
+   (record {
+      owner: principal;
+      subaccount: opt blob;
+    }) query;
   failJob: (nat, text) -> (Result);
   /// Pull price + fee from the boss's account under an ICRC-2 allowance they
   /// signed for THIS canister. Safe to retry: the same job reuses the same
   /// created_at_time, so the ledger answers a replay with #Duplicate.
   fundJob: (nat) -> (MoneyResult);
+  getApiDoc: () -> (text) query;
   getJob: (nat) -> (opt Job) query;
   getListing: (nat) -> (opt ListingCard) query;
   getResume: (nat) -> (vec ResumeEntry) query;
+  hallFee: () ->
+   (record {
+      bps: nat;
+      treasury: opt record {
+                      owner: principal;
+                      subaccount: opt blob;
+                    };
+    }) query;
+  /// The fee rate fixed for one job when it was posted (0 = no fee).
+  jobHallFeeBps: (nat) -> (nat) query;
   jobPayouts: (nat) -> (vec Payout) query;
   jobProgress: (nat) -> (opt text) query;
   /// The one public read. No brief, no body: status and a one-line summary,
@@ -260,6 +282,15 @@ service : {
   market_admin_add_ledger: (principal) -> ();
   market_admin_claim: () -> (bool);
   market_admin_pause: (bool) -> ();
+  /// Plan admin: the hall fee for jobs posted from now on (0 to 1,000 bps) and where it goes.
+  market_admin_set_fee: (nat,
+   opt record {
+         owner: principal;
+         subaccount: opt blob;
+       }) -> ();
+  /// Plan admin: return surplus left in a CLOSED job's escrow (a third-party or double deposit) to
+  /// the boss. Only when nothing is owed from it any more; its own payout row, exactly once.
+  market_admin_sweep: (nat) -> (MoneyResult);
   myJobs: () -> (vec Job) query;
   myListings: () -> (vec Listing) query;
   /// Jobs on the caller's listings (as operator).
@@ -269,8 +300,9 @@ service : {
   progressJob: (nat, text) -> (Result);
   putListing: (PutListingReq) -> (Result);
   rejectDelivery: (nat, text) -> (Result);
-  /// Rule on a disputed job. `#split(n)` pays the worker n% and refunds the rest.
   resolveDispute: (nat, Ruling, text) -> (MoneyResult);
+  /// Send a hall cut that didn't go out (the worker was already paid). Boss, operator or plan admin.
+  retryCut: (nat) -> (MoneyResult);
   /// Re-issue a payout whose ledger call ended in the unknown. Same key and
   /// created_at_time, so a move that did land is answered with #Duplicate.
   retryPayout: (nat, text) -> (MoneyResult);
