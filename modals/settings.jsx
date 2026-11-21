@@ -200,6 +200,58 @@ const SELF_HOST_PROVIDERS = [
     where: 'aistudio.google.com/apikey', note: 'generous free tier' },
 ];
 
+/* The sign-in for a coworker's OWN brain, on that coworker's config (2026-11-21).
+   Anthony signed his hosted office into his Claude subscription by approving on claude.ai
+   and pasting back one code, and asked for exactly that flow for everyone. Before this, the
+   only places it lived were the hire shelf (which hides a coworker once hired) and
+   Settings → Connections (hidden in managed offices), so hiring Claude before finishing the
+   sign-in left nowhere to paste the code. This shows, under the Brain picker, whatever the
+   chosen brain still needs: install it, sign in with the subscription, or nothing more. */
+const SUBSCRIPTION_DRIVER = { claudecode: 'claude-code', cafresohq: 'claude-code', codex: 'codex' };
+const SUBSCRIPTION_NAME = { 'claude-code': 'your Claude subscription', codex: 'your ChatGPT subscription' };
+export function subscriptionDriverFor(model) {
+  const { provider } = CafresoHQClient.parseModelId(model) || {};
+  return SUBSCRIPTION_DRIVER[provider] || null;
+}
+function CoworkerBrainAccess({ model }) {
+  const id = subscriptionDriverFor(model);
+  const [det, setDet] = useStateM(null);   // null = checking · false = office didn't answer · object
+  const probe = useCallbackM(async () => {
+    if (!id) return;
+    try {
+      const r = await fetch((window._API_BASE || '') + '/agent/drivers?probe=1', { cache: 'no-store', credentials: 'include' });
+      const j = r.ok ? await r.json() : null;
+      const d = ((j && j.drivers) || []).find(x => x.id === id);
+      setDet(d ? (d.detect || {}) : false);
+    } catch (_e) { setDet(false); }
+  }, [id]);
+  useEffectM(() => { setDet(null); probe(); }, [probe]);
+  const signinCtl = useAgentSignin({ onSignedIn: probe });
+  const installCtl = useAgentInstall({ onInstalled: probe });
+  if (!id) return null;
+  let line;
+  if (det === null) line = 'checking this brain…';
+  else if (det === false) line = 'your office didn’t answer — is it still running?';
+  else if (!det.installed) line = 'not installed in this office yet — install it, then sign in';
+  else if (det.authenticated) line = `signed in with ${SUBSCRIPTION_NAME[id]} ✓`;
+  else if (det.auth === 'expired') line = 'its sign-in has expired — sign in again';
+  else line = `needs a sign-in with ${SUBSCRIPTION_NAME[id]} before its first task`;
+  return (
+    <div className="row-knob" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <span className="lbl">Brain sign-in</span>
+        <span className="sub">{line}</span>
+      </div>
+      {det && !det.installed && (
+        <AgentInstall id={id} broken={false} ctl={installCtl} onLookAgain={probe} where="settings" />
+      )}
+      {det && det.installed && !det.authenticated && (
+        <AgentSignin id={id} expired={det.auth === 'expired'} ctl={signinCtl} onLookAgain={probe} where="settings" />
+      )}
+    </div>
+  );
+}
+
 function ConnectionsPanel() {
   const [drivers, setDrivers] = useStateM(null);   // null = still probing
   const [err, setErr] = useStateM('');
@@ -1297,6 +1349,7 @@ function SettingsModal({ open, onClose, agents, onDismiss, onUpdateAgent, scanli
                       <span className="lbl">Brain</span>
                       <ModelPicker value={sel.model} onChange={v=>update({model:v})}/>
                     </div>
+                    <CoworkerBrainAccess model={sel.model} />
                     <div className="row-knob" style={{flexDirection:'column',alignItems:'stretch',gap:4}}>
                       <div className="row" style={{justifyContent:'space-between'}}><span className="lbl">Creativity</span><span className="sub">{sel.temperature?.toFixed(2)}</span></div>
                       <input type="range" className="pxslider" min="0" max="1" step="0.05" value={sel.temperature||0} onChange={e=>update({temperature:parseFloat(e.target.value)})}/>

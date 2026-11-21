@@ -61,10 +61,14 @@ class ClaudeCodeDriver(Driver):
         material is read or returned. False is a hint, not a verdict (macOS
         keychain-stored creds have no file to see)."""
         home = pathlib.Path.home()
+        # CLAUDE_CONFIG_DIR moves BOTH files into one folder (the fleet image points it at the
+        # /data volume so a subscription sign-in survives a rebuild); look where the CLI does.
+        cfg_dir = os.environ.get('CLAUDE_CONFIG_DIR', '').strip()
+        base = pathlib.Path(cfg_dir) if cfg_dir else home / '.claude'
         try:
-            if (home / '.claude' / '.credentials.json').is_file():
+            if (base / '.credentials.json').is_file():
                 return True, 'oauth'
-            cfg = home / '.claude.json'
+            cfg = (base / '.claude.json') if cfg_dir else (home / '.claude.json')
             if cfg.is_file():
                 try:
                     if '"oauthAccount"' in cfg.read_text(encoding='utf-8',

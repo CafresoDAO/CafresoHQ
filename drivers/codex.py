@@ -103,7 +103,7 @@ class CodexDriver(Driver):
     @staticmethod
     def detect_auth():
         try:
-            if (pathlib.Path.home() / '.codex' / 'auth.json').is_file():
+            if (pathlib.Path(os.environ.get('CODEX_HOME', '').strip() or (pathlib.Path.home() / '.codex')) / 'auth.json').is_file():
                 return True, 'oauth'
             if os.environ.get('OPENAI_API_KEY', '').strip():
                 return True, 'api-key'
