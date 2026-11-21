@@ -209,7 +209,10 @@ def main():
 
     # ── 4. the row says "1 item", not "1 items" ─────────────────────────
     lab = run_label()
-    check('the panel\'s own count label was liftable', lab is not None,
+    # The per-topic list (and its "N items" label) left the graph with the
+    # analysis card on 2026-11-21; the worker's shares are still checked above.
+    card_gone = 'Main topics' not in VIEW.read_text(encoding='utf-8')
+    check('the panel\'s own count label was liftable (or gone with the card)', card_gone or lab is not None,
           'views/graph.jsx — the expression moved; re-point the lift rather '
           'than dropping the check')
     if lab:

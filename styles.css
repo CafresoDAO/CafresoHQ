@@ -12722,3 +12722,100 @@ body.night .modal-head, body.night .modal-foot { background: #2e2840; }
   .msg.user .bubble { margin-left: 12%; }
   .msg.ceo .bubble, .msg.agent .bubble { margin-right: 6%; }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Library, three panes (Obsidian layout): folders │ files or note │ graph.
+   ───────────────────────────────────────────────────────────────────────── */
+.lib-folders { overflow-y: auto; flex: 1; padding: 6px 0 12px; font: 13px/1.35 Inter, system-ui, sans-serif; color: var(--ink); }
+.lib-folder {
+  display: flex; align-items: center; gap: 6px; padding: 5px 10px; margin: 1px 6px;
+  border-radius: 6px; cursor: pointer; user-select: none; white-space: nowrap;
+}
+.lib-folder:hover { background: rgba(127, 109, 242, 0.10); }
+.lib-folder.active { background: rgba(127, 109, 242, 0.18); font-weight: 600; }
+.lib-folder.drop { outline: 2px dashed #7f6df2; outline-offset: -2px; }
+.lib-folder:focus-visible, .lib-file:focus-visible { outline: 2px solid #7f6df2; outline-offset: -2px; }
+.lib-chev { width: 12px; flex: 0 0 12px; font-size: 10px; opacity: 0.55; text-align: center; }
+.lib-folder-name { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.lib-count { font-size: 11px; opacity: 0.5; font-variant-numeric: tabular-nums; }
+
+.lib-middle { position: relative; }
+.lib-files { display: flex; flex-direction: column; min-height: 0; flex: 1; font-family: Inter, system-ui, sans-serif; }
+.lib-files-head {
+  display: flex; align-items: baseline; gap: 10px; padding: 12px 16px 10px;
+  border-bottom: 1px solid var(--frame-line, rgba(0,0,0,0.12));
+}
+.lib-crumbs { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lib-crumb { cursor: pointer; }
+.lib-crumb:hover { color: #7f6df2; }
+.lib-crumb-sep { margin: 0 6px; opacity: 0.4; font-weight: 400; }
+.lib-files-count { font-size: 11px; opacity: 0.55; white-space: nowrap; }
+.lib-files-list { overflow-y: auto; flex: 1; padding: 6px 8px 16px; }
+.lib-file {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px;
+  cursor: pointer; font-size: 13px; color: var(--ink);
+}
+.lib-file:hover { background: rgba(127, 109, 242, 0.08); }
+.lib-file.active { background: rgba(127, 109, 242, 0.18); }
+.lib-subfolder .lib-file-title { font-weight: 600; }
+.lib-file-icon { font-size: 10px; opacity: 0.55; width: 10px; }
+.lib-file-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-file-meta { font-size: 11px; opacity: 0.5; white-space: nowrap; max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
+.lib-fresh { font-size: 8px; color: #7f6df2; }
+.lib-files-empty { padding: 28px 16px; font-size: 13px; opacity: 0.55; text-align: center; }
+.lib-show-graph { position: absolute; top: 9px; right: 12px; font-size: 11px; }
+.lib-back { font-size: 11px; white-space: nowrap; max-width: 40%; overflow: hidden; text-overflow: ellipsis; }
+body.night .lib-folders, body.night .lib-file { color: #e6e1f0; }
+body.night .lib-folder:hover, body.night .lib-file:hover { background: rgba(167, 151, 255, 0.12); }
+body.night .lib-folder.active, body.night .lib-file.active { background: rgba(167, 151, 255, 0.22); }
+body.night .lib-files-head { border-bottom-color: rgba(255,255,255,0.08); }
+
+/* ── Graph view, Obsidian facelift ─────────────────────────────────────── */
+.obs-graph-bar {
+  position: absolute; top: 10px; left: 10px; right: 10px; z-index: 2;
+  display: flex; align-items: center; gap: 6px;
+}
+.obs-graph-search {
+  width: 200px; max-width: 50%; padding: 6px 10px; border-radius: 6px;
+  font: 12px Inter, system-ui, sans-serif; color: #222;
+  background: rgba(255,255,255,0.92); border: 1px solid rgba(0,0,0,0.12);
+}
+.obs-graph-search:focus { outline: none; border-color: #7f6df2; box-shadow: 0 0 0 2px rgba(127,109,242,0.25); }
+.obs-graph-btn {
+  width: 28px; height: 28px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center;
+  font: 14px/1 Inter, system-ui, sans-serif; cursor: pointer; padding: 0;
+  color: #555; background: rgba(255,255,255,0.9); border: 1px solid rgba(0,0,0,0.10);
+  transition: background 120ms ease, color 120ms ease;
+}
+.obs-graph-btn:hover, .obs-graph-btn.on { color: #7f6df2; background: #fff; }
+.obs-graph-btn:focus-visible { outline: 2px solid #7f6df2; outline-offset: 1px; }
+.obs-graph-settings {
+  position: absolute; top: 46px; right: 10px; z-index: 3; width: 236px;
+  padding: 6px 12px 12px; border-radius: 8px;
+  background: rgba(255,255,255,0.97); border: 1px solid rgba(0,0,0,0.10);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.14);
+  font: 12px Inter, system-ui, sans-serif; color: #333;
+}
+.obs-gs-head { margin: 10px 0 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.55; }
+.obs-gs-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 0; }
+.obs-gs-row select {
+  max-width: 140px; font: 12px Inter, system-ui, sans-serif; padding: 3px 6px; border-radius: 5px;
+  border: 1px solid rgba(0,0,0,0.14); background: transparent; color: inherit;
+}
+.obs-gs-actions { display: flex; flex-direction: column; gap: 6px; }
+.obs-gs-actions button {
+  text-align: left; padding: 6px 8px; border-radius: 5px; cursor: pointer; font: 12px Inter, system-ui, sans-serif;
+  border: 1px solid rgba(0,0,0,0.12); background: transparent; color: inherit;
+}
+.obs-gs-actions button:hover { border-color: #7f6df2; color: #7f6df2; }
+.obs-gs-foot { margin-top: 10px; font-size: 11px; opacity: 0.5; }
+body.night .obs-graph-search { color: #ddd; background: rgba(38,38,38,0.92); border-color: rgba(255,255,255,0.10); }
+body.night .obs-graph-btn { color: #bbb; background: rgba(38,38,38,0.92); border-color: rgba(255,255,255,0.10); }
+body.night .obs-graph-btn:hover, body.night .obs-graph-btn.on { color: #a88bfa; background: #2b2b2b; }
+body.night .obs-graph-settings { color: #ddd; background: rgba(32,32,32,0.97); border-color: rgba(255,255,255,0.10); }
+body.night .obs-gs-row select, body.night .obs-gs-actions button { border-color: rgba(255,255,255,0.14); }
+body.night .obs-gs-row select option { background: #262626; }
+body.night .vault-graph-pane { background: #1e1e1e; }
+@media (prefers-reduced-motion: reduce) {
+  .obs-graph-btn, .obs-graph-search { transition: none; }
+}

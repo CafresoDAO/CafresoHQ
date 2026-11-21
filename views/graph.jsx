@@ -45,6 +45,15 @@ const filterMatcher = (text) => (text ? (n) => nodeMatchesFilter(n, text) : '');
 
 const GRAPH_PREFS_KEY = 'cafresohq:graph:prefs';
 
+/* The last layout per source ('links' / 'concepts'), kept for this page load so a
+   rebuild — every saved note fires one — or a trip away from the Library and back
+   doesn't replay the layout. In memory only: positions are cheap to recompute. */
+const KEPT_LAYOUT = {};
+function rememberLayout(eng) {
+  if (!eng || !eng.__source || typeof eng.positions !== 'function') return;
+  try { KEPT_LAYOUT[eng.__source] = { positions: eng.positions(), camera: eng.cameraState() }; } catch (_) {}
+}
+
 function loadGraphPrefs() {
   try {
     const raw = localStorage.getItem(GRAPH_PREFS_KEY);
@@ -85,29 +94,16 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
   const persistedRef = React.useRef(null);
   if (persistedRef.current === null) persistedRef.current = loadGraphPrefs() || {};
   const persisted = persistedRef.current;
+  /* The Obsidian facelift (2026-11-21) starts everyone on the plain grey look
+     with the settings closed, once; after that their own choices stick. */
+  if (persisted.look !== 'obsidian') { persisted.look = 'obsidian'; persisted.colorMode = 'plain'; persisted.drawerOpen = false; }
 
   const [colorMode, setColorMode] = useSV(persisted.colorMode || 'community');
   const [localMode, setLocalMode] = useSV(persisted.localMode || 'global');
   const [filter, setFilter] = useSV('');
   const [analytics, setAnalytics] = useSV(null);
   const [loading, setLoading] = useSV(true);
-  const [panelOpen, setPanelOpen] = useSV(persisted.drawerOpen !== false);
-  /* The analytics panel's `top` used to be a hardcoded 50 — the height of
-     the toolbar when it fits on ONE line. On a phone the toolbar wraps to
-     three lines (~190px), and the panel painted straight through the
-     wrapped controls (zIndex kept them clickable, not readable). Track the
-     toolbar's real bottom edge instead of assuming its height. */
-  const toolbarRef = React.useRef(null);
-  const [panelTop, setPanelTop] = useSV(50);
-  React.useEffect(() => {
-    const el = toolbarRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const measure = () => setPanelTop(el.offsetTop + el.offsetHeight + 6);
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+  const [panelOpen, setPanelOpen] = useSV(persisted.drawerOpen === true);
   const [ctxMenu, setCtxMenu] = useSV(null); // { id, x, y }
   const [shareUrl, setShareUrl] = useSV(null);
   const [sharing, setSharing] = useSV(false);
@@ -154,7 +150,20 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
      (#404): claimed before the first suspend, re-checked after it. */
   const mountSeqRef = React.useRef(0);
 
-  const isDark = typeof document !== 'undefined' && document.body.classList.contains('night');
+  /* Follows the office's day/night switch live: the engine repaints its ground,
+     dots and labels without a rebuild. */
+  const readDark = () => typeof document !== 'undefined' && document.body.classList.contains('night');
+  const [isDark, setIsDark] = useSV(readDark);
+  React.useEffect(() => {
+    if (typeof MutationObserver === 'undefined') return;
+    const mo = new MutationObserver(() => {
+      const d = readDark();
+      setIsDark(d);
+      try { engineRef.current && engineRef.current.setDark(d); } catch (_) {}
+    });
+    mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    return () => mo.disconnect();
+  }, []);
   const titleFor = (id) => {
     const n = rawRef.current.byId[id];
     return (n && (n.title || n.label)) || String(id).split('/').pop().replace(/\.md$/, '');
@@ -243,11 +252,17 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
   // (Re)mount the engine on fresh data, re-applying controls a remount drops.
   const mountData = (g) => {
     if (!containerRef.current || !window.CafresoGraphEngine) return null;
+    // A rebuild keeps the map where it was: every note that was on it goes back
+    // to its spot and only newcomers settle in (graph-engine.js _placeFrom).
+    rememberLayout(engineRef.current);
+    const kept = KEPT_LAYOUT[sourceRef.current] || null;
     try { engineRef.current && engineRef.current.destroy(); } catch (_) {}
     const eng = window.CafresoGraphEngine.mount(containerRef.current, buildData(g), {
-      dark: isDark, colorMode: colorModeRef.current, colorFor, now: Date.now(),
+      positions: kept && kept.positions, camera: kept && kept.camera,
+      dark: readDark(), colorMode: colorModeRef.current, colorFor, now: Date.now(),
       edgeMode: edgesHoverRef.current ? 'hover' : 'always',
     });
+    eng.__source = sourceRef.current;
     engineRef.current = eng;
     wireEngine(eng);
     if (filterRef.current) eng.setFilter(filterMatcher(filterRef.current));
@@ -355,6 +370,7 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
 
   // Destroy the engine on unmount.
   React.useEffect(() => () => {
+    rememberLayout(engineRef.current);
     try { engineRef.current && engineRef.current.destroy(); } catch (_) {}
     if (window.CafresoHQGraph) { try { delete window.CafresoHQGraph; } catch (_) {} }
   }, []);
@@ -444,174 +460,71 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
        one yet, and points at the thing that would create one. */
     unformed: 'Not enough here to read a shape yet — link a few notes and this fills in.',
   };
-  const COLOR_MODES = [['community', 'Topics'], ['tags', 'Tags'], ['type', 'Type'], ['folder', 'Folder'], ['inlinks', 'Links'], ['modified', 'Recency']];
+  const COLOR_MODES = [['plain', 'Plain (Obsidian)'], ['community', 'Topics'], ['tags', 'Tags'], ['type', 'Type'], ['folder', 'Folder'], ['inlinks', 'Most linked'], ['modified', 'Recency']];
 
   const ctrlStyle = { background: 'rgba(20,18,12,0.55)', color: '#e9e2d4', border: '1px solid rgba(245,210,93,0.25)', borderRadius: 6, padding: '3px 7px', fontSize: 12, fontFamily: 'Inter, system-ui, sans-serif' };
 
-  return React.createElement('div', { style: { position: 'relative', width: '100%', height: '100%', minHeight: 0, overflow: 'hidden', background: isDark ? '#171310' : '#f4efe6' } },
+  return React.createElement('div', { style: { position: 'relative', width: '100%', height: '100%', minHeight: 0, overflow: 'hidden', background: isDark ? '#1e1e1e' : '#ffffff' } },
     // Sigma mounts here.
     React.createElement('div', { ref: containerRef, style: { position: 'absolute', inset: 0 } }),
 
     // Loading hint.
-    loading && React.createElement('div', { style: { position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#bdb3a0', font: '13px Inter, sans-serif', pointerEvents: 'none' } }, source === 'concepts' ? 'Building concept map…' : 'Loading graph…'),
+    loading && React.createElement('div', { style: { position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: isDark ? '#8a8a8a' : '#9a9a9a', font: '13px Inter, sans-serif', pointerEvents: 'none' } }, source === 'concepts' ? 'Building concept map…' : 'Loading graph…'),
 
-    // Top toolbar. zIndex above the analytics panel below: on a narrow
-    // viewport this row's ~10 controls (filter, two selects, four buttons,
-    // the analytics toggle, minimize) wrap onto a second line, and that
-    // line lands inside the panel's own top:50 territory. Without this the
-    // panel — which paints AFTER the toolbar in DOM order, so it wins
-    // default stacking — sits visually and functionally on top of the
-    // wrapped row. Confirmed live: `document.elementFromPoint()` at the
-    // "Hide analytics ›" button's own center returned the panel's content
-    // div, not the button, so the one control that closes the panel became
-    // permanently unclickable the moment it opened on an ordinary window
-    // width — not a rare narrow-viewport edge case, the default size this
-    // was driven at.
-    React.createElement('div', { ref: toolbarRef, style: { position: 'absolute', top: 10, left: 10, right: 10, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', pointerEvents: 'none', zIndex: 2 } },
+    /* Obsidian's graph chrome: a quiet search box top-left, a few round icon
+       buttons top-right, and the settings tucked behind the gear. The old
+       always-open "Graph analysis" card is gone: it covered a third of the map
+       and Anthony asked for it out (2026-11-21). */
+    React.createElement('div', { className: 'obs-graph-bar', style: { pointerEvents: 'none' } },
       React.createElement('input', {
-        value: filter, placeholder: source === 'concepts' ? 'Filter concepts' : 'Filter  (tag:x  type:y  -term)',
+        className: 'obs-graph-search',
+        value: filter, placeholder: source === 'concepts' ? 'Search concepts…' : 'Search files…',
+        'aria-label': 'Filter the graph', title: 'Filter: words, tag:x, type:y, -term, orphan, stale',
         onChange: (e) => setFilter(e.target.value),
-        style: { ...ctrlStyle, width: 180, pointerEvents: 'auto' },
+        style: { pointerEvents: 'auto' },
       }),
-      // Data source: wikilink graph vs concept co-occurrence map.
-      React.createElement('select', { value: source, onChange: (e) => setSource(e.target.value), title: 'Graph source', style: { ...ctrlStyle, pointerEvents: 'auto' } },
-        React.createElement('option', { value: 'links' }, '🔗 Links'),
-        React.createElement('option', { value: 'concepts' }, '🧠 Concepts')),
-      React.createElement('select', { value: colorMode, onChange: (e) => setColorMode(e.target.value), title: 'Color by', style: { ...ctrlStyle, pointerEvents: 'auto' } },
-        COLOR_MODES.map(([v, l]) => React.createElement('option', { key: v, value: v }, l))),
-      // Concept mode → folder scope picker; link mode → local depth around the active note.
-      source === 'concepts'
-        ? React.createElement('select', { value: scope, onChange: (e) => setScope(e.target.value), title: 'Concept-map scope (folder)', style: { ...ctrlStyle, pointerEvents: 'auto', maxWidth: 150 } },
-            React.createElement('option', { value: '__all__' }, 'All notes'),
-            folders.map((f) => React.createElement('option', { key: f, value: f }, f + '/')))
-        : React.createElement('select', { value: localMode, onChange: (e) => setLocalMode(e.target.value), title: 'Local depth around active note', style: { ...ctrlStyle, pointerEvents: 'auto' } },
-            [['global', 'Whole graph'], ['1', '1 hop'], ['2', '2 hops'], ['3', '3 hops']].map(([v, l]) => React.createElement('option', { key: v, value: v }, l))),
-      React.createElement('button', { onClick: () => setEdgesHover((v) => !v), title: edgesHover ? 'Edges appear on hover' : 'Edges always visible — click to calm', style: { ...ctrlStyle, cursor: 'pointer', pointerEvents: 'auto', ...(edgesHover ? { color: '#F5D25D', borderColor: 'rgba(245,210,93,0.55)' } : {}) } }, edgesHover ? 'Edges: hover' : 'Edges: on'),
-      source === 'concepts'
-        ? React.createElement('button', { onClick: () => { const a = window.CafresoHQGraph; if (a && a.refresh) a.refresh(); }, title: 'Re-read notes and rebuild the concept map', style: { ...ctrlStyle, cursor: 'pointer', pointerEvents: 'auto' } }, '↻ Rebuild')
-        : React.createElement('button', { onClick: () => { const e = engineRef.current; if (e) e.refreshLayout(); }, title: 'Re-run layout', style: { ...ctrlStyle, cursor: 'pointer', pointerEvents: 'auto' } }, '↻ Layout'),
-      React.createElement('button', { onClick: publish, title: 'Publish a shareable public graph', style: { ...ctrlStyle, cursor: 'pointer', pointerEvents: 'auto' } }, sharing ? 'Publishing…' : '⤴ Share'),
       React.createElement('div', { style: { flex: 1 } }),
-      React.createElement('button', { onClick: () => setPanelOpen((v) => !v), style: { ...ctrlStyle, cursor: 'pointer', pointerEvents: 'auto' } }, panelOpen ? 'Hide analytics ›' : '‹ Analytics'),
-      onMinimize && React.createElement('button', { onClick: onMinimize, 'aria-label': 'Minimize graph', title: 'Minimize graph', style: { ...ctrlStyle, cursor: 'pointer', pointerEvents: 'auto' } }, '✕'),
+      React.createElement('button', { className: 'obs-graph-btn', title: 'Zoom in', 'aria-label': 'Zoom in', style: { pointerEvents: 'auto' }, onClick: () => { const e = engineRef.current; if (e) e.zoom(1); } }, '+'),
+      React.createElement('button', { className: 'obs-graph-btn', title: 'Zoom out', 'aria-label': 'Zoom out', style: { pointerEvents: 'auto' }, onClick: () => { const e = engineRef.current; if (e) e.zoom(-1); } }, '−'),
+      React.createElement('button', { className: 'obs-graph-btn', title: 'Fit the whole graph', 'aria-label': 'Fit the whole graph', style: { pointerEvents: 'auto' }, onClick: () => { const e = engineRef.current; if (e) e.fit(); } }, '⤢'),
+      React.createElement('button', { className: 'obs-graph-btn' + (panelOpen ? ' on' : ''), title: 'Graph settings', 'aria-label': 'Graph settings', 'aria-expanded': panelOpen, style: { pointerEvents: 'auto' }, onClick: () => setPanelOpen((v) => !v) }, '⚙'),
+      onMinimize && React.createElement('button', { className: 'obs-graph-btn', onClick: onMinimize, 'aria-label': 'Hide graph', title: 'Hide graph', style: { pointerEvents: 'auto' } }, '✕'),
     ),
 
-    // Analytics side panel (InfraNodus-style).
-    panelOpen && React.createElement('div', { style: { position: 'absolute', top: panelTop, right: 10, bottom: 10, width: 246, overflowY: 'auto', background: 'rgba(20,18,12,0.82)', backdropFilter: 'blur(6px)', border: '1px solid rgba(245,210,93,0.22)', borderRadius: 10, padding: '12px 13px', color: '#e9e2d4', font: '12px Inter, system-ui, sans-serif', zIndex: 1 } },
-      React.createElement('div', { style: { fontWeight: 600, fontSize: 13, marginBottom: 8, color: '#F5D25D' } }, source === 'concepts' ? 'Concept analysis' : 'Graph analysis'),
-      source === 'concepts' && conceptMeta && React.createElement('div', { style: { color: '#8f8676', fontSize: 11, marginBottom: 8 } }, 'Co-occurrence over ' + conceptMeta.docs + ' note' + (conceptMeta.docs === 1 ? '' : 's')),
-      !m && React.createElement('div', { style: { color: '#9b938a' } }, 'Computing…'),
-      m && React.createElement(React.Fragment, null,
-        React.createElement('div', { style: { display: 'inline-block', padding: '3px 9px', borderRadius: 20, background: 'rgba(245,210,93,0.16)', color: '#F5D25D', fontWeight: 600, textTransform: 'capitalize', marginBottom: 6 } }, m.structure || '—'),
-        React.createElement('div', { style: { color: '#cabfa9', marginBottom: 10, lineHeight: 1.4 } }, STRUCT_COPY[m.structure] || ''),
-        React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 10px', marginBottom: 12 } },
-          /* "Notes" was a lie on a business surface. `/vault/graph` returns
-             the whole office — measured on a real session it was 19 message
-             threads, 12 coworkers, 5 decisions and 2 tasks, and **zero**
-             vault notes (the vault was empty) — all counted and labelled
-             "Notes: 38". Concept mode really is concepts, so it keeps its
-             word; the links map gets one that covers what it holds, with
-             the actual mix spelled out below. */
-          /* Modularity is GONE, and the two graph-theory words are
-             translated. This panel already had the "Notes was a lie" fix
-             below; the metrics row kept three terms a boss cannot act on.
-
-             Modularity is the worst of them because it is redundant AND
-             unreadable: analytics.worker.js decides the verdict chip from
-             it (a low modularity picks between 'biased' and 'overlapping'),
-             so the sentence directly above this row IS the modularity, said
-             in words. Showing 0.25 as well adds a number with no visible
-             scale, which is the same shape as the FUEL gauge that filled
-             toward a budget nobody set.
-
-             Components and avg degree are real and worth keeping; they just
-             needed the names a boss would use. */
-          [[source === 'concepts' ? 'Concepts' : 'On the map', m.nodes], ['Links', m.edges], ['Topics', m.communityCount], ['Separate clusters', m.components], ['Links per item', (m.avgDegree || 0).toFixed(1)]]
-            .map(([k, v]) => React.createElement('div', { key: k }, React.createElement('span', { style: { color: '#8f8676' } }, k + ': '), React.createElement('b', null, v)))),
-
-        /* The mix, in office words. Says nothing when a kind is absent, so
-           an empty vault never claims notes it doesn't have. */
-        source !== 'concepts' && (() => {
-          const NAMES = {
-            note: ['note', 'notes'], task: ['task', 'tasks'],
-            decision: ['decision', 'decisions'], 'message-thread': ['conversation', 'conversations'],
-            agent: ['coworker', 'coworkers'],
-          };
-          const by = (rawRef.current && rawRef.current.byType) || {};
-          const parts = Object.keys(by)
-            .sort((a, b) => by[b] - by[a])
-            .map((t) => {
-              const n = by[t];
-              const nm = NAMES[t] || [t, t + 's'];
-              return n + ' ' + (n === 1 ? nm[0] : nm[1]);
-            });
-          if (!parts.length) return null;
-          return React.createElement('div', { style: { color: '#8f8676', fontSize: 11, marginTop: -6, marginBottom: 12, lineHeight: 1.45 } }, parts.join(' · '));
-        })(),
-
-        /* Top influential (betweenness brokers). The heading is conditional
-           because nothing brokers on a small or disjoint graph — every
-           betweenness is 0, the Jenks cutoff comes back Infinity, and the
-           list is empty. A brand-new office was therefore shown a bold
-           "Most influential" with a blank space under it, which reads as a
-           surface that failed to load rather than one with nothing true to
-           say yet. No answer is better rendered as no section. */
-        (analytics.topInfluential || []).length > 0 && React.createElement(React.Fragment, null,
-          React.createElement('div', { style: { fontWeight: 600, margin: '4px 0 5px', color: '#F5D25D' } }, 'Most influential'),
-          (analytics.topInfluential || []).slice(0, 6).map((t) =>
-            React.createElement('div', { key: t.id, role: 'button', tabIndex: 0,
-              onClick: () => { const e = engineRef.current; if (e) e.focusNode(t.id); },
-              onKeyDown: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); const e = engineRef.current; if (e) e.focusNode(t.id); } },
-              title: 'Focus', style: { cursor: 'pointer', padding: '2px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } },
-              '◆ ' + titleFor(t.id)))),
-
-        // Topical clusters. Conditional for the same reason as the heading
-        // above: an empty vault was showing "Main topics" over blank space.
-        (analytics.clusters || []).length > 0 && React.createElement(React.Fragment, null,
-        React.createElement('div', { style: { fontWeight: 600, margin: '12px 0 5px', color: '#F5D25D' } }, 'Main topics'),
-        (analytics.clusters || []).slice(0, 5).map((c) =>
-          React.createElement('div', { key: c.community, style: { marginBottom: 6 } },
-            React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 6 } },
-              React.createElement('span', { style: { width: 9, height: 9, borderRadius: '50%', background: window.CafresoGraphEngine.communityColor(c.community), display: 'inline-block', flex: '0 0 auto' } }),
-              React.createElement('b', null, Math.round(c.share * 100) + '%'),
-              /* Same correction as the stat row above: a cluster mixes
-                 conversations, coworkers, decisions and tasks, so "notes"
-                 was wrong here too. "items" is true whatever it holds.
-                 Singular when there is one of it: a lone note read "1 items",
-                 and the counts here sit beside a percentage the boss is
-                 already having to squint at. */
-              React.createElement('span', { style: { color: '#8f8676' } },
-                c.size + ' ' + (source === 'concepts'
-                  ? (c.size === 1 ? 'concept' : 'concepts')
-                  : (c.size === 1 ? 'item' : 'items')))),
-            React.createElement('div', { style: { color: '#cabfa9', fontSize: 11, paddingLeft: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } },
-              /* Distinct NODES can share a display title — several messages
-                 all render as "You → Sora" — so slicing to 3 before resolving
-                 titles produced labels like "You → Sora, You → Sora, You →
-                 Sora": one topic, repeated, dressed as three exemplars.
-                 `topNodes` carries 5 candidates; dedupe on the resolved title
-                 across all of them and take the first 3 that actually differ,
-                 so a cluster with real variety shows it and a cluster that
-                 genuinely is all one thing says so once. */
-              (() => {
-                const seen = new Set();
-                const names = [];
-                for (const id of (c.topNodes || [])) {
-                  const t = titleFor(id);
-                  if (!t || seen.has(t)) continue;
-                  seen.add(t);
-                  names.push(t);
-                  if (names.length === 3) break;
-                }
-                return names.join(', ');
-              })())))),
-
-        // Structural gap.
-        analytics.gap && React.createElement('div', { style: { marginTop: 12, padding: 8, borderRadius: 8, background: 'rgba(232,169,169,0.10)', border: '1px solid rgba(232,169,169,0.25)' } },
-          React.createElement('div', { style: { fontWeight: 600, color: '#E8A9A9', marginBottom: 3 } }, 'Structural gap'),
-          React.createElement('div', { style: { color: '#cabfa9', fontSize: 11, lineHeight: 1.4 } },
-            'Weakly connected: ', React.createElement('b', null, titleFor(analytics.gap.aTop)), ' ⟷ ', React.createElement('b', null, titleFor(analytics.gap.bTop)))),
-      ),
+    // Settings, closed until asked for (Obsidian's Filters / Display / Forces).
+    panelOpen && React.createElement('div', { className: 'obs-graph-settings', role: 'dialog', 'aria-label': 'Graph settings' },
+      React.createElement('div', { className: 'obs-gs-head' }, 'Filters'),
+      React.createElement('label', { className: 'obs-gs-row' }, 'Show',
+        React.createElement('select', { value: source, onChange: (e) => setSource(e.target.value) },
+          React.createElement('option', { value: 'links' }, 'Linked notes'),
+          React.createElement('option', { value: 'concepts' }, 'Concepts in notes'))),
+      source === 'concepts'
+        ? React.createElement('label', { className: 'obs-gs-row' }, 'Folder',
+            React.createElement('select', { value: scope, onChange: (e) => setScope(e.target.value) },
+              React.createElement('option', { value: '__all__' }, 'All notes'),
+              folders.map((f) => React.createElement('option', { key: f, value: f }, f + '/'))))
+        : React.createElement('label', { className: 'obs-gs-row' }, 'Depth',
+            React.createElement('select', { value: localMode, onChange: (e) => setLocalMode(e.target.value), title: 'Only the open note and its neighbours' },
+              [['global', 'Whole Library'], ['1', '1 link away'], ['2', '2 links away'], ['3', '3 links away']].map(([v, l]) => React.createElement('option', { key: v, value: v }, l)))),
+      React.createElement('div', { className: 'obs-gs-head' }, 'Display'),
+      React.createElement('label', { className: 'obs-gs-row' }, 'Colour',
+        React.createElement('select', { value: colorMode, onChange: (e) => setColorMode(e.target.value) },
+          COLOR_MODES.map(([v, l]) => React.createElement('option', { key: v, value: v }, l)))),
+      React.createElement('label', { className: 'obs-gs-row' }, 'Links',
+        React.createElement('select', { value: edgesHover ? 'hover' : 'on', onChange: (e) => setEdgesHover(e.target.value === 'hover') },
+          React.createElement('option', { value: 'on' }, 'Always'),
+          React.createElement('option', { value: 'hover' }, 'On hover'))),
+      React.createElement('div', { className: 'obs-gs-head' }, 'Layout'),
+      React.createElement('div', { className: 'obs-gs-actions' },
+        source === 'concepts'
+          ? React.createElement('button', { onClick: () => { const a = window.CafresoHQGraph; if (a && a.refresh) a.refresh(); } }, 'Rebuild')
+          : React.createElement('button', { onClick: () => { const e = engineRef.current; if (e) e.refreshLayout(); } }, 'Re-run layout'),
+        React.createElement('button', { onClick: publish }, sharing ? 'Publishing…' : 'Share a public copy')),
+      /* What the old analysis card said, in one quiet line: the counts and
+         the shape verdict (STRUCT_COPY), only for someone who opened settings. */
+      m && React.createElement('div', { className: 'obs-gs-foot' },
+        m.nodes + ' on the map · ' + m.edges + ' links' + (m.communityCount ? ' · ' + m.communityCount + ' topics' : ''),
+        STRUCT_COPY[m.structure] && React.createElement('div', { style: { marginTop: 4 } }, STRUCT_COPY[m.structure])),
     ),
 
     // Node context menu.

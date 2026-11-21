@@ -99,7 +99,9 @@ def main():
     # The tree arm is untouched: test_an_empty_library_greets_its_first_boss
     # reads both of these out of this file and they must still be here.
     check('the idle arm still swaps the TREE for the greeting, nothing else',
-          bare.count('{emptyTreeState || <FolderTree') == 2)
+          # phone: FolderTree; desktop: LibraryFolders (three-pane Library, 2026-11-21)
+          bare.count('{emptyTreeState || <FolderTree') == 1
+          and bare.count('{emptyTreeState || <LibraryFolders') == 1)
     check('the kind chips still hide when there is nothing to filter',
           bare.count('{showTools && toolsPanel}') == 2 and '{files.length > 0 && kindChips}' in bare)
 

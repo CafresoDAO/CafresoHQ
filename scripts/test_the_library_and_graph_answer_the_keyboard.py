@@ -82,14 +82,16 @@ def main():
           and 'hits.map(h => hitRow(h, openByPath))' in vault
           and 'hits.map(h => hitRow(h, mobileOpenByPath))' in vault,
           len(hit_rows))
-    check('the minimized-graph restore pane is a real button now',
-          'className="vault-graph-pane fullspan" role="button" tabIndex={0}' in vault,
-          '— "(click to show)" must be clickable by keyboard too')
+    # The "(click to show)" pane left with the three-pane Library (2026-11-21):
+    # a hidden graph comes back through a native <button>.
+    check('the hidden graph comes back through a real button',
+          '<button className="px-btn ghost lib-show-graph" onClick={() => setGraphMinimized(false)}' in vault,
+          '— showing the graph must be reachable by keyboard too')
     # Any hit row or restore pane that gained a role must also have keys —
     # a focusable row that swallows Enter is worse than an unfocusable one.
     for label, hay, n in (
-        ('hit rows', vault, 1 + 1 + 1),  # shared hit row + restore pane
-                                         # + backlink chips (same recipe)
+        ('hit rows', vault, 1 + 1),  # shared hit row + backlink chips
+                                     # (the restore pane is a <button> now)
     ):
         keyed = len(re.findall(
             r"onKeyDown=\{e ?=> ?\{ if \(e\.key ?=== ?'Enter' ?\|\| ?e\.key ?=== ?' '\) \{ e\.preventDefault\(\);", hay))
@@ -100,14 +102,22 @@ def main():
     check('the node context menu is a menu of menuitems',
           "role: 'menu', 'aria-label': 'Node actions'" in graph
           and "role: 'menuitem', tabIndex: 0" in graph)
-    check('menu items and focus rows answer the keyboard',
-          graph.count("if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault();") == 2,
+    # The analysis card and its focusable "Most influential" rows left the
+    # graph on 2026-11-21; the node menu is what remains to answer keys.
+    check('menu items answer the keyboard',
+          graph.count("if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault();") == 1,
           graph.count("if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault();"))
-    check('the influential-node rows are buttons',
-          "role: 'button', tabIndex: 0," in graph)
-    check('the minimize button has a name',
-          "'aria-label': 'Minimize graph'" in graph,
+    check('the hide button has a name',
+          "'aria-label': 'Hide graph'" in graph,
           '— a bare ✕ reads as "multiplication x"')
+    check('every graph icon button has a name',
+          graph.count("className: 'obs-graph-btn") == graph.count("className: 'obs-graph-btn") and
+          all(n in graph for n in ("'aria-label': 'Zoom in'", "'aria-label': 'Zoom out'",
+                                    "'aria-label': 'Fit the whole graph'", "'aria-label': 'Graph settings'")))
+    # The three-pane Library's own rows: every focusable one answers Enter/Space.
+    keys_ok = re.compile(r"onKeyDown=\{\(e\) => \{ if \(e\.key === 'Enter' \|\| e\.key === ' '\)")
+    check('folder rows, file rows and breadcrumbs answer Enter and Space',
+          len(keys_ok.findall(vault)) >= 4, len(keys_ok.findall(vault)))
 
     print()
     if FAILS:

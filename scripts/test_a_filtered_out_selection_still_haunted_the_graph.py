@@ -87,7 +87,7 @@ def main():
     )
 
     harness = '''
-const DIM = '#2a2733';
+const DIM = '#353535';
 const DIM_LIGHT = '#d8d0c4';
 const EDGE_SIZE = 0.9;
 const EDGE_SIZE_FOCUS = 1.8;
@@ -120,7 +120,9 @@ const fakeGraph = {
 const engine = {
   dark: true, hidden: new Set(), localSet: null, filterText: '', filterFn: null,
   hovered: null, selected: null, graph: fakeGraph, _nbrCache: null,
-  _edgeBase() { return 'rgba(176,158,214,0.22)'; },
+  // The Obsidian palette (graph-engine.js THEMES.dark) the reducers read.
+  t: { dim: '#353535', edge: '#3d3d3d', edgeDim: '#262626', accent: '#a88bfa' },
+  _edgeBase() { return '#3d3d3d'; },
 %(body)s
 };
 for (const n of ['_focusId', '_neighborhood', '_visible', '_nodeReducer', '_edgeReducer']) {
@@ -133,12 +135,14 @@ const out = {};
 // full-strength, C (not a neighbor) dims, A->B is revealed.
 engine.selected = 'A';
 out.baseline_focus = engine._focusId();
-out.baseline_B_dimmed = engine._nodeReducer('B', NODES.B).color === '#2a2733';
-out.baseline_C_dimmed = engine._nodeReducer('C', NODES.C).color === '#2a2733';
+out.baseline_B_dimmed = engine._nodeReducer('B', NODES.B).color === '#353535';
+out.baseline_C_dimmed = engine._nodeReducer('C', NODES.C).color === '#353535';
 out.baseline_edge_hidden = !!engine._edgeReducer('A->B', EDGES['A->B']).hidden;
 // B->C touches neither A nor a neighbor of A, so with a real, visible focus
 // it is correctly hidden too — "reveal only the focused node's own edges".
-out.baseline_unrelated_edge_hidden = !!engine._edgeReducer('B->C', EDGES['B->C']).hidden;
+// (Since the Obsidian facelift it FADES to edgeDim rather than vanishing; either counts.)
+const faded = (r) => !!r.hidden || r.color === '#262626';
+out.baseline_unrelated_edge_hidden = faded(engine._edgeReducer('B->C', EDGES['B->C']));
 
 // Now A gets filtered out from under the still-active selection — exactly
 // what setFilter()/setHidden()/setLocalMode() do without touching
@@ -148,9 +152,9 @@ engine._nbrCache = null;
 engine.filterFn = (rec) => rec.id !== 'A';
 out.focus_after_filter = engine._focusId();
 out.A_hidden = !!engine._nodeReducer('A', NODES.A).hidden;
-out.B_dimmed_after = engine._nodeReducer('B', NODES.B).color === '#2a2733';
-out.C_dimmed_after = engine._nodeReducer('C', NODES.C).color === '#2a2733';
-out.unrelated_edge_hidden_after = !!engine._edgeReducer('B->C', EDGES['B->C']).hidden;
+out.B_dimmed_after = engine._nodeReducer('B', NODES.B).color === '#353535';
+out.C_dimmed_after = engine._nodeReducer('C', NODES.C).color === '#353535';
+out.unrelated_edge_hidden_after = faded(engine._edgeReducer('B->C', EDGES['B->C']));
 
 console.log(JSON.stringify(out));
 ''' % {'body': body}
@@ -172,7 +176,7 @@ console.log(JSON.stringify(out));
     check('baseline: non-neighbor C is dimmed', out['baseline_C_dimmed'], str(out))
     check("baseline: A->B is revealed as the focus's own edge, not hidden",
           not out['baseline_edge_hidden'], str(out))
-    check("baseline: unrelated edge B->C is correctly hidden while A is focused",
+    check("baseline: unrelated edge B->C is correctly faded while A is focused",
           out['baseline_unrelated_edge_hidden'], str(out))
 
     check('A is (still, correctly) hidden once filtered out', out['A_hidden'], str(out))
@@ -182,7 +186,7 @@ console.log(JSON.stringify(out));
           not out['B_dimmed_after'], str(out))
     check('C is no longer dimmed once its filtered-out "focus" stops haunting it',
           not out['C_dimmed_after'], str(out))
-    check("B->C is no longer hidden — a phantom focus can't blank edges that never touched it",
+    check("B->C is no longer faded — a phantom focus can't blank edges that never touched it",
           not out['unrelated_edge_hidden_after'], str(out))
 
     print()
