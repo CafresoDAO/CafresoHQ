@@ -34,6 +34,11 @@
         "node_compatibility": true,
         "output": "declarations/cafresohq_market"
       }
+    },
+    "cf_factory": {
+      "//": "The canister factory (docs/AGENT_ECONOMY_ON_ICP.md \u00a76.1): agents create, upgrade (snapshot first) and roll back their own canisters inside an owner's cycles budget. Not deployed.",
+      "type": "motoko",
+      "main": "src/cf_factory/main.mo"
     }
   },
   "defaults": {
