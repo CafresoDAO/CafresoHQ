@@ -69,7 +69,10 @@ def main():
           and 'drop files anywhere' in block)
 
     check('both layouts swap the TREE for the greeting, nothing else',
-          vault.count('{emptyTreeState || <FolderTree') == 2)
+          # the phone keeps FolderTree; the desktop's left pane is LibraryFolders
+          # since the three-pane Library (2026-11-21)
+          vault.count('{emptyTreeState || <FolderTree') == 1
+          and vault.count('{emptyTreeState || <LibraryFolders') == 1)
     check('the kind chips hide when there is nothing to filter',
           (vault.count('{showTools && toolsPanel}') == 2 and '{files.length > 0 && kindChips}' in vault))
     check('the loading moment still belongs to the !status screen',
