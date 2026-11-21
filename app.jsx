@@ -6564,7 +6564,7 @@ ${d.text}` : d.text,
         if (CafresoHQChain.isAvailable()) {
           const reqs = await CafresoHQChain.inbox.list('pending');
           if (!stopped) {
-            setApprovals(prev => {
+            const mergeInbox = (prev) => {
               const live = new Set(reqs.map(r => String(r.id)));
               const have = new Set(prev.filter(p => p.inboxId).map(p => p.inboxId));
               const kept = prev.filter(p => !p.inboxId || live.has(p.inboxId));
@@ -6577,7 +6577,7 @@ ${d.text}` : d.text,
                   inboxId: String(r.id),
                   agentId: owner ? owner.id : undefined,
                   title: approvalTitle(String(r.kind || 'request'), r.summary, null),
-                  by: owner ? owner.name : String(r.agentId || 'an agent'),
+                  by: owner ? owner.name : String(r.agentId || 'a coworker'),
                   kind: 'inbox · ' + String(r.kind || 'request'),
                   elevated: r.kind === 'send' || r.kind === 'deploy' || r.kind === 'upgrade',
                   external: true,
@@ -6588,7 +6588,8 @@ ${d.text}` : d.text,
               if (!fresh.length && kept.length === prev.length) return prev;
               if (fresh.length) say(`${fresh[0].by} is asking: ${fresh[0].title.slice(0, 30)}…`, 'STAMP');
               return [...kept, ...fresh];
-            });
+            };
+            setApprovals(mergeInbox);
           }
         }
       } catch (_e) { /* an older shell without chain:inbox:*, or offline */ }
@@ -6901,7 +6902,7 @@ ${d.text}` : d.text,
         recorded
           ? (approve
               ? 'Your approval is recorded on-chain. Nothing was executed: anything it needs signed is still signed separately.'
-              : 'Your decline is recorded on-chain. The agent sees it the next time it checks.')
+              : 'Your decline is recorded on-chain. The coworker who asked sees it the next time it checks.')
           : 'The inbox did not record this (it was already decided, expired, or the shell could not reach it).');
       if (!recorded) {
         setChat(prev => [...prev, { id: HQ.uid('m'), from: 'system', name: 'HQ',
