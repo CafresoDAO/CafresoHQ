@@ -128,6 +128,28 @@ else
   echo "[entrypoint] WARN hermes CLI not found in image — /hermes proxy will 502 until installed"
 fi
 
+# ── Subscription sign-ins and installed agents survive a rebuild ────────────
+# A boss signs Claude Code (or Codex) in to the subscription they already pay for, from the
+# coworker's own settings. Kept in the container layer, that sign-in — and the CLI installed
+# for it — vanished whenever the fleet rebuilt the container. Put both on the /data volume.
+AGENT_HOME=/data/hq-state/agent-home
+if [ -d /data/hq-state ] && [ -w /data/hq-state ]; then
+  mkdir -p "$AGENT_HOME/claude" "$AGENT_HOME/codex" "$AGENT_HOME/npm-global/bin"
+  # One-time move of a sign-in made before this existed (same container, before a restart).
+  if [ -f /root/.claude/.credentials.json ] && [ ! -f "$AGENT_HOME/claude/.credentials.json" ]; then
+    cp -a /root/.claude/. "$AGENT_HOME/claude/"
+    [ -f /root/.claude.json ] && cp -a /root/.claude.json "$AGENT_HOME/claude/.claude.json"
+  fi
+  if [ -f /root/.codex/auth.json ] && [ ! -f "$AGENT_HOME/codex/auth.json" ]; then
+    cp -a /root/.codex/. "$AGENT_HOME/codex/"
+  fi
+  export CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$AGENT_HOME/claude}"
+  export CODEX_HOME="${CODEX_HOME:-$AGENT_HOME/codex}"
+  export npm_config_prefix="${npm_config_prefix:-$AGENT_HOME/npm-global}"
+  export PATH="$npm_config_prefix/bin:$PATH"
+  echo "[entrypoint] agent sign-ins and installs persist in $AGENT_HOME"
+fi
+
 # ── npm environment for on-demand agent installs ────────────────────────────
 # POST /agents/install runs `npm i -g`; serve.py inherits this env for its
 # subprocesses, so make the prefix/cache/HOME explicit + writable here. Without
