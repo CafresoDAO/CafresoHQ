@@ -71,6 +71,8 @@ const STATUS_WORDS = {
   refunded: 'refunded', cancelled: 'cancelled', failed: 'failed — refund on its way',
 };
 const KINDS = [['brief', 'a brief'], ['research', 'research'], ['draft', 'a draft'], ['page', 'a page'], ['code', 'code'], ['task', 'something else']];
+/* A first asking price per token, so listing is one click; all sit above the hall's floor of 100 transfer fees. */
+const STARTING_PRICE = { ICP: '0.25', CF: '0.5', ckUSDT: '2', ckUSDC: '2', ckBTC: '0.00003', sGLDT: '5', ckBAT: '20' };
 const DEADLINES = [[3600, '1 hour'], [14400, '4 hours'], [86400, '1 day'], [259200, '3 days'], [604800, 'a week']];
 /* which local brain works network jobs — from the coworker's own brain id */
 const DRIVER_OF = { claudecode: 'claude-code', codex: 'codex', gemini: 'gemini', 'gemini-api': 'gemini-api',
@@ -125,7 +127,7 @@ function MarketView({ agents = [] }) {
       </div>
     );
   }
-  const tabs = [['hire', 'Hire from the network'], ['jobs', 'Your jobs'], ['offer', 'Offer a coworker']];
+  const tabs = [['hire', 'Hire from the network'], ['jobs', 'Your jobs'], ['offer', 'List your coworker']];
   return (
     <div className="view-market" style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0, height: '100%' }}>
       {header}
@@ -156,7 +158,7 @@ function HireTab({ info, onPosted }) {
       {!cards.length && (
         <div className="empty-state">
           <div className="empty-title">Nobody is listed yet</div>
-          <div className="empty-sub">The hall opens with the first coworker someone offers. You can offer one of yours from the "Offer a coworker" tab.</div>
+          <div className="empty-sub">The hall opens with the first coworker someone offers. You can list one of yours from the "List your coworker" tab.</div>
         </div>
       )}
       <div className="team-grid">
@@ -346,8 +348,12 @@ function OfferTab({ info, agents }) {
   const [price, setPrice] = useSM('0.25');
   const [driver, setDriver] = useSM('');
   const [model, setModel] = useSM('');
+  const [payout, setPayout] = useSM('me');    // 'me' = the operator's account; 'agent' = that agent's own wallet
+  const [more, setMore] = useSM(false);
   const [busy, setBusy] = useSM('');
   const timer = useRM(null);
+  const tokenKeys = Object.keys(info.tokens || { ICP: 1 });
+  const pickToken = (k) => { setToken(k); if (Object.values(STARTING_PRICE).includes(price)) setPrice(STARTING_PRICE[k] || '1'); };
   const loadWorker = () => fetch(`${API()}/marketplace/worker/status`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(setWorker).catch(() => setWorker(null));
   const loadListings = () => Promise.all([mkt().myListings(), mkt().operatorJobs()]).then(([ls, js]) => { setListings(ls); setJobs(js); })
     .catch(e => { setListings([]); toast('error', `Could not read your listings — ${e.message || e}`); });
@@ -365,17 +371,24 @@ function OfferTab({ info, agents }) {
     setDriver(driverOf(a.model)); setModel(String(a.model || ''));
   };
   const raw = toRaw(price, token, info.tokens);
-  const canList = name.trim() && raw !== null && BI(raw) > BI(0) && driver && !busy;
+  const canList = pick && name.trim() && raw !== null && BI(raw) > BI(0) && driver && !busy;
   const principal = worker && worker.principal;
   const list = async () => {
     setBusy('listing');
     try {
+      // The agent's own wallet is a sub-account of the operator's account; the shell derives it.
+      let payoutSub = null;
+      if (payout === 'agent') {
+        const adr = await CafresoHQChain.wallet.address(pick);
+        payoutSub = adr && adr.subaccountHex;
+        if (!/^[0-9a-f]{64}$/i.test(String(payoutSub || ''))) throw new Error('could not read that coworker\'s wallet address');
+      }
       const r = await mkt().putListing({ name: name.trim(), role: role.trim(), pitch: pitch.trim(), brain: brain.trim(),
-                                         tags: tags.split(',').map(s => s.trim()).filter(Boolean), token, price: raw, active: true });
+                                         tags: tags.split(',').map(s => s.trim()).filter(Boolean), token, price: raw, payoutSub, active: true });
       if (principal) await mkt().linkWorker(r.id, principal);
       await post('/marketplace/worker/config', { canister: info.canister, host: info.host, driver, model, enabled: true });
       toast('success', principal ? `${name.trim()} is listed and on duty.` : `${name.trim()} is listed — link the key once this office's worker answers.`);
-      setName(''); setPitch(''); setPick('');
+      setName(''); setPitch(''); setPick(''); setPayout('me'); setMore(false);
       loadListings();
     } catch (e) { toast('error', `Could not list them — ${e.message || e}`); }
     setBusy('');
@@ -396,6 +409,66 @@ function OfferTab({ info, agents }) {
   const onDuty = worker && worker.running;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* list one: who, price, where the pay goes, one button */}
+      <div className="team-card market-quick" style={{ cursor: 'default', gap: 12 }} data-offer-form>
+        <div className="name">List a coworker for hire</div>
+        <div className="market-step"><Lbl>1 · Who</Lbl>
+          <div className="market-chips" role="radiogroup" aria-label="Which coworker">
+            {agents.map(a => {
+              const can = !!driverOf(a.model);
+              return (
+                <button key={a.id} type="button" role="radio" aria-checked={pick === a.id} disabled={!can}
+                        className={`px-btn sz-sm ${pick === a.id ? 'primary' : 'ghost'}`} data-pick-agent={a.id}
+                        title={can ? `${a.role || 'coworker'} · ${brainName(a)}` : 'its brain is not one this office can run for others'}
+                        onClick={() => choose(a.id)}>{a.name}</button>
+              );
+            })}
+            {!agents.length && <Note>You have no coworkers yet. Hire one in Team first.</Note>}
+          </div>
+        </div>
+        <div className="market-step"><Lbl>2 · Price per job</Lbl>
+          <div className="market-chips">
+            <input style={{ ...inputStyle, width: 110 }} value={price} inputMode="decimal" aria-label="Price per job" data-price onChange={e => setPrice(e.target.value)} />
+            <span role="radiogroup" aria-label="Token" style={{ display: 'contents' }}>
+              {tokenKeys.map(k => (
+                <button key={k} type="button" role="radio" aria-checked={token === k} data-token={k}
+                        className={`px-btn sz-sm ${token === k ? 'primary' : 'ghost'}`} onClick={() => pickToken(k)}>{symbolOf(k, info.tokens)}</button>
+              ))}
+            </span>
+          </div>
+          {price && raw === null && <Note tone="warn">That is not an amount {symbolOf(token, info.tokens)} can hold.</Note>}
+        </div>
+        <div className="market-step"><Lbl>3 · Paid into</Lbl>
+          <div className="market-chips" role="radiogroup" aria-label="Where the pay goes">
+            <button type="button" role="radio" aria-checked={payout === 'me'} data-payout="me"
+                    className={`px-btn sz-sm ${payout === 'me' ? 'primary' : 'ghost'}`} onClick={() => setPayout('me')}>My account</button>
+            <button type="button" role="radio" aria-checked={payout === 'agent'} data-payout="agent" disabled={!pick}
+                    className={`px-btn sz-sm ${payout === 'agent' ? 'primary' : 'ghost'}`} onClick={() => setPayout('agent')}>{name.trim() ? `${name.trim()}'s own wallet` : 'The coworker\'s own wallet'}</button>
+          </div>
+          <Note>{payout === 'agent'
+            ? 'Each accepted job pays into this coworker\'s wallet in your office. It is still your account; the coworker spends from it only within the limits you set.'
+            : 'Each accepted job pays straight into your signed-in account.'}</Note>
+        </div>
+        <button type="button" className="market-more" aria-expanded={more} onClick={() => setMore(m => !m)}>{more ? 'Hide details' : 'Edit how it is shown (name, pitch, skills)'}</button>
+        {more && (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+              <div className="form-row"><Lbl>Listed as</Lbl><input style={inputStyle} value={name} maxLength={80} onChange={e => setName(e.target.value)} /></div>
+              <div className="form-row"><Lbl>Role</Lbl><input style={inputStyle} value={role} maxLength={80} onChange={e => setRole(e.target.value)} /></div>
+              <div className="form-row"><Lbl>Brain shown to bosses</Lbl><input style={inputStyle} value={brain} maxLength={80} onChange={e => setBrain(e.target.value)} /></div>
+            </div>
+            <div className="form-row"><Lbl>What it is good at, in one line</Lbl><input style={inputStyle} value={pitch} maxLength={500} onChange={e => setPitch(e.target.value)} placeholder="e.g. Crisp research briefs with sources, under an hour" /></div>
+            <div className="form-row"><Lbl>Takes (comma-separated)</Lbl><input style={inputStyle} value={tags} onChange={e => setTags(e.target.value)} /></div>
+          </>
+        )}
+        <Note>Network jobs run on the coworker's brain with no tools and no access to your files. Only the boss's brief goes in and only the reply comes out.</Note>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Btn variant="primary" disabled={!canList} loading={busy === 'listing'} onClick={list}>
+            {pick && raw !== null ? `List ${name.trim() || 'it'} for ${price} ${symbolOf(token, info.tokens)}` : 'List it'}
+          </Btn>
+        </div>
+      </div>
+
       {/* the worker: this office's key and whether it is on duty */}
       <div className="team-card" style={{ cursor: 'default' }} data-worker-card>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', alignItems: 'baseline' }}>
@@ -435,6 +508,7 @@ function OfferTab({ info, agents }) {
             </div>
             <Note>{l.role || 'coworker'} · {l.brain || 'brain not stated'} · asks {fmtAmount(l.price, l.token, info.tokens)} · takes {(l.tags || []).join(', ') || 'anything'}</Note>
             <Note>{l.worker ? (principal && l.worker === principal ? 'Key: this office' : `Key: ${short(l.worker)} (another office)`) : 'No key linked — nobody can take jobs for this listing yet'}
+              {' · '}pays into {l.payoutSub ? 'the coworker\'s own wallet' : 'your account'}
               {' · '}{mine.length} job{mine.length === 1 ? '' : 's'} on record · earned {fmtAmount(earned.toString(), l.token, info.tokens)}</Note>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {(!l.worker || (principal && l.worker !== principal)) && <Btn size="sm" variant="primary" loading={busy === `link-${l.id}`} onClick={() => link(l)}>Link this office's key</Btn>}
@@ -447,32 +521,6 @@ function OfferTab({ info, agents }) {
         );
       })}
 
-      {/* offer one */}
-      <div className="team-card" style={{ cursor: 'default', gap: 10 }} data-offer-form>
-        <div className="name">Offer a coworker</div>
-        <Note>Pick one of yours. Jobs from the network run on that coworker's brain, with no tools and no access to your files; only the boss's brief goes in and only the reply comes out. You are paid per job into your own account once the boss accepts.</Note>
-        <div className="form-row"><Lbl>Which coworker</Lbl>
-          <select style={inputStyle} value={pick} onChange={e => choose(e.target.value)}>
-            <option value="">— choose —</option>
-            {agents.map(a => <option key={a.id} value={a.id}>{a.name} · {a.role}{driverOf(a.model) ? '' : ' (no brain this office can run for others)'}</option>)}
-          </select></div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
-          <div className="form-row"><Lbl>Listed as</Lbl><input style={inputStyle} value={name} maxLength={80} onChange={e => setName(e.target.value)} /></div>
-          <div className="form-row"><Lbl>Role</Lbl><input style={inputStyle} value={role} maxLength={80} onChange={e => setRole(e.target.value)} /></div>
-          <div className="form-row"><Lbl>Brain (as shown to bosses)</Lbl><input style={inputStyle} value={brain} maxLength={80} onChange={e => setBrain(e.target.value)} /></div>
-        </div>
-        <div className="form-row"><Lbl>What they are good at — one line</Lbl><input style={inputStyle} value={pitch} maxLength={500} onChange={e => setPitch(e.target.value)} placeholder="e.g. Crisp research briefs with sources, under an hour" /></div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
-          <div className="form-row"><Lbl>Takes (comma-separated)</Lbl><input style={inputStyle} value={tags} onChange={e => setTags(e.target.value)} /></div>
-          <div className="form-row"><Lbl>Paid in</Lbl>
-            <select style={inputStyle} value={token} onChange={e => setToken(e.target.value)}>{Object.keys(info.tokens || { ICP: 1 }).map(k => <option key={k} value={k}>{symbolOf(k, info.tokens)}</option>)}</select></div>
-          <div className="form-row"><Lbl>Asking price per job</Lbl><input style={inputStyle} value={price} inputMode="decimal" onChange={e => setPrice(e.target.value)} /></div>
-        </div>
-        {pick && !driver && <Note tone="warn">This coworker's brain is not one this office can run on someone else's behalf. Pick one on a brain this machine runs.</Note>}
-        <div style={{ display: 'flex', gap: 8 }}>
-          <Btn variant="primary" disabled={!canList} loading={busy === 'listing'} onClick={list}>List them and put this office on duty</Btn>
-        </div>
-      </div>
     </div>
   );
 }

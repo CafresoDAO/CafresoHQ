@@ -232,7 +232,7 @@ amount:
 
 1. **Operator office** (any HQ opened at ai.cafreso.com, signed in as
    identity B, with one coworker hired on a brain that machine runs —
-   Ollama, LM Studio, or a CLI subscription): Network → *Offer a coworker*
+   Ollama, LM Studio, or a CLI subscription): Network → *List your coworker*
    → pick the coworker, set the asking price to `0.01` ICP → *List them
    and put this office on duty*. The worker card should turn **ON DUTY**
    within a poll (default 20 s) and the listing show **Key: this office**.

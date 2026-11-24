@@ -29,10 +29,11 @@
   const ORIGIN = location.origin;
   const iframe = document.getElementById('hq');
   const ICP = { symbol: 'ICP', canister: 'ryjl3-tyaaa-aaaaa-aaaba-cai', decimals: 8 };
+  const CF = { symbol: 'CF', canister: '3pzpy-yiaaa-aaaap-an6uq-cai', decimals: 8 };
   const ns = () => String(Date.now()) + '000000';
   const S = window.__fakeShell = {
     log: [], approvals: [], paid: [], seq: 0, declineFunding: false, progress: {},
-    info: { canister: 'fakeh-hall0-aaaaa-aaaaa-cai', host: ORIGIN, configured: true, tokens: { ICP } },
+    info: { canister: 'fakeh-hall0-aaaaa-aaaaa-cai', host: ORIGIN, configured: true, tokens: { ICP, CF } },
     listings: {
       '7': { id: '7', operator: 'op-principal', worker: 'wkey-principal', name: 'Mira', role: 'Research Coworker',
              pitch: 'Crisp research briefs with sources, under an hour', brain: 'Claude Sonnet 4',
@@ -110,6 +111,7 @@
       case 'chain:market:progress': return reply({ type: 'chain:market:progress:response', note: S.progress[String(d.id)] || '' });
       case 'chain:market:payouts': return reply({ type: 'chain:market:payouts:response', payouts: [] });
       case 'chain:market:my-listings': return reply({ type: 'chain:market:my-listings:response', listings: Object.values(S.myListings) });
+      case 'chain:wallet:address': return reply({ type: 'chain:wallet:address:response', agentId: d.agentId, owner: 'boss-principal', subaccountHex: 'ab'.repeat(32) });
       case 'chain:market:put-listing': {
         const id = d.id != null ? String(d.id) : String(100 + Object.keys(S.myListings).length + 1);
         const prev = S.myListings[id] || {};
