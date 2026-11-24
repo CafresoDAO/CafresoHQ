@@ -910,7 +910,7 @@ function TerminalSession({ project, cli, sessionId, visible, ptySupported, spawn
           </div>
 
           {/* Claude Desktop-style input */}
-          <div style={{
+          <div className="term-composer" style={{
             padding: '12px 16px 14px', borderTop: '1px solid var(--rule)',
             background: 'var(--paper-2)', flexShrink: 0,
           }}>
