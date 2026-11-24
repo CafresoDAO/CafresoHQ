@@ -333,8 +333,8 @@ def _terminal_pty_ws(self):
     cols = max(10, min(500, int((params.get('cols') or ['120'])[0])))
     rows = max(5,  min(200, int((params.get('rows') or ['30'] )[0])))
 
-    if cli not in ('claude', 'codex', 'hermes', 'gemini'):
-        return self._send_json(400, {'error': 'cli must be claude, codex, hermes, or gemini'})
+    if cli not in ('claude', 'codex', 'hermes', 'gemini', 'shell'):
+        return self._send_json(400, {'error': 'cli must be claude, codex, hermes, gemini, or shell'})
     if not cwd:
         return self._send_json(400, {'error': 'cwd required'})
     cwd_path = pathlib.Path(_client_path(cwd)).resolve()
@@ -382,7 +382,14 @@ def _terminal_pty_ws(self):
         return self.send_error(403, 'Missing or invalid nonce',
                                'Missing or invalid nonce — fetch /terminal/nonce first')
 
-    if cli == 'claude':
+    if cli == 'shell':
+        # A plain login shell in the project folder: dfx, git, npm. The same
+        # Host + Origin + nonce checks above guard it as guard the agent CLIs,
+        # which can already run any command.
+        bin_ = ('cmd.exe' if _is_win else
+                next((b for b in (os.environ.get('SHELL'), '/bin/bash', '/bin/sh')
+                      if b and os.path.isfile(b)), None))
+    elif cli == 'claude':
         bin_ = self._claudecode_resolve()
     elif cli == 'codex':
         bin_ = self._codex_resolve()
@@ -394,7 +401,7 @@ def _terminal_pty_ws(self):
         return self._send_json(503, {'error': f'{cli} CLI not found'})
     # Hermes opens its interactive agent via the `chat` subcommand; the
     # workspace cwd scopes the agent to that project. Others just exec.
-    cli_extra_args = ['chat'] if cli == 'hermes' else []
+    cli_extra_args = ['chat'] if cli == 'hermes' else (['-l'] if cli == 'shell' and not _is_win else [])
 
     # ── WebSocket handshake ─────────────────────────────────────────────
     ws_key = self.headers.get('Sec-WebSocket-Key', '')
@@ -417,6 +424,10 @@ def _terminal_pty_ws(self):
     # ── Build PTY environment ───────────────────────────────────────────
     import copy as _copy
     agent_env = _copy.deepcopy(os.environ)
+    # A service (systemd, launchd, a container entrypoint) often has no TERM;
+    # without one, `clear`, colours and full-screen tools fail in the shell.
+    if not agent_env.get('TERM'):
+        agent_env['TERM'] = 'xterm-256color'
     for _d in [r'C:\Program Files\Git\usr\bin',
                r'C:\Program Files\Git\bin',
                r'C:\Program Files\Git\mingw64\bin']:

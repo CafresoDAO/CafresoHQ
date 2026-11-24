@@ -26,7 +26,7 @@ function TerminalView() {
           <span className="tag">
             {/* Must list every session type the "+" menu in ProjectTerminal
                 actually offers (terminal.jsx's addSession menu). */}
-            Hermes · Claude Code · Codex · Gemini · hqsh
+            Shell · Hermes · Claude Code · Codex · Gemini · hqsh
           </span>
         </div>
         <span className="term-hint">+ adds a session · × ends one</span>

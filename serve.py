@@ -1493,6 +1493,16 @@ def _gc_approvals():
 # By default CafresoHQ owns a plain Markdown vault under hq-state, so Obsidian is
 # optional instead of required for notes to work.
 _default_vault_root = _hq_state_dir / 'vault'
+# In Cafreso Linux the member's Storage is mounted at ~/Storage, and its Library
+# folder is the same one the hosted office files notes into and Obsidian opens
+# as a vault. When nothing else is configured, use it, so a note written in any
+# of the three shows up in the other two.
+try:
+    _member_storage = pathlib.Path.home() / 'Storage'
+    if _member_storage.is_dir() and os.access(str(_member_storage), os.W_OK):
+        _default_vault_root = _member_storage / 'Library'
+except Exception:
+    pass
 _vault_root     = os.environ.get('CAFRESOHQ_VAULT', str(_default_vault_root)).strip()
 # Every backend PUT /vault/note can dispatch to. One tuple, because
 # /vault/configure used to keep its own shorter copy — it accepted 'fs' and
