@@ -127,7 +127,7 @@ function MarketView({ agents = [] }) {
       </div>
     );
   }
-  const tabs = [['hire', 'Hire from the network'], ['jobs', 'Your jobs'], ['offer', 'List your agent']];
+  const tabs = [['hire', 'Hire from the network'], ['jobs', 'Your jobs'], ['offer', 'List your coworker']];
   return (
     <div className="view-market" style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0, height: '100%' }}>
       {header}
@@ -158,7 +158,7 @@ function HireTab({ info, onPosted }) {
       {!cards.length && (
         <div className="empty-state">
           <div className="empty-title">Nobody is listed yet</div>
-          <div className="empty-sub">The hall opens with the first coworker someone offers. You can list one of yours from the "List your agent" tab.</div>
+          <div className="empty-sub">The hall opens with the first coworker someone offers. You can list one of yours from the "List your coworker" tab.</div>
         </div>
       )}
       <div className="team-grid">
@@ -381,7 +381,7 @@ function OfferTab({ info, agents }) {
       if (payout === 'agent') {
         const adr = await CafresoHQChain.wallet.address(pick);
         payoutSub = adr && adr.subaccountHex;
-        if (!/^[0-9a-f]{64}$/i.test(String(payoutSub || ''))) throw new Error('could not read that agent\'s wallet address');
+        if (!/^[0-9a-f]{64}$/i.test(String(payoutSub || ''))) throw new Error('could not read that coworker\'s wallet address');
       }
       const r = await mkt().putListing({ name: name.trim(), role: role.trim(), pitch: pitch.trim(), brain: brain.trim(),
                                          tags: tags.split(',').map(s => s.trim()).filter(Boolean), token, price: raw, payoutSub, active: true });
@@ -411,9 +411,9 @@ function OfferTab({ info, agents }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {/* list one: who, price, where the pay goes, one button */}
       <div className="team-card market-quick" style={{ cursor: 'default', gap: 12 }} data-offer-form>
-        <div className="name">List an agent for hire</div>
+        <div className="name">List a coworker for hire</div>
         <div className="market-step"><Lbl>1 · Who</Lbl>
-          <div className="market-chips" role="radiogroup" aria-label="Which agent">
+          <div className="market-chips" role="radiogroup" aria-label="Which coworker">
             {agents.map(a => {
               const can = !!driverOf(a.model);
               return (
@@ -423,7 +423,7 @@ function OfferTab({ info, agents }) {
                         onClick={() => choose(a.id)}>{a.name}</button>
               );
             })}
-            {!agents.length && <Note>You have no agents yet. Hire one in Team first.</Note>}
+            {!agents.length && <Note>You have no coworkers yet. Hire one in Team first.</Note>}
           </div>
         </div>
         <div className="market-step"><Lbl>2 · Price per job</Lbl>
@@ -443,10 +443,10 @@ function OfferTab({ info, agents }) {
             <button type="button" role="radio" aria-checked={payout === 'me'} data-payout="me"
                     className={`px-btn sz-sm ${payout === 'me' ? 'primary' : 'ghost'}`} onClick={() => setPayout('me')}>My account</button>
             <button type="button" role="radio" aria-checked={payout === 'agent'} data-payout="agent" disabled={!pick}
-                    className={`px-btn sz-sm ${payout === 'agent' ? 'primary' : 'ghost'}`} onClick={() => setPayout('agent')}>{name.trim() ? `${name.trim()}'s own wallet` : 'The agent\'s own wallet'}</button>
+                    className={`px-btn sz-sm ${payout === 'agent' ? 'primary' : 'ghost'}`} onClick={() => setPayout('agent')}>{name.trim() ? `${name.trim()}'s own wallet` : 'The coworker\'s own wallet'}</button>
           </div>
           <Note>{payout === 'agent'
-            ? 'Each accepted job pays into this agent\'s wallet in your office. It is still your account; the agent spends from it only within the limits you set.'
+            ? 'Each accepted job pays into this coworker\'s wallet in your office. It is still your account; the coworker spends from it only within the limits you set.'
             : 'Each accepted job pays straight into your signed-in account.'}</Note>
         </div>
         <button type="button" className="market-more" aria-expanded={more} onClick={() => setMore(m => !m)}>{more ? 'Hide details' : 'Edit how it is shown (name, pitch, skills)'}</button>
@@ -461,7 +461,7 @@ function OfferTab({ info, agents }) {
             <div className="form-row"><Lbl>Takes (comma-separated)</Lbl><input style={inputStyle} value={tags} onChange={e => setTags(e.target.value)} /></div>
           </>
         )}
-        <Note>Network jobs run on the agent's brain with no tools and no access to your files. Only the boss's brief goes in and only the reply comes out.</Note>
+        <Note>Network jobs run on the coworker's brain with no tools and no access to your files. Only the boss's brief goes in and only the reply comes out.</Note>
         <div style={{ display: 'flex', gap: 8 }}>
           <Btn variant="primary" disabled={!canList} loading={busy === 'listing'} onClick={list}>
             {pick && raw !== null ? `List ${name.trim() || 'it'} for ${price} ${symbolOf(token, info.tokens)}` : 'List it'}
@@ -508,7 +508,7 @@ function OfferTab({ info, agents }) {
             </div>
             <Note>{l.role || 'coworker'} · {l.brain || 'brain not stated'} · asks {fmtAmount(l.price, l.token, info.tokens)} · takes {(l.tags || []).join(', ') || 'anything'}</Note>
             <Note>{l.worker ? (principal && l.worker === principal ? 'Key: this office' : `Key: ${short(l.worker)} (another office)`) : 'No key linked — nobody can take jobs for this listing yet'}
-              {' · '}pays into {l.payoutSub ? 'the agent\'s own wallet' : 'your account'}
+              {' · '}pays into {l.payoutSub ? 'the coworker\'s own wallet' : 'your account'}
               {' · '}{mine.length} job{mine.length === 1 ? '' : 's'} on record · earned {fmtAmount(earned.toString(), l.token, info.tokens)}</Note>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {(!l.worker || (principal && l.worker !== principal)) && <Btn size="sm" variant="primary" loading={busy === `link-${l.id}`} onClick={() => link(l)}>Link this office's key</Btn>}

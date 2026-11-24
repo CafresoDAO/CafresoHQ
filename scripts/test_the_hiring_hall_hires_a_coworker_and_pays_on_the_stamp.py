@@ -202,7 +202,7 @@ def main():
         title = ev(ws, "return D.querySelector('.view-market .section-title').textContent;")
         check('the room is signed HIRING HALL', 'HIRING HALL' in (title or ''), title)
         check('three tabs: hire, your jobs, offer',
-              ev(ws, "return [...D.querySelectorAll('[data-market-tab]')].map(b => b.textContent.trim());") == ['Hire from the network', 'Your jobs', 'List your agent'])
+              ev(ws, "return [...D.querySelectorAll('[data-market-tab]')].map(b => b.textContent.trim());") == ['Hire from the network', 'Your jobs', 'List your coworker'])
 
         wait(ws, "D.querySelector('[data-listing=\"7\"]')", 20, "Mira's card")
         card = ev(ws, """const c = D.querySelector('[data-listing="7"]');
@@ -287,7 +287,7 @@ def main():
         check('Take it back asks the hall for the refund', True)
 
         # offer a coworker
-        ev(ws, "btn('List your agent').click();")
+        ev(ws, "btn('List your coworker').click();")
         wait(ws, "D.querySelector('[data-worker-card] code')", 20, 'the worker card')
         wc = ev(ws, """const c = D.querySelector('[data-worker-card]');
           return { key: c.querySelector('code').getAttribute('title'), pill: c.querySelector('.status-pill').textContent.trim() };""")
@@ -314,7 +314,7 @@ def main():
         check("paid into the agent's own wallet: its sub-account goes with the listing", req.get('payoutSub') == 'ab' * 32, req.get('payoutSub'))
         check('the shell was asked for that agent\'s wallet address',
               H.evaluate(ws, f"window.__fakeShell.log.some(l => l.type === 'chain:wallet:address' && l.data.agentId === {picked['id']!r})"))
-        wait(ws, "[...D.querySelectorAll('[data-my-listing]')].some(c => /pays into the agent.s own wallet/.test(c.textContent))", 20, 'the new listing to show where it pays')
+        wait(ws, "[...D.querySelectorAll('[data-my-listing]')].some(c => /pays into the coworker.s own wallet/.test(c.textContent))", 20, 'the new listing to show where it pays')
         check('the new listing shows where it pays', True)
 
         # ── a shell whose hall is not deployed ────────────────────────────
