@@ -1,7 +1,7 @@
 import { CafresoHQV2 } from '../features.jsx';
 import { CafresoHQClient } from '../claude-client.jsx';
 import { Sprite } from '../sprites.jsx';
-import { xpStats, XP_HOT_STREAK } from '../app/experience.jsx';
+import { xpStats, xpRank, xpToday, XP_HOT_STREAK } from '../app/experience.jsx';
 import { officeDate } from '../app/artifacts.jsx';
 import { brainName, CAN_USE_OFF_TIP, CAN_USE_TIP, EFFORT_TIP, grantedTools, memoryLabel, memoryNotes, payrollLabel, poweredBy } from '../app/cast.jsx';
 import { attentionCount as attentionCountOf, groupAttention, onRoster } from '../app/attention.jsx';
@@ -211,6 +211,18 @@ function TasksView({ tasks, agents, onAdd, onMove, onDelete, onCyclePriority, on
             deals. */}
         <span className="tag">{filtered.length} of {tasks.length} · click → CHAT to draft it in chat, 📋 ROOM to set up a meeting</span>
       </div>
+      {(() => {
+        const d = xpToday(experience, tasks, agents);
+        return (
+          <div className="quest-strip" data-quest-strip aria-label="The office today">
+            <div className="quest-stat"><b>{d.open}</b><span>open quest{d.open === 1 ? '' : 's'}</span></div>
+            <div className="quest-stat"><b>{d.active}</b><span>in progress</span></div>
+            <div className="quest-stat is-win"><b>{d.today}</b><span>finished today</span></div>
+            <div className="quest-stat"><b>{d.total}</b><span>finished all time</span></div>
+            {d.best && <div className="quest-stat is-hot"><b>{d.best.streak} 🔥</b><span>{d.best.name}'s streak</span></div>}
+          </div>
+        );
+      })()}
       <div className="view-toolbar">
         <input className="view-search" placeholder="Search tasks…" value={q} onChange={e=>setQ(e.target.value)} />
         <label className="view-check">
@@ -838,7 +850,7 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
             const stuck = a.mood === 'stuck';
             const lastFailed = stuck ? lastFailedByAgent.get(a.id) : null;
             return (
-              <div key={a.id} className={'team-card' + (stuck ? ' is-stuck' : '')} onClick={()=>onInspect(a)}>
+              <div key={a.id} className={'team-card rank-' + xpRank(xp.jobs).tier + (stuck ? ' is-stuck' : '')} onClick={()=>onInspect(a)}>
                 {/* The STATUS pill stays truthful about liveness (busy/idle) —
                     §4's rule that only agent.status answers "is this running
                     right now" applies here too. Distress is a second axis and
@@ -848,6 +860,19 @@ function TeamView({ agents, activity = [], experience = [], onHire, onInspect, o
                 <div className="sprite-box"><Sprite data={a.color} scale={3} className="bob"/></div>
                 <div className="name">{a.name}</div>
                 <div className="role">{a.role}</div>
+                {/* Rank: the same ladder as the public agent card, counted from finished jobs only. */}
+                {(() => {
+                  const rk = xpRank(xp.jobs);
+                  return (
+                    <div className="rank-row" data-rank={rk.tier} title={`${rk.name} · ${rk.jobs} finished job${rk.jobs === 1 ? '' : 's'}. Rank counts finished jobs only.`}>
+                      <span className="rank-badge">LV {rk.level} · {rk.name}</span>
+                      <span className="rank-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={rk.pct} aria-label={`Progress to ${rk.next || 'top rank'}`}>
+                        <span style={{ width: rk.pct + '%' }} />
+                      </span>
+                      <span className="rank-next">{rk.line}</span>
+                    </div>
+                  );
+                })()}
                 {stuck && a.task && (
                   <div className="team-stuck-line" title={a.task}>⚠ {a.task}</div>
                 )}

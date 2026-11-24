@@ -12896,3 +12896,24 @@ body.night .vault-backlinks-pane a, body.night .vault-backlinks-list > * > :firs
     background: transparent; color: var(--error); border: 1px solid var(--error); box-shadow: none;
   }
 }
+/* ── Rank and quests ─────────────────────────────────────────────────────────
+   Frame colours match the public agent card's five ranks. */
+.team-card { --rank-1: #d8cfc0; --rank-2: var(--ink-2); }
+.team-card.rank-r1 { --rank-1: #9fb7c9; --rank-2: #4c6a80; }
+.team-card.rank-r2 { --rank-1: #f0c674; --rank-2: #a9782a; }
+.team-card.rank-r3 { --rank-1: #c9a4f5; --rank-2: #6b3fd0; }
+.team-card.rank-r4 { --rank-1: #ffb37a; --rank-2: #e0457f; }
+.team-card.rank-r1, .team-card.rank-r2, .team-card.rank-r3, .team-card.rank-r4 { border-color: var(--rank-2); box-shadow: 2px 2px 0 0 var(--rank-2); }
+.rank-row { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 4px 8px; }
+.rank-badge { font-family: 'Press Start 2P', monospace; font-size: 8px; line-height: 1; padding: 4px 6px; color: #17131f; background: linear-gradient(90deg, var(--rank-1), #fbe7a6); border: 1px solid var(--rank-2); white-space: nowrap; }
+.rank-bar { display: block; height: 8px; background: var(--paper-2); border: 1px solid var(--rank-2); image-rendering: pixelated; }
+.rank-bar > span { display: block; height: 100%; background: repeating-linear-gradient(90deg, var(--rank-1) 0 6px, var(--rank-2) 6px 8px); transition: width 300ms cubic-bezier(0.215, 0.61, 0.355, 1); }
+.rank-next { grid-column: 1 / -1; font-family: 'Inter', system-ui, sans-serif; font-size: 10px; color: var(--ink-2); }
+.quest-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 8px; margin: 0 0 12px; }
+.quest-stat { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; background: var(--paper); border: 2px solid var(--ink); box-shadow: var(--shadow-hard); }
+.quest-stat b { font-family: 'Press Start 2P', monospace; font-size: 14px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.quest-stat span { font-family: 'Inter', system-ui, sans-serif; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-2); }
+.quest-stat.is-win { background: var(--accent-sun); }
+.quest-stat.is-win span { color: var(--ink); }
+.quest-stat.is-hot b { color: var(--error); }
+@media (prefers-reduced-motion: reduce) { .rank-bar > span { transition: none; } }
