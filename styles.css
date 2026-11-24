@@ -8314,7 +8314,8 @@ body.night .bn-item.active { background: rgba(0,212,181,0.15); color: var(--acce
      whose container was missing from this list, which put its ticker (the
      last thing in the column) entirely behind the tab bar. */
   body { padding-bottom: 0; }
-  .view, .view-projects, .vault-view, .vault-mobile, .view-team, .mobile-chat-view, .view-tasks, .view-memory, .view-calendar, .office-wrap, .view-market {
+  .view, .view-projects, .vault-view, .vault-mobile, .view-team, .mobile-chat-view, .view-tasks, .view-memory, .view-calendar, .office-wrap, .view-market,
+  .view-terminal, .ws-root, .view-canisters {
     padding-bottom: calc(72px + env(safe-area-inset-bottom)) !important;
   }
 
@@ -8682,7 +8683,7 @@ body.night .bn-item.active { background: rgba(0,212,181,0.15); color: var(--acce
   /* Content views: clear the larger tab bar + home indicator */
   .view, .view-projects, .vault-view, .vault-view.unified, .vault-mobile,
   .view-team, .mobile-chat-view, .view-tasks, .view-memory, .view-calendar,
-  .office-wrap, .view-market {
+  .office-wrap, .view-market, .view-terminal, .ws-root, .view-canisters {
     padding-bottom: calc(80px + env(safe-area-inset-bottom)) !important;
   }
 }
@@ -12849,3 +12850,44 @@ body.night .obs-graph-chip { color: #ccc; background: rgba(38,38,38,0.92); borde
 body.night .vault-backlinks-pane { background: rgba(20, 20, 31, 0.5); color: inherit; border-top-color: rgba(124, 107, 255, 0.15); }
 .vault-backlinks-pane a, .vault-backlinks-pane .vault-backlink-title, .vault-backlinks-list > * > :first-child { color: var(--accent-ink, #6a4bd8); }
 body.night .vault-backlinks-pane a, body.night .vault-backlinks-list > * > :first-child { color: inherit; }
+
+/* ── Phone pass ──────────────────────────────────────────────────────────────
+   Measured at 375x812 on every tab.
+   - Terminal, Projects and Canisters did not clear the tab bar (added to the
+     clearance lists above): the Terminal message box and the Projects pane
+     switcher sat underneath it.
+   - Tasks and the Hiring Hall ran to the screen edge.
+   - The top bar was a lone bell: it now names the room you are in, which
+     matters for the rooms the tab bar does not list. */
+@media (max-width: 768px) {
+  .view-terminal, .ws-root, .view-canisters { box-sizing: border-box; }
+  .view-tasks, .view-market { padding-left: 12px !important; padding-right: 12px !important; box-sizing: border-box; }
+  .view-canisters { padding: 16px 12px; }
+  .view-market .section-title, .view-tasks .section-title { flex-wrap: wrap; row-gap: 4px; }
+  .view-tasks .view-toolbar, .view-tasks .tasks-toolbar { flex-wrap: wrap; row-gap: 8px; }
+
+  .topbar .crumbs { display: flex; flex: 0 1 auto; min-width: 0; font-size: 12px; letter-spacing: 0.08em; }
+  .topbar .crumbs > *:not(:last-child) { display: none; }
+  .topbar .crumbs > *:last-child { color: var(--ink) !important; font-weight: 700; white-space: nowrap; }
+  .topbar .status { justify-content: flex-end; }
+  .topbar { align-content: center; }
+  .topbar .crumbs { max-width: calc(100% - 175px); }
+  /* The command button floats over the bottom-left corner; the Terminal message box starts to its right. */
+  .term-composer { padding-left: 62px !important; }
+
+  /* Sheets: the grab handle sat in the header's row and pushed the title into the Close button.
+     It now rides the top edge, the title starts at the left and keeps clear of Close. */
+  .modal-head { padding: 18px 16px 12px; gap: 12px; text-align: left; }
+  .modal-head::before { position: absolute; top: 7px; left: 50%; margin: 0 0 0 -18px; background: var(--frame-line); }
+  .modal-head > :first-child:not(.modal-close) { min-width: 0; flex: 1 1 auto; }
+  .modal-head .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .settings-search, .settings-shell .settings-search { flex: 0 0 190px; }
+
+  /* The command button floats over the chat box's left end: start the text to its right. */
+  .mobile-chat-view .composer textarea { padding-left: 54px; }
+  /* Letting someone go was the loudest thing on every Team card. It stays, quieter. */
+  .team-card .team-dismiss {
+    align-self: flex-start; width: auto; min-height: 44px; padding: 0 14px;
+    background: transparent; color: var(--error); border: 1px solid var(--error); box-shadow: none;
+  }
+}
