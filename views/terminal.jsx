@@ -1538,8 +1538,8 @@ function ProjectTerminal({ project, visible }) {
     } catch (_e) {}
   }, [sessions, pid]);
 
-  const cliName = (cli) => cli === 'hermes' ? 'Hermes' : cli === 'claude' ? 'Claude' : cli === 'gemini' ? 'Gemini' : cli === 'hqsh' ? 'hqsh' : 'Codex';
-  const cliIcon = (cli) => cli === 'hermes' ? '☼' : cli === 'claude' ? '✦' : cli === 'gemini' ? '✧' : cli === 'hqsh' ? '⛓' : '◈';
+  const cliName = (cli) => cli === 'hermes' ? 'Hermes' : cli === 'claude' ? 'Claude' : cli === 'gemini' ? 'Gemini' : cli === 'hqsh' ? 'hqsh' : cli === 'shell' ? 'Shell' : 'Codex';
+  const cliIcon = (cli) => cli === 'hermes' ? '☼' : cli === 'claude' ? '✦' : cli === 'gemini' ? '✧' : cli === 'hqsh' ? '⛓' : cli === 'shell' ? '$' : '◈';
 
   const getLabel = (session) => {
     const name = cliName(session.cli);
@@ -1637,7 +1637,7 @@ function ProjectTerminal({ project, visible }) {
               borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
               padding: 6, minWidth: 170,
             }}>
-              {[['hermes', '☼', 'Hermes', true], ['claude', '✦', 'Claude Code', false], ['codex', '◈', 'Codex CLI', false], ['gemini', '✧', 'Gemini CLI', false], ['hqsh', '⛓', 'hqsh — HQ chain shell', false]].map(([c, ico, label, isDefault]) => (
+              {[['shell', '$', 'Shell — dfx, git, npm', false], ['hermes', '☼', 'Hermes', true], ['claude', '✦', 'Claude Code', false], ['codex', '◈', 'Codex CLI', false], ['gemini', '✧', 'Gemini CLI', false], ['hqsh', '⛓', 'hqsh — HQ chain shell', false]].map(([c, ico, label, isDefault]) => (
                 <div key={c}
                   onClick={() => addSession(c)}
                   style={{
@@ -1676,6 +1676,16 @@ function ProjectTerminal({ project, visible }) {
           {s.cli === 'hqsh' ? (
             /* hqsh is a browser-side canister REPL — no PTY spawn. */
             <HqShell sessionId={s.sessionId} visible={visible && s.id === activeId} />
+          ) : s.cli === 'shell' ? (
+            /* A plain login shell in the project folder. No chat mode and no
+               model: it goes straight to the PTY. */
+            ptySupported === false ? (
+              <div style={{ padding: 24, color: 'var(--ink-3)', fontSize: 13 }}>
+                A shell needs this office's own machine. Open CafresoHQ in Cafreso Linux, or run it locally, and the shell opens here.
+              </div>
+            ) : (
+              <EmbeddedTerminal project={project} cli="shell" sessionId={s.sessionId} visible={visible && s.id === activeId} authMethod="subscription" />
+            )
           ) : (
             <TerminalSession
               project={project}

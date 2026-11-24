@@ -96,7 +96,11 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
   const persisted = persistedRef.current;
   /* The Obsidian facelift (2026-11-21) starts everyone on the plain grey look
      with the settings closed, once; after that their own choices stick. */
-  if (persisted.look !== 'obsidian') { persisted.look = 'obsidian'; persisted.colorMode = 'plain'; persisted.drawerOpen = false; }
+  if (persisted.look !== 'obsidian' && persisted.look !== 'obsidian-groups') { persisted.look = 'obsidian'; persisted.colorMode = 'plain'; persisted.drawerOpen = false; }
+  /* Obsidian "groups" (2026-11-24): the same quiet look, but each folder gets
+     its own colour and a legend, so the map reads at a glance. Applied once;
+     a boss who then picks Plain keeps Plain. */
+  if (persisted.look !== 'obsidian-groups') { persisted.look = 'obsidian-groups'; if (persisted.colorMode === 'plain' || !persisted.colorMode) persisted.colorMode = 'folder'; }
 
   const [colorMode, setColorMode] = useSV(persisted.colorMode || 'community');
   const [localMode, setLocalMode] = useSV(persisted.localMode || 'global');
@@ -496,6 +500,18 @@ function GraphView({ onOpenNote, embedded = false, activePath = null, onMinimize
       onMinimize && React.createElement('button', { className: 'obs-graph-btn', onClick: onMinimize, 'aria-label': 'Hide graph', title: 'Hide graph', style: { pointerEvents: 'auto' } }, '✕'),
     ),
 
+    /* Folder legend: which colour is which folder. A chip filters the map to
+       that folder; the same chip again clears it. */
+    colorMode === 'folder' && source !== 'concepts' && folders.length > 0 && React.createElement('div', { className: 'obs-graph-legend', 'aria-label': 'Folders' },
+      folders.slice(0, 10).map((f) => {
+        const q = 'path:' + (/\s/.test(f) ? '"' + f + '/"' : f + '/');
+        return React.createElement('button', {
+          key: f, className: 'obs-graph-chip' + (filter === q ? ' on' : ''), title: 'Show only ' + f,
+          'aria-pressed': filter === q,
+          onClick: () => setFilter(filter === q ? '' : q),
+        }, React.createElement('i', { style: { background: folderColor(f + '/x', isDark) } }), f);
+      })),
+
     // Settings, closed until asked for (Obsidian's Filters / Display / Forces).
     panelOpen && React.createElement('div', { className: 'obs-graph-settings', role: 'dialog', 'aria-label': 'Graph settings' },
       React.createElement('div', { className: 'obs-gs-head' }, 'Filters'),
@@ -639,8 +655,17 @@ function folderHueFor(path) {
   return slot * 30; // 0,30,60,…,330
 }
 
+/* Hex, not hsl(): sigma's WebGL colour parser only reads hex and rgb(), and
+   drew every hsl() node black. */
 function folderColor(path, isDark) {
-  return `hsl(${folderHueFor(path)}, ${isDark ? 55 : 45}%, ${isDark ? 65 : 60}%)`;
+  const h = folderHueFor(path) / 360, sat = isDark ? 0.55 : 0.5, l = isDark ? 0.65 : 0.55;
+  const q = l < 0.5 ? l * (1 + sat) : l + sat - l * sat, p2 = 2 * l - q;
+  const ch = (t) => {
+    t = (t + 1) % 1;
+    const v = t < 1 / 6 ? p2 + (q - p2) * 6 * t : t < 1 / 2 ? q : t < 2 / 3 ? p2 + (q - p2) * (2 / 3 - t) * 6 : p2;
+    return Math.round(v * 255).toString(16).padStart(2, '0');
+  };
+  return '#' + ch(h + 1 / 3) + ch(h) + ch(h - 1 / 3);
 }
 
 /* Heat gradient — sharp recency-aware color. Returns vivid red/orange for

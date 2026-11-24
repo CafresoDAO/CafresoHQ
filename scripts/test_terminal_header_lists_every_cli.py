@@ -41,9 +41,9 @@ misc_src = (ROOT / 'views' / 'misc.jsx').read_text()
 
 # Pull the addSession menu's literal array of [id, icon, label, isDefault]
 # tuples straight out of terminal.jsx — e.g.
-#   [['hermes', '☼', 'Hermes', true], ['claude', '✦', 'Claude Code', false], ...]
+#   [['shell', '$', 'Shell — dfx, git, npm', false], ['hermes', '☼', 'Hermes', true], ...]
 m = re.search(
-    r"\[\['hermes',.*?\]\]\.map\(\(\[c, ico, label, isDefault\]\)",
+    r"\[\['shell',.*?\]\]\.map\(\(\[c, ico, label, isDefault\]\)",
     term_src, re.S,
 )
 check(m is not None, "couldn't locate the addSession menu's CLI list in views/terminal.jsx "
@@ -58,11 +58,11 @@ if m:
 
 # views/misc.jsx must first still render the header text at all.
 header_m = re.search(
-    r"Hermes · Claude Code · Codex · Gemini[^<]*", misc_src,
+    r"Shell · Hermes · Claude Code · Codex · Gemini[^<]*", misc_src,
 )
 check(header_m is not None,
       "views/misc.jsx's TerminalView header subtitle text is missing or changed shape "
-      "— expected it to start with 'Hermes · Claude Code · Codex · Gemini'.")
+      "— expected it to start with 'Shell · Hermes · Claude Code · Codex · Gemini'.")
 header_text = header_m.group(0) if header_m else ''
 
 # Every CLI id offered by the real "+" menu must be discoverable from the

@@ -78,8 +78,11 @@ const ALL_NAV_ITEMS = [
    them, and off the rail, phone bar, number keys and command palette for
    everyone else. Read once at load; the switch reloads the office. */
 const DEV_ONLY_VIEWS = ['terminal', 'canisters'];
+/* On unless switched off (2026-11-24): CafresoHQ is an ICP developer tool
+   first, so Terminal and Canisters are on the rail from the start. Someone
+   who turned the switch off keeps their choice ('0'). */
 function isDevMode() {
-  try { return localStorage.getItem('cafresohq.devMode') === '1'; } catch (_) { return false; }
+  try { return localStorage.getItem('cafresohq.devMode') !== '0'; } catch (_) { return true; }
 }
 function setDevMode(on) {
   try { localStorage.setItem('cafresohq.devMode', on ? '1' : '0'); } catch (_) {}

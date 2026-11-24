@@ -124,6 +124,11 @@ def main():
         ok, out = rep.call('fct_t_agent', 'cf_factory', 'createProject', f'(principal "{owner_acct}", "hello", {T} : nat)')
         check('the agent creates a canister with 1 T from the budget', ok and 'canisterId' in out, out)
         cid = (re.search(r'canisterId = principal "([^"]+)"', out) or [None, None])[1]
+        # Anyone can read what an agent has left: the agent directory shows it on the agent's card.
+        agent_p = rep.dfx('identity', 'get-principal', identity='fct_t_agent', timeout=30).stdout.strip()
+        ok, bud = rep.call('fct_t_stranger', 'cf_factory', 'agentBudget', f'(principal "{agent_p}")', query=True)
+        check('a stranger can read the agent has 2 T left of its 3 T budget',
+              ok and 'cap = 3_000_000_000_000' in bud and 'left = 2_000_000_000_000' in bud and 'budgets = 1' in bud, bud)
         info = rep.dfx('canister', 'info', cid, identity='fct_t_stranger', timeout=60).stdout if cid else ''
         check('...controlled by the owner and the factory, and nobody else',
               owner_acct in info and factory in info and agent not in info, info)

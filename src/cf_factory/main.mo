@@ -289,6 +289,16 @@ actor class CfFactory(init : { minCreateCycles : Nat; minUpgradeCycles : Nat; re
     Buffer.toArray(out);
   };
 
+  /// What an agent may still spend, across every budget an owner gave it. Public: the agent
+  /// directory shows it on the agent's card. Paused and expired budgets don't count.
+  public query func agentBudget(agent : Principal) : async { cap : Nat; used : Nat; left : Nat; budgets : Nat } {
+    var cap = 0; var used = 0; var n = 0;
+    for ((_, b) in ppMap.entries(budgets)) {
+      if (b.agent == agent and not b.paused and b.expiresAt > Time.now()) { cap += b.cap; used += Nat.min(b.used, b.cap); n += 1 };
+    };
+    { cap; used; left = cap - used; budgets = n };
+  };
+
   public shared query ({ caller }) func projectsForMe() : async [Project] {
     let out = Buffer.Buffer<Project>(4);
     for (i in idsOf(byAgent, caller).vals()) { switch (natMap.get(projects, i)) { case (?p) out.add(p); case null {} } };
