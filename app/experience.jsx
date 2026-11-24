@@ -195,4 +195,45 @@ function xpLastAttemptText(attempt) {
   return `${who} hit a snag on this`;
 }
 
-export { taskKind, xpAffinityText, xpKindLabel, xpLastAttempt, xpLastAttemptText, xpRecord, xpStats, XP_HOT_STREAK, XP_KIND_LABEL };
+/* ── Rank ─────────────────────────────────────────────────────────────────
+   The same five rungs the public agent card uses (cf_agents' card.js), so a
+   coworker reads the same in the office and on its card. A rank is counted
+   from finished jobs in the ledger and nothing else: effort, chat and snags
+   never move it, and it cannot go down because the ledger is append-only. */
+const XP_RANKS = [
+  { at: 0,  name: 'Rookie',  tier: 'r0' },
+  { at: 1,  name: 'Working', tier: 'r1' },
+  { at: 3,  name: 'Proven',  tier: 'r2' },
+  { at: 15, name: 'Veteran', tier: 'r3' },
+  { at: 50, name: 'Legend',  tier: 'r4' },
+];
+function xpRank(jobs) {
+  const n = Math.max(0, Math.floor(Number(jobs) || 0));
+  let i = 0;
+  while (i + 1 < XP_RANKS.length && n >= XP_RANKS[i + 1].at) i++;
+  const cur = XP_RANKS[i], next = XP_RANKS[i + 1] || null;
+  const pct = next ? Math.round(((n - cur.at) / (next.at - cur.at)) * 100) : 100;
+  return { name: cur.name, tier: cur.tier, level: i + 1, jobs: n, next: next ? next.name : null,
+           toNext: next ? next.at - n : 0, pct,
+           line: next ? `${next.at - n} more job${next.at - n === 1 ? '' : 's'} to ${next.name}` : 'top rank' };
+}
+
+/* The office's day at a glance, for the quest strip on Tasks. Counts come from
+   the task list (what is open) and the ledger (what was finished, and when). */
+function xpToday(ledger, tasks, agents, now = Date.now()) {
+  const start = new Date(now); start.setHours(0, 0, 0, 0);
+  const log = Array.isArray(ledger) ? ledger : [];
+  const done = log.filter(e => e && e.outcome === 'done');
+  const today = done.filter(e => (e.at || 0) >= start.getTime()).length;
+  const list = Array.isArray(tasks) ? tasks : [];
+  const open = list.filter(t => t && t.status !== 'done').length;
+  const active = list.filter(t => t && (t.status === 'doing' || t.status === 'review')).length;
+  let best = null;
+  for (const a of (Array.isArray(agents) ? agents : [])) {
+    const st = xpStats(log, a.id);
+    if (st.streak >= 2 && (!best || st.streak > best.streak)) best = { name: a.name, streak: st.streak };
+  }
+  return { today, total: done.length, open, active, best };
+}
+
+export { xpRank, xpToday, XP_RANKS, taskKind, xpAffinityText, xpKindLabel, xpLastAttempt, xpLastAttemptText, xpRecord, xpStats, XP_HOT_STREAK, XP_KIND_LABEL };
