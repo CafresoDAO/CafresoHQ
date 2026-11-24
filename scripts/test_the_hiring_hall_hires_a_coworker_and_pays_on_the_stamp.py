@@ -149,6 +149,10 @@ def main():
     print(f'  using  {chrome}')
 
     state_dir = tempfile.mkdtemp(prefix='cafresohq-hall-state-')
+    # one agent on a brain this office can run for others, so the listing card has someone to pick
+    os.makedirs(os.path.join(state_dir, 'memory'), exist_ok=True)
+    with open(os.path.join(state_dir, 'memory', 'agents.json'), 'w', encoding='utf-8') as f:
+        f.write('[{"id":"a-builder","name":"Builder","role":"ICP Developer","model":"claudecode:sonnet","status":"idle","desk":0}]')
     base, server = boot_server(state_dir)
     check('serve.py boots on a scratch port', base is not None)
     if base is None:
@@ -198,7 +202,7 @@ def main():
         title = ev(ws, "return D.querySelector('.view-market .section-title').textContent;")
         check('the room is signed HIRING HALL', 'HIRING HALL' in (title or ''), title)
         check('three tabs: hire, your jobs, offer',
-              ev(ws, "return [...D.querySelectorAll('[data-market-tab]')].map(b => b.textContent.trim());") == ['Hire from the network', 'Your jobs', 'Offer a coworker'])
+              ev(ws, "return [...D.querySelectorAll('[data-market-tab]')].map(b => b.textContent.trim());") == ['Hire from the network', 'Your jobs', 'List your agent'])
 
         wait(ws, "D.querySelector('[data-listing=\"7\"]')", 20, "Mira's card")
         card = ev(ws, """const c = D.querySelector('[data-listing="7"]');
@@ -283,13 +287,35 @@ def main():
         check('Take it back asks the hall for the refund', True)
 
         # offer a coworker
-        ev(ws, "btn('Offer a coworker').click();")
+        ev(ws, "btn('List your agent').click();")
         wait(ws, "D.querySelector('[data-worker-card] code')", 20, 'the worker card')
         wc = ev(ws, """const c = D.querySelector('[data-worker-card]');
           return { key: c.querySelector('code').getAttribute('title'), pill: c.querySelector('.status-pill').textContent.trim() };""")
         check("Offer shows this office's real worker key, OFF DUTY", wc['key'] == worker_principal and wc['pill'] == 'OFF DUTY', (wc, worker_principal))
-        check('with no coworker chosen the listing button stays dark',
-              ev(ws, "const b = btn('List them and put this office on duty'); return b.disabled || b.classList.contains('is-disabled');"))
+        check('with no agent chosen the listing button stays dark',
+              ev(ws, "const b = btn('List it'); return b.disabled || b.classList.contains('is-disabled');"))
+
+        # the quick listing: who, price and token, where the pay goes, one button
+        wait(ws, "D.querySelector('[data-pick-agent]:not([disabled])')", 20, 'an agent this office can list')
+        picked = ev(ws, """const b = D.querySelector('[data-pick-agent]:not([disabled])'); b.click();
+          return { id: b.getAttribute('data-pick-agent'), name: b.textContent.trim() };""")
+        ev(ws, "D.querySelector('[data-token=\"CF\"]').click();")
+        wait(ws, "D.querySelector('[data-price]').value === '0.5'", 10, 'the CF starting price')
+        check('choosing a token fills in a starting price for it', True)
+        ev(ws, "D.querySelector('[data-payout=\"agent\"]').click();")
+        label = f"List {picked['name']} for 0.5 CF"
+        wait(ws, f"!!btn({label!r})", 10, 'the button to spell out the listing')
+        check('the button says who is listed and for how much', True, label)
+        ev(ws, f"btn({label!r}).click();")
+        H.wait_for(ws, "window.__fakeShell.log.some(l => l.type === 'chain:market:put-listing')", 20, 'the listing request')
+        req = H.evaluate(ws, "JSON.stringify(window.__fakeShell.log.filter(l => l.type === 'chain:market:put-listing').pop().data)")
+        req = json.loads(req)
+        check('the listing carries the chosen token and price', req.get('token') == 'CF' and str(req.get('price')) == '50000000', req)
+        check("paid into the agent's own wallet: its sub-account goes with the listing", req.get('payoutSub') == 'ab' * 32, req.get('payoutSub'))
+        check('the shell was asked for that agent\'s wallet address',
+              H.evaluate(ws, f"window.__fakeShell.log.some(l => l.type === 'chain:wallet:address' && l.data.agentId === {picked['id']!r})"))
+        wait(ws, "[...D.querySelectorAll('[data-my-listing]')].some(c => /pays into the agent.s own wallet/.test(c.textContent))", 20, 'the new listing to show where it pays')
+        check('the new listing shows where it pays', True)
 
         # ── a shell whose hall is not deployed ────────────────────────────
         ws.call('Page.navigate', {'url': base + '/scripts/harness_fake_shell.html'})

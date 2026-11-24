@@ -12849,3 +12849,9 @@ body.night .obs-graph-chip { color: #ccc; background: rgba(38,38,38,0.92); borde
 body.night .vault-backlinks-pane { background: rgba(20, 20, 31, 0.5); color: inherit; border-top-color: rgba(124, 107, 255, 0.15); }
 .vault-backlinks-pane a, .vault-backlinks-pane .vault-backlink-title, .vault-backlinks-list > * > :first-child { color: var(--accent-ink, #6a4bd8); }
 body.night .vault-backlinks-pane a, body.night .vault-backlinks-list > * > :first-child { color: inherit; }
+
+/* Hiring Hall: the quick "list an agent" card */
+.market-quick .market-step { display: flex; flex-direction: column; gap: 6px; }
+.market-quick .market-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.market-quick .market-more { align-self: flex-start; padding: 0; border: 0; background: none; color: var(--ink-2); font: inherit; font-size: 12px; text-decoration: underline; cursor: pointer; }
+.market-quick .market-more:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
