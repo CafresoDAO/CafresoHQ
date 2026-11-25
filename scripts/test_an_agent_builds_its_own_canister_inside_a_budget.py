@@ -85,7 +85,7 @@ def main():
         # the two versions an agent will ship
         cache = rep.dfx('cache', 'show').stdout.strip()
         wasm = {}
-        for v in ('v1', 'v2'):
+        for v in ('v1', 'v2', 'v3'):
             out = Path(tmp) / f'{v}.wasm'
             r = subprocess.run([f'{cache}/moc', '--package', 'base', f'{cache}/base',
                                 str(ROOT / 'scripts/replica_harness/factory' / f'{v}.mo'), '-o', str(out)],
@@ -168,6 +168,11 @@ def main():
         check('the agent rolls back', ok and 'ok' in out, out)
         check('...it answers as v1 again', 'v1' in direct('version')[1], direct('version'))
         check('...with the data as it was before the upgrade (2, not 3)', '2 : nat' in direct('get')[1], direct('get'))
+
+        ok, out = install('fct_t_agent', 'v3', 'upgrade')
+        check("an upgrade the IC refuses says the IC's own reason, not just 'rejected'",
+              ok and 'the upgrade was rejected' in out and 'The IC said:' in out and 'assert' in out.lower(), out[:600])
+        check('...and the old code keeps running', 'v1' in direct('version')[1], direct('version'))
 
         ok, out = rep.call('fct_t_agent', 'cf_factory', 'status', '(1 : nat)')
         check('status reports the canister running with its cycles', ok and 'running' in out and 'cycles' in out, out[:300])

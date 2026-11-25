@@ -211,6 +211,14 @@ actor class CfFactory(init : { minCreateCycles : Nat; minUpgradeCycles : Nat; re
   };
   func reread(p : Project) : Project { switch (natMap.get(projects, p.id)) { case (?cur) cur; case null p } };
   /// Start a canister after a stop, and say so if that failed too.
+  let REJECT_MAX : Nat = 600;
+  /// The first n characters of t, with "…" when it was longer.
+  func clip(t : Text, n : Nat) : Text {
+    if (t.size() <= n) return t;
+    var out = ""; var i = 0;
+    label chars for (c in t.chars()) { if (i >= n) break chars; out #= Text.fromChar(c); i += 1 };
+    out # "…"
+  };
   func restart(cid : Principal) : async Text {
     try { await ic.start_canister({ canister_id = cid }); "" }
     catch (e) { " The canister could not be started again (" # Error.message(e) # "): the owner can start it as a controller." };
@@ -386,13 +394,18 @@ actor class CfFactory(init : { minCreateCycles : Nat; minUpgradeCycles : Nat; re
         };
         save({ reread(p) with snapshotId = ?snap.id; snapshotAt = ?now() });
         let m : Mode = switch (mode) { case (#upgradeKeepMemory) #upgrade(?{ wasm_memory_persistence = ?#keep }); case _ #upgrade(null) };
-        let installed = try {
+        // Keep the IC's own reason: without it an agent can only guess why mainnet refused (2026-11-25,
+        // ckbat-boost ships 3-7 all said just "rejected").
+        var rejected : ?Text = null;
+        try {
           await ic.install_code({ mode = m; canister_id = p.canisterId; wasm_module = wasm; arg });
-          true;
-        } catch (_) { false };
+        } catch (e) { rejected := ?clip(Error.message(e), REJECT_MAX) };
         // An upgrade that traps leaves the old code in place; start it again either way.
         let note = await restart(p.canisterId);
-        if (not installed) return #err("the upgrade was rejected; the old code is still running, and the snapshot is kept." # note);
+        switch (rejected) {
+          case (?why) return #err("the upgrade was rejected; the old code is still running, and the snapshot is kept. The IC said: " # why # note);
+          case null {};
+        };
         let cur = reread(p);
         save({ cur with installs = cur.installs + 1; lastInstallAt = ?now(); unconfirmed = true });
         if (note != "") return #err("upgraded, but:" # note);
