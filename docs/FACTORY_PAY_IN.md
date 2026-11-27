@@ -1,9 +1,11 @@
 # Paying the factory in ICP and ckUSDT
 
-Status: **design note, second draft, 2026-11-27. Nothing here is built or deployed.**
+Status: **ICP pay-in is built and tested on a local replica (2026-11-27). Nothing is deployed.**
+ckUSDT, the "Add funds" panel and the connector opt-in are still design only.
 It is step 3 of the three-year plan (`obsidian-computer/docs/THREE_YEAR_PLAN.md`).
 
-Decided by Anthony on 2026-11-27: **build it into the factory**, and **do not accept ckUSDC**.
+Decided by Anthony on 2026-11-27: **build it into the factory**, **do not accept ckUSDC**, and
+**the fee is cost plus 10%**.
 The first draft proposed a separate canister; that is dropped.
 
 ## The problem
@@ -94,10 +96,11 @@ on a DEX and its price.
 
 ## Price
 
-The strategy proposes cycles at cost plus 20%. So an owner who pays for 1.2 T receives 1.0 T. For
-ICP the factory keeps the rest as cycles. For ckUSDT the margin is inside the price.
+Cycles are sold at cost plus 10% (Anthony, 2026-11-27; the strategy doc had proposed 20%). So an
+owner who pays for 1.1 T receives 1.0 T. For ICP the factory keeps the rest as cycles. For ckUSDT
+the margin is inside the price.
 
-Example at today's rate: 1 ICP mints about 1.52 T, and the owner is credited about 1.27 T.
+Example at today's rate: 1 ICP mints about 1.52 T, and the owner is credited about 1.38 T.
 
 `quote(token, amount)` shows the cycles an owner would receive before they send anything.
 
@@ -159,9 +162,28 @@ setPayPaused   : (bool) -> ();                                       // operator
 An "Add funds" panel on Obsidian.Computer, later also in the Cafreso skill's output:
 
 - their deposit address, with a copy button and a QR code;
-- "You will receive about 1.27 T cycles for 1 ICP", from `quote`;
+- "You will receive about 1.38 T cycles for 1 ICP", from `quote`;
 - after paying: the balance in cycles, and in plain terms how long that runs one small app;
 - a clear line that payments cannot be turned back into ICP or ckUSDT.
+
+## What is built (ICP only)
+
+In `src/cf_factory/main.mo`, tested by `scripts/test_an_owner_pays_the_factory_in_icp.py` beside a
+mock ICP ledger and minting canister (`scripts/replica_harness/mock_icp.mo`).
+
+It differs from the sketch above in these ways:
+
+- **Settings** are one optional install argument, `pay`: the ledger, the minting canister, the
+  markup (1,000 = 10%) and the three ICP limits. Left out, every payment method says it is off, so
+  an upgrade with today's arguments changes nothing.
+- **`depositAddressFor(owner)`** is added, so an agent can read an owner their address.
+- **`quote`** uses the last rate the factory saw. **`refreshRate()`** asks the minting canister, at
+  most every ten minutes.
+- **A payment's states** are started, sent, credited and failed. A refund before `settle` has no
+  payment row, so there is no "refunded" state.
+- **A deposit over the cap** is taken one cap at a time; the rest waits for the next `settle`.
+- **`sweep`** comes with ckUSDT. There is nothing to sweep for ICP: it is burned.
+- **The operator** for `setPayPaused` is any controller of the factory.
 
 ## Tests before anything goes near mainnet
 
@@ -180,7 +202,8 @@ On a local replica, with the harness in `scripts/replica_harness` (it already ha
 
 ## Build order
 
-1. ICP pay-in in the factory, with tests. Upgrade on Anthony's yes, with low caps.
+1. ICP pay-in in the factory, with tests: **done on a local replica**. The mainnet upgrade waits
+   for Anthony's yes, with low caps.
 2. One real payment of 0.1 ICP by Anthony, end to end.
 3. The "Add funds" panel.
 4. ckUSDT, as a second upgrade.
@@ -204,7 +227,7 @@ On a local replica, with the harness in `scripts/replica_harness` (it already ha
 |---|---|
 | Separate canister, or inside the factory | Inside the factory (Anthony, 2026-11-27) |
 | Accept ckUSDC | No (Anthony, 2026-11-27) |
-| The fee: cost plus 20% | Open |
+| The fee | Cost plus 10% (Anthony, 2026-11-27) |
 | ckUSDT from the factory's surplus first, a DEX swap later | Open |
 | The starting caps in the table above | Open |
 | Where collected ckUSDT goes: the reserve account today, the treasury canister once it is live | Open |
