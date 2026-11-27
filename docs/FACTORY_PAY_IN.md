@@ -174,8 +174,9 @@ mock ICP ledger and minting canister (`scripts/replica_harness/mock_icp.mo`).
 It differs from the sketch above in these ways:
 
 - **Settings** are one optional install argument, `pay`: the ledger, the minting canister, the
-  markup (1,000 = 10%) and the three ICP limits. Left out, every payment method says it is off, so
-  an upgrade with today's arguments changes nothing.
+  markup (1,000 = 10%) and the three ICP limits. They are stored. Until they are first given, every
+  payment method says it is off. After that, an upgrade that leaves `pay` out keeps them, and a new
+  value replaces them. Settings that make no sense make the upgrade fail.
 - **`depositAddressFor(owner)`** is added, so an agent can read an owner their address.
 - **`quote`** uses the last rate the factory saw. **`refreshRate()`** asks the minting canister, at
   most every ten minutes.
@@ -184,6 +185,40 @@ It differs from the sketch above in these ways:
 - **A deposit over the cap** is taken one cap at a time; the rest waits for the next `settle`.
 - **`sweep`** comes with ckUSDT. There is nothing to sweep for ICP: it is burned.
 - **The operator** for `setPayPaused` is any controller of the factory.
+- **`retryPayment(id, block)`** and **`closePayment(id, why)`**, operator only. The first reopens a
+  payment whose ICP was sent but not credited; the second closes one that can never finish, so the
+  owner can pay or refund again. Neither moves anything: cycles are still credited only on the
+  minting canister's own answer, and a ledger block serves one payment.
+- **The credit is checked.** A reported amount that is not sane, or more than the factory holds
+  above what it owes, is not credited.
+
+## Review, 2026-11-27
+
+An independent review found no way to be credited twice or without ICP being burned, and found
+every declared type equal to the live ICP ledger and minting canister. Its findings, and what was
+done:
+
+| Finding | Done |
+|---|---|
+| A stuck payment locks the owner's deposit address, with no operator method | `retryPayment`, `closePayment` |
+| A retry more than a day later dropped the record even if the transfer had happened | The record is kept and marked for the operator |
+| A routine upgrade without `pay` switched off refunds and stranded open payments | Settings are stored |
+| A repeated ledger answer was trusted on a new payment | A block serves one payment; timestamps never repeat |
+| The credit trusted the minting canister's number | Sanity cap, and never more than the factory holds |
+| `payIcp` took ICP before checks that could still fail | It checks the day's limit and open payments first |
+| A dropped payment could lower the wrong day's total | Fixed |
+| No check on the settings | Checked at install |
+| Anyone can make the factory spend cycles on calls out | Anonymous callers are refused. A signed-in caller still can; this is as before for other methods |
+
+Left as they are, and to know:
+
+- **Anyone can settle for an owner.** That turns the deposit into cycles, which cannot be refunded
+  as ICP. An owner who wants their ICP back must refund before anyone settles.
+- **The ledger fee (0.0001 ICP) is fixed in the code.** If the ledger changes it, settle and refund
+  fail until an upgrade.
+- **ICP sent to the factory's main account**, not to a deposit address, cannot be recovered.
+- **When the minting canister sends ICP back**, it keeps three ledger fees.
+- **Stop the factory before every upgrade**, as the runbook says, so no payment is mid-call.
 
 ## Tests before anything goes near mainnet
 
@@ -196,6 +231,7 @@ On a local replica, with the harness in `scripts/replica_harness` (it already ha
 5. A stale rate: ckUSDT pauses, ICP still works.
 6. Refund before settle returns the deposit less the fee. Refund after settle is refused.
 7. Each cap is enforced, and the pay switch stops payments while apps keep working.
+   (Not tested: the day's total starting again at midnight UTC.)
 8. Every existing factory test still passes unchanged.
 9. The new build passes `moc --stable-compatible` against the live build, and an upgrade from the
    live wasm keeps every balance, budget and project.

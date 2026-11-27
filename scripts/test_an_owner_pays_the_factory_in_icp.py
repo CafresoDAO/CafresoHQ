@@ -23,6 +23,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import zlib
 from pathlib import Path
@@ -37,7 +38,7 @@ ICP = 100_000_000
 FEE = 10_000
 RATE = 15_197                      # cycles per e8s, as the mock mints
 MARKUP = 1_000                     # cost plus 10%
-MIN, MAX, DAY = ICP // 10, 5 * ICP, 14 * ICP
+MIN, MAX, DAY = ICP // 10, 5 * ICP, 40 * ICP
 OLD_ARGS = (f'minCreateCycles = {T // 2} : nat; minUpgradeCycles = {T // 10} : nat; '
             f'reserveCycles = {T // 2} : nat; opFeeCycles = 1_000_000_000 : nat')
 
@@ -278,12 +279,103 @@ def main():
         rep.call('fpi_stranger', 'mock_icp', 'mock_fail_notify', '(1 : nat, "refund")')
         ok, out = settle(payer)
         check('the minting canister sends the ICP back: the owner is told, and nothing is credited',
-              ok and 'sent the ICP back' in out and balance() == expect and held(deposit_acct(payer)) == ICP - FEE, (out, held(deposit_acct(payer))))
+              ok and 'sent the ICP back' in out and balance() == expect and held(deposit_acct(payer)) == ICP - 3 * FEE, (out, held(deposit_acct(payer))))
         ok, out = rep.call('fpi_payer', 'cf_factory', 'myPayments', '()', query=True)
         check('...and their payment list shows where it stopped', ok and 'failed' in out and 'mock: refunded' in out, out[:300])
         ok, out = settle(payer)
-        expect += credit(ICP - 2 * FEE)
+        expect += credit(ICP - 4 * FEE)
         check('...settling again pays in what came back', 'credited' in out and balance() == expect, (out, balance(), expect))
+
+
+        # ── what the review asked for ───────────────────────────────────
+        def last_id():
+            out = rep.call('fpi_payer', 'cf_factory', 'myPayments', '()', query=True)[1]
+            return int(re.search(r'\bid = ([\d_]+)', out).group(1).replace('_', ''))
+
+        def blocks():
+            return nat(rep.call('fpi_stranger', 'mock_icp', 'mock_blocks', '()', query=True)[1])
+
+        r = rep.dfx('canister', 'call', 'cf_factory', 'settle', f'(principal "{payer}", variant {{ ICP }})', '--output', 'idl', identity='anonymous')
+        check('an anonymous caller is turned away before the factory calls anything', 'sign in' in r.stdout + r.stderr, r.stdout + r.stderr)
+
+        fund(payer, ICP + FEE)
+        b0 = blocks()
+        rep.call('fpi_stranger', 'mock_icp', 'mock_lose_transfer_reply', '(1 : nat)')
+        ok, out = settle(payer)
+        check('the transfer goes through but its reply is lost: the factory says to call again',
+              ok and 'call settle again' in out and held(deposit_acct(payer)) == 0 and balance() == expect, out)
+        ok, out = settle(payer)
+        expect += credit(ICP)
+        check('...the retry finds the same transfer (no second one) and credits once',
+              'credited' in out and balance() == expect and blocks() == b0 + 1, (out, balance(), expect, b0, blocks()))
+
+        fund(payer, ICP + FEE)
+        results = []
+        ts = [threading.Thread(target=lambda: results.append(settle(payer)[1])) for _ in range(5)]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join()
+        expect += credit(ICP)
+        check('five settles at once credit one payment', balance() == expect and sum('credited' in x for x in results) >= 1,
+              (balance(), expect, [x[:80] for x in results]))
+
+        fund(payer, ICP + FEE)
+        rep.call('fpi_stranger', 'mock_icp', 'mock_fail_notify', '(1 : nat, "other")')
+        ok, out = settle(payer)
+        check('the minting canister says try later: the payment stays open', ok and 'call settle again' in out and balance() == expect, out)
+        # an upgrade in the middle, with today's arguments and no pay settings
+        r = rep.dfx('deploy', 'cf_factory', '--upgrade-unchanged', '--argument', f'(record {{ {OLD_ARGS} }})', identity='fpi_owner', timeout=600)
+        ok, out = rep.call('fpi_stranger', 'cf_factory', 'payStats', '()', query=True)
+        check('an upgrade that leaves the pay settings out keeps them', r.returncode == 0 and 'on = true' in out and 'markupBps = 1_000' in out, out + r.stderr[-200:])
+        ok, out = settle(payer)
+        expect += credit(ICP)
+        check('...and the payment that was part-way through finishes after it', 'credited' in out and balance() == expect, (out, balance(), expect))
+
+        fund(payer, ICP + FEE)
+        rep.call('fpi_stranger', 'mock_icp', 'mock_fail_notify', '(1 : nat, "invalid")')
+        ok, out = settle(payer)
+        pid = last_id()
+        check('the minting canister refuses the transfer: the payment stops as failed, uncredited',
+              ok and 'refused the transfer' in out and balance() == expect, out)
+        ok, out = rep.call('fpi_stranger', 'cf_factory', 'retryPayment', f'({pid} : nat, null)')
+        check("a stranger can't reopen a payment", ok and 'controllers only' in out, out)
+        ok, out = rep.call('fpi_owner', 'cf_factory', 'retryPayment', f'({pid} : nat, null)')
+        check('the operator reopens it', ok and 'ok' in out, out)
+        ok, out = settle(payer)
+        expect += credit(ICP)
+        check('...and settle then credits it, once', 'credited' in out and balance() == expect, (out, balance(), expect))
+        ok, out = rep.call('fpi_owner', 'cf_factory', 'retryPayment', f'({pid} : nat, null)')
+        check('a credited payment cannot be reopened', ok and 'already credited' in out, out)
+        ok, out = rep.call('fpi_owner', 'cf_factory', 'retryPayment', f'(1 : nat, opt ({b0} : nat64))')
+        check("...nor can another payment be pointed at a block that is taken", ok and ('already credited' in out or 'belongs to payment' in out), out)
+
+        fund(payer, ICP + FEE)
+        rep.call('fpi_stranger', 'mock_icp', 'mock_fail_notify', '(1 : nat, "lie")')
+        ok, out = settle(payer)
+        pid = last_id()
+        check('a minting canister that claims cycles it never sent is not believed', ok and 'nothing was credited' in out and balance() == expect, out)
+        rep.call('fpi_owner', 'cf_factory', 'retryPayment', f'({pid} : nat, null)')
+        ok, out = settle(payer)
+        expect += credit(ICP)
+        check('...and the real answer is credited after the operator reopens it', 'credited' in out and balance() == expect, (out, balance(), expect))
+
+        fund(payer, ICP + FEE)
+        rep.call('fpi_stranger', 'mock_icp', 'mock_fail_notify', '(1 : nat, "processing")')
+        settle(payer)
+        pid = last_id()
+        ok, out = rep.call('fpi_stranger', 'cf_factory', 'closePayment', f'({pid} : nat, "test")')
+        check("a stranger can't close a payment", ok and 'controllers only' in out, out)
+        ok, out = rep.call('fpi_owner', 'cf_factory', 'closePayment', f'({pid} : nat, "test")')
+        check('the operator can close a payment that is stuck, so the owner is not locked out', ok and 'ok' in out, out)
+        fund(payer, ICP // 5 + FEE)
+        ok, out = settle(payer)
+        expect += credit(ICP // 5)
+        check('...the owner can pay again', 'credited' in out and balance() == expect, (out, balance(), expect))
+        rep.call('fpi_owner', 'cf_factory', 'retryPayment', f'({pid} : nat, null)')
+        ok, out = settle(payer)
+        expect += credit(ICP)
+        check('...and the closed payment can still be reopened and credited', 'credited' in out and balance() == expect, (out, balance(), expect))
 
         # ── limits ──────────────────────────────────────────────────────
         fund(payer, ICP // 20)
@@ -315,9 +407,24 @@ def main():
         expect += credit(ICP - FEE)
         check('...and the rest on the next settle', 'credited' in out and balance() == expect, (out, balance(), expect))
 
+        # a new pay setting replaces the stored one: set today's limit just above what was taken
+        today = fields(rep.call('fpi_stranger', 'cf_factory', 'payStats', '()', query=True)[1]).get('icpToday', 0)
+        tight = pay.replace(f'dayIcp = {DAY} : nat', f'dayIcp = {max(today + ICP // 2, MAX)} : nat')
+        r = rep.dfx('deploy', 'cf_factory', '--upgrade-unchanged', '--argument', f'(record {{ {OLD_ARGS}; {tight} }})',
+                    identity='fpi_owner', timeout=600)
         fund(payer, 2 * ICP + FEE)
         ok, out = settle(payer)
-        check("past the day's limit for all owners, a payment waits", ok and "today's limit" in out and balance() == expect, out)
+        check("past the day's limit for all owners, a payment waits", r.returncode == 0 and ok and "today's limit" in out and balance() == expect, out)
+        p2 = f'record {{ owner = principal "{payer2}"; subaccount = null }}'
+        had = held(p2)
+        rep.call('fpi_payer2', 'mock_icp', 'icrc2_approve',
+                 f'(record {{ spender = record {{ owner = principal "{factory}"; subaccount = null }}; amount = {ICP} : nat }})')
+        ok, out = rep.call('fpi_payer2', 'cf_factory', 'payIcp', f'({ICP * 3 // 4} : nat)')
+        check('...and payIcp refuses before it takes any ICP', ok and "today's limit" in out and held(p2) == had - FEE, (out, had, held(p2)))
+        r = rep.dfx('deploy', 'cf_factory', '--upgrade-unchanged', '--argument',
+                    f'(record {{ {OLD_ARGS}; {pay.replace("minIcp = " + str(MIN), "minIcp = 0")} }})', identity='fpi_owner', timeout=600)
+        check('settings that make no sense (a smallest payment of 0) make the upgrade fail, and the old ones stay',
+              r.returncode != 0 and 'on = true' in rep.call('fpi_stranger', 'cf_factory', 'payStats', '()', query=True)[1], r.stderr[-200:])
 
         # ── the pause switch ────────────────────────────────────────────
         ok, out = rep.call('fpi_stranger', 'cf_factory', 'setPayPaused', '(true)')
@@ -341,7 +448,7 @@ def main():
               fs.get('cycles', 0) >= fs.get('owed', 1) + fs.get('reserve', 0), fs)
         ok, out = rep.call('fpi_stranger', 'cf_factory', 'payStats', '()', query=True)
         st = fields(out)
-        check('payStats counts every payment and the ICP turned into cycles', st.get('payments') == 8 and st.get('icpBurned', 0) > 11 * ICP, out)
+        check('payStats counts every payment and the ICP turned into cycles', st.get('payments') == 15 and st.get('icpBurned', 0) > 18 * ICP, out)
         ok, out = rep.call('fpi_agent', 'cf_factory', 'getApiDoc', '()', query=True)
         check('the API doc tells an assistant how paying works', ok and 'settle(owner' in out and 'depositAddressFor' in out, out[-300:])
     finally:

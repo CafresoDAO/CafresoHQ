@@ -38,8 +38,9 @@ import Principal "mo:base/Principal";
 import Text "mo:base/Text";
 import Time "mo:base/Time";
 
-/// `pay` holds the settings for paying in ICP (the PayConfig type below). Leave it out, or null,
-/// and every payment method says it is off.
+/// `pay` holds the settings for paying in ICP (the PayConfig type below). They are STORED: given
+/// once, they stay through later upgrades that leave `pay` out, and a new value replaces them.
+/// Until one is given, every payment method says it is off.
 actor class CfFactory(init : {
   minCreateCycles : Nat; minUpgradeCycles : Nat; reserveCycles : Nat; opFeeCycles : Nat;
   pay : ?{ icpLedger : Principal; cmc : Principal; markupBps : Nat; minIcp : Nat; maxIcp : Nat; dayIcp : Nat };
@@ -571,6 +572,22 @@ actor class CfFactory(init : {
   stable var payCount : Nat = 0;
   stable var icpRate : { cyclesPerE8s : Nat; at : Int } = { cyclesPerE8s = 0; at = 0 };
   var payBusy : OrderedMap.Map<Principal, Bool> = pMap.empty();          // not stored: an upgrade clears it
+  var rateBusy : Bool = false;
+  let n64Map = OrderedMap.Make<Nat64>(Nat64.compare);
+  stable var payBlocks : OrderedMap.Map<Nat64, Nat> = n64Map.empty();   // ledger block -> the one payment that may use it
+  stable var lastCreatedAt : Nat64 = 0;
+  // The settings are stored, so a routine upgrade that leaves `pay` out cannot switch off refunds
+  // or strand a payment that is part-way through. Bad settings make the install trap (and roll back).
+  stable var payCfg : ?PayConfig = null;
+  switch (init.pay) {
+    case (?c) {
+      assert c.minIcp >= 10 * ICP_FEE and c.maxIcp >= c.minIcp and c.dayIcp >= c.maxIcp and c.markupBps <= 5_000;
+      payCfg := ?c;
+    };
+    case null {};
+  };
+  // No real rate comes near this (ICP at 100 XDR). A minting canister that claims more is not believed.
+  let MAX_CYCLES_PER_E8S : Nat = 1_000_000;
 
   /// The 32-byte subaccount that stands for a principal: its length, its bytes, then zeros.
   func subOf(p : Principal) : Blob {
@@ -608,7 +625,7 @@ actor class CfFactory(init : {
     payments := natMap.delete(payments, p.id);
     payOpen := pMap.delete(payOpen, p.owner);
     payByOwner := pMap.put(payByOwner, p.owner, Array.filter<Nat>(idsOf(payByOwner, p.owner), func(i : Nat) : Bool { i != p.id }));
-    if (today() == payDay) payDayIcp := if (payDayIcp >= p.amount) payDayIcp - p.amount else 0;
+    if (p.at / DAY_NS == payDay) payDayIcp := if (payDayIcp >= p.amount) payDayIcp - p.amount else 0;
   };
   func failPay(p : Payment, why : Text) {
     savePay({ p with state = #failed(clip(why, 300)); at = now() });
@@ -623,7 +640,7 @@ actor class CfFactory(init : {
   /// What `amount` of a token would add to an owner's balance, at the last rate this factory saw.
   /// `rateAt` is 0 until a rate is known: call refreshRate() first.
   public query func quote(token : Token, amount : Nat) : async { cycles : Nat; fee : Nat; rateAt : Int } {
-    switch (token, init.pay) {
+    switch (token, payCfg) {
       case (#ICP, ?cfg) {
         let minted = amount * icpRate.cyclesPerE8s;
         let credit = creditFor(cfg, minted);
@@ -634,9 +651,12 @@ actor class CfFactory(init : {
   };
 
   /// Ask the minting canister for today's ICP-to-cycles rate (at most every 10 minutes).
-  public shared func refreshRate() : async { #ok : { cyclesPerE8s : Nat; at : Int }; #err : Text } {
-    let cfg = switch (init.pay) { case (?c) c; case null return #err("paying in ICP is not turned on") };
+  public shared ({ caller }) func refreshRate() : async { #ok : { cyclesPerE8s : Nat; at : Int }; #err : Text } {
+    if (Principal.isAnonymous(caller)) return #err("sign in");
+    let cfg = switch (payCfg) { case (?c) c; case null return #err("paying in ICP is not turned on") };
     if (icpRate.at > 0 and now() - icpRate.at < RATE_FRESH_NS) return #ok(icpRate);
+    if (rateBusy) return #err("the rate is being read; try again in a moment");
+    rateBusy := true;
     let cmc : Cmc = actor (Principal.toText(cfg.cmc));
     try {
       let r = await cmc.get_icp_xdr_conversion_rate();
@@ -644,14 +664,17 @@ actor class CfFactory(init : {
       // so one e8s mints exactly that many cycles.
       icpRate := { cyclesPerE8s = Nat64.toNat(r.data.xdr_permyriad_per_icp); at = now() };
       #ok(icpRate);
-    } catch (e) { #err("the minting canister did not answer: " # Error.message(e)) };
+    } catch (e) { #err("the minting canister did not answer: " # Error.message(e)) } finally { rateBusy := false };
   };
 
-  /// Turn an owner's ICP deposit into cycles on their balance. Anyone may call it for any owner:
-  /// it can only help them. Safe to call again after any failure; a payment is credited once.
-  public shared func settle(owner : Principal, token : Token) : async PayResult {
+  /// Turn an owner's ICP deposit into cycles on their balance. Anyone signed in may call it for any
+  /// owner. Know this: it makes the deposit cycles, which cannot be refunded as ICP, so an owner who
+  /// wants their ICP back should refund before anyone settles. Safe to call again after any failure;
+  /// a payment is credited once.
+  public shared ({ caller }) func settle(owner : Principal, token : Token) : async PayResult {
+    if (Principal.isAnonymous(caller)) return #err("sign in");
     switch (token) { case (#ckUSDT) return #err("ckUSDT is not accepted yet"); case (#ICP) {} };
-    let cfg = switch (init.pay) { case (?c) c; case null return #err("paying in ICP is not turned on") };
+    let cfg = switch (payCfg) { case (?c) c; case null return #err("paying in ICP is not turned on") };
     if (payPaused) return #err("payments are paused");
     if (Principal.isAnonymous(owner)) return #err("an owner must be signed in");
     if (pMap.get(payBusy, owner) == ?true) return #err("a payment for this owner is already running");
@@ -662,12 +685,15 @@ actor class CfFactory(init : {
   /// For a wallet that can approve (ICRC-2): approve this canister for `amount` plus two ledger fees,
   /// then call this. It moves the ICP to the caller's deposit address and settles it.
   public shared ({ caller }) func payIcp(amount : Nat) : async PayResult {
-    let cfg = switch (init.pay) { case (?c) c; case null return #err("paying in ICP is not turned on") };
+    let cfg = switch (payCfg) { case (?c) c; case null return #err("paying in ICP is not turned on") };
     if (payPaused) return #err("payments are paused");
     if (Principal.isAnonymous(caller)) return #err("sign in");
     if (amount < cfg.minIcp) return #err("the smallest payment is " # icpText(cfg.minIcp));
     if (amount > cfg.maxIcp) return #err("the largest single payment is " # icpText(cfg.maxIcp));
     if (pMap.get(payBusy, caller) == ?true) return #err("a payment for this owner is already running");
+    if (openPayment(caller) != null) return #err("an earlier payment is part-way through: call settle to finish it first");
+    rollDay();
+    if (payDayIcp + amount > cfg.dayIcp) return #err("today's limit for all payments is reached; try tomorrow");
     payBusy := pMap.put(payBusy, caller, true);
     try {
       let ledger : IcpLedger = actor (Principal.toText(cfg.icpLedger));
@@ -702,9 +728,12 @@ actor class CfFactory(init : {
         rollDay();
         if (payDayIcp + amount > cfg.dayIcp) return #err("today's limit for all payments is reached; settle tomorrow, or refund");
         payDayIcp += amount;
+        // Never the same created_at_time twice: the ledger tells transfers apart by it.
+        let stamp = Nat64.fromIntWrap(now());
+        lastCreatedAt := if (stamp > lastCreatedAt) stamp else lastCreatedAt + 1;
         let r : Payment = {
           id = nextPayment; owner; token = #ICP; amount; cycles = 0; fee = 0; at = now();
-          block = null; createdAt = Nat64.fromIntWrap(now()); state = #started;
+          block = null; createdAt = lastCreatedAt; state = #started;
         };
         nextPayment += 1;
         savePay(r);
@@ -727,11 +756,28 @@ actor class CfFactory(init : {
       let block = switch (sent) {
         case (#Ok(b)) b;
         case (#Err(#TxDuplicate({ duplicate_of }))) duplicate_of;
+        case (#Err(#TxTooOld(_))) {
+          // Only a retry more than a day later gets here, and the first try may have gone through.
+          // Keep the row: the operator finds the block and reopens it with retryPayment.
+          failPay(row, "too old to retry; the transfer may have happened. Needs the operator");
+          return #err("this payment is too old to retry by itself; ask the operator (payment " # Nat.toText(row.id) # ")");
+        };
         case (#Err(e)) {
           dropPay(row);
           return #err("the ledger refused the transfer, and the deposit is untouched: " # debug_show (e));
         };
       };
+      // A block pays for one payment only, whatever the ledger answers.
+      switch (n64Map.get(payBlocks, block)) {
+        case (?other) {
+          if (other != row.id) {
+            failPay(row, "the ledger named block " # Nat64.toText(block) # ", which payment " # Nat.toText(other) # " used. Needs the operator");
+            return #err("the ledger answered with a block another payment used; ask the operator (payment " # Nat.toText(row.id) # ")");
+          };
+        };
+        case null {};
+      };
+      payBlocks := n64Map.put(payBlocks, block, row.id);
       row := { row with block = ?block; state = #sent };
       savePay(row);
     };
@@ -747,6 +793,12 @@ actor class CfFactory(init : {
         let cur = switch (natMap.get(payments, row.id)) { case (?c) c; case null row };
         if (cur.state != #sent) return #ok(cur);     // credited by an earlier answer
         let credit = creditFor(cfg, cycles);
+        // Believe the answer only if it is sane and the cycles are really here: the factory never
+        // owes an owner more than it holds.
+        if (cycles > cur.amount * MAX_CYCLES_PER_E8S or Cycles.balance() < owed + credit + init.reserveCycles) {
+          failPay(cur, "the minting canister reported " # Nat.toText(cycles) # " cycles, which the factory does not hold. Needs the operator");
+          return #err("the cycles did not arrive as reported; nothing was credited. Ask the operator (payment " # Nat.toText(cur.id) # ")");
+        };
         setBalance(owner, balanceOf(owner) + credit);
         feesTaken += cycles - credit;
         icpBurned += cur.amount;
@@ -772,7 +824,7 @@ actor class CfFactory(init : {
   /// are paused. After settle the money is cycles: withdraw() sends those to a canister.
   public shared ({ caller }) func refund(token : Token) : async Result {
     switch (token) { case (#ckUSDT) return #err("ckUSDT is not accepted yet"); case (#ICP) {} };
-    let cfg = switch (init.pay) { case (?c) c; case null return #err("paying in ICP is not turned on") };
+    let cfg = switch (payCfg) { case (?c) c; case null return #err("paying in ICP is not turned on") };
     if (Principal.isAnonymous(caller)) return #err("sign in");
     if (pMap.get(payBusy, caller) == ?true) return #err("a payment for this owner is running");
     if (openPayment(caller) != null) return #err("a payment is part-way through: call settle to finish it first");
@@ -812,7 +864,7 @@ actor class CfFactory(init : {
     on : Bool; paused : Bool; markupBps : Nat; minIcp : Nat; maxIcp : Nat; dayIcp : Nat;
     icpToday : Nat; icpBurned : Nat; payments : Nat; spendable : Nat;
   } {
-    let (on, markupBps, minIcp, maxIcp, dayIcp) = switch (init.pay) {
+    let (on, markupBps, minIcp, maxIcp, dayIcp) = switch (payCfg) {
       case (?c) (true, c.markupBps, c.minIcp, c.maxIcp, c.dayIcp);
       case null (false, 0, 0, 0, 0);
     };
@@ -820,6 +872,44 @@ actor class CfFactory(init : {
       on; paused = payPaused; markupBps; minIcp; maxIcp; dayIcp;
       icpToday = if (today() == payDay) payDayIcp else 0; icpBurned; payments = payCount; spendable = spendable();
     };
+  };
+
+  /// The operator (a controller) reopens a payment that stopped with its ICP already sent, so the
+  /// next settle asks the minting canister again. `block` names the ledger block when the factory
+  /// never learned it. Safe: cycles are still credited only on the minting canister's own answer
+  /// for that block, and a block serves one payment.
+  public shared ({ caller }) func retryPayment(id : Nat, block : ?Nat64) : async Result {
+    if (not Principal.isController(caller)) return #err("controllers only");
+    let p = switch (natMap.get(payments, id)) { case (?p) p; case null return #err("no such payment") };
+    switch (p.state) { case (#credited) return #err("already credited"); case _ {} };
+    switch (pMap.get(payOpen, p.owner)) {
+      case (?open) { if (open != id) return #err("the owner has another payment part-way through: payment " # Nat.toText(open)) };
+      case null {};
+    };
+    let b = switch (block, p.block) {
+      case (?b, _) b;
+      case (null, ?b) b;
+      case (null, null) return #err("this payment has no ledger block: give one");
+    };
+    switch (n64Map.get(payBlocks, b)) {
+      case (?other) { if (other != id) return #err("that block belongs to payment " # Nat.toText(other)) };
+      case null {};
+    };
+    payBlocks := n64Map.put(payBlocks, b, id);
+    savePay({ p with block = ?b; state = #sent });
+    payOpen := pMap.put(payOpen, p.owner, id);
+    #ok(id);
+  };
+
+  /// The operator closes a payment that can never finish, so the owner can pay or refund again.
+  /// It moves nothing. The payment stays in the list as failed, with the reason.
+  public shared ({ caller }) func closePayment(id : Nat, why : Text) : async Result {
+    if (not Principal.isController(caller)) return #err("controllers only");
+    let p = switch (natMap.get(payments, id)) { case (?p) p; case null return #err("no such payment") };
+    if (pMap.get(payOpen, p.owner) != ?id) return #err("that payment is not open");
+    if (pMap.get(payBusy, p.owner) == ?true) return #err("that payment is running right now");
+    failPay(p, "closed by the operator: " # why);
+    #ok(id);
   };
 
   /// The operator's switch (a controller of this canister): stops settle and payIcp. Refunds and

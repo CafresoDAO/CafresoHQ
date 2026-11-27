@@ -37,7 +37,8 @@ actor MockIcp {
   let TPUP : Nat64 = 0x50555054;
   var rate : Nat = 15_197;                  // xdr_permyriad_per_icp: cycles minted per e8s
   var failNotify : Nat = 0;
-  var failNotifyHow : Text = "processing";  // processing | reject | refund
+  var failNotifyHow : Text = "processing";  // processing | reject | refund | other | invalid | lie
+  var loseReply : Nat = 0;
   var failTransfer : Nat = 0;
 
   let balances = HashMap.HashMap<Blob, Nat>(64, Blob.equal, Blob.hash);
@@ -67,6 +68,8 @@ actor MockIcp {
   public func mint(to : Account, amount : Nat) : async Nat { balances.put(aid(to), bal(aid(to)) + amount); bal(aid(to)) };
   public func mock_fail_notify(times : Nat, how : Text) : async () { failNotify := times; failNotifyHow := how };
   public func mock_fail_transfer(times : Nat) : async () { failTransfer := times };
+  /// The transfer goes through, and the caller is told it failed.
+  public func mock_lose_transfer_reply(times : Nat) : async () { loseReply := times };
   public func mock_set_rate(r : Nat) : async () { rate := r };
   public query func mock_blocks() : async Nat { blocks.size() };
 
@@ -131,6 +134,8 @@ actor MockIcp {
     if (bal(from) < amount + FEE) return #Err(#InsufficientFunds({ balance = { e8s = Nat64.fromNat(bal(from)) } }));
     let b = move(from, a.to, amount, a.memo);
     switch (print) { case (?p) seen.put(p, b); case null {} };
+    // Kept (not rolled back): the reject below is sent after an await, as a lost reply would look.
+    if (loseReply > 0) { loseReply -= 1; await async {}; throw Error.reject("mock: the reply was lost") };
     #Ok(Nat64.fromNat(b));
   };
 
@@ -159,11 +164,14 @@ actor MockIcp {
       failNotify -= 1;
       if (failNotifyHow == "reject") throw Error.reject("mock: the minting canister is busy");
       if (failNotifyHow == "refund") {
-        // as the real one does: the ICP goes back to the sender, less a fee
+        // as the real one does: the ICP goes back to the sender, less three ledger fees
         balances.put(mine, bal(mine) - b.amount);
-        balances.put(b.from, bal(b.from) + b.amount - FEE);
+        balances.put(b.from, bal(b.from) + b.amount - 3 * FEE);
         return #Err(#Refunded({ block_index = null; reason = "mock: refunded" }));
       };
+      if (failNotifyHow == "other") return #Err(#Other({ error_message = "mock: try later"; error_code = 1 }));
+      if (failNotifyHow == "invalid") return #Err(#InvalidTransaction("mock: not seen yet"));
+      if (failNotifyHow == "lie") return #Ok(b.amount * 5_000_000);   // claims cycles it never sends
       return #Err(#Processing);
     };
     let cycles = b.amount * rate;
