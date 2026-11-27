@@ -62,6 +62,8 @@ SUITE_OVERRIDES: list[tuple[str, int, bool]] = [
     ('scripts/test_mandates_spend_only_what_the_owner_signed.py', 900, True),
     # cf_factory on port 4980: create, install, upgrade with a snapshot, roll back. ~3 min cold.
     ('scripts/test_an_agent_builds_its_own_canister_inside_a_budget.py', 900, True),
+    # cf_factory pay-in on port 4984: upgrade from the live version, then pay in ICP beside a mock ledger. ~5 min cold.
+    ('scripts/test_an_owner_pays_the_factory_in_icp.py', 1200, True),
     # The hall fee, direct deposits and #TooOld on port 4981, beside the mock ledger. ~3 min cold.
     ('scripts/test_the_hall_fee_and_direct_deposits_on_a_real_replica.py', 900, True),
     ('scripts/test_the_hall_writes_track_records_to_the_directory_on_a_real_replica.py', 900, True),
