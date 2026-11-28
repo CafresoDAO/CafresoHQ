@@ -439,6 +439,43 @@ def main():
         check('...and an owner can still take an unsettled deposit back', ok and 'ok' in out and held(deposit_acct(payer)) == 0, out)
         rep.call('fpi_owner', 'cf_factory', 'setPayPaused', '(false)')
 
+        # ── a factory with little to spare (found on mainnet, 2026-11-28) ─
+        # While the factory handles the minting canister's answer, its own balance reads lower than
+        # at rest, so a guard that compares that reading with what it owes refused a real payment.
+        # No markup here, so the payment brings the factory nothing extra to hide the gap.
+        # A local replica holds back far less than mainnet's 13-node subnets (fees scale with subnet
+        # size), so the spare has to be squeezed to about 1 B to show it. An upgrade costs cycles
+        # too: the first one measures that cost, the second lands on the target.
+        nomarkup = pay.replace(f"markupBps = {MARKUP}", "markupBps = 0")
+        def squeeze(target):
+            f = fields(rep.call('fpi_stranger', 'cf_factory', 'factoryStatus', '()', query=True)[1])
+            res = f.get('reserve', 0) + f.get('spendable', 0) - target
+            a = OLD_ARGS.replace(f'reserveCycles = {T // 2} : nat', f'reserveCycles = {res} : nat')
+            a = re.sub(r'reserveCycles = \d+ : nat', f'reserveCycles = {res} : nat', a)
+            rr = rep.dfx('deploy', 'cf_factory', '--upgrade-unchanged', '--argument', f'(record {{ {a}; {nomarkup} }})',
+                         identity='fpi_owner', timeout=600)
+            return rr, fields(rep.call('fpi_stranger', 'cf_factory', 'factoryStatus', '()', query=True)[1])
+        r, fs = squeeze(8_000_000_000)
+        cost = 8_000_000_000 - fs.get('spendable', 0)
+        r, fs = squeeze(1_000_000_000 + max(cost, 0))
+        check('the factory is set up with almost nothing to spare', r.returncode == 0 and 0 < fs.get('spendable', 0) < 2_500_000_000, (fs, r.stderr[-200:]))
+        expect = balance()          # projects made earlier have charged this owner small fees
+        fund(payer, MIN + FEE)
+        ok, out = settle(payer)
+        expect += MIN * RATE
+        check('a small payment is still credited when the factory has little to spare', ok and 'credited' in out and balance() == expect, (out, balance(), expect))
+        fs = fields(rep.call('fpi_stranger', 'cf_factory', 'factoryStatus', '()', query=True)[1])
+        check('...and the factory still holds what it owes plus its reserve', fs.get('cycles', 0) >= fs.get('owed', 1) + fs.get('reserve', 0), fs)
+        fund(payer, MIN + FEE)
+        rep.call('fpi_stranger', 'mock_icp', 'mock_fail_notify', '(1 : nat, "lie")')
+        ok, out = settle(payer)
+        pid = last_id()
+        check('...while a claim of cycles that never came is still refused there', ok and 'nothing was credited' in out and balance() == expect, out)
+        rep.call('fpi_owner', 'cf_factory', 'retryPayment', f'({pid} : nat, null)')
+        ok, out = settle(payer)
+        expect += MIN * RATE
+        check('...and credited once the operator reopens it', 'credited' in out and balance() == expect, (out, balance(), expect))
+
         # ── the books ───────────────────────────────────────────────────
         ok, out = settle(payer, who='fpi_payer')
         ok, out = rep.call('fpi_stranger', 'cf_factory', 'settle', f'(principal "{payer}", variant {{ ckUSDT }})')
@@ -448,7 +485,7 @@ def main():
               fs.get('cycles', 0) >= fs.get('owed', 1) + fs.get('reserve', 0), fs)
         ok, out = rep.call('fpi_stranger', 'cf_factory', 'payStats', '()', query=True)
         st = fields(out)
-        check('payStats counts every payment and the ICP turned into cycles', st.get('payments') == 15 and st.get('icpBurned', 0) > 18 * ICP, out)
+        check('payStats counts every payment and the ICP turned into cycles', st.get('payments') == 17 and st.get('icpBurned', 0) > 18 * ICP, out)
         ok, out = rep.call('fpi_agent', 'cf_factory', 'getApiDoc', '()', query=True)
         check('the API doc tells an assistant how paying works', ok and 'settle(owner' in out and 'depositAddressFor' in out, out[-300:])
     finally:

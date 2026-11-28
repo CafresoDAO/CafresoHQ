@@ -588,6 +588,12 @@ actor class CfFactory(init : {
   };
   // No real rate comes near this (ICP at 100 XDR). A minting canister that claims more is not believed.
   let MAX_CYCLES_PER_E8S : Nat = 1_000_000;
+  // While the factory runs a call, the network holds back cycles to pay for it and gives the unused
+  // part back afterwards, so Cycles.balance() reads tens of billions lower than the balance at rest.
+  // The first real payment (mainnet, 2026-11-28) was refused because the guard below compared that
+  // low reading with everything the factory owes. Two allowances fix it:
+  let ARRIVAL_SLACK : Nat = 5_000_000_000;      // what the minting call itself may cost the factory
+  let HELD_WHILE_RUNNING : Nat = 150_000_000_000; // the most a reading may be low by; never more than half the reserve
 
   /// The 32-byte subaccount that stands for a principal: its length, its bytes, then zeros.
   func subOf(p : Principal) : Blob {
@@ -786,6 +792,7 @@ actor class CfFactory(init : {
 
     // The minting canister remembers a transfer by its block: asking twice mints once.
     let cmc : Cmc = actor (Principal.toText(cfg.cmc));
+    let before = Cycles.balance();
     let minted = try { await cmc.notify_top_up({ block_index = block; canister_id = me }) }
     catch (e) { return #err("the minting canister did not answer (" # Error.message(e) # "); the ICP is safe, call settle again") };
     switch (minted) {
@@ -794,8 +801,15 @@ actor class CfFactory(init : {
         if (cur.state != #sent) return #ok(cur);     // credited by an earlier answer
         let credit = creditFor(cfg, cycles);
         // Believe the answer only if it is sane and the cycles are really here: the factory never
-        // owes an owner more than it holds.
-        if (cycles > cur.amount * MAX_CYCLES_PER_E8S or Cycles.balance() < owed + credit + init.reserveCycles) {
+        // owes an owner more than it holds. Either the balance rose by the amount across this call
+        // (both readings are taken mid-call, so they compare like with like), or, for a repeated
+        // answer whose cycles came on an earlier call, the factory covers the credit and its reserve
+        // after allowing for what the network holds back while this call runs.
+        let have = Cycles.balance();
+        let arrived = have + ARRIVAL_SLACK >= before + cycles;
+        let hold = Nat.min(HELD_WHILE_RUNNING, init.reserveCycles / 2);
+        let covered = have + hold >= owed + credit + init.reserveCycles;
+        if (cycles > cur.amount * MAX_CYCLES_PER_E8S or not (arrived or covered)) {
           failPay(cur, "the minting canister reported " # Nat.toText(cycles) # " cycles, which the factory does not hold. Needs the operator");
           return #err("the cycles did not arrive as reported; nothing was credited. Ask the operator (payment " # Nat.toText(cur.id) # ")");
         };

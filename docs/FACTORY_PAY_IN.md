@@ -1,6 +1,6 @@
 # Paying the factory in ICP and ckUSDT
 
-Status: **ICP pay-in is built and tested on a local replica (2026-11-27). Nothing is deployed.**
+Status: **ICP pay-in is live on mainnet since 2026-11-28 (0.1 to 2 ICP a payment, 10 ICP a day, cost plus 10%). The first real payment minted its cycles but was not credited; the fix is in "First real payment" below and is not deployed yet.**
 ckUSDT, the "Add funds" panel and the connector opt-in are still design only.
 It is step 3 of the three-year plan (`obsidian-computer/docs/THREE_YEAR_PLAN.md`).
 
@@ -219,6 +219,18 @@ Left as they are, and to know:
 - **ICP sent to the factory's main account**, not to a deposit address, cannot be recovered.
 - **When the minting canister sends ICP back**, it keeps three ledger fees.
 - **Stop the factory before every upgrade**, as the runbook says, so no payment is mid-call.
+
+## First real payment, 2026-11-28
+
+Anthony approved one 0.1 ICP payment from `ic_admin`.
+
+- **What worked on the real ledger and minting canister:** the transfer to the deposit address, the send to the minting canister (block 40,766,766), and the mint. 0.1 ICP became 142.93 B cycles, which reached the factory. The rate read (`refreshRate`) and `quote` also worked.
+- **What failed:** the factory refused the credit ("the cycles did not arrive as reported"), and refused again after the operator reopened the payment.
+- **Why:** the guard compared `Cycles.balance()`, read while the call was still running, with everything the factory owes plus the credit and the reserve. While a call runs, the network holds back cycles to pay for it and returns the unused part afterwards, so that reading is tens of billions lower than the balance at rest. The factory had 74 B to spare before the payment and 182 B after it; the credit was 130 B; the reading came out more than 52 B low. The local tests never saw this because the test factory always had trillions to spare.
+- **The fix:** believe the answer if the balance rose by the minted amount across the minting call (two readings taken the same way), or, for a repeated answer whose cycles came earlier, if the factory covers the credit and its reserve after allowing up to 150 B (never more than half the reserve) for what is held while the call runs. A claim of cycles that never came is still refused.
+- **New test:** the factory is set up with about 30 B to spare, a 0.1 ICP payment must be credited, and a false claim there must still be refused.
+- **Payment 1** is recorded as failed and uncredited. After the fix is deployed, the operator reopens it (`retryPayment(1, null)`) and `settle` credits `ic_admin` about 130 B.
+- **Until then** keep the factory's spare cycles well above the largest credit plus 100 B, or a payment will be refused the same way.
 
 ## Tests before anything goes near mainnet
 
